@@ -348,6 +348,31 @@ void TabClient::OnResetDialogState(CefRefPtr<CefBrowser> /*browser*/) {
   }
 }
 
+void TabClient::OnFullscreenModeChange(CefRefPtr<CefBrowser> /*browser*/,
+                                       bool fullscreen) {
+  CEF_REQUIRE_UI_THREAD();
+  if (delegate_) {
+    delegate_->OnFullscreenModeChanged(fullscreen);
+  }
+}
+
+bool TabClient::OnPreKeyEvent(CefRefPtr<CefBrowser> browser,
+                              const CefKeyEvent& event,
+                              CefEventHandle /*os_event*/,
+                              bool* /*is_keyboard_shortcut*/) {
+  CEF_REQUIRE_UI_THREAD();
+  // Escape always leaves HTML full screen, before the page sees the key (as
+  // in Chrome); with Alloy style this is the client's job.
+  constexpr int kEscapeKeyCode = 0x1B;
+  if (event.type == KEYEVENT_RAWKEYDOWN &&
+      event.windows_key_code == kEscapeKeyCode &&
+      browser->GetHost()->IsFullscreen()) {
+    browser->GetHost()->ExitFullscreen(/*will_cause_resize=*/true);
+    return true;
+  }
+  return false;
+}
+
 bool TabClient::OnKeyEvent(CefRefPtr<CefBrowser> /*browser*/,
                            const CefKeyEvent& event,
                            CefEventHandle os_event) {

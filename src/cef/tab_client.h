@@ -115,6 +115,10 @@ class TabClientDelegate {
   // The page responds again: remove the question.
   virtual void OnRendererResponsive() = 0;
 
+  // The page entered or left HTML full screen (video, presentation). The
+  // platform makes the window full screen and hides the browser UI.
+  virtual void OnFullscreenModeChanged(bool fullscreen) = 0;
+
   // Find in page progress: `count` matches, `active` is the 1-based index of
   // the highlighted one; `final_update` is false while still searching.
   virtual void OnFindResult(int count, int active, bool final_update) = 0;
@@ -189,6 +193,8 @@ class TabClient : public CefClient,
                      const CefString& title) override;
   void OnFaviconURLChange(CefRefPtr<CefBrowser> browser,
                           const std::vector<CefString>& icon_urls) override;
+  void OnFullscreenModeChange(CefRefPtr<CefBrowser> browser,
+                              bool fullscreen) override;
 
   // CefDownloadHandler:
   bool OnBeforeDownload(CefRefPtr<CefBrowser> browser,
@@ -222,6 +228,10 @@ class TabClient : public CefClient,
   void OnResetDialogState(CefRefPtr<CefBrowser> browser) override;
 
   // CefKeyboardHandler:
+  bool OnPreKeyEvent(CefRefPtr<CefBrowser> browser,
+                     const CefKeyEvent& event,
+                     CefEventHandle os_event,
+                     bool* is_keyboard_shortcut) override;
   bool OnKeyEvent(CefRefPtr<CefBrowser> browser,
                   const CefKeyEvent& event,
                   CefEventHandle os_event) override;

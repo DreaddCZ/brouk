@@ -1,0 +1,9 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Print test</title>
+<style>body { font: 15px -apple-system, sans-serif; margin: 2em; }</style>
+<h1>Printing (spec 012, item 10)</h1>
+<p>⌘P, File → Print…, the context menu's Print… or the button below open the
+print dialog. "Save as PDF" in the dialog writes a PDF.</p>
+<button onclick="print()">window.print()</button>
+<script>if (location.hash === '#auto') setTimeout(print, 500);</script>

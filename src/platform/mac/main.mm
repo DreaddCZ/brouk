@@ -26,6 +26,12 @@ int main(int argc, char* argv[]) {
       return 1;
     }
 
+    // Session restore will be our own (003): macOS must not restore windows
+    // or offer to "reopen windows" after a crash.
+    [NSUserDefaults.standardUserDefaults registerDefaults:@{
+      @"ApplePersistenceIgnoreState" : @YES
+    }];
+
     BRAppDelegate* delegate = [[BRAppDelegate alloc] init];
     NSApp.delegate = delegate;
 

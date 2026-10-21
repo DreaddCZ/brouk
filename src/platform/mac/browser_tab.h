@@ -29,6 +29,7 @@ NS_ASSUME_NONNULL_BEGIN
     reserveDownloadPath:(const std::string&)suggested;
 - (void)tab:(BRTab*)tab releaseDownloadPath:(const std::string&)path;
 - (void)tab:(BRTab*)tab downloadUpdated:(const brouk::DownloadInfo&)info;
+- (void)tab:(BRTab*)tab fullscreenChanged:(BOOL)fullscreen;
 - (void)tab:(BRTab*)tab
         openURL:(NSString*)url
     disposition:(brouk::OpenDisposition)disposition;
@@ -88,6 +89,10 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)zoom:(cef_zoom_command_t)command;
 // Chromium zoom level of the page (0 = 100 %).
 - (double)zoomLevel;
+
+- (void)print;
+// Leaves HTML full screen (if the page is in it).
+- (void)exitFullscreen;
 
 // Starts closing: runs the page's beforeunload handler, which may cancel.
 - (void)requestClose;

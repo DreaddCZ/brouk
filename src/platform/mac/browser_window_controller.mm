@@ -1,6 +1,7 @@
 #import "platform/mac/browser_window_controller.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -97,6 +98,12 @@ NSButton* ToolbarButton(NSString* symbol,
   NSView* _contentArea;
   BRFindBar* _findBar;
   BRDownloadNotice* _downloadNotice;
+  // The tab whose page is in HTML full screen, if any.
+  __weak BRTab* _fullscreenTab;
+  // We put the window into macOS full screen for that page (and leave it
+  // again afterwards).
+  BOOL _windowFullscreenForPage;
+  NSTextField* _fullscreenHint;
 }
 
 - (instancetype)initWithOwner:(id<BRBrowserWindowOwner>)owner {
@@ -314,6 +321,10 @@ NSButton* ToolbarButton(NSString* symbol,
   if (!tab) {
     return;
   }
+  // Like Chrome, switching tabs ends a page's full screen.
+  if (_fullscreenTab && _fullscreenTab != tab) {
+    [_fullscreenTab exitFullscreen];
+  }
   BRTab* previous = [self activeTab];
   _model->ActivateTab(tab.tabId);
   if (previous != tab) {
@@ -448,6 +459,85 @@ NSButton* ToolbarButton(NSString* symbol,
 
 - (void)tab:(BRTab*)tab downloadUpdated:(const brouk::DownloadInfo&)info {
   [_downloadNotice updateWithInfo:info];
+}
+
+#pragma mark - HTML full screen
+
+- (BOOL)isWindowFullscreen {
+  return (self.window.styleMask & NSWindowStyleMaskFullScreen) != 0;
+}
+
+- (void)tab:(BRTab*)tab fullscreenChanged:(BOOL)fullscreen {
+  if (fullscreen) {
+    if (tab != [self activeTab]) {
+      [tab exitFullscreen];
+      return;
+    }
+    _fullscreenTab = tab;
+    [self setBrowserUIHidden:YES];
+    if (![self isWindowFullscreen]) {
+      _windowFullscreenForPage = YES;
+      [self.window toggleFullScreen:nil];
+    }
+    [self showFullscreenHint];
+  } else if (tab == _fullscreenTab) {
+    _fullscreenTab = nil;
+    [self setBrowserUIHidden:NO];
+    if (_windowFullscreenForPage && [self isWindowFullscreen]) {
+      [self.window toggleFullScreen:nil];
+    }
+    _windowFullscreenForPage = NO;
+  }
+}
+
+// Page full screen: the page fills the whole window.
+- (void)setBrowserUIHidden:(BOOL)hidden {
+  NSRect b = self.window.contentView.bounds;
+  _tabStrip.hidden = hidden;
+  _toolbar.hidden = hidden;
+  _findBar.hidden = hidden || ![self activeTab].findBarVisible;
+  _contentArea.frame =
+      hidden ? b
+             : NSMakeRect(0, 0, b.size.width,
+                          b.size.height - kTabStripHeight - kToolbarHeight);
+}
+
+// Chrome's hint: "Press Esc to exit full screen", fading after 4 s.
+- (void)showFullscreenHint {
+  if (!_fullscreenHint) {
+    _fullscreenHint =
+        [NSTextField labelWithString:@"Press  Esc  to exit full screen"];
+    _fullscreenHint.font = [NSFont systemFontOfSize:15
+                                             weight:NSFontWeightMedium];
+    _fullscreenHint.textColor = NSColor.whiteColor;
+    _fullscreenHint.alignment = NSTextAlignmentCenter;
+    _fullscreenHint.wantsLayer = YES;
+    _fullscreenHint.layer.backgroundColor =
+        [NSColor colorWithWhite:0.1 alpha:0.85].CGColor;
+    _fullscreenHint.layer.cornerRadius = 10;
+    _fullscreenHint.autoresizingMask =
+        NSViewMinXMargin | NSViewMaxXMargin | NSViewMinYMargin;
+  }
+  NSView* root = self.window.contentView;
+  NSRect b = root.bounds;
+  _fullscreenHint.frame = NSMakeRect(std::floor((b.size.width - 320) / 2),
+                                     b.size.height - 80, 320, 40);
+  _fullscreenHint.alphaValue = 1;
+  [root addSubview:_fullscreenHint];
+  NSTextField* hint = _fullscreenHint;
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 4 * NSEC_PER_SEC),
+                 dispatch_get_main_queue(), ^{
+                   [NSAnimationContext
+                       runAnimationGroup:^(NSAnimationContext* context) {
+                         context.duration = 0.5;
+                         hint.animator.alphaValue = 0;
+                       }
+                       completionHandler:^{
+                         if (hint.alphaValue == 0) {
+                           [hint removeFromSuperview];
+                         }
+                       }];
+                 });
 }
 
 - (void)tabDidCreateBrowser:(BRTab*)tab {
@@ -596,6 +686,10 @@ NSButton* ToolbarButton(NSString* symbol,
   [tab focusContent];
 }
 
+- (IBAction)printPage:(id)sender {
+  [[self activeTab] print];
+}
+
 #pragma mark - Zoom
 
 - (IBAction)zoomIn:(id)sender {
@@ -672,6 +766,8 @@ NSButton* ToolbarButton(NSString* symbol,
 - (void)windowWillExitFullScreen:(NSNotification*)notification {
   _tabStrip.leadingInset = kTrafficLightsInset;
   _tabStrip.needsLayout = YES;
+  _windowFullscreenForPage = NO;
+  [_fullscreenTab exitFullscreen];
 }
 
 @end

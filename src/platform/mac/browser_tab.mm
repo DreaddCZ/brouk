@@ -125,6 +125,10 @@ class TabDelegateBridge : public TabClientDelegate {
     BRTab* tab = tab_;
     [tab.delegate tab:tab downloadUpdated:info];
   }
+  void OnFullscreenModeChanged(bool fullscreen) override {
+    BRTab* tab = tab_;
+    [tab.delegate tab:tab fullscreenChanged:fullscreen];
+  }
   void OnFindResult(int count, int active, bool final_update) override {
     [tab_ handleFindResult:count active:active final:final_update];
   }
@@ -159,6 +163,7 @@ class TabDelegateBridge : public TabClientDelegate {
   BRTabDialogView* _dialog;
   BRTabDialogView* _unresponsiveDialog;
   BRSadTabView* _sadTab;
+  BOOL _clientDetached;
 }
 
 - (instancetype)initWithId:(brouk::TabId)tabId
@@ -178,7 +183,10 @@ class TabDelegateBridge : public TabClientDelegate {
 }
 
 - (void)dealloc {
-  if (_client) {
+  // Normally detached in handleBrowserClosed. A tab whose browser never
+  // existed (aborted popup) is freed while CEF runs; after CefShutdown the
+  // client must not be touched (no CEF UI thread any more).
+  if (_client && !_clientDetached) {
     _client->DetachDelegate();
   }
 }
@@ -288,6 +296,18 @@ class TabDelegateBridge : public TabClientDelegate {
   if (_browser && _browser->GetHost()->CanZoom(command)) {
     _browser->GetHost()->Zoom(command);
     [_delegate tabDidChangeState:self];
+  }
+}
+
+- (void)print {
+  if (_browser) {
+    _browser->GetHost()->Print();
+  }
+}
+
+- (void)exitFullscreen {
+  if (_browser && _browser->GetHost()->IsFullscreen()) {
+    _browser->GetHost()->ExitFullscreen(/*will_cause_resize=*/true);
   }
 }
 
@@ -451,6 +471,7 @@ class TabDelegateBridge : public TabClientDelegate {
 - (void)handleBrowserClosed {
   _browser = nullptr;
   _client->DetachDelegate();
+  _clientDetached = YES;
   [_delegate tabDidClose:self];
 }
 

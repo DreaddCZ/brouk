@@ -287,6 +287,12 @@
       modifiers:cmd];
   [file addItem:NSMenuItem.separatorItem];
   [self addItem:file
+          title:@"Print…"
+         action:@selector(printPage:)
+            key:@"p"
+      modifiers:cmd];
+  [file addItem:NSMenuItem.separatorItem];
+  [self addItem:file
           title:@"Close Window"
          action:@selector(performClose:)
             key:@"w"
