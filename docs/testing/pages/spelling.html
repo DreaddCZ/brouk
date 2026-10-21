@@ -1,0 +1,13 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Spell check test</title>
+<style>body { font: 15px -apple-system, sans-serif; margin: 2em; } textarea { width: 32em; height: 5em; font-size: 16px; }</style>
+<h1>Spell checking (spec 012, item 13)</h1>
+<p>Misspelled words are underlined in red; right-click one for suggestions
+("Add to Dictionary" too). Uses the macOS spell checker and its languages.</p>
+<textarea id="t" autofocus spellcheck="true">This sentense has a speling mistake. Tohle je česká věta s chibou.</textarea>
+<script>
+  const t = document.getElementById('t');
+  t.focus();
+  t.setSelectionRange(t.value.length, t.value.length);
+</script>
