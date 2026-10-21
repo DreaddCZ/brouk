@@ -18,16 +18,16 @@ jobs:
       CXX: clang++
       BROUK_CEF_CACHE: ${{ github.workspace }}/.cef-cache
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
 
       - name: Cache pinned tools
-        uses: actions/cache@v4
+        uses: actions/cache@v6.1.0
         with:
           path: .tools
           key: tools-${{ runner.os }}-${{ hashFiles('scripts/install_tools') }}
 
       - name: Cache CEF download
-        uses: actions/cache@v4
+        uses: actions/cache@v6.1.0
         with:
           path: .cef-cache
           key: cef-linux64-${{ hashFiles('scripts/fetch_cef') }}
