@@ -1,6 +1,6 @@
 # 003 – Browser UI
 
-- **Status:** draft
+- **Status:** ready
 - **Priority:** P1
 - **Depends on:** 001, 004, 005
 
@@ -19,7 +19,7 @@ Core UI elements:
 - Horizontal tab strip. Vertical tabs come later (see Out of scope).
 - Tab groups: each profile's tabs in a window form one group, labelled with the profile's name, colour and number of open tabs (see 005). Clicking the group label collapses or expands the group, as in Chrome. Each group has its own "+" button that opens a new tab in that group.
 - The default profile's group is always present in every window, even with no tabs, at the far right of the tab strip (at the bottom with vertical tabs later). Other profiles' groups appear when they get their first tab and disappear when their last tab closes.
-- Pinned tabs work as in Chrome.
+- Pinned tabs work as in Chrome, with these differences: a pinned tab sits at the start of its own profile group (not outside the groups), it keeps its close button, and it stays wider than other tabs when space is short — e.g. icon plus the first few letters of its title while other tabs are icon-only.
 - When tabs do not fit:
   1. They shrink down to just their icon.
   2. If there is still not enough space, other groups collapse automatically to make room for the group the user is working in.
@@ -40,7 +40,8 @@ Core UI elements:
 - [ ] A tab group can be collapsed and expanded by clicking its label; the label shows the number of open tabs.
 - [ ] Every group has a "+" button that opens a new tab in that group's profile.
 - [ ] Every window always shows the default profile's group at the far right of the tab strip, also when it has no tabs.
-- [ ] Tabs can be pinned and unpinned.
+- [ ] Tabs can be pinned and unpinned; a pinned tab sits at the start of its profile group and shows a close button.
+- [ ] When tabs shrink, pinned tabs stay wider than other tabs while space allows (icon plus the start of the title vs. icon only).
 - [ ] Every tab shows which profile it belongs to (its group's name and colour), and the toolbar shows the active tab's profile colour.
 - [ ] Theme follows the OS light/dark setting, with manual override.
 
@@ -56,12 +57,12 @@ Theme, toolbar items, shortcuts, new tab page content.
 
 ## Open questions
 
-- Pinned tabs and profile groups: does a pinned tab sit at the start of its own profile group, or at the start of the whole tab strip as in Chrome? (Every tab belongs to a profile group, see 005.)
-- Pinned tabs and the close button: Chrome hides ✕ on pinned tabs; this spec says ✕ is always visible on every tab. Which wins?
+None.
 
 ## Notes
 
 - 2026-10-21 (UI and profiles review): left to be resolved during testing, not specified now: the exact behaviour in step 3 of tab overflow, split view, new tab page content, session restore on startup, reopening closed tabs.
+- 2026-10-21 (UI and profiles review): pinned tabs sit at the start of their profile group, keep the close button and stay wider than other tabs when space is short. Spec set to `ready`; implementation also needs the configuration decision in 004 (shortcuts, theme and other settings).
 
 - 2026-10-21 (decision in 001): hybrid UI shell. Windows, tabs, toolbar, address bar and menus are native (Objective-C++/AppKit on macOS); settings, history, bookmarks, downloads and other internal pages are HTML/TypeScript pages rendered in CEF. This answers "native look or custom cross-platform look" for the main window chrome; internal pages follow the same theme.
 - 2026-10-21 (UI and profiles review): horizontal tabs first, vertical later. Tab groups are profile groups (one group per profile per window, see 005), collapsible like in Chrome. Separate workspaces are not needed for now.
