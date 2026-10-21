@@ -48,7 +48,7 @@ Platform-native webviews (e.g. WKWebView on macOS) are excluded because they are
 
 Chromium ships a new stable release every ~4 weeks plus security fixes in between, and CEF follows with new builds. Staying current means:
 
-1. **Automated CEF bump (CI):** a GitHub Actions workflow detects new CEF stable builds, updates the pinned CEF version, builds, runs tests, signs and notarizes the app. API breaks are fixed in a pull request (Claude Code can do this).
+1. **Automated CEF bump (CI):** a GitHub Actions workflow detects new CEF stable builds, updates the pinned CEF version, builds, runs tests, signs and notarizes the app — on macOS once for Apple Silicon and once for Intel (see 002). API breaks are fixed in a pull request (Claude Code can do this).
 2. **Automatic delivery to the user:** an in-app updater — Sparkle on macOS, WinSparkle or equivalent on Windows — checks a signed update feed and installs new versions in the background.
 3. **Evaluate** the CEF repository's new installer library (automatic CEF version management with background updates) before choosing the final updater; check its maturity first.
 
