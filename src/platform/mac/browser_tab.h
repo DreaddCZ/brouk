@@ -4,6 +4,7 @@
 #import <Cocoa/Cocoa.h>
 
 #include <optional>
+#include <string>
 
 #include "cef/tab_client.h"
 #include "core/tab_strip_model.h"
@@ -24,6 +25,10 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)tabCloseReady:(BRTab*)tab;
 - (void)tabDidClose:(BRTab*)tab;
 - (BOOL)tab:(BRTab*)tab handleUnhandledKeyEvent:(NSEvent*)event;
+- (std::string)tab:(BRTab*)tab
+    reserveDownloadPath:(const std::string&)suggested;
+- (void)tab:(BRTab*)tab releaseDownloadPath:(const std::string&)path;
+- (void)tab:(BRTab*)tab downloadUpdated:(const brouk::DownloadInfo&)info;
 - (void)tab:(BRTab*)tab
         openURL:(NSString*)url
     disposition:(brouk::OpenDisposition)disposition;

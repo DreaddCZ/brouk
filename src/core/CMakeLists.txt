@@ -8,6 +8,8 @@ set(BROUK_CORE_SOURCES
   crash_error_code.h
   dialog_spam_guard.cc
   dialog_spam_guard.h
+  download_paths.cc
+  download_paths.h
   tab_strip_model.cc
   tab_strip_model.h
   url_display.cc

@@ -199,6 +199,57 @@ void TabClient::DownloadFavicon(const CefRefPtr<CefBrowser>& browser,
                                     new ImageCallback(this, done, 2.0f));
 }
 
+bool TabClient::OnBeforeDownload(
+    CefRefPtr<CefBrowser> /*browser*/,
+    CefRefPtr<CefDownloadItem> download_item,
+    const CefString& suggested_name,
+    CefRefPtr<CefBeforeDownloadCallback> callback) {
+  CEF_REQUIRE_UI_THREAD();
+  if (!delegate_) {
+    return false;  // Tab is closing: Alloy style cancels the download.
+  }
+  std::string path = delegate_->ReserveDownloadPath(suggested_name.ToString());
+  download_paths_[download_item->GetId()] = path;
+  // Like Chrome: save to the downloads folder without asking, except for
+  // "Save Link/Image As…", which shows the save dialog.
+  bool ask =
+      save_as_urls_.erase(download_item->GetOriginalUrl().ToString()) > 0 ||
+      save_as_urls_.erase(download_item->GetURL().ToString()) > 0;
+  callback->Continue(path, ask);
+  return true;
+}
+
+void TabClient::OnDownloadUpdated(
+    CefRefPtr<CefBrowser> /*browser*/,
+    CefRefPtr<CefDownloadItem> download_item,
+    CefRefPtr<CefDownloadItemCallback> /*callback*/) {
+  CEF_REQUIRE_UI_THREAD();
+  DownloadInfo info;
+  info.id = download_item->GetId();
+  info.full_path = download_item->GetFullPath().ToString();
+  info.percent = download_item->GetPercentComplete();
+  if (download_item->IsComplete()) {
+    info.state = DownloadInfo::State::kComplete;
+  } else if (download_item->IsCanceled()) {
+    info.state = DownloadInfo::State::kCanceled;
+  } else if (download_item->IsInterrupted()) {
+    info.state = DownloadInfo::State::kFailed;
+  }
+  bool finished = info.state != DownloadInfo::State::kInProgress;
+  if (finished) {
+    auto it = download_paths_.find(info.id);
+    if (it != download_paths_.end()) {
+      if (delegate_) {
+        delegate_->ReleaseDownloadPath(it->second);
+      }
+      download_paths_.erase(it);
+    }
+  }
+  if (delegate_ && (!info.full_path.empty() || finished)) {
+    delegate_->OnDownloadUpdated(info);
+  }
+}
+
 void TabClient::OnFindResult(CefRefPtr<CefBrowser> /*browser*/,
                              int /*identifier*/,
                              int count,

@@ -4,6 +4,8 @@
 
 #import <Cocoa/Cocoa.h>
 
+#include <string>
+
 #include "include/cef_request_context.h"
 
 NS_ASSUME_NONNULL_BEGIN
@@ -19,6 +21,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)browserWindowWillClose:(BRBrowserWindowController*)controller;
 // "Open Link in New Window".
 - (void)openWindowWithURL:(NSString*)url;
+// Downloads (app-wide, so concurrent downloads never share a file name).
+- (std::string)reserveDownloadPath:(const std::string&)suggested;
+- (void)releaseDownloadPath:(const std::string&)path;
 @end
 
 @interface BRBrowserWindowController : NSWindowController <NSWindowDelegate>

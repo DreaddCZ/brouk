@@ -9,6 +9,7 @@
 #import "platform/mac/address_field.h"
 #import "platform/mac/browser_tab.h"
 #import "platform/mac/browser_window.h"
+#import "platform/mac/download_notice.h"
 #import "platform/mac/find_bar.h"
 #import "platform/mac/tab_strip_view.h"
 
@@ -95,6 +96,7 @@ NSButton* ToolbarButton(NSString* symbol,
   NSButton* _zoomButton;
   NSView* _contentArea;
   BRFindBar* _findBar;
+  BRDownloadNotice* _downloadNotice;
 }
 
 - (instancetype)initWithOwner:(id<BRBrowserWindowOwner>)owner {
@@ -118,6 +120,9 @@ NSButton* ToolbarButton(NSString* symbol,
   window.minSize = NSMakeSize(480, 300);
   window.releasedWhenClosed = NO;
   window.tabbingMode = NSWindowTabbingModeDisallowed;
+  // Session restore will be our own (003); macOS window restoration would
+  // reopen empty windows after a crash.
+  window.restorable = NO;
   window.collectionBehavior |= NSWindowCollectionBehaviorFullScreenPrimary;
   [window center];
 
@@ -201,6 +206,11 @@ NSButton* ToolbarButton(NSString* symbol,
   _findBar.delegate = self;
   _findBar.hidden = YES;
   [root addSubview:_findBar];
+
+  _downloadNotice =
+      [[BRDownloadNotice alloc] initWithFrame:NSMakeRect(12, 12, 420, 40)];
+  _downloadNotice.autoresizingMask = NSViewMaxXMargin | NSViewMaxYMargin;
+  [root addSubview:_downloadNotice];
 }
 
 #pragma mark - Tabs
@@ -425,6 +435,19 @@ NSButton* ToolbarButton(NSString* symbol,
   _model->InsertFromOpener(tab.tabId, opener.tabId, foreground);
   [tab createBrowserWithURL:url requestContext:[_owner requestContext]];
   [self modelDidChange];
+}
+
+- (std::string)tab:(BRTab*)tab
+    reserveDownloadPath:(const std::string&)suggested {
+  return [_owner reserveDownloadPath:suggested];
+}
+
+- (void)tab:(BRTab*)tab releaseDownloadPath:(const std::string&)path {
+  [_owner releaseDownloadPath:path];
+}
+
+- (void)tab:(BRTab*)tab downloadUpdated:(const brouk::DownloadInfo&)info {
+  [_downloadNotice updateWithInfo:info];
 }
 
 - (void)tabDidCreateBrowser:(BRTab*)tab {

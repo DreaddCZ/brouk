@@ -1,5 +1,6 @@
 #import "platform/mac/app_delegate.h"
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -8,6 +9,7 @@
 
 #include "brouk/app_info.h"
 #include "core/address_input.h"
+#include "core/download_paths.h"
 #include "include/cef_app.h"
 #include "include/cef_command_line.h"
 #include "include/cef_request_context.h"
@@ -46,11 +48,17 @@
   CefRefPtr<CefRequestContext> _requestContext;
   int _browserCount;
   BOOL _quitting;
+  std::unique_ptr<brouk::DownloadPathReserver> _downloadPaths;
 }
 
 - (instancetype)init {
   if ((self = [super init])) {
     _windows = [NSMutableArray array];
+    _downloadPaths =
+        std::make_unique<brouk::DownloadPathReserver>([](const std::string& p) {
+          return [NSFileManager.defaultManager
+              fileExistsAtPath:[NSString stringWithUTF8String:p.c_str()]];
+        });
   }
   return self;
 }
@@ -133,6 +141,24 @@
     return;
   }
   [[self openWindow] openTabWithURL:url activate:YES];
+}
+
+- (std::string)reserveDownloadPath:(const std::string&)suggested {
+  // Chrome's default: ~/Downloads (configurable later, see 012/004).
+  NSURL* downloads =
+      [NSFileManager.defaultManager URLForDirectory:NSDownloadsDirectory
+                                           inDomain:NSUserDomainMask
+                                  appropriateForURL:nil
+                                             create:YES
+                                              error:nil];
+  NSString* dir =
+      downloads.path
+          ?: [NSHomeDirectory() stringByAppendingPathComponent:@"Downloads"];
+  return _downloadPaths->Reserve(dir.UTF8String, suggested);
+}
+
+- (void)releaseDownloadPath:(const std::string&)path {
+  _downloadPaths->Release(path);
 }
 
 - (IBAction)newWindow:(nullable id)sender {

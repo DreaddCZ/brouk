@@ -113,6 +113,18 @@ class TabDelegateBridge : public TabClientDelegate {
     [pasteboard clearContents];
     [pasteboard setData:data forType:NSPasteboardTypePNG];
   }
+  std::string ReserveDownloadPath(const std::string& suggested) override {
+    BRTab* tab = tab_;
+    return [tab.delegate tab:tab reserveDownloadPath:suggested];
+  }
+  void ReleaseDownloadPath(const std::string& path) override {
+    BRTab* tab = tab_;
+    [tab.delegate tab:tab releaseDownloadPath:path];
+  }
+  void OnDownloadUpdated(const DownloadInfo& info) override {
+    BRTab* tab = tab_;
+    [tab.delegate tab:tab downloadUpdated:info];
+  }
   void OnFindResult(int count, int active, bool final_update) override {
     [tab_ handleFindResult:count active:active final:final_update];
   }

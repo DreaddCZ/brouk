@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <optional>
 #include <set>
 #include <string>
@@ -46,6 +47,15 @@ using JsDialogDone =
 
 // Where a link from the context menu opens (Chrome's choices).
 enum class OpenDisposition { kNewBackgroundTab, kNewForegroundTab, kNewWindow };
+
+// State of a download, for the download notice (012, item 18).
+struct DownloadInfo {
+  enum class State { kInProgress, kComplete, kCanceled, kFailed };
+  std::uint32_t id = 0;
+  State state = State::kInProgress;
+  std::string full_path;  // Empty until the target path is known.
+  int percent = -1;       // -1 if unknown.
+};
 
 // Why a tab's renderer process is gone (crash page text depends on it).
 enum class RendererGoneReason { kCrashed, kKilled, kOutOfMemory, kOther };
@@ -114,6 +124,12 @@ class TabClientDelegate {
   virtual void CopyTextToClipboard(const std::string& text) = 0;
   virtual void CopyImageToClipboard(const std::vector<std::uint8_t>& png) = 0;
 
+  // Downloads: a unique path in the downloads folder for the suggested
+  // (untrusted) file name, reserved until released.
+  virtual std::string ReserveDownloadPath(const std::string& suggested) = 0;
+  virtual void ReleaseDownloadPath(const std::string& path) = 0;
+  virtual void OnDownloadUpdated(const DownloadInfo& info) = 0;
+
   // A key event the page did not handle, with the native event (NSEvent* on
   // macOS). Return true if the UI handled it (e.g. as a menu shortcut).
   virtual bool OnUnhandledKeyEvent(const CefKeyEvent& event,
@@ -125,6 +141,7 @@ class TabClientDelegate {
 class TabClient : public CefClient,
                   public CefContextMenuHandler,
                   public CefDisplayHandler,
+                  public CefDownloadHandler,
                   public CefFindHandler,
                   public CefJSDialogHandler,
                   public CefKeyboardHandler,
@@ -145,6 +162,7 @@ class TabClient : public CefClient,
     return this;
   }
   CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
+  CefRefPtr<CefDownloadHandler> GetDownloadHandler() override { return this; }
   CefRefPtr<CefFindHandler> GetFindHandler() override { return this; }
   CefRefPtr<CefJSDialogHandler> GetJSDialogHandler() override { return this; }
   CefRefPtr<CefKeyboardHandler> GetKeyboardHandler() override { return this; }
@@ -171,6 +189,15 @@ class TabClient : public CefClient,
                      const CefString& title) override;
   void OnFaviconURLChange(CefRefPtr<CefBrowser> browser,
                           const std::vector<CefString>& icon_urls) override;
+
+  // CefDownloadHandler:
+  bool OnBeforeDownload(CefRefPtr<CefBrowser> browser,
+                        CefRefPtr<CefDownloadItem> download_item,
+                        const CefString& suggested_name,
+                        CefRefPtr<CefBeforeDownloadCallback> callback) override;
+  void OnDownloadUpdated(CefRefPtr<CefBrowser> browser,
+                         CefRefPtr<CefDownloadItem> download_item,
+                         CefRefPtr<CefDownloadItemCallback> callback) override;
 
   // CefFindHandler:
   void OnFindResult(CefRefPtr<CefBrowser> browser,
@@ -250,6 +277,8 @@ class TabClient : public CefClient,
   std::string favicon_url_;      // URL of the favicon being shown.
   // URLs from "Save Link/Image As…": their downloads ask where to save.
   std::set<std::string> save_as_urls_;
+  // Reserved download paths by download id, released when it ends.
+  std::map<std::uint32_t, std::string> download_paths_;
   DialogSpamGuard dialog_guard_;
   // The dialog waiting for the user's answer, if any.
   CefRefPtr<CefJSDialogCallback> pending_dialog_;

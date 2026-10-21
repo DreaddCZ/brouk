@@ -36,8 +36,8 @@ endif()
 
 # Applies warnings, sanitizers and exception settings to one of our targets.
 #   brouk_target_options(<target> [CEF] [APP] [NO_SANITIZE])
-# CEF: the target uses CEF headers; compile like CEF's own code (no RTTI) and
-# treat the CEF headers as system headers so -Wpedantic does not flag them.
+# CEF: the target uses CEF headers; treat them as system headers so
+# -Wpedantic does not flag them.
 # APP: code linked into the app process (see BROUK_APP_SANITIZER_FLAGS).
 # NO_SANITIZE: for code that cannot load the sanitizer runtime (sandboxed
 # helper processes).
@@ -54,6 +54,10 @@ function(brouk_target_options target)
     ${BROUK_WARNING_FLAGS} ${sanitizer_flags}
     # We never throw (CLAUDE.md, "Errors").
     $<$<COMPILE_LANGUAGE:CXX,OBJCXX>:-fno-exceptions>
+    # No RTTI anywhere, like CEF and Chromium: mixing code with and without
+    # RTTI gives one type two different type descriptions (UBSan reported
+    # this for a std::function passed from the app into the core).
+    $<$<COMPILE_LANGUAGE:CXX,OBJCXX>:-fno-rtti>
     $<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>
     # "a ?: b" is idiomatic Objective-C; allow it there only.
     $<$<COMPILE_LANGUAGE:OBJCXX>:-Wno-gnu-conditional-omitted-operand>)
@@ -62,8 +66,6 @@ function(brouk_target_options target)
     "${PROJECT_SOURCE_DIR}/src"
     "${PROJECT_BINARY_DIR}/generated")
   if(ARG_CEF)
-    target_compile_options(${target} PRIVATE
-      $<$<COMPILE_LANGUAGE:CXX,OBJCXX>:-fno-rtti>)
     target_include_directories(${target} SYSTEM PRIVATE "${CEF_ROOT}")
     target_compile_definitions(${target} PRIVATE ${CEF_COMPILER_DEFINES})
   endif()
