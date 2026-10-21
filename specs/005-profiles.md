@@ -21,6 +21,8 @@ A profile is a completely separate set of browser data: cookies and logins, hist
 - Window-level UI follows the active tab's profile: bookmarks bar, password filling, new tab page.
 - Links are opened in the right profile by routing rules (see 010).
 - Several profiles can run at the same time, in separate windows or in the same window.
+- A profile can be exported to a file and imported on another device.
+- Deleting a profile that has open tabs is allowed: after the user confirms, its tabs close and its data is removed. The default profile cannot be deleted; the user first makes another profile the default.
 - A profile can be launched directly, e.g. from the command line (`--profile <name>`) or a dock/desktop shortcut.
 - Nothing leaks between profiles, apart from the shared autofill data.
 
@@ -38,11 +40,15 @@ A profile is a completely separate set of browser data: cookies and logins, hist
 - [ ] The bookmarks bar and password filling use the active tab's profile.
 - [ ] A specific profile can be started from the command line.
 - [ ] The profile manager can be set to appear at startup or be skipped (opening a default profile).
-- [ ] Deleting a profile removes all of its data, after confirmation.
+- [ ] Deleting a profile removes all of its data, after confirmation; if it has open tabs, the confirmation says so and the tabs close.
+- [ ] The default profile cannot be deleted while it is the default.
+- [ ] A profile can be exported to a single file and imported on another device, keeping its name and colour.
 
 ## Out of scope
 
-- Sync of profiles between devices.
+- Sync of profiles between devices (manual export/import only for now).
+- Importing data from Chrome, Firefox or Safari — not in the current phase.
+- Temporary (throwaway) profiles.
 - Online accounts tied to profiles (Chrome-style sign-in).
 - Several groups of the same profile in one window.
 - Firefox-style containers: profile groups in a shared window cover this need, with full isolation.
@@ -53,12 +59,11 @@ Default profile, show profile manager at startup (yes/no), per-profile name, col
 
 ## Open questions
 
-- Import profiles/data from Chrome, Firefox or Safari?
-- Temporary (throwaway) profiles?
-- What happens to open tabs of a profile that is being deleted?
+- What does a profile export contain? Proposed: settings, bookmarks and passwords (passwords encrypted with a password the user enters when exporting); not cookies/logged-in sessions or cache. History: include or not?
 
 ## Notes
 
 - 2026-10-21 (decision in 001): profiles are our own implementation, not Chrome's profile system. Each profile is a separate CEF request context with its own storage directory. Because isolation is per request context rather than per window, profiles are not tied to windows the way they are in Chrome — which is what makes mixed-profile windows possible.
 - 2026-10-21 (decision in 001): Chrome extensions are not supported; "extensions" above refers to our own extension mechanism, if one is ever added.
 - 2026-10-21 (UI and profiles review): profiles are local only and can be mixed in one window, one group per profile per window. Containers are not needed. "Open links from other apps in which profile?" is answered by the routing rules in 010. Autofill is shared across profiles; passwords stay per profile. The default profile's group is always present in each window; every group has a "+" button for a new tab in its profile.
+- 2026-10-21 (profiles review): no import from other browsers in the current phase; no temporary profiles; profiles can be exported/imported between devices; deleting a profile with open tabs is allowed after confirmation. The default profile cannot be deleted, because its group must exist in every window (003).
