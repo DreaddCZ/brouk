@@ -109,6 +109,9 @@ const std::vector<PermissionKind>& SiteSettingKinds() {
 }
 
 std::string OriginForPrompt(const std::string& origin_url) {
+  if (origin_url.empty()) {
+    return {};  // CEF's URL functions require a non-empty URL.
+  }
   std::string display = CefFormatUrlForSecurityDisplay(origin_url).ToString();
   constexpr std::string_view kHttps = "https://";
   if (display.starts_with(kHttps)) {
@@ -121,6 +124,9 @@ std::string OriginForPrompt(const std::string& origin_url) {
 }
 
 std::string OriginOf(const std::string& url) {
+  if (url.empty()) {
+    return {};  // CEF's URL functions require a non-empty URL.
+  }
   CefURLParts parts;
   if (!CefParseURL(url, parts)) {
     return {};

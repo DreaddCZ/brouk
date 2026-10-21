@@ -6,6 +6,8 @@ add_library(brouk_cef STATIC
   context_menu_model.h
   permission_mapping.cc
   permission_mapping.h
+  site_info.cc
+  site_info.h
   tab_client.cc
   tab_client.h
 )

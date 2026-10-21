@@ -12,6 +12,8 @@ set(BROUK_CORE_SOURCES
   download_paths.h
   permissions.cc
   permissions.h
+  security_state.cc
+  security_state.h
   tab_strip_model.cc
   tab_strip_model.h
   url_display.cc

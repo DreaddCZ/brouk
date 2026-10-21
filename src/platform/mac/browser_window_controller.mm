@@ -12,6 +12,7 @@
 #import "platform/mac/browser_window.h"
 #import "platform/mac/download_notice.h"
 #import "platform/mac/find_bar.h"
+#import "platform/mac/site_info_popover.h"
 #import "platform/mac/tab_strip_view.h"
 
 #include "core/address_input.h"
@@ -94,6 +95,7 @@ NSButton* ToolbarButton(NSString* symbol,
   NSButton* _forwardButton;
   NSButton* _reloadButton;
   BRAddressField* _addressField;
+  NSButton* _siteInfoButton;
   NSButton* _zoomButton;
   NSView* _contentArea;
   BRFindBar* _findBar;
@@ -187,6 +189,18 @@ NSButton* ToolbarButton(NSString* symbol,
     [_toolbar addSubview:button];
     x += 32;
   }
+
+  // Site info (lock) at the left of the address bar, as in Chrome.
+  _siteInfoButton =
+      ToolbarButton(@"info.circle", @"Site information",
+                    @"View site information", self, @selector(showSiteInfo:));
+  _siteInfoButton.frame = NSMakeRect(x + 4, 8, 26, 24);
+  _siteInfoButton.autoresizingMask = NSViewMaxXMargin;
+  _siteInfoButton.symbolConfiguration = [NSImageSymbolConfiguration
+      configurationWithPointSize:12
+                          weight:NSFontWeightMedium];
+  [_toolbar addSubview:_siteInfoButton];
+  x += 30;
 
   _addressField = [[BRAddressField alloc]
       initWithFrame:NSMakeRect(x + 6, 8, b.size.width - x - 18, 24)];
@@ -298,6 +312,12 @@ NSButton* ToolbarButton(NSString* symbol,
   [_addressField showPendingText:tab.pendingAddressText];
   NSString* title = tab.title.length ? tab.title : @"New Tab";
   self.window.title = title;
+
+  CefRefPtr<CefBrowser> browser = [tab browser];
+  _siteInfoButton.image = [NSImage
+      imageWithSystemSymbolName:[BRSiteInfoPopover symbolForBrowser:browser]
+       accessibilityDescription:[BRSiteInfoPopover labelForBrowser:browser]];
+  _siteInfoButton.contentTintColor = [BRSiteInfoPopover tintForBrowser:browser];
 
   double level = [tab zoomLevel];
   _zoomButton.hidden = !brouk::IsZoomIndicatorShown(level);
@@ -684,6 +704,16 @@ NSButton* ToolbarButton(NSString* symbol,
   [tab stopFinding];
   [self updateToolbar];
   [tab focusContent];
+}
+
+- (IBAction)showSiteInfo:(id)sender {
+  BRTab* tab = [self activeTab];
+  __weak BRTab* weakTab = tab;
+  [BRSiteInfoPopover showForBrowser:[tab browser]
+                         relativeTo:_siteInfoButton
+                             reload:^{
+                               [weakTab reload];
+                             }];
 }
 
 - (IBAction)printPage:(id)sender {
