@@ -46,12 +46,23 @@ To use the pinned tools directly in a terminal: `source scripts/env.sh`.
 - `scripts/format` formats the code (`--check` only reports), `scripts/lint
   [build-dir]` runs clang-tidy on the portable code.
 
+### Signing certificate (once per Mac)
+
+```sh
+scripts/create_dev_certificate
+```
+
+creates a self-signed "Brouk Local Dev" code signing certificate in your login
+keychain (macOS asks for your password to trust it). Builds are then signed
+with it, so macOS recognises every new build as the same app: keychain access
+and camera/microphone permissions are remembered across rebuilds. Without it,
+builds are signed ad-hoc and macOS asks again after every rebuild.
+
 ### Keychain prompt on first start
 
 Chromium keeps the key that encrypts cookies and saved logins in the macOS
 keychain ("Chromium Safe Storage"). On first start macOS asks for permission;
-choose **Always Allow**. Local builds have an ad-hoc signature that changes
-with every build, so macOS asks again after a rebuild.
+choose **Always Allow**.
 
 For automated developer test runs only, `BROUK_DEV_MOCK_KEYCHAIN=1` makes
 Chromium use a throwaway key instead of the keychain. Do not use it for normal

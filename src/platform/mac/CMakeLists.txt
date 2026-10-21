@@ -76,13 +76,30 @@ foreach(_suffix_list ${CEF_HELPER_APP_SUFFIXES})
   list(APPEND _signed_helpers "${_helper_app}")
 endforeach()
 
-# Ad-hoc signature (phase 1, local builds). Inner code first, then the app.
+# Signing (phase 1, local builds). With the certificate from
+# scripts/create_dev_certificate the app keeps the same identity across
+# builds, so macOS remembers keychain access and permissions; without it the
+# signature is ad-hoc. Inner code first, then the app.
+set(BROUK_DEV_IDENTITY "${APP_NAME} Local Dev")
+execute_process(COMMAND security find-identity -v -p codesigning
+                OUTPUT_VARIABLE _identities ERROR_QUIET)
+string(FIND "${_identities}" "\"${BROUK_DEV_IDENTITY}\"" _found)
+if(_found GREATER -1)
+  set(BROUK_CODESIGN_IDENTITY "${BROUK_DEV_IDENTITY}" CACHE STRING
+      "Code signing identity for local builds")
+else()
+  set(BROUK_CODESIGN_IDENTITY "-" CACHE STRING
+      "Code signing identity for local builds (- means ad-hoc)")
+  message(STATUS "Signing ad-hoc; run scripts/create_dev_certificate to "
+                 "keep keychain access and permissions across builds.")
+endif()
 add_custom_command(TARGET brouk_app POST_BUILD
-  COMMAND codesign --force --sign - "${_framework}/Libraries/libcef_sandbox.dylib"
+  COMMAND codesign --force --sign "${BROUK_CODESIGN_IDENTITY}"
+          "${_framework}/Libraries/libcef_sandbox.dylib"
           "${_framework}/Libraries/libvk_swiftshader.dylib"
           "${_framework}/Libraries/libvulkan.dylib"
-  COMMAND codesign --force --sign - "${_framework}"
-  COMMAND codesign --force --sign - ${_signed_helpers}
-  COMMAND codesign --force --sign - "${APP_BUNDLE}"
-  COMMENT "Signing ${APP_NAME}.app (ad-hoc)"
+  COMMAND codesign --force --sign "${BROUK_CODESIGN_IDENTITY}" "${_framework}"
+  COMMAND codesign --force --sign "${BROUK_CODESIGN_IDENTITY}" ${_signed_helpers}
+  COMMAND codesign --force --sign "${BROUK_CODESIGN_IDENTITY}" "${APP_BUNDLE}"
+  COMMENT "Signing ${APP_NAME}.app (${BROUK_CODESIGN_IDENTITY})"
   VERBATIM)
