@@ -36,18 +36,26 @@ All features and requirements live in [`specs/`](specs/README.md).
 
 - **Base technology: CEF** with prebuilt binaries, Chrome bootstrap and **Alloy style** browsers for web content. Not a Chromium fork. Details and reasoning: `specs/001-technology-stack.md`.
 - Profiles, developer tools (beyond the stock DevTools frontend), password manager and autofill are **our own implementations**, not Chrome's.
-- **UI shell: hybrid** — native (Swift/AppKit on macOS) for windows, tabs, toolbar, address bar, menus and the window picker; HTML/TypeScript pages in CEF for settings, history, password manager, profile manager and custom developer tools. Details: `specs/001-technology-stack.md`.
+- **UI shell: hybrid** — native (Objective-C++/AppKit on macOS) for windows, tabs, toolbar, address bar, menus and the window picker; HTML/TypeScript pages in CEF for settings, history, password manager, profile manager and custom developer tools. Details: `specs/001-technology-stack.md`.
+- **Languages:** C++20 for the core, Objective-C++ (AppKit) for the macOS UI, TypeScript for the HTML pages. Swift only for a macOS API not reachable from Objective-C. No Rust. Details: `specs/001-technology-stack.md`.
 - The app **updates itself automatically**; CI picks up new CEF releases, builds, signs and publishes them.
 
 ## Open decisions
 
 These are not settled yet — do not assume an answer:
 
-- Implementation language(s).
 - Build system and CI setup.
 - Configuration format and where settings are stored.
 
 Once decided, record them here and in a dedicated spec.
+
+## Working with CEF and the code
+
+- **Check the CEF headers before using any CEF API.** The CEF API changes between versions and your training data may be outdated; the headers in the CEF distribution used by the build (`include/`) are the source of truth, including their doc comments. Do not rely on memory for CEF function names, signatures or behaviour.
+- Same for macOS APIs that are new or recently changed: verify against the SDK headers.
+- Keep quality checks strict so mistakes surface immediately: compiler warnings as errors, sanitizers (AddressSanitizer, UndefinedBehaviorSanitizer) in debug/test builds and CI, and tests for every change.
+- Keep the build fast: small targets, incremental builds; avoid changes that force full rebuilds without need.
+- TypeScript pages: pin dependency versions; do not add new frameworks or libraries without the user's approval.
 
 ## Conventions
 

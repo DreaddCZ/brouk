@@ -34,9 +34,15 @@ Platform-native webviews (e.g. WKWebView on macOS) are excluded because they are
 - **Updates:** the app updates itself automatically and regularly; the user never maintains it manually (see "Update process" below).
 
 - **UI shell: hybrid** (decided 2026-10-21).
-  - **Native** (Swift/AppKit on macOS, the platform's native toolkit on Windows later): window frames, tab strip, toolbar and address bar with its suggestions dropdown, menus, the window picker (010), and OS integration (displays, Spaces, Touch ID, full-screen). Reason: speed, low memory, native feel, and window/display/Space awareness is native code in any case.
+  - **Native** (Objective-C++/AppKit on macOS, the platform's native toolkit on Windows later): window frames, tab strip, toolbar and address bar with its suggestions dropdown, menus, the window picker (010), and OS integration (displays, Spaces, Touch ID, full-screen). Reason: speed, low memory, native feel, and window/display/Space awareness is native code in any case.
   - **HTML/TypeScript pages rendered in CEF** for content-heavy internal pages: settings, history, bookmarks/downloads views, password manager page, profile manager and our own developer tools. Reason: one implementation shared by macOS and Windows, easy theming, fast iteration.
   - The window/tab model lives in the shared core, independent of the UI layer.
+
+- **Languages** (decided 2026-10-21), chosen for how reliably Claude Code can write and maintain them:
+  - **C++ (C++20)** for the core: CEF integration, window/tab model, profiles, password and autofill storage, update logic. CEF's own API, samples and most examples are C++, and the language changes slowly.
+  - **Objective-C++ (AppKit)** for the native macOS UI. It mixes directly with C++ (no bridging layer), AppKit's Objective-C API is stable and well documented, and Chrome's and CEF's own Mac code is written this way. Small Swift files are allowed only when a macOS API is not available from Objective-C.
+  - **TypeScript** for the HTML pages, plain or with at most one long-established library, with pinned versions. No fast-changing frameworks.
+  - Windows UI language/toolkit: decided when Windows work starts (core stays shared C++).
 
 ### Update process
 
@@ -66,7 +72,6 @@ Update channel (stable by default), automatic install of updates (on by default)
 
 ## Open questions
 
-- Implementation language for the core (C++ is CEF's native API; Swift/C++ interop on macOS; Rust bindings exist).
 - Build system (CMake is CEF's default).
 - Chrome extensions: support at all? (Limited in Alloy style.)
 - Release cadence: ship every CEF stable update, or batch them (security trade-off)?
@@ -77,3 +82,4 @@ Update channel (stable by default), automatic install of updates (on by default)
 - Superseded leaning (before 2026-10-21): Option A, a Chromium fork based on ungoogled-chromium's patch set.
 - CEF runtime styles: Chrome style provides the full Chrome UI layer; Alloy style provides less built-in functionality but more client callbacks and off-screen rendering. Styles are chosen per browser/window and can be mixed.
 - UI shell trade-offs considered: an all-HTML UI (Vivaldi-style) would share one UI across platforms but costs an extra renderer process per UI surface, makes overlays like the address bar dropdown awkward to layer, and does not feel native; an all-native UI needs every page written per platform. The hybrid keeps the always-visible parts native and shares the content-heavy pages.
+- Language trade-offs considered (2026-10-21): **Swift** changes yearly (Swift 6 strict concurrency, SwiftUI updates), which is where models produce outdated code, and its C++ interop is recent with little training data. **Rust** has the strongest compiler checks, but its CEF bindings are young, change with every CEF release and have little training data, its macOS UI crates change often, and builds are slower. **C++** risks memory bugs that compile but crash later; countered with strict warnings, sanitizers and tests in CI.
