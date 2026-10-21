@@ -46,3 +46,4 @@ Default profile, show profile manager at startup (yes/no), per-profile name, col
 ## Notes
 
 - 2026-10-21 (decision in 001): profiles are our own implementation, not Chrome's profile system. Each profile is a separate CEF request context with its own storage directory. Because isolation is per request context rather than per window, profiles and containers are not tied to windows the way they are in Chrome.
+- 2026-10-21 (decision in 001): Chrome extensions are not supported; "extensions" above refers to our own extension mechanism, if one is ever added.

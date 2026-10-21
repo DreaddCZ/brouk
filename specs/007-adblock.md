@@ -44,3 +44,5 @@ Enabled lists, custom rules, per-site allowlist, update frequency, blocking on/o
 - Also block cookie banners and other annoyances by default?
 
 ## Notes
+
+- 2026-10-21 (decision in 001): Chrome extensions are not supported, so this built-in blocker is the only ad blocking; it should cover what uBlock Origin does (network and cosmetic filtering, uBO filter syntax). Engine choice: `adblock-rust` conflicts with the "no Rust" language decision unless used as a prebuilt library through its C interface (adds a Rust toolchain to the build); the alternative is our own C++ engine. Decide when this spec is detailed.
