@@ -31,6 +31,9 @@ must be secure (https or localhost) to ask for these permissions.</p>
         (e) => log('clipboard: ' + e.name)),
   };
   for (const id of Object.keys(run)) document.getElementById(id).onclick = run[id];
+  // #notif-later: notify 8 s after load (for testing with Brouk in the
+  // background; macOS may not show banners for the app in front).
+  run['notif-later'] = () => setTimeout(run.notif, 8000);
   const auto = location.hash.slice(1);
   if (run[auto]) setTimeout(run[auto], 500);
 </script>
