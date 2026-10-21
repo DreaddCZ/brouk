@@ -23,6 +23,12 @@ NSString* ToNSString(const std::string& s) {
              ?: @"";
 }
 
+NSString* StripFragment(NSString* url) {
+  NSRange hash = [url rangeOfString:@"#"];
+  return hash.location == NSNotFound ? url
+                                     : [url substringToIndex:hash.location];
+}
+
 }  // namespace
 
 @interface BRTab ()
@@ -33,6 +39,8 @@ NSString* ToNSString(const std::string& s) {
 - (void)handleFavicon:(NSImage*)image;
 - (void)handleCloseReady;
 - (void)handleBrowserClosed;
+- (void)handlePopupBlocked:(NSString*)url;
+- (void)handleAudible:(BOOL)audible;
 - (void)showJsDialog:(const brouk::JsDialogRequest&)request
                 done:(brouk::JsDialogDone)done;
 - (void)dismissJsDialog;
@@ -86,6 +94,9 @@ class TabDelegateBridge : public TabClientDelegate {
       return std::nullopt;
     }
     return [tab.delegate tab:tab wantsPopup:request];
+  }
+  void OnPopupBlocked(const std::string& target_url) override {
+    [tab_ handlePopupBlocked:ToNSString(target_url)];
   }
   void OnPopupAborted(int popup_id) override {
     BRTab* tab = tab_;
@@ -152,6 +163,7 @@ class TabDelegateBridge : public TabClientDelegate {
     BRTab* tab = tab_;
     [tab.delegate tab:tab fullscreenChanged:fullscreen];
   }
+  void OnAudibleChanged(bool audible) override { [tab_ handleAudible:audible]; }
   void OnFindResult(int count, int active, bool final_update) override {
     [tab_ handleFindResult:count active:active final:final_update];
   }
@@ -188,6 +200,7 @@ class TabDelegateBridge : public TabClientDelegate {
   BRTabDialogView* _externalProtocolDialog;
   BRSadTabView* _sadTab;
   BOOL _clientDetached;
+  NSMutableArray<NSString*>* _blockedPopupURLs;
   // Permission prompts of this tab; the first one is shown.
   NSMutableArray<BRPermissionPromptView*>* _permissionPrompts;
 }
@@ -201,6 +214,7 @@ class TabDelegateBridge : public TabClientDelegate {
     _url = @"";
     _findText = @"";
     _permissionPrompts = [NSMutableArray array];
+    _blockedPopupURLs = [NSMutableArray array];
     _containerView = [[NSView alloc] initWithFrame:NSZeroRect];
     _containerView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     _bridge = std::make_unique<brouk::TabDelegateBridge>(self);
@@ -381,6 +395,10 @@ class TabDelegateBridge : public TabClientDelegate {
 }
 
 - (void)handleAddress:(NSString*)url {
+  // Like Chrome, the list of blocked popups belongs to the page shown.
+  if (![StripFragment(url) isEqualToString:StripFragment(_url)]) {
+    [_blockedPopupURLs removeAllObjects];
+  }
   _url = [url copy];
   [_delegate tabDidChangeState:self];
 }
@@ -574,6 +592,39 @@ class TabDelegateBridge : public TabClientDelegate {
 - (void)dismissJsDialog {
   [_dialog dismiss];
   _dialog = nil;
+}
+
+- (void)handleAudible:(BOOL)audible {
+  _isAudible = audible;
+  [_delegate tabDidChangeState:self];
+}
+
+- (BOOL)isMuted {
+  return _browser && _browser->GetHost()->IsAudioMuted();
+}
+
+- (void)toggleMute {
+  if (_browser) {
+    _browser->GetHost()->SetAudioMuted(!_browser->GetHost()->IsAudioMuted());
+    [_delegate tabDidChangeState:self];
+  }
+}
+
+- (void)handlePopupBlocked:(NSString*)url {
+  constexpr NSUInteger kMaxBlockedPopups = 20;
+  if (_blockedPopupURLs.count < kMaxBlockedPopups) {
+    [_blockedPopupURLs addObject:url];
+  }
+  [_delegate tabDidChangeState:self];
+}
+
+- (NSArray<NSString*>*)blockedPopupURLs {
+  return [_blockedPopupURLs copy];
+}
+
+- (void)clearBlockedPopups {
+  [_blockedPopupURLs removeAllObjects];
+  [_delegate tabDidChangeState:self];
 }
 
 - (void)handleCloseReady {

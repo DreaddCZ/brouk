@@ -21,6 +21,10 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)browserWindowWillClose:(BRBrowserWindowController*)controller;
 // "Open Link in New Window".
 - (void)openWindowWithURL:(NSString*)url;
+// A popup window for window.open() with features; `size` is the content size
+// the page asked for.
+- (BRBrowserWindowController*)openPopupWindowWithContentSize:(NSSize)size;
+- (void)openNewWindow;
 // Downloads (app-wide, so concurrent downloads never share a file name).
 - (std::string)reserveDownloadPath:(const std::string&)suggested;
 - (void)releaseDownloadPath:(const std::string&)path;
@@ -29,6 +33,9 @@ NS_ASSUME_NONNULL_BEGIN
 @interface BRBrowserWindowController : NSWindowController <NSWindowDelegate>
 
 - (instancetype)initWithOwner:(id<BRBrowserWindowOwner>)owner;
+// A popup window (no tab strip, read-only address) of the given content size.
+- (instancetype)initWithOwner:(id<BRBrowserWindowOwner>)owner
+             popupContentSize:(NSSize)popupSize;
 
 // Opens a tab at the end of the strip. `url` nil opens an empty new tab with
 // the address bar focused.

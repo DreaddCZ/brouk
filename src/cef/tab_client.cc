@@ -12,6 +12,7 @@
 #include "core/address_input.h"
 #include "core/crash_error_code.h"
 #include "core/external_protocol.h"
+#include "core/page_events.h"
 #include "include/cef_image.h"
 #include "include/cef_parser.h"
 #include "include/cef_request_context.h"
@@ -69,6 +70,54 @@ class ImageCallback : public CefDownloadImageCallback {
 void TabClient::DetachDelegate() {
   CEF_REQUIRE_UI_THREAD();
   delegate_ = nullptr;
+}
+
+bool TabClient::OnProcessMessageReceived(CefRefPtr<CefBrowser> /*browser*/,
+                                         CefRefPtr<CefFrame> frame,
+                                         CefProcessId source_process,
+                                         CefRefPtr<CefProcessMessage> message) {
+  CEF_REQUIRE_UI_THREAD();
+  if (source_process != PID_RENDERER ||
+      message->GetName().ToString() != kPageEventMessage) {
+    return false;
+  }
+  // From a web page: untrusted, validated before use.
+  CefRefPtr<CefListValue> args = message->GetArgumentList();
+  if (!args || args->GetSize() != 2 || args->GetType(0) != VTYPE_STRING ||
+      args->GetType(1) != VTYPE_STRING) {
+    return true;
+  }
+  std::optional<PageEvent> event = ParsePageEvent(
+      args->GetString(0).ToString(), args->GetString(1).ToString());
+  if (!event || !delegate_) {
+    return true;
+  }
+  switch (event->type) {
+    case PageEvent::Type::kPopupBlocked:
+      delegate_->OnPopupBlocked(event->url);
+      break;
+    case PageEvent::Type::kAudible:
+    case PageEvent::Type::kInaudible:
+      if (frame) {
+        SetFrameAudible(frame->GetIdentifier().ToString(),
+                        event->type == PageEvent::Type::kAudible);
+      }
+      break;
+  }
+  return true;
+}
+
+void TabClient::SetFrameAudible(const std::string& frame_id, bool audible) {
+  bool was_audible = !audible_frames_.empty();
+  if (audible) {
+    audible_frames_.insert(frame_id);
+  } else {
+    audible_frames_.erase(frame_id);
+  }
+  bool now_audible = !audible_frames_.empty();
+  if (now_audible != was_audible && delegate_) {
+    delegate_->OnAudibleChanged(now_audible);
+  }
 }
 
 void TabClient::OnBeforeContextMenu(CefRefPtr<CefBrowser> browser,
@@ -164,6 +213,7 @@ void TabClient::OnAddressChange(CefRefPtr<CefBrowser> /*browser*/,
   }
   // "Allow this time" ends when the tab leaves the site.
   EndOneTimeGrants(frame->GetBrowser(), OriginOf(url.ToString()));
+
   if (delegate_) {
     delegate_->OnAddressChanged(url.ToString());
   }
@@ -390,7 +440,7 @@ bool TabClient::OnKeyEvent(CefRefPtr<CefBrowser> /*browser*/,
   return delegate_ && delegate_->OnUnhandledKeyEvent(event, os_event);
 }
 
-bool TabClient::OnBeforePopup(CefRefPtr<CefBrowser> /*browser*/,
+bool TabClient::OnBeforePopup(CefRefPtr<CefBrowser> browser,
                               CefRefPtr<CefFrame> /*frame*/,
                               int popup_id,
                               const CefString& target_url,
@@ -407,6 +457,20 @@ bool TabClient::OnBeforePopup(CefRefPtr<CefBrowser> /*browser*/,
   if (!delegate_) {
     return true;  // Tab is closing: cancel.
   }
+  // Chrome's popup blocker: popups the user did not ask for (no click or key
+  // press) are blocked unless the site is allowed to open popups.
+  if (!user_gesture) {
+    std::string origin = OriginOf(browser->GetMainFrame()->GetURL().ToString());
+    cef_content_setting_values_t allowed =
+        origin.empty()
+            ? CEF_CONTENT_SETTING_VALUE_DEFAULT
+            : browser->GetHost()->GetRequestContext()->GetContentSetting(
+                  origin, origin, CEF_CONTENT_SETTING_TYPE_POPUPS);
+    if (allowed != CEF_CONTENT_SETTING_VALUE_ALLOW) {
+      delegate_->OnPopupBlocked(target_url.ToString());
+      return true;
+    }
+  }
   PopupRequest request;
   request.popup_id = popup_id;
   request.target_url = target_url.ToString();
@@ -414,6 +478,8 @@ bool TabClient::OnBeforePopup(CefRefPtr<CefBrowser> /*browser*/,
   request.user_gesture = user_gesture;
   request.wants_popup_window =
       target_disposition == CEF_WOD_NEW_POPUP || popup_features.isPopup != 0;
+  request.width = popup_features.widthSet ? popup_features.width : 0;
+  request.height = popup_features.heightSet ? popup_features.height : 0;
   std::optional<PopupHost> host = delegate_->OnBeforePopup(request);
   if (!host || !host->parent_view || !host->client) {
     return true;  // Blocked.
@@ -457,6 +523,20 @@ void TabClient::OnBeforeClose(CefRefPtr<CefBrowser> browser) {
   EndOneTimeGrants(browser, /*current_origin=*/"");
   if (delegate_) {
     delegate_->OnBrowserClosed();
+  }
+}
+
+void TabClient::OnLoadStart(CefRefPtr<CefBrowser> /*browser*/,
+                            CefRefPtr<CefFrame> frame,
+                            TransitionType /*transition_type*/) {
+  CEF_REQUIRE_UI_THREAD();
+  // A new document in the main frame starts silent: the old page and its
+  // frames are gone. (Not called for same-document navigations.)
+  if (frame->IsMain() && !audible_frames_.empty()) {
+    audible_frames_.clear();
+    if (delegate_) {
+      delegate_->OnAudibleChanged(false);
+    }
   }
 }
 
@@ -700,9 +780,11 @@ void TabClient::OnRenderProcessTerminated(CefRefPtr<CefBrowser> /*browser*/,
                                           int error_code,
                                           const CefString& /*error_string*/) {
   CEF_REQUIRE_UI_THREAD();
+  audible_frames_.clear();
   if (!delegate_) {
     return;
   }
+  delegate_->OnAudibleChanged(false);
   RendererGoneReason reason = RendererGoneReason::kOther;
   switch (status) {
     case TS_PROCESS_CRASHED:

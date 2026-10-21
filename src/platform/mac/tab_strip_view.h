@@ -14,6 +14,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)tabStripDidCloseTab:(brouk::TabId)tabId;
 - (void)tabStripDidMoveTab:(brouk::TabId)tabId toIndex:(NSUInteger)index;
 - (void)tabStripDidRequestNewTab;
+- (void)tabStripDidToggleMute:(brouk::TabId)tabId;
 @end
 
 @interface BRTabStripView : NSView

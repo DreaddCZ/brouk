@@ -58,6 +58,7 @@ TEST(PermissionsTest, Texts) {
             "meet.google.com wants to");
   EXPECT_EQ(PermissionDescription(K::kCamera), "Use your camera");
   EXPECT_EQ(PermissionName(K::kMicrophone), "Microphone");
+  EXPECT_EQ(PermissionName(K::kPopups), "Pop-ups and redirects");
 }
 
 }  // namespace

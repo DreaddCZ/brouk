@@ -50,7 +50,7 @@ configure_file(Info.plist.in "${APP_BUNDLE}/Contents/Info.plist" @ONLY)
 # sanitizers here: helpers run sandboxed and cannot load the sanitizer runtime.
 add_executable(brouk_helper helper_main.cc)
 brouk_target_options(brouk_helper CEF NO_SANITIZE)
-target_link_libraries(brouk_helper PRIVATE libcef_dll_wrapper)
+target_link_libraries(brouk_helper PRIVATE brouk_renderer libcef_dll_wrapper)
 set_target_properties(brouk_helper PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/helper")
 add_dependencies(brouk_app brouk_helper)

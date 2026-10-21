@@ -34,6 +34,7 @@ NSColor* ActiveTabColor() {
 @interface BRTabStripView ()
 - (void)tabViewMouseDown:(BRTabView*)tabView event:(NSEvent*)event;
 - (void)tabViewClose:(BRTabView*)tabView;
+- (void)tabViewToggleMute:(BRTabView*)tabView;
 @end
 
 // One tab: icon (or spinner), title, and a close button behind a divider so a
@@ -50,6 +51,7 @@ NSColor* ActiveTabColor() {
   NSProgressIndicator* _spinner;
   NSTextField* _label;
   NSButton* _close;
+  NSButton* _audio;  // Speaker: shown while playing or muted; click mutes.
   BOOL _hovered;
   NSTrackingArea* _tracking;
 }
@@ -85,6 +87,18 @@ NSColor* ActiveTabColor() {
     _close.contentTintColor = NSColor.secondaryLabelColor;
     _close.toolTip = @"Close tab (⌘W)";
     [self addSubview:_close];
+
+    _audio = [NSButton buttonWithImage:[NSImage new]
+                                target:self
+                                action:@selector(audioClicked:)];
+    _audio.bordered = NO;
+    _audio.imagePosition = NSImageOnly;
+    _audio.symbolConfiguration = [NSImageSymbolConfiguration
+        configurationWithPointSize:10
+                            weight:NSFontWeightMedium];
+    _audio.contentTintColor = NSColor.secondaryLabelColor;
+    _audio.hidden = YES;
+    [self addSubview:_audio];
 
     self.accessibilityRole = NSAccessibilityRadioButtonRole;
   }
@@ -141,6 +155,19 @@ NSColor* ActiveTabColor() {
   _icon.image = tab.favicon
                     ?: [NSImage imageWithSystemSymbolName:@"globe"
                                  accessibilityDescription:nil];
+  BOOL showAudio = tab.isAudible || tab.isMuted;
+  if (showAudio) {
+    BOOL muted = tab.isMuted;
+    _audio.image =
+        [NSImage imageWithSystemSymbolName:muted ? @"speaker.slash.fill"
+                                                 : @"speaker.wave.2.fill"
+                  accessibilityDescription:muted ? @"Unmute tab" : @"Mute tab"];
+    _audio.toolTip = muted ? @"Unmute tab" : @"Mute tab";
+  }
+  if (_audio.hidden == showAudio) {
+    _audio.hidden = !showAudio;
+    self.needsLayout = YES;
+  }
   if (tab.isLoading) {
     _icon.hidden = YES;
     [_spinner startAnimation:nil];
@@ -166,7 +193,12 @@ NSColor* ActiveTabColor() {
   _spinner.frame = iconRect;
   _icon.alphaValue = showIcon ? 1 : 0;
   CGFloat labelX = NSMaxX(iconRect) + 6;
-  CGFloat labelWidth = closeX - 6 - labelX;
+  CGFloat labelEnd = closeX - 6;
+  if (!_audio.hidden) {
+    _audio.frame = NSMakeRect(closeX - 8 - 16, midY - 8, 16, 16);
+    labelEnd = NSMinX(_audio.frame) - 2;
+  }
+  CGFloat labelWidth = labelEnd - labelX;
   _label.hidden = labelWidth < 12;
   _label.frame =
       NSMakeRect(labelX, midY - 8, std::max<CGFloat>(labelWidth, 0), 16);
@@ -208,6 +240,10 @@ NSColor* ActiveTabColor() {
 
 - (void)closeClicked:(id)sender {
   [_strip tabViewClose:self];
+}
+
+- (void)audioClicked:(id)sender {
+  [_strip tabViewToggleMute:self];
 }
 
 - (BOOL)accessibilityPerformPress {
@@ -322,6 +358,10 @@ NSColor* ActiveTabColor() {
 
 - (void)tabViewClose:(BRTabView*)tabView {
   [_delegate tabStripDidCloseTab:tabView.tabId];
+}
+
+- (void)tabViewToggleMute:(BRTabView*)tabView {
+  [_delegate tabStripDidToggleMute:tabView.tabId];
 }
 
 // Click selects; horizontal drag reorders (the dragged tab follows the mouse

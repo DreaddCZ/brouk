@@ -161,6 +161,19 @@
   _downloadPaths->Release(path);
 }
 
+- (BRBrowserWindowController*)openPopupWindowWithContentSize:(NSSize)size {
+  BRBrowserWindowController* controller =
+      [[BRBrowserWindowController alloc] initWithOwner:self
+                                      popupContentSize:size];
+  [_windows addObject:controller];
+  [controller showWindow:nil];
+  return controller;
+}
+
+- (void)openNewWindow {
+  [self newWindow:nil];
+}
+
 - (IBAction)newWindow:(nullable id)sender {
   if (_quitting || !_requestContext) {
     return;

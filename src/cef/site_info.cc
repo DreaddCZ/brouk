@@ -77,6 +77,11 @@ std::vector<SitePermission> GetSitePermissions(
     }
     cef_content_setting_values_t value =
         context->GetContentSetting(origin, origin, *type);
+    // Only decisions that differ from the profile's default (e.g. pop-ups
+    // are blocked everywhere unless allowed).
+    if (value == context->GetContentSetting(CefString(), CefString(), *type)) {
+      continue;
+    }
     if (value == CEF_CONTENT_SETTING_VALUE_ALLOW) {
       result.push_back({kind, PermissionSetting::kAllow});
     } else if (value == CEF_CONTENT_SETTING_VALUE_BLOCK) {

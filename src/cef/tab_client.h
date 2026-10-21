@@ -24,6 +24,9 @@ struct PopupRequest {
   // window.open() with size or position features: Chrome opens these as a
   // popup window instead of a tab.
   bool wants_popup_window = false;
+  // Requested content size (window.open features), 0 if not given.
+  int width = 0;
+  int height = 0;
 };
 
 // A JavaScript dialog (alert/confirm/prompt) or the "leave site?" dialog.
@@ -108,6 +111,9 @@ class TabClientDelegate {
   // Returns where to host the popup's browser, or nullopt to block it.
   virtual std::optional<PopupHost> OnBeforePopup(
       const PopupRequest& request) = 0;
+  // A popup without user gesture was blocked (Chrome's popup blocker); the
+  // address bar offers to open it or allow popups for the site.
+  virtual void OnPopupBlocked(const std::string& target_url) = 0;
   // A popup allowed by OnBeforePopup failed to be created.
   virtual void OnPopupAborted(int popup_id) = 0;
 
@@ -150,6 +156,9 @@ class TabClientDelegate {
   // The page entered or left HTML full screen (video, presentation). The
   // platform makes the window full screen and hides the browser UI.
   virtual void OnFullscreenModeChanged(bool fullscreen) = 0;
+
+  // Whether the page plays sound (reported by the page script; an estimate).
+  virtual void OnAudibleChanged(bool audible) = 0;
 
   // Find in page progress: `count` matches, `active` is the 1-based index of
   // the highlighted one; `final_update` is false while still searching.
@@ -209,6 +218,10 @@ class TabClient : public CefClient,
     return this;
   }
   CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
+  bool OnProcessMessageReceived(CefRefPtr<CefBrowser> browser,
+                                CefRefPtr<CefFrame> frame,
+                                CefProcessId source_process,
+                                CefRefPtr<CefProcessMessage> message) override;
 
   // CefContextMenuHandler:
   void OnBeforeContextMenu(CefRefPtr<CefBrowser> browser,
@@ -293,6 +306,9 @@ class TabClient : public CefClient,
   void OnBeforeClose(CefRefPtr<CefBrowser> browser) override;
 
   // CefLoadHandler:
+  void OnLoadStart(CefRefPtr<CefBrowser> browser,
+                   CefRefPtr<CefFrame> frame,
+                   TransitionType transition_type) override;
   void OnLoadingStateChange(CefRefPtr<CefBrowser> browser,
                             bool is_loading,
                             bool can_go_back,
@@ -366,6 +382,9 @@ class TabClient : public CefClient,
   // Reserved download paths by download id, released when it ends.
   std::map<std::uint32_t, std::string> download_paths_;
   std::vector<OneTimeGrant> one_time_grants_;
+  // Frames whose page script reported audio playing.
+  std::set<std::string> audible_frames_;
+  void SetFrameAudible(const std::string& frame_id, bool audible);
   // An external-protocol question is open (one at a time, like Chrome).
   bool asking_external_protocol_ = false;
   // Ids for media prompts (CEF's own prompt ids start at 1 and grow).

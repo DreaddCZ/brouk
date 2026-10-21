@@ -33,6 +33,8 @@ std::string PermissionDescription(PermissionKind kind) {
       return "Use cookies and site data from other sites";
     case PermissionKind::kCameraPanTiltZoom:
       return "Use and move your camera";
+    case PermissionKind::kPopups:
+      return "Open pop-ups and redirects";
     case PermissionKind::kOther:
       return "Use a browser feature";
   }
@@ -65,6 +67,8 @@ std::string PermissionName(PermissionKind kind) {
       return "Third-party cookies";
     case PermissionKind::kCameraPanTiltZoom:
       return "Camera movement";
+    case PermissionKind::kPopups:
+      return "Pop-ups and redirects";
     case PermissionKind::kOther:
       return "Other";
   }

@@ -90,6 +90,8 @@ std::optional<cef_content_setting_types_t> ContentSettingFor(
       return CEF_CONTENT_SETTING_TYPE_STORAGE_ACCESS;
     case PermissionKind::kCameraPanTiltZoom:
       return CEF_CONTENT_SETTING_TYPE_CAMERA_PAN_TILT_ZOOM;
+    case PermissionKind::kPopups:
+      return CEF_CONTENT_SETTING_TYPE_POPUPS;
     case PermissionKind::kScreenShare:
     case PermissionKind::kOther:
       return std::nullopt;
@@ -103,7 +105,7 @@ const std::vector<PermissionKind>& SiteSettingKinds() {
       PermissionKind::kLocation,         PermissionKind::kNotifications,
       PermissionKind::kClipboard,        PermissionKind::kMidi,
       PermissionKind::kWindowManagement, PermissionKind::kLocalFonts,
-      PermissionKind::kIdleDetection,
+      PermissionKind::kIdleDetection,    PermissionKind::kPopups,
   };
   return kKinds;
 }

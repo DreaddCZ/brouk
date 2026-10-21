@@ -53,6 +53,15 @@ NS_ASSUME_NONNULL_BEGIN
 // A JavaScript dialog is waiting for the user in this tab.
 @property(nonatomic, readonly) BOOL hasDialog;
 
+// The page plays sound (estimated by the page script) / the tab is muted.
+@property(nonatomic, readonly) BOOL isAudible;
+@property(nonatomic, readonly) BOOL isMuted;
+- (void)toggleMute;
+
+// Popups blocked on the current page (newest last).
+@property(nonatomic, readonly) NSArray<NSString*>* blockedPopupURLs;
+- (void)clearBlockedPopups;
+
 // Find in page state, kept per tab as in Chrome.
 @property(nonatomic) BOOL findBarVisible;
 @property(nonatomic, copy) NSString* findText;
