@@ -39,17 +39,14 @@ All features and requirements live in [`specs/`](specs/README.md).
 - Profiles, developer tools (beyond the stock DevTools frontend), password manager and autofill are **our own implementations**, not Chrome's.
 - **UI shell: hybrid** — native (Objective-C++/AppKit on macOS) for windows, tabs, toolbar, address bar, menus and the window picker; HTML/TypeScript pages in CEF for settings, history, password manager, profile manager and custom developer tools. Details: `specs/001-technology-stack.md`.
 - **Languages:** C++20 for the core, Objective-C++ (AppKit) for the macOS UI, TypeScript for the HTML pages. Swift only for a macOS API not reachable from Objective-C. No Rust. Details: `specs/001-technology-stack.md`.
+- **Configuration:** YAML files, global and per profile (on macOS in `~/Library/Application Support/<app>/`), live reload, machine-written (comments not preserved). Details: `specs/004-configuration.md`.
 - **Build:** CMake + Ninja, pinned CEF version downloaded by script, `tsc` for TypeScript, GoogleTest and Node's test runner for tests.
 - **Phases:** phase 1 (now) — personal use, builds made locally on the user's Macs, CI runs only Linux core build and tests. Phase 2 — colleagues: signing, notarization, macOS CI, public update feed. Details: `specs/001-technology-stack.md`.
 - From phase 2, the app **updates itself automatically**; CI picks up new CEF releases, builds, signs and publishes them.
 
 ## Open decisions
 
-These are not settled yet — do not assume an answer:
-
-- Where settings files are stored (format is decided: YAML, see `specs/004-configuration.md`).
-
-Once decided, record them here and in a dedicated spec.
+None at the moment. When a new one comes up, list it here until it is decided, then record it under Decisions and in the relevant spec.
 
 ## Working with CEF and the code
 
