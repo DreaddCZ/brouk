@@ -21,6 +21,8 @@ add_executable(brouk_app
   browser_window_controller.mm
   data_paths.h
   data_paths.mm
+  find_bar.h
+  find_bar.mm
   main.mm
   sad_tab_view.h
   sad_tab_view.mm

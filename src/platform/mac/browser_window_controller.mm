@@ -9,11 +9,13 @@
 #import "platform/mac/address_field.h"
 #import "platform/mac/browser_tab.h"
 #import "platform/mac/browser_window.h"
+#import "platform/mac/find_bar.h"
 #import "platform/mac/tab_strip_view.h"
 
 #include "core/address_input.h"
 #include "core/tab_strip_model.h"
 #include "core/url_display.h"
+#include "core/zoom.h"
 #include "include/wrapper/cef_helpers.h"
 
 namespace {
@@ -69,7 +71,8 @@ NSButton* ToolbarButton(NSString* symbol,
 
 @interface BRBrowserWindowController () <BRTabDelegate,
                                          BRTabStripDelegate,
-                                         BRAddressFieldDelegate>
+                                         BRAddressFieldDelegate,
+                                         BRFindBarDelegate>
 @end
 
 @implementation BRBrowserWindowController {
@@ -89,7 +92,9 @@ NSButton* ToolbarButton(NSString* symbol,
   NSButton* _forwardButton;
   NSButton* _reloadButton;
   BRAddressField* _addressField;
+  NSButton* _zoomButton;
   NSView* _contentArea;
+  BRFindBar* _findBar;
 }
 
 - (instancetype)initWithOwner:(id<BRBrowserWindowOwner>)owner {
@@ -176,6 +181,26 @@ NSButton* ToolbarButton(NSString* symbol,
   _addressField.autoresizingMask = NSViewWidthSizable;
   _addressField.addressDelegate = self;
   [_toolbar addSubview:_addressField];
+
+  // Zoom indicator at the right end of the address bar; click resets to
+  // 100 % (Chrome shows a popup with the same reset button).
+  _zoomButton = [NSButton buttonWithTitle:@""
+                                   target:self
+                                   action:@selector(resetZoom:)];
+  _zoomButton.bezelStyle = NSBezelStyleInline;
+  _zoomButton.font = [NSFont systemFontOfSize:11];
+  _zoomButton.hidden = YES;
+  _zoomButton.autoresizingMask = NSViewMinXMargin;
+  _zoomButton.frame = NSMakeRect(NSMaxX(_addressField.frame) - 58, 10, 54, 20);
+  [_toolbar addSubview:_zoomButton];
+
+  _findBar = [[BRFindBar alloc]
+      initWithFrame:NSMakeRect(_contentArea.frame.size.width - 380,
+                               NSMaxY(_contentArea.frame) - 44, 368, 36)];
+  _findBar.autoresizingMask = NSViewMinXMargin | NSViewMinYMargin;
+  _findBar.delegate = self;
+  _findBar.hidden = YES;
+  [root addSubview:_findBar];
 }
 
 #pragma mark - Tabs
@@ -256,6 +281,23 @@ NSButton* ToolbarButton(NSString* symbol,
   [_addressField showPendingText:tab.pendingAddressText];
   NSString* title = tab.title.length ? tab.title : @"New Tab";
   self.window.title = title;
+
+  double level = [tab zoomLevel];
+  _zoomButton.hidden = !brouk::IsZoomIndicatorShown(level);
+  _zoomButton.title =
+      [NSString stringWithFormat:@"%d %%", brouk::ZoomPercentFromLevel(level)];
+  _zoomButton.toolTip = @"Zoom: click to reset to 100 % (⌘0)";
+  _zoomButton.accessibilityLabel =
+      [NSString stringWithFormat:@"Zoom %d percent, reset",
+                                 brouk::ZoomPercentFromLevel(level)];
+
+  _findBar.hidden = !tab.findBarVisible;
+  if (tab.findBarVisible) {
+    if (![_findBar.text isEqualToString:tab.findText]) {
+      _findBar.text = tab.findText;
+    }
+    [_findBar setActiveMatch:tab.findActiveMatch ofCount:tab.findCount];
+  }
 }
 
 - (void)activateTab:(BRTab*)tab {
@@ -470,6 +512,65 @@ NSButton* ToolbarButton(NSString* symbol,
 
 - (IBAction)focusLocation:(id)sender {
   [_addressField focusAndSelectAll];
+}
+
+#pragma mark - Find
+
+- (IBAction)showFindBar:(id)sender {
+  BRTab* tab = [self activeTab];
+  if (!tab) {
+    return;
+  }
+  tab.findBarVisible = YES;
+  [self updateToolbar];
+  [_findBar focus];
+}
+
+- (IBAction)findNext:(id)sender {
+  [self findInActiveTabForward:YES];
+}
+
+- (IBAction)findPrevious:(id)sender {
+  [self findInActiveTabForward:NO];
+}
+
+- (void)findInActiveTabForward:(BOOL)forward {
+  BRTab* tab = [self activeTab];
+  if (!tab.findBarVisible || tab.findText.length == 0) {
+    [self showFindBar:nil];
+    return;
+  }
+  [tab findText:tab.findText forward:forward findNext:YES];
+}
+
+- (void)findBar:(BRFindBar*)bar
+       findText:(NSString*)text
+        forward:(BOOL)forward
+       findNext:(BOOL)findNext {
+  [[self activeTab] findText:text forward:forward findNext:findNext];
+  [self updateToolbar];
+}
+
+- (void)findBarDidClose:(BRFindBar*)bar {
+  BRTab* tab = [self activeTab];
+  tab.findBarVisible = NO;
+  [tab stopFinding];
+  [self updateToolbar];
+  [tab focusContent];
+}
+
+#pragma mark - Zoom
+
+- (IBAction)zoomIn:(id)sender {
+  [[self activeTab] zoom:CEF_ZOOM_COMMAND_IN];
+}
+
+- (IBAction)zoomOut:(id)sender {
+  [[self activeTab] zoom:CEF_ZOOM_COMMAND_OUT];
+}
+
+- (IBAction)resetZoom:(id)sender {
+  [[self activeTab] zoom:CEF_ZOOM_COMMAND_RESET];
 }
 
 - (IBAction)selectNextTab:(id)sender {

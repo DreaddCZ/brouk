@@ -111,6 +111,18 @@ void TabClient::DownloadFavicon(const CefRefPtr<CefBrowser>& browser,
                                     new FaviconCallback(this, done));
 }
 
+void TabClient::OnFindResult(CefRefPtr<CefBrowser> /*browser*/,
+                             int /*identifier*/,
+                             int count,
+                             const CefRect& /*selection_rect*/,
+                             int active_match_ordinal,
+                             bool final_update) {
+  CEF_REQUIRE_UI_THREAD();
+  if (delegate_) {
+    delegate_->OnFindResult(count, active_match_ordinal, final_update);
+  }
+}
+
 bool TabClient::OnJSDialog(CefRefPtr<CefBrowser> /*browser*/,
                            const CefString& origin_url,
                            JSDialogType dialog_type,

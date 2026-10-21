@@ -101,6 +101,10 @@ class TabClientDelegate {
   // The page responds again: remove the question.
   virtual void OnRendererResponsive() = 0;
 
+  // Find in page progress: `count` matches, `active` is the 1-based index of
+  // the highlighted one; `final_update` is false while still searching.
+  virtual void OnFindResult(int count, int active, bool final_update) = 0;
+
   // A key event the page did not handle, with the native event (NSEvent* on
   // macOS). Return true if the UI handled it (e.g. as a menu shortcut).
   virtual bool OnUnhandledKeyEvent(const CefKeyEvent& event,
@@ -111,6 +115,7 @@ class TabClientDelegate {
 // TabClientDelegate, so platform code never implements CEF interfaces itself.
 class TabClient : public CefClient,
                   public CefDisplayHandler,
+                  public CefFindHandler,
                   public CefJSDialogHandler,
                   public CefKeyboardHandler,
                   public CefLifeSpanHandler,
@@ -127,6 +132,7 @@ class TabClient : public CefClient,
 
   // CefClient:
   CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
+  CefRefPtr<CefFindHandler> GetFindHandler() override { return this; }
   CefRefPtr<CefJSDialogHandler> GetJSDialogHandler() override { return this; }
   CefRefPtr<CefKeyboardHandler> GetKeyboardHandler() override { return this; }
   CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
@@ -141,6 +147,14 @@ class TabClient : public CefClient,
                      const CefString& title) override;
   void OnFaviconURLChange(CefRefPtr<CefBrowser> browser,
                           const std::vector<CefString>& icon_urls) override;
+
+  // CefFindHandler:
+  void OnFindResult(CefRefPtr<CefBrowser> browser,
+                    int identifier,
+                    int count,
+                    const CefRect& selection_rect,
+                    int active_match_ordinal,
+                    bool final_update) override;
 
   // CefJSDialogHandler:
   bool OnJSDialog(CefRefPtr<CefBrowser> browser,

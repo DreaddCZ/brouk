@@ -10,6 +10,8 @@ set(BROUK_CORE_SOURCES
   tab_strip_model.h
   url_display.cc
   url_display.h
+  zoom.cc
+  zoom.h
 )
 
 # Built twice with different sanitizers (see BroukCompilerOptions.cmake):

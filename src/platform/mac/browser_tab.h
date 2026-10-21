@@ -43,6 +43,12 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, readonly) BOOL isClosing;
 // A JavaScript dialog is waiting for the user in this tab.
 @property(nonatomic, readonly) BOOL hasDialog;
+
+// Find in page state, kept per tab as in Chrome.
+@property(nonatomic) BOOL findBarVisible;
+@property(nonatomic, copy) NSString* findText;
+@property(nonatomic, readonly) int findCount;
+@property(nonatomic, readonly) int findActiveMatch;
 // What the user typed in the address bar but has not submitted yet; kept per
 // tab like in Chrome.
 @property(nonatomic, copy, nullable) NSString* pendingAddressText;
@@ -65,6 +71,15 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)reloadIgnoringCache;
 - (void)stopLoading;
 - (void)focusContent;
+
+// Find in page; an empty text stops finding.
+- (void)findText:(NSString*)text forward:(BOOL)forward findNext:(BOOL)findNext;
+- (void)stopFinding;
+
+// Zoom with Chrome's preset steps, remembered per site in the profile.
+- (void)zoom:(cef_zoom_command_t)command;
+// Chromium zoom level of the page (0 = 100 %).
+- (double)zoomLevel;
 
 // Starts closing: runs the page's beforeunload handler, which may cancel.
 - (void)requestClose;

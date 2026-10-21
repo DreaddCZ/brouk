@@ -39,6 +39,7 @@ NSString* ToNSString(const std::string& s) {
                  errorCode:(NSString*)errorCode;
 - (void)handleUnresponsive:(brouk::UnresponsiveDone)done;
 - (void)handleResponsive;
+- (void)handleFindResult:(int)count active:(int)active final:(BOOL)final;
 @end
 
 namespace brouk {
@@ -97,6 +98,9 @@ class TabDelegateBridge : public TabClientDelegate {
     [tab_ handleUnresponsive:std::move(done)];
   }
   void OnRendererResponsive() override { [tab_ handleResponsive]; }
+  void OnFindResult(int count, int active, bool final_update) override {
+    [tab_ handleFindResult:count active:active final:final_update];
+  }
   void OnCloseReady() override { [tab_ handleCloseReady]; }
   void OnBrowserClosed() override { [tab_ handleBrowserClosed]; }
   // Shortcuts act on key-down only; CEF also reports char and key-up events.
@@ -137,6 +141,7 @@ class TabDelegateBridge : public TabClientDelegate {
     _delegate = delegate;
     _title = @"";
     _url = @"";
+    _findText = @"";
     _containerView = [[NSView alloc] initWithFrame:NSZeroRect];
     _containerView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     _bridge = std::make_unique<brouk::TabDelegateBridge>(self);
@@ -223,6 +228,44 @@ class TabDelegateBridge : public TabClientDelegate {
   if (_browser) {
     _browser->GetHost()->SetFocus(true);
   }
+}
+
+- (void)findText:(NSString*)text forward:(BOOL)forward findNext:(BOOL)findNext {
+  _findText = [text copy];
+  if (!_browser) {
+    return;
+  }
+  if (text.length == 0) {
+    [self stopFinding];
+    return;
+  }
+  _browser->GetHost()->Find(text.UTF8String, forward, /*matchCase=*/false,
+                            findNext);
+}
+
+- (void)stopFinding {
+  _findCount = 0;
+  _findActiveMatch = 0;
+  if (_browser) {
+    _browser->GetHost()->StopFinding(/*clearSelection=*/true);
+  }
+}
+
+- (void)handleFindResult:(int)count active:(int)active final:(BOOL)final {
+  _findCount = count;
+  _findActiveMatch = active;
+  [_delegate tabDidChangeState:self];
+}
+
+- (void)zoom:(cef_zoom_command_t)command {
+  if (_browser && _browser->GetHost()->CanZoom(command)) {
+    _browser->GetHost()->Zoom(command);
+    [_delegate tabDidChangeState:self];
+  }
+}
+
+- (double)zoomLevel {
+  return _browser ? _browser->GetHost()->GetZoomLevel() : 0.0;
 }
 
 - (void)requestClose {

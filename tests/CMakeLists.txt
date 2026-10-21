@@ -22,6 +22,7 @@ add_executable(brouk_core_tests
   core/dialog_spam_guard_test.cc
   core/tab_strip_model_test.cc
   core/url_display_test.cc
+  core/zoom_test.cc
 )
 brouk_target_options(brouk_core_tests)
 target_link_libraries(brouk_core_tests PRIVATE brouk_core_testing GTest::gtest_main)

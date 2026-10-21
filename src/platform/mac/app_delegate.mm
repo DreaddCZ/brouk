@@ -306,6 +306,24 @@
          action:@selector(selectAll:)
             key:@"a"
       modifiers:cmd];
+  [edit addItem:NSMenuItem.separatorItem];
+  NSMenu* find = [[NSMenu alloc] initWithTitle:@"Find"];
+  [edit addItemWithTitle:@"Find" action:nil keyEquivalent:@""].submenu = find;
+  [self addItem:find
+          title:@"Find…"
+         action:@selector(showFindBar:)
+            key:@"f"
+      modifiers:cmd];
+  [self addItem:find
+          title:@"Find Next"
+         action:@selector(findNext:)
+            key:@"g"
+      modifiers:cmd];
+  [self addItem:find
+          title:@"Find Previous"
+         action:@selector(findPrevious:)
+            key:@"g"
+      modifiers:cmd | shift];
 
   NSMenu* view = [self submenu:@"View" in:bar];
   [self addItem:view
@@ -323,6 +341,30 @@
          action:@selector(reloadIgnoringCache:)
             key:@"r"
       modifiers:cmd | shift];
+  [view addItem:NSMenuItem.separatorItem];
+  [self addItem:view
+          title:@"Actual Size"
+         action:@selector(resetZoom:)
+            key:@"0"
+      modifiers:cmd];
+  [self addItem:view
+          title:@"Zoom In"
+         action:@selector(zoomIn:)
+            key:@"+"
+      modifiers:cmd];
+  [self addItem:view
+          title:@"Zoom Out"
+         action:@selector(zoomOut:)
+            key:@"-"
+      modifiers:cmd];
+  // Cmd+= zooms in too (the + key without Shift), as in Chrome.
+  NSMenuItem* zoomInAlt = [self addItem:view
+                                  title:@"Zoom In"
+                                 action:@selector(zoomIn:)
+                                    key:@"="
+                              modifiers:cmd];
+  zoomInAlt.hidden = YES;
+  zoomInAlt.allowsKeyEquivalentWhenHidden = YES;
   [view addItem:NSMenuItem.separatorItem];
   [self addItem:view
           title:@"Enter Full Screen"
