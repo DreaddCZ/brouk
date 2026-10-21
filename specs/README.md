@@ -34,5 +34,5 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 007 | [Ad and tracker blocking](007-adblock.md) | draft | P1 |
 | 008 | [Password manager](008-password-manager.md) | draft | P1 |
 | 009 | [Form autofill](009-autofill.md) | draft | P1 |
-| 010 | [Window picker for opening links](010-link-window-picker.md) | idea | P2 |
+| 010 | [Link routing and window picker](010-link-routing.md) | draft | P1 |
 | 011 | [Bookmark manager](011-bookmarks.md) | draft | P1 |

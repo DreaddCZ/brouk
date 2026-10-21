@@ -34,7 +34,7 @@ Platform-native webviews (e.g. WKWebView on macOS) are excluded because they are
 - **Updates:** the app updates itself automatically and regularly; the user never maintains it manually (see "Update process" below).
 
 - **UI shell: hybrid** (decided 2026-10-21).
-  - **Native** (Objective-C++/AppKit on macOS, the platform's native toolkit on Windows later): window frames, tab strip, toolbar and address bar with its suggestions dropdown, menus, the window picker (010), and OS integration (displays, Spaces, Touch ID, full-screen). Reason: speed, low memory, native feel, and window/display/Space awareness is native code in any case.
+  - **Native** (Objective-C++/AppKit on macOS, the platform's native toolkit on Windows later): window frames, tab strip, toolbar and address bar with its suggestions dropdown, menus, the link routing and window picker dialog (010), and OS integration (displays, Spaces, Touch ID, full-screen). Reason: speed, low memory, native feel, and window/display/Space awareness is native code in any case.
   - **HTML/TypeScript pages rendered in CEF** for content-heavy internal pages: settings, history, bookmarks/downloads views, password manager page, profile manager and our own developer tools. Reason: one implementation shared by macOS and Windows, easy theming, fast iteration.
   - The window/tab model lives in the shared core, independent of the UI layer.
 
