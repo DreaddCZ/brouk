@@ -11,22 +11,26 @@ Make the browser "fully configurable": every behaviour and UI option is adjustab
 ## Description
 
 - A settings UI for common options.
-- A human-readable config file (per profile) exposing *all* options, including advanced ones not shown in the UI — similar to Firefox's `about:config`, but file-based.
+- A human-readable YAML config file (per profile) exposing *all* options, including advanced ones not shown in the UI — similar to Firefox's `about:config`, but file-based.
 - Changes in the file apply without manual migration; invalid values are reported, not silently ignored.
+- **Live reload:** changes made in the settings UI or in the file take effect while the browser is running. Settings that need a restart are marked as such in the settings UI, and when one of them changes, the user is told that a restart is needed.
 - Global settings (app-wide) and per-profile settings are clearly separated.
-- Settings can be exported and imported.
+- Settings can be exported and imported manually (this is the way to move settings between devices for now).
 
 ## Acceptance criteria
 
 - [ ] Every setting in the UI is also in the config file, and vice versa for non-advanced settings.
-- [ ] Editing the config file and restarting (or reloading) applies the change.
+- [ ] Config files are YAML.
+- [ ] Editing the config file while the browser runs applies the change without a restart, except for settings marked as requiring a restart.
+- [ ] Settings that require a restart are marked in the settings UI, and changing one tells the user a restart is needed.
 - [ ] An invalid config value produces a clear error message and falls back to the default.
 - [ ] Settings can be exported to a file and imported on another machine.
 - [ ] Each profile has its own settings; global settings apply to all profiles.
 
 ## Out of scope
 
-- Settings sync across devices (possible later spec).
+- Settings sync across devices — wanted eventually, as a later spec; manual export/import covers it for now.
+- Managed/enterprise policies (admin-locked settings) — not in the first versions, possibly later.
 
 ## Configuration
 
@@ -34,9 +38,10 @@ This spec defines the configuration system itself.
 
 ## Open questions
 
-- File format: TOML, JSON, YAML?
-- Live reload of the config file, or apply on restart?
-- Managed/enterprise policies (admin-locked settings)?
-- Should settings sync between devices eventually?
+- Where are the files stored? Proposed for macOS: `~/Library/Application Support/<app>/settings.yaml` for global settings and `…/profiles/<profile>/settings.yaml` per profile.
+- When the settings UI changes a value, must comments and ordering the user wrote in the YAML file be preserved?
 
 ## Notes
+
+- 2026-10-21 (settings review): YAML format, live reload with restart-required settings marked, no managed policies in the first versions, sync eventually but manual export/import for now.
+- YAML 1.1 parsers read unquoted `no`, `on`, `off` and similar words as booleans; values must be checked against a typed schema of all settings so such mix-ups are reported as errors (fits the "invalid values are reported" rule).

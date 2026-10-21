@@ -47,7 +47,7 @@ All features and requirements live in [`specs/`](specs/README.md).
 
 These are not settled yet — do not assume an answer:
 
-- Configuration format and where settings are stored.
+- Where settings files are stored (format is decided: YAML, see `specs/004-configuration.md`).
 
 Once decided, record them here and in a dedicated spec.
 
