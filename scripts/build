@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# Builds Brouk. One command for local builds (phase 1, see specs/001).
+#
+#   scripts/build                     Debug build for this Mac's architecture
+#   scripts/build --release           Release build
+#   scripts/build --arch arm64        Apple Silicon build (also from an Intel Mac)
+#   scripts/build --arch x86_64       Intel build (also from an Apple Silicon Mac)
+#   scripts/build --test              also run the tests
+#
+# The app bundle ends up in build/<config>-<arch>/.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+CONFIG=Debug
+ARCH="$(uname -m)"
+RUN_TESTS=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --release) CONFIG=Release ;;
+    --debug) CONFIG=Debug ;;
+    --arch) ARCH="$2"; shift ;;
+    --test) RUN_TESTS=1 ;;
+    *) echo "Unknown option: $1" >&2; exit 2 ;;
+  esac
+  shift
+done
+
+"$ROOT/scripts/install_tools"
+# shellcheck source=/dev/null
+source "$ROOT/scripts/env.sh"
+
+case "$(uname -s)-$ARCH" in
+  Darwin-x86_64) CEF_PLATFORM=macosx64 ;;
+  Darwin-arm64) CEF_PLATFORM=macosarm64 ;;
+  Linux-x86_64) CEF_PLATFORM=linux64 ;;
+  *) echo "Unsupported target: $(uname -s) $ARCH" >&2; exit 1 ;;
+esac
+"$ROOT/scripts/fetch_cef" "$CEF_PLATFORM"
+
+CONFIG_LOWER="$(echo "$CONFIG" | tr '[:upper:]' '[:lower:]')"
+BUILD_DIR="$ROOT/build/$CONFIG_LOWER-$ARCH"
+EXTRA=()
+if [[ "$(uname -s)" == Darwin ]]; then
+  EXTRA+=("-DCMAKE_OSX_ARCHITECTURES=$ARCH" "-DPROJECT_ARCH=$ARCH")
+fi
+cmake -S "$ROOT" -B "$BUILD_DIR" -G Ninja -DCMAKE_BUILD_TYPE="$CONFIG" \
+  "${EXTRA[@]}"
+cmake --build "$BUILD_DIR"
+
+if [[ $RUN_TESTS -eq 1 ]]; then
+  if [[ "$ARCH" == "$(uname -m)" ]]; then
+    ctest --test-dir "$BUILD_DIR" --output-on-failure
+  else
+    echo "Skipping tests: cannot run $ARCH binaries on $(uname -m)."
+  fi
+fi
+echo "Built in $BUILD_DIR"

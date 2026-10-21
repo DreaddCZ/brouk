@@ -1,0 +1,6 @@
+.tools/
+build/
+out/
+third_party/cef/
+node_modules/
+.DS_Store

@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Creates a self-signed code signing certificate "<APP_NAME> Local Dev" in the
+# login keychain, used to sign local builds (phase 1).
+#
+# Why: ad-hoc signatures change with every build, so macOS treats each build
+# as a new app and asks again for keychain access ("Chromium Safe Storage")
+# and for camera/microphone permissions. A stable certificate keeps the app's
+# identity the same across builds. Run once per Mac; the build picks the
+# certificate up automatically (re-run cmake or scripts/build afterwards).
+#
+# macOS asks for your login password to trust the certificate for code
+# signing, and on the first build codesign asks to use the key: "Always Allow".
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+APP_NAME="$(sed -n 's/^set(APP_NAME "\(.*\)")$/\1/p' "$ROOT/CMakeLists.txt")"
+NAME="$APP_NAME Local Dev"
+KEYCHAIN="$HOME/Library/Keychains/login.keychain-db"
+
+if security find-identity -v -p codesigning | grep -q "\"$NAME\""; then
+  echo "Certificate \"$NAME\" already exists."
+  exit 0
+fi
+
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+cat > "$TMP/openssl.cnf" <<EOF
+[req]
+distinguished_name = dn
+x509_extensions = ext
+prompt = no
+[dn]
+CN = $NAME
+[ext]
+basicConstraints = critical, CA:false
+keyUsage = critical, digitalSignature
+extendedKeyUsage = critical, codeSigning
+EOF
+
+/usr/bin/openssl req -x509 -newkey rsa:3072 -nodes -days 3650 \
+  -config "$TMP/openssl.cnf" -keyout "$TMP/key.pem" -out "$TMP/cert.pem" \
+  2>/dev/null
+# A throwaway password protects the key only while it is moved into the
+# keychain.
+PASS="$(/usr/bin/openssl rand -hex 16)"
+/usr/bin/openssl pkcs12 -export -inkey "$TMP/key.pem" -in "$TMP/cert.pem" \
+  -name "$NAME" -out "$TMP/identity.p12" -passout "pass:$PASS"
+
+security import "$TMP/identity.p12" -k "$KEYCHAIN" -P "$PASS" \
+  -T /usr/bin/codesign
+echo "Trusting the certificate for code signing (macOS asks for your password)..."
+security add-trusted-cert -r trustRoot -p codeSign -k "$KEYCHAIN" \
+  "$TMP/cert.pem"
+
+if security find-identity -v -p codesigning | grep -q "\"$NAME\""; then
+  echo "Created \"$NAME\". Rebuild to sign with it: scripts/build"
+else
+  echo "The certificate was imported but is not valid for code signing." >&2
+  exit 1
+fi

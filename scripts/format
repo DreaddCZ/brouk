@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# Formats our C++/Objective-C++ sources with the pinned clang-format.
+#   scripts/format          rewrite files in place
+#   scripts/format --check  only report unformatted files (CI)
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+CLANG_FORMAT="${CLANG_FORMAT:-$ROOT/.tools/bin/clang-format}"
+command -v "$CLANG_FORMAT" >/dev/null || CLANG_FORMAT=clang-format
+
+cd "$ROOT"
+files=()
+while IFS= read -r f; do files+=("$f"); done < <(
+  git ls-files --cached --others --exclude-standard \
+    'src/*.cc' 'src/*.h' 'src/*.mm' 'tests/*.cc' 'tests/*.h')
+if [[ ${#files[@]} -eq 0 ]]; then
+  exit 0
+fi
+if [[ "${1:-}" == "--check" ]]; then
+  "$CLANG_FORMAT" --dry-run --Werror "${files[@]}"
+else
+  "$CLANG_FORMAT" -i "${files[@]}"
+fi

@@ -1,0 +1,26 @@
+include(FetchContent)
+
+# GoogleTest, pinned by version and checksum (see third_party/README.md).
+FetchContent_Declare(googletest
+  URL https://github.com/google/googletest/releases/download/v1.18.0/googletest-1.18.0.tar.gz
+  URL_HASH SHA256=6e3191c1455468b3fc35a417fb565c1c5071aee1b7e7f85e30cf48a98d37d8b5
+  DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+  EXCLUDE_FROM_ALL)
+set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
+set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
+# GoogleTest must match our sanitizer settings to avoid false reports.
+foreach(gtest_target gtest gtest_main)
+  target_compile_options(${gtest_target} PRIVATE ${BROUK_SANITIZER_FLAGS})
+endforeach()
+
+include(GoogleTest)
+
+add_executable(brouk_core_tests
+  core/address_input_test.cc
+  core/tab_strip_model_test.cc
+  core/url_display_test.cc
+)
+brouk_target_options(brouk_core_tests)
+target_link_libraries(brouk_core_tests PRIVATE brouk_core_testing GTest::gtest_main)
+gtest_discover_tests(brouk_core_tests DISCOVERY_MODE PRE_TEST)

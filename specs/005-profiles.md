@@ -71,6 +71,7 @@ None.
 ## Notes
 
 - 2026-10-21 (readiness review): criteria that need passwords (008), bookmarks (011), history (013) or autofill (009) are marked "(after NNN)" and are completed when those specs are built; the rest of this spec can be implemented now. The export file format must be versioned and extensible, so those parts can be added later without breaking older exports.
+- 2026-10-21 (implementation, 001): a profile's data is in two folders: `profiles/<id>/` (our files) and `web/<id>/` (Chromium's cookies, cache, storage). Deleting a profile removes both. Until this spec is implemented, the single profile has the id `default`.
 - 2026-10-21 (readiness review): each profile has a stable internal ID used for its storage folder (004); the name is only a display label and can change freely.
 - 2026-10-21 (decision in 001): profiles are our own implementation, not Chrome's profile system. Each profile is a separate CEF request context with its own storage directory. Because isolation is per request context rather than per window, profiles are not tied to windows the way they are in Chrome — which is what makes mixed-profile windows possible.
 - 2026-10-21 (decision in 001): Chrome extensions are not supported; "extensions" above refers to our own extension mechanism, if one is ever added.
