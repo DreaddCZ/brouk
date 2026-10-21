@@ -13,6 +13,8 @@ A clean, minimal browser interface built for focused work, which the user can re
 Core UI elements:
 
 - Windows with tabs, an address/search bar, back/forward/reload.
+- **Address bar search:** text that is not a URL is searched with the default search engine — **Google** by default. The search engine is configurable: choose from a built-in list (Google, Bing, DuckDuckGo, Startpage, Ecosia) or add a custom one with a URL template (`https://example.com/search?q=%s`).
+- **Address bar suggestions,** in this order: (1) **history** of the active tab's profile, (2) **bookmarks** of that profile, (3) **search suggestions** from the search engine, last. Each source can be turned off; search suggestions send what the user types to the search engine (as in Chrome) and are on by default.
 - Minimal chrome by default: no promotional content, news feed or unnecessary buttons.
 - Keyboard-first: every action reachable by a shortcut; shortcuts remappable.
 - A command palette (search for any action, tab, bookmark or setting).
@@ -27,7 +29,7 @@ Core UI elements:
 - The close button (✕) stays visible on every tab at every width and is visually separated from the rest of the tab, so the user does not close a tab by accident when trying to drag it.
 - Light and dark theme following the OS by default.
 - Clear indication of the profile: every tab shows its profile group, and the toolbar shows the active tab's profile colour.
-- Bookmarks, history and downloads views.
+- Bookmarks, history and downloads views — specified separately in 011, 013 and 014 (later).
 
 ## Acceptance criteria
 
@@ -44,6 +46,8 @@ Core UI elements:
 - [ ] When tabs shrink, pinned tabs stay wider than other tabs while space allows (icon plus the start of the title vs. icon only).
 - [ ] Every tab shows which profile it belongs to (its group's name and colour), and the toolbar shows the active tab's profile colour.
 - [ ] Theme follows the OS light/dark setting, with manual override.
+- [ ] Typing text that is not a URL searches with the default search engine (Google unless changed); the engine can be changed in settings, including a custom URL template.
+- [ ] Address bar suggestions list history matches first, then bookmark matches (after 011), then search suggestions; each source can be turned off.
 
 ## Out of scope
 
@@ -53,7 +57,7 @@ Core UI elements:
 
 ## Configuration
 
-Theme, toolbar items, shortcuts, new tab page content.
+Theme, toolbar items, shortcuts, new tab page content, default search engine (Google) and custom search engines, suggestion sources (history, bookmarks, search suggestions — all on).
 
 ## Open questions
 
@@ -61,6 +65,8 @@ None.
 
 ## Notes
 
+- 2026-10-21 (readiness review): default search engine Google, configurable; suggestions from history first, then bookmarks, search suggestions last. Bookmarks (011), history (013) and downloads (014) views are specified later. Search engine and suggestion settings are global for now (provisional — could become per profile later).
+- 2026-10-21 (readiness review): milestone 1 ("browse the web", see roadmap) needs only a minimal subset of this spec: one window with a simple tab strip (no profile groups yet), address bar with search, back/forward/reload, and the standard shortcuts. Build that subset so it grows into the full UI here — no throwaway shell.
 - 2026-10-21 (UI and profiles review): left to be resolved during testing, not specified now: the exact behaviour in step 3 of tab overflow, split view, new tab page content, session restore on startup, reopening closed tabs.
 - 2026-10-21 (UI and profiles review): pinned tabs sit at the start of their profile group, keep the close button and stay wider than other tabs when space is short. Spec set to `ready`; implementation also needs the configuration decision in 004 (shortcuts, theme and other settings).
 

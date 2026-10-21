@@ -26,7 +26,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | ID | Title | Status | Priority |
 |---|---|---|---|
 | 001 | [Technology stack](001-technology-stack.md) | ready | P1 |
-| 002 | [Platform support](002-platform-support.md) | draft | P1 |
+| 002 | [Platform support](002-platform-support.md) | ready (macOS) | P1 |
 | 003 | [Browser UI](003-browser-ui.md) | ready | P1 |
 | 004 | [Configuration system](004-configuration.md) | ready | P1 |
 | 005 | [Profiles](005-profiles.md) | ready | P1 |
@@ -36,3 +36,21 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 009 | [Form autofill](009-autofill.md) | draft | P1 |
 | 010 | [Link routing and window picker](010-link-routing.md) | draft | P1 |
 | 011 | [Bookmark manager](011-bookmarks.md) | draft | P1 |
+| 012 | [Web platform basics](012-web-platform-basics.md) | ready | P1 |
+| 013 | [History](013-history.md) | idea | P1 |
+| 014 | [Downloads](014-downloads.md) | idea | P2 |
+
+## Roadmap
+
+Build order. Each milestone ends with a build the user tests on their Macs.
+
+| Milestone | Goal | Specs |
+|---|---|---|
+| **M1 – Browse the web** | A working app that displays web sites correctly: one window, simple tabs, address bar with search, back/forward/reload, standard shortcuts, and all basics from 012 (dialogs, permissions, sign-ins, errors, find, zoom, print, full screen, downloads to `~/Downloads`). | 001 (phase 1 items), 002 (macOS), 012, minimal subset of 003 |
+| **M2 – Core model and settings** | Shared window/tab model in the core; YAML settings with live reload and a basic settings page. | 004 |
+| **M3 – Profiles** | Isolated profiles, profile groups in one window, profile manager, export/import (parts available so far). | 005 |
+| **M4 – Full browser UI** | Tab overflow, pinned tabs, command palette, remappable shortcuts, themes, address bar suggestions from history. | 003, history storage needed by 003 (013) |
+| **M5 – Developer tools** | Dock, per-tab toggle, own tools, request rules, API export, remote debugging. | 006 |
+| **Later** | In an order to be agreed: | 010, 007, 008, 009, 011, 013, 014 |
+
+Rules: a milestone uses only `ready` specs; later milestones may be re-ordered by the user. Unspecified standard browser behaviour follows Chrome (see `CLAUDE.md`).

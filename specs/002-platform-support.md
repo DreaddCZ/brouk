@@ -1,6 +1,6 @@
 # 002 – Platform support
 
-- **Status:** draft
+- **Status:** ready (for macOS; Windows and mobile parts are not in scope yet)
 - **Priority:** P1
 - **Depends on:** 001
 
@@ -24,7 +24,7 @@ Code and architecture should keep platform-specific parts isolated so Windows ca
 
 - [ ] macOS: runs natively on Apple Silicon (arm64) and Intel (x86_64) as two separate builds, on macOS 15 and later (deployment target 15.0). Phase 2 (sharing with colleagues, see 001): each build signed and notarized so it opens without security warnings.
 - [ ] Phase 2: each macOS build updates itself from its own update feed; an Intel install never receives an Apple Silicon build and vice versa.
-- [ ] Windows: builds and runs on Windows 10/11 x64 using the same feature set (phase 2).
+- [ ] Windows (when Windows work starts — not tied to release phase 2): builds and runs on Windows 10/11 x64 using the same feature set.
 - [ ] Platform-specific code is kept in clearly separated modules.
 - [ ] User data (profiles, settings) uses each OS's standard app data location.
 
@@ -38,11 +38,15 @@ n/a
 
 ## Open questions
 
-- Linux: wanted at all? If yes, which phase?
+None for macOS. Deferred until they become relevant (they do not block macOS work):
+
+- Linux as a user-facing platform: wanted at all? (The core already builds on Linux for tests, see 001.)
 - Windows on ARM?
 - Distribution: direct download, Homebrew, Mac App Store, winget?
 
 ## Notes
+
+- 2026-10-21 (readiness review): set to `ready` for macOS. "Phase 1/2" in 001 means release phases (personal use / colleagues); Windows and mobile are platform rollout steps and are not tied to those phases. Remaining questions deferred.
 
 - 2026-10-21: minimum macOS is 15 Sequoia. The user's 2019 Intel MacBook runs macOS 15.8, and 15 and 26 are the versions the user can test on. Chromium (and so CEF) requires macOS 13 Ventura or later since Chrome 151 (July 2026); the minimum can be lowered towards that if a colleague needs it in phase 2.
 

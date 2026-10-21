@@ -35,20 +35,20 @@ A profile is a completely separate set of browser data: cookies and logins, hist
 - [ ] User can create, rename and delete profiles, and set a name and colour.
 - [ ] Creating or using a profile never requires signing in to any online account.
 - [ ] Logging into a site in profile A does not log in profile B, including when tabs of A and B are in the same window.
-- [ ] History, bookmarks, passwords, extensions and settings are separate per profile.
-- [ ] Autofill entries are shared: an entry saved in one profile is offered in every profile.
+- [ ] History, bookmarks, passwords, extensions and settings are separate per profile. (History after 013, bookmarks after 011, passwords after 008; cookies, cache, storage and settings now.)
+- [ ] Autofill entries are shared: an entry saved in one profile is offered in every profile. (after 009)
 - [ ] Two or more profiles can be open simultaneously, both in separate windows and in the same window.
 - [ ] In each window, a profile's tabs form exactly one group, shown with the profile's name and colour.
 - [ ] A new window or tab opened without choosing a profile opens in the default profile; a group's "+" button opens a new tab in that group's profile.
 - [ ] Dragging a tab into another profile's group first shows a "continue / cancel" dialog; on continue, the tab's URL reopens in the target profile; on cancel, nothing changes.
-- [ ] The bookmarks bar and password filling use the active tab's profile.
+- [ ] The bookmarks bar and password filling use the active tab's profile. (after 011 and 008)
 - [ ] A specific profile can be started from the command line.
 - [ ] The profile manager can be set to appear at startup or be skipped (opening a default profile).
 - [ ] Deleting a profile removes all of its data, after confirmation; if it has open tabs, the confirmation says so and the tabs close.
 - [ ] The default profile cannot be deleted while it is the default.
-- [ ] A profile can be exported to a single file and imported on another device, keeping its name, colour, settings, bookmarks and passwords.
-- [ ] Passwords in the export file are encrypted with a user-chosen export password; the file cannot be imported without it.
-- [ ] When exporting, the user chooses whether to include history and can limit it by age or by number of visited pages.
+- [ ] A profile can be exported to a single file and imported on another device, keeping its name, colour, settings, bookmarks and passwords. (Name, colour and settings now; bookmarks after 011; passwords after 008.)
+- [ ] Passwords in the export file are encrypted with a user-chosen export password; the file cannot be imported without it. (after 008)
+- [ ] When exporting, the user chooses whether to include history and can limit it by age or by number of visited pages. (after 013)
 - [ ] The export contains no cookies, sessions or cache.
 
 ## Out of scope
@@ -70,6 +70,8 @@ None.
 
 ## Notes
 
+- 2026-10-21 (readiness review): criteria that need passwords (008), bookmarks (011), history (013) or autofill (009) are marked "(after NNN)" and are completed when those specs are built; the rest of this spec can be implemented now. The export file format must be versioned and extensible, so those parts can be added later without breaking older exports.
+- 2026-10-21 (readiness review): each profile has a stable internal ID used for its storage folder (004); the name is only a display label and can change freely.
 - 2026-10-21 (decision in 001): profiles are our own implementation, not Chrome's profile system. Each profile is a separate CEF request context with its own storage directory. Because isolation is per request context rather than per window, profiles are not tied to windows the way they are in Chrome — which is what makes mixed-profile windows possible.
 - 2026-10-21 (decision in 001): Chrome extensions are not supported; "extensions" above refers to our own extension mechanism, if one is ever added.
 - 2026-10-21 (UI and profiles review): profiles are local only and can be mixed in one window, one group per profile per window. Containers are not needed. "Open links from other apps in which profile?" is answered by the routing rules in 010. Autofill is shared across profiles; passwords stay per profile. The default profile's group is always present in each window; every group has a "+" button for a new tab in its profile.
