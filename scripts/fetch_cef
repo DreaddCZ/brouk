@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+# Downloads the pinned CEF binary distribution (minimal) for this platform into
+# third_party/cef/<platform>/ (git-ignored) and verifies its SHA-256 checksum.
+#
+# Usage: scripts/fetch_cef [macosx64|macosarm64|linux64]
+#   Without an argument, the platform of this machine is used. Pass the other
+#   macOS architecture to cross-compile (e.g. the Intel build on Apple Silicon).
+#
+# To update CEF: change CEF_VERSION and the checksums below (the SHA-1 published
+# in https://cef-builds.spotifycdn.com/index.json can be used to check a fresh
+# download before recording its SHA-256).
+
+set -euo pipefail
+
+CEF_VERSION="154.0.34+g14c5a08+chromium-154.0.8037.98"
+
+checksum() {
+  case "$1" in
+    macosx64) echo ebcb691252c9ccde63488a913e2381bce4e275acbbb96ce4763b318b7f0b781a ;;
+    macosarm64) echo b7efb24bcce34b94e836a9f545005aea210e08abdf4ee1483ea03b8daf93f080 ;;
+    linux64) echo e87e2c76304372dd28b899ceb6efa4b353f52700594ddc358a8237ec07ec6492 ;;
+    *) echo "Unknown CEF platform: $1" >&2; return 1 ;;
+  esac
+}
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+if [[ $# -ge 1 ]]; then
+  PLATFORM="$1"
+else
+  case "$(uname -s)-$(uname -m)" in
+    Darwin-x86_64) PLATFORM=macosx64 ;;
+    Darwin-arm64) PLATFORM=macosarm64 ;;
+    Linux-x86_64) PLATFORM=linux64 ;;
+    *) echo "Unsupported platform: $(uname -s)-$(uname -m)" >&2; exit 1 ;;
+  esac
+fi
+
+EXPECTED="$(checksum "$PLATFORM")"
+NAME="cef_binary_${CEF_VERSION}_${PLATFORM}_minimal"
+DEST="$ROOT/third_party/cef/$PLATFORM"
+STAMP="$DEST/.brouk_cef_version"
+
+if [[ -f "$STAMP" ]] && [[ "$(cat "$STAMP")" == "$CEF_VERSION" ]]; then
+  echo "CEF $CEF_VERSION ($PLATFORM) already present in $DEST"
+  exit 0
+fi
+
+# Archives are cached outside the repo so switching versions or re-extracting
+# does not download again. CI points BROUK_CEF_CACHE at a cached directory.
+CACHE="${BROUK_CEF_CACHE:-$HOME/.cache/brouk/cef}"
+mkdir -p "$CACHE"
+ARCHIVE="$CACHE/$NAME.tar.bz2"
+
+sha256() {
+  if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1
+  else shasum -a 256 "$1" | cut -d' ' -f1; fi
+}
+
+if [[ ! -f "$ARCHIVE" ]] || [[ "$(sha256 "$ARCHIVE")" != "$EXPECTED" ]]; then
+  echo "Downloading $NAME ..."
+  # '+' must be percent-encoded in the CDN URL.
+  URL="https://cef-builds.spotifycdn.com/${NAME//+/%2B}.tar.bz2"
+  curl -fL --retry 3 -o "$ARCHIVE.part" "$URL"
+  mv "$ARCHIVE.part" "$ARCHIVE"
+fi
+
+ACTUAL="$(sha256 "$ARCHIVE")"
+if [[ "$ACTUAL" != "$EXPECTED" ]]; then
+  rm -f "$ARCHIVE"
+  echo "Checksum mismatch for $NAME: expected $EXPECTED, got $ACTUAL" >&2
+  exit 1
+fi
+
+echo "Extracting to $DEST ..."
+rm -rf "$DEST" "$DEST.tmp"
+mkdir -p "$DEST.tmp"
+tar -xjf "$ARCHIVE" -C "$DEST.tmp" --strip-components=1
+echo "$CEF_VERSION" > "$DEST.tmp/.brouk_cef_version"
+mv "$DEST.tmp" "$DEST"
+echo "CEF $CEF_VERSION ($PLATFORM) ready in $DEST"

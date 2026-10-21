@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Runs clang-tidy on the portable C++ sources (core and CEF integration).
+# Needs a configured build directory with compile_commands.json.
+#   scripts/lint [build-dir]     default: build/debug
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+BUILD_DIR="${1:-$ROOT/build/debug}"
+CLANG_TIDY="${CLANG_TIDY:-$ROOT/.tools/bin/clang-tidy}"
+command -v "$CLANG_TIDY" >/dev/null || CLANG_TIDY=clang-tidy
+
+cd "$ROOT"
+# The CEF integration can only be checked if the build includes it.
+patterns=('src/core/*.cc')
+if grep -q '"file": ".*src/cef/' "$BUILD_DIR/compile_commands.json"; then
+  patterns+=('src/cef/*.cc')
+fi
+# The standalone clang-tidy does not know where Xcode keeps the SDK headers.
+extra=()
+if [[ "$(uname -s)" == Darwin ]]; then
+  extra+=("--extra-arg=-isysroot$(xcrun --show-sdk-path)")
+fi
+status=0
+while IFS= read -r f; do
+  "$CLANG_TIDY" --quiet -p "$BUILD_DIR" ${extra[@]+"${extra[@]}"} "$f" ||
+    status=1
+done < <(git ls-files --cached --others --exclude-standard "${patterns[@]}")
+exit $status

@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+# Downloads the pinned build tools into .tools/ (git-ignored) and verifies
+# their SHA-256 checksums. Nothing is installed system-wide.
+#
+# Why not Homebrew: Homebrew no longer ships binaries for Intel Macs, and
+# pinned versions keep both Macs and CI on the same tools.
+#
+# Usage: scripts/install_tools          (idempotent; re-run after a version bump)
+# Then:  source scripts/env.sh          (puts .tools/bin first on PATH)
+
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+TOOLS="$ROOT/.tools"
+DOWNLOADS="$TOOLS/downloads"
+BIN="$TOOLS/bin"
+mkdir -p "$DOWNLOADS" "$BIN"
+
+case "$(uname -s)-$(uname -m)" in
+  Darwin-x86_64) PLATFORM=mac-x64 ;;
+  Darwin-arm64) PLATFORM=mac-arm64 ;;
+  Linux-x86_64) PLATFORM=linux-x64 ;;
+  *) echo "Unsupported platform: $(uname -s)-$(uname -m)" >&2; exit 1 ;;
+esac
+
+CMAKE_VERSION=4.4.4
+NINJA_VERSION=1.13.2
+NODE_VERSION=24.21.0
+GH_VERSION=2.102.0
+LLVM_TOOLS_VERSION=22.1.8 # clang-format and clang-tidy (from PyPI wheels)
+
+PYPI=https://files.pythonhosted.org/packages
+
+# Prints "url sha256" for a tool on the current platform.
+artifact() {
+  case "$1-$PLATFORM" in
+    cmake-mac-*) echo "https://github.com/Kitware/CMake/releases/download/v$CMAKE_VERSION/cmake-$CMAKE_VERSION-macos-universal.tar.gz 4b7b73704b1db9b374e5c9ab8e17ac6148b817b6396ee75cd94a852cbac9d305" ;;
+    cmake-linux-x64) echo "https://github.com/Kitware/CMake/releases/download/v$CMAKE_VERSION/cmake-$CMAKE_VERSION-linux-x86_64.tar.gz e5bb807f7728cb60cd8b27ebc97a2edb469b68655f21e844a600c3575b76f5bb" ;;
+    ninja-mac-*) echo "https://github.com/ninja-build/ninja/releases/download/v$NINJA_VERSION/ninja-mac.zip c99048673aa765960a99cf10c6ddb9f1fad506099ff0a0e137ad8960a88f321b" ;;
+    ninja-linux-x64) echo "https://github.com/ninja-build/ninja/releases/download/v$NINJA_VERSION/ninja-linux.zip 5749cbc4e668273514150a80e387a957f933c6ed3f5f11e03fb30955e2bbead6" ;;
+    node-mac-x64) echo "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-darwin-x64.tar.gz 1462cb3b3046b815cf8ea436d3da450ec1a9f11dac7e5a46b0ada5305d7e8097" ;;
+    node-mac-arm64) echo "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-darwin-arm64.tar.gz bed7eea5325e1108f32ce5228ddd6a5f0f08a499ee42aa7442aea583702f6057" ;;
+    node-linux-x64) echo "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6" ;;
+    gh-mac-x64) echo "https://github.com/cli/cli/releases/download/v$GH_VERSION/gh_${GH_VERSION}_macOS_amd64.zip b245f24eb2bf5f75b426b4c26da3651a107f8d5b6f4fddfbfccc5679041378b3" ;;
+    gh-mac-arm64) echo "https://github.com/cli/cli/releases/download/v$GH_VERSION/gh_${GH_VERSION}_macOS_arm64.zip da922c20d1792e5b2cbf375593d7a658acf034c12c84e007e71c76ef959c337e" ;;
+    gh-linux-x64) echo "https://github.com/cli/cli/releases/download/v$GH_VERSION/gh_${GH_VERSION}_linux_amd64.tar.gz bb766f710eef8ede859c18578c72c327597cd4c8a85b06001b1f3843c6019386" ;;
+    clang-format-mac-x64) echo "$PYPI/5d/d8/29b9db6098da1a011ca3f7560c3942fa81404dbbb4367c3bd1d5c435da3b/clang_format-$LLVM_TOOLS_VERSION-py2.py3-none-macosx_10_9_x86_64.whl fc2ac5bd0ea41af49968fb69426207806d5f7016cb8f4bfbd44f4f1ffe8d53f2" ;;
+    clang-format-mac-arm64) echo "$PYPI/2e/55/539cc1036dae16659f50500ca34838cc5b16cd3e98e3faaf164186b98093/clang_format-$LLVM_TOOLS_VERSION-py2.py3-none-macosx_11_0_arm64.whl d1147107222c0dda3e4869e9e8c4a79f9ed1de83819e5274de42b82adf3d2129" ;;
+    clang-format-linux-x64) echo "$PYPI/e5/88/b82c066fa807da4ca2518fecf79071361f6324b77375e5e92c059c0697fd/clang_format-$LLVM_TOOLS_VERSION-py2.py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl b00cff6bfd1f1686f073a4fdf1cb937dbd58bf7510c659477805c03afdea0816" ;;
+    clang-tidy-mac-x64) echo "$PYPI/86/14/27f6ed1ffdf3fcc53d4482a5f1292b39751c7426ca70deca8bb7d04f5dae/clang_tidy-$LLVM_TOOLS_VERSION-py2.py3-none-macosx_10_9_x86_64.whl 04b6c97bcdc032763d0d924531def281acd0b5a939bcc79994cbf3c6fe83e1ae" ;;
+    clang-tidy-mac-arm64) echo "$PYPI/01/23/949977d4304e30eeef80206b37a9305084926ea06b99708961fcbf27913f/clang_tidy-$LLVM_TOOLS_VERSION-py2.py3-none-macosx_11_0_arm64.whl 916d7cbc9590e719459738fedc5ba76ac91f128d671390e574a0779014c84d73" ;;
+    clang-tidy-linux-x64) echo "$PYPI/82/19/0f2668f8f5e2452b096a2b898f2b6bcecbceb6dd0c7f75d1755ce1f18d8b/clang_tidy-$LLVM_TOOLS_VERSION-py2.py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl 1a3de07ba82d4403d8b692ae63a5520d4db5c606014c92c24bbcef9259057bf1" ;;
+    *) echo "No artifact for $1 on $PLATFORM" >&2; return 1 ;;
+  esac
+}
+
+sha256() {
+  if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1
+  else shasum -a 256 "$1" | cut -d' ' -f1; fi
+}
+
+# Downloads a tool's archive (if not cached) and verifies it. Prints its path.
+fetch() {
+  local url expected file
+  read -r url expected < <(artifact "$1")
+  file="$DOWNLOADS/$(basename "$url")"
+  if [[ ! -f "$file" ]] || [[ "$(sha256 "$file")" != "$expected" ]]; then
+    echo "Downloading $1 ..." >&2
+    curl -fsSL --retry 3 -o "$file.part" "$url"
+    mv "$file.part" "$file"
+  fi
+  local actual
+  actual="$(sha256 "$file")"
+  if [[ "$actual" != "$expected" ]]; then
+    rm -f "$file"
+    echo "Checksum mismatch for $1: expected $expected, got $actual" >&2
+    exit 1
+  fi
+  echo "$file"
+}
+
+# Extracts an archive into a fresh directory .tools/<name>-<version>.
+extract() {
+  local archive="$1" dest="$2"
+  rm -rf "$dest.tmp" && mkdir -p "$dest.tmp"
+  case "$archive" in
+    *.zip|*.whl) unzip -q "$archive" -d "$dest.tmp" ;;
+    *) tar -xf "$archive" -C "$dest.tmp" ;;
+  esac
+  rm -rf "$dest" && mv "$dest.tmp" "$dest"
+}
+
+install_tool() {
+  local name="$1" version="$2"
+  local dest="$TOOLS/$name-$version"
+  if [[ ! -d "$dest" ]]; then
+    extract "$(fetch "$name")" "$dest"
+  fi
+  echo "$dest"
+}
+
+link() { ln -sf "$1" "$BIN/$2"; }
+
+dir="$(install_tool cmake "$CMAKE_VERSION")"
+for t in cmake ctest cpack; do
+  link "$(find "$dir" -type f -path "*/bin/$t" | head -1)" "$t"
+done
+
+dir="$(install_tool ninja "$NINJA_VERSION")"
+chmod +x "$dir/ninja"
+link "$dir/ninja" ninja
+
+dir="$(install_tool node "$NODE_VERSION")"
+node_bin="$(dirname "$(find "$dir" -path '*/bin/node' | head -1)")"
+for t in node npm npx; do link "$node_bin/$t" "$t"; done
+
+dir="$(install_tool gh "$GH_VERSION")"
+link "$(find "$dir" -type f -path '*/bin/gh' | head -1)" gh
+
+for t in clang-format clang-tidy; do
+  dir="$(install_tool "$t" "$LLVM_TOOLS_VERSION")"
+  exe="$(find "$dir" -type f -path "*/bin/$t" | head -1)"
+  chmod +x "$exe"
+  link "$exe" "$t"
+done
+
+echo "Tools installed in $BIN. Run: source scripts/env.sh"

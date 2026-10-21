@@ -1,0 +1,5 @@
+# Chromium style, like CEF (see CLAUDE.md, "C++ rules").
+BasedOnStyle: Chromium
+---
+Language: ObjC
+BasedOnStyle: Chromium
