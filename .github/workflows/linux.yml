@@ -1,0 +1,60 @@
+# Phase 1 CI (specs/001): builds the portable code (core and CEF integration)
+# on Linux and runs its tests under AddressSanitizer + UBSan. macOS builds
+# are made locally on the user's Macs.
+name: linux
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-24.04
+    env:
+      CC: clang
+      CXX: clang++
+      BROUK_CEF_CACHE: ${{ github.workspace }}/.cef-cache
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache pinned tools
+        uses: actions/cache@v4
+        with:
+          path: .tools
+          key: tools-${{ runner.os }}-${{ hashFiles('scripts/install_tools') }}
+
+      - name: Cache CEF download
+        uses: actions/cache@v4
+        with:
+          path: .cef-cache
+          key: cef-linux64-${{ hashFiles('scripts/fetch_cef') }}
+
+      - name: Install tools
+        run: scripts/install_tools
+
+      - name: Check formatting
+        run: scripts/format --check
+
+      - name: Fetch CEF
+        run: scripts/fetch_cef linux64
+
+      - name: Configure (Debug, sanitizers on)
+        run: |
+          source scripts/env.sh
+          cmake -S . -B build/debug -G Ninja -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Build
+        run: |
+          source scripts/env.sh
+          cmake --build build/debug
+
+      - name: Test
+        run: |
+          source scripts/env.sh
+          ctest --test-dir build/debug --output-on-failure
+
+      - name: clang-tidy
+        run: scripts/lint build/debug
