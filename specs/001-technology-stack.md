@@ -33,6 +33,11 @@ Platform-native webviews (e.g. WKWebView on macOS) are excluded because they are
 - **Password manager (008) and autofill (009):** our own implementation — injected scripts detect login/address forms; secrets are stored encrypted via the OS keychain (macOS Keychain, later Windows Credential Manager/DPAPI); save/fill prompts are our own UI.
 - **Updates:** the app updates itself automatically and regularly; the user never maintains it manually (see "Update process" below).
 
+- **UI shell: hybrid** (decided 2026-10-21).
+  - **Native** (Swift/AppKit on macOS, the platform's native toolkit on Windows later): window frames, tab strip, toolbar and address bar with its suggestions dropdown, menus, the window picker (010), and OS integration (displays, Spaces, Touch ID, full-screen). Reason: speed, low memory, native feel, and window/display/Space awareness is native code in any case.
+  - **HTML/TypeScript pages rendered in CEF** for content-heavy internal pages: settings, history, bookmarks/downloads views, password manager page, profile manager and our own developer tools. Reason: one implementation shared by macOS and Windows, easy theming, fast iteration.
+  - The window/tab model lives in the shared core, independent of the UI layer.
+
 ### Update process
 
 Chromium ships a new stable release every ~4 weeks plus security fixes in between, and CEF follows with new builds. Staying current means:
@@ -61,7 +66,6 @@ Update channel (stable by default), automatic install of updates (on by default)
 
 ## Open questions
 
-- UI shell: native per platform (Swift/AppKit on macOS) vs. HTML/TypeScript UI rendered in CEF vs. a hybrid. Window, display and Space awareness (see 010) is native code in every option.
 - Implementation language for the core (C++ is CEF's native API; Swift/C++ interop on macOS; Rust bindings exist).
 - Build system (CMake is CEF's default).
 - Chrome extensions: support at all? (Limited in Alloy style.)
@@ -72,3 +76,4 @@ Update channel (stable by default), automatic install of updates (on by default)
 
 - Superseded leaning (before 2026-10-21): Option A, a Chromium fork based on ungoogled-chromium's patch set.
 - CEF runtime styles: Chrome style provides the full Chrome UI layer; Alloy style provides less built-in functionality but more client callbacks and off-screen rendering. Styles are chosen per browser/window and can be mixed.
+- UI shell trade-offs considered: an all-HTML UI (Vivaldi-style) would share one UI across platforms but costs an extra renderer process per UI surface, makes overlays like the address bar dropdown awkward to layer, and does not feel native; an all-native UI needs every page written per platform. The hybrid keeps the always-visible parts native and shares the content-heavy pages.

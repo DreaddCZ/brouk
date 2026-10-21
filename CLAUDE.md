@@ -36,13 +36,13 @@ All features and requirements live in [`specs/`](specs/README.md).
 
 - **Base technology: CEF** with prebuilt binaries, Chrome bootstrap and **Alloy style** browsers for web content. Not a Chromium fork. Details and reasoning: `specs/001-technology-stack.md`.
 - Profiles, developer tools (beyond the stock DevTools frontend), password manager and autofill are **our own implementations**, not Chrome's.
+- **UI shell: hybrid** — native (Swift/AppKit on macOS) for windows, tabs, toolbar, address bar, menus and the window picker; HTML/TypeScript pages in CEF for settings, history, password manager, profile manager and custom developer tools. Details: `specs/001-technology-stack.md`.
 - The app **updates itself automatically**; CI picks up new CEF releases, builds, signs and publishes them.
 
 ## Open decisions
 
 These are not settled yet — do not assume an answer:
 
-- UI shell: native per platform (Swift/AppKit) vs. HTML/TypeScript UI in CEF vs. hybrid.
 - Implementation language(s).
 - Build system and CI setup.
 - Configuration format and where settings are stored.

@@ -47,3 +47,5 @@ Tab layout, theme, toolbar items, shortcuts, new tab page content.
 - Native look (macOS-style) or a custom cross-platform look?
 
 ## Notes
+
+- 2026-10-21 (decision in 001): hybrid UI shell. Windows, tabs, toolbar, address bar and menus are native (Swift/AppKit on macOS); settings, history, bookmarks, downloads and other internal pages are HTML/TypeScript pages rendered in CEF. This answers "native look" for the main window chrome; internal pages follow the same theme.
