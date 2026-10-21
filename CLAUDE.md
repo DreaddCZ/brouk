@@ -6,7 +6,7 @@ Guidance for Claude Code when working in this repository.
 
 A custom web browser built on Chromium. Goals:
 
-- **Multiplatform** – Windows, macOS and Linux.
+- **Multiplatform** – macOS first, then Windows, mobile later (see `specs/002-platform-support.md`).
 - **Lightweight** – low memory and CPU footprint, fast startup, no bloat.
 - **Fully configurable** – behaviour, UI and shortcuts adjustable by the user.
 - **Focused on work** – features that help with productive, professional use.

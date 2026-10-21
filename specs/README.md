@@ -25,4 +25,12 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 
 | ID | Title | Status | Priority |
 |---|---|---|---|
-| | *(no specs yet)* | | |
+| 001 | [Technology stack](001-technology-stack.md) | draft | P1 |
+| 002 | [Platform support](002-platform-support.md) | draft | P1 |
+| 003 | [Browser UI](003-browser-ui.md) | draft | P1 |
+| 004 | [Configuration system](004-configuration.md) | draft | P1 |
+| 005 | [Profiles](005-profiles.md) | draft | P1 |
+| 006 | [Developer tools](006-developer-tools.md) | draft | P1 |
+| 007 | [Ad and tracker blocking](007-adblock.md) | draft | P1 |
+| 008 | [Password manager](008-password-manager.md) | draft | P1 |
+| 009 | [Form autofill](009-autofill.md) | draft | P1 |
