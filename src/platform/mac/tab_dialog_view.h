@@ -14,14 +14,15 @@ typedef void (^BRTabDialogCompletion)(BOOL ok, NSString* input, BOOL suppress);
 
 @interface BRTabDialogView : NSView
 
-// `promptText` non-nil adds a text field; `cancelTitle` nil means no Cancel
-// button (Escape then answers OK, like an alert).
+// `promptText` non-nil adds a text field; `checkboxTitle` non-nil adds a
+// checkbox (its state is `suppress` in the completion); `cancelTitle` nil
+// means no Cancel button (Escape then answers OK, like an alert).
 - (instancetype)initWithTitle:(NSString*)title
                       message:(NSString*)message
                       okTitle:(NSString*)okTitle
                   cancelTitle:(nullable NSString*)cancelTitle
                    promptText:(nullable NSString*)promptText
-             offerSuppression:(BOOL)offerSuppression
+                checkboxTitle:(nullable NSString*)checkboxTitle
                    completion:(BRTabDialogCompletion)completion;
 
 // A JavaScript dialog; `done` is called once when the user answers.

@@ -52,15 +52,18 @@ NSString* ToNSString(const std::string& s) {
                          : nil;
   __block brouk::JsDialogDone js_done = std::move(done);
   return [[BRTabDialogView alloc]
-         initWithTitle:title
-               message:message
-               okTitle:okTitle
-           cancelTitle:cancelTitle
-            promptText:prompt
-      offerSuppression:request.offer_suppression
-            completion:^(BOOL ok, NSString* input, BOOL suppress) {
-              js_done(ok, input.UTF8String ?: "", suppress);
-            }];
+      initWithTitle:title
+            message:message
+            okTitle:okTitle
+        cancelTitle:cancelTitle
+         promptText:prompt
+      checkboxTitle:request.offer_suppression
+                        ? @"Prevent this page from creating additional "
+                          @"dialogs"
+                        : nil
+         completion:^(BOOL ok, NSString* input, BOOL suppress) {
+           js_done(ok, input.UTF8String ?: "", suppress);
+         }];
 }
 
 - (instancetype)initWithTitle:(NSString*)title
@@ -68,7 +71,7 @@ NSString* ToNSString(const std::string& s) {
                       okTitle:(NSString*)okTitle
                   cancelTitle:(nullable NSString*)cancelTitle
                    promptText:(nullable NSString*)promptText
-             offerSuppression:(BOOL)offerSuppression
+                checkboxTitle:(nullable NSString*)checkboxTitle
                    completion:(BRTabDialogCompletion)completion {
   if ((self = [super initWithFrame:NSZeroRect])) {
     _completion = completion;
@@ -82,7 +85,7 @@ NSString* ToNSString(const std::string& s) {
                       okTitle:okTitle
                   cancelTitle:cancelTitle
                    promptText:promptText
-             offerSuppression:offerSuppression];
+                checkboxTitle:checkboxTitle];
   }
   return self;
 }
@@ -105,7 +108,7 @@ NSString* ToNSString(const std::string& s) {
                     okTitle:(NSString*)okTitle
                 cancelTitle:(nullable NSString*)cancelTitle
                  promptText:(nullable NSString*)promptText
-           offerSuppression:(BOOL)offerSuppression {
+              checkboxTitle:(nullable NSString*)checkboxTitle {
   _panel = [[NSView alloc] initWithFrame:NSZeroRect];
   _panel.wantsLayer = YES;
   _panel.layer.cornerRadius = 10;
@@ -153,11 +156,10 @@ NSString* ToNSString(const std::string& s) {
     _input.target = self;
     _input.action = @selector(okClicked:);
   }
-  if (offerSuppression) {
-    _suppress = [NSButton
-        checkboxWithTitle:@"Prevent this page from creating additional dialogs"
-                   target:nil
-                   action:nil];
+  if (checkboxTitle) {
+    _suppress = [NSButton checkboxWithTitle:checkboxTitle
+                                     target:nil
+                                     action:nil];
   }
 
   _okButton = [NSButton buttonWithTitle:okTitle
@@ -187,8 +189,14 @@ NSString* ToNSString(const std::string& s) {
   }
   y += buttonHeight + 14;
   if (_suppress) {
-    _suppress.frame =
-        NSMakeRect(kPadding, y, contentWidth, _suppress.fittingSize.height);
+    // Long checkbox labels wrap instead of being cut off.
+    _suppress.lineBreakMode = NSLineBreakByWordWrapping;
+    _suppress.cell.wraps = YES;
+    // A finite bound: an infinite one yields an invalid size.
+    CGFloat checkboxHeight = std::ceil(
+        [_suppress.cell cellSizeForBounds:NSMakeRect(0, 0, contentWidth, 1000)]
+            .height);
+    _suppress.frame = NSMakeRect(kPadding, y, contentWidth, checkboxHeight);
     [_panel addSubview:_suppress];
     y += _suppress.frame.size.height + 10;
   }

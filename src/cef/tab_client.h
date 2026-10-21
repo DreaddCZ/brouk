@@ -66,6 +66,16 @@ struct PermissionRequest {
 };
 using PermissionDone = std::function<void(PermissionChoice choice)>;
 
+// A link wants to open another app (mailto:, msteams:, ...).
+struct ExternalProtocolRequest {
+  std::string url;            // Untrusted, from the page.
+  std::string scheme;         // "mailto"
+  std::string origin;         // Display form of the page asking; may be empty.
+  bool can_remember = false;  // Offer "Always allow" (the page has an origin).
+};
+// `open`: open the app now; `always`: remember for the site and scheme.
+using ExternalProtocolDone = std::function<void(bool open, bool always)>;
+
 // Why a tab's renderer process is gone (crash page text depends on it).
 enum class RendererGoneReason { kCrashed, kKilled, kOutOfMemory, kOther };
 
@@ -130,6 +140,12 @@ class TabClientDelegate {
                                     PermissionDone done) = 0;
   // The request went away (navigation, tab closed): remove its prompt.
   virtual void DismissPermissionPrompt(std::uint64_t id) = 0;
+
+  // Asks whether to open another app for a link; `done` is called once.
+  virtual void AskOpenExternalProtocol(const ExternalProtocolRequest& request,
+                                       ExternalProtocolDone done) = 0;
+  // Opens the URL with the app macOS (or the OS) registered for it.
+  virtual void OpenExternalUrl(const std::string& url) = 0;
 
   // The page entered or left HTML full screen (video, presentation). The
   // platform makes the window full screen and hides the browser UI.
@@ -301,6 +317,11 @@ class TabClient : public CefClient,
       cef_permission_request_result_t result) override;
 
   // CefRequestHandler:
+  bool OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
+                      CefRefPtr<CefFrame> frame,
+                      CefRefPtr<CefRequest> request,
+                      bool user_gesture,
+                      bool is_redirect) override;
   void OnRenderProcessTerminated(CefRefPtr<CefBrowser> browser,
                                  TerminationStatus status,
                                  int error_code,
@@ -345,6 +366,8 @@ class TabClient : public CefClient,
   // Reserved download paths by download id, released when it ends.
   std::map<std::uint32_t, std::string> download_paths_;
   std::vector<OneTimeGrant> one_time_grants_;
+  // An external-protocol question is open (one at a time, like Chrome).
+  bool asking_external_protocol_ = false;
   // Ids for media prompts (CEF's own prompt ids start at 1 and grow).
   std::uint64_t next_media_prompt_id_ = 1ULL << 62;
   DialogSpamGuard dialog_guard_;

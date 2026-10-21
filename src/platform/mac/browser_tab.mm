@@ -44,6 +44,8 @@ NSString* ToNSString(const std::string& s) {
 - (void)showPermissionPrompt:(const brouk::PermissionRequest&)request
                         done:(brouk::PermissionDone)done;
 - (void)dismissPermissionPrompt:(std::uint64_t)requestId;
+- (void)askOpenExternalProtocol:(const brouk::ExternalProtocolRequest&)request
+                           done:(brouk::ExternalProtocolDone)done;
 @end
 
 namespace brouk {
@@ -136,6 +138,16 @@ class TabDelegateBridge : public TabClientDelegate {
   void DismissPermissionPrompt(std::uint64_t id) override {
     [tab_ dismissPermissionPrompt:id];
   }
+  void AskOpenExternalProtocol(const ExternalProtocolRequest& request,
+                               ExternalProtocolDone done) override {
+    [tab_ askOpenExternalProtocol:request done:std::move(done)];
+  }
+  void OpenExternalUrl(const std::string& url) override {
+    NSURL* nsurl = [NSURL URLWithString:ToNSString(url)];
+    if (nsurl) {
+      [NSWorkspace.sharedWorkspace openURL:nsurl];
+    }
+  }
   void OnFullscreenModeChanged(bool fullscreen) override {
     BRTab* tab = tab_;
     [tab.delegate tab:tab fullscreenChanged:fullscreen];
@@ -173,6 +185,7 @@ class TabDelegateBridge : public TabClientDelegate {
   BOOL _closeWhenCreated;
   BRTabDialogView* _dialog;
   BRTabDialogView* _unresponsiveDialog;
+  BRTabDialogView* _externalProtocolDialog;
   BRSadTabView* _sadTab;
   BOOL _clientDetached;
   // Permission prompts of this tab; the first one is shown.
@@ -372,6 +385,52 @@ class TabDelegateBridge : public TabClientDelegate {
   [_delegate tabDidChangeState:self];
 }
 
+#pragma mark - External protocols
+
+// Chrome's "Open <app>?" question. Links to schemes no app handles do
+// nothing, as in Chrome.
+- (void)askOpenExternalProtocol:(const brouk::ExternalProtocolRequest&)request
+                           done:(brouk::ExternalProtocolDone)done {
+  NSURL* url = [NSURL URLWithString:ToNSString(request.url)];
+  NSURL* app =
+      url ? [NSWorkspace.sharedWorkspace URLForApplicationToOpenURL:url] : nil;
+  if (!app) {
+    done(false, false);
+    return;
+  }
+  NSString* appName = [[NSFileManager.defaultManager displayNameAtPath:app.path]
+      stringByDeletingPathExtension];
+  NSString* origin = ToNSString(request.origin);
+  NSString* message =
+      origin.length
+          ? [NSString
+                stringWithFormat:@"%@ wants to open this application.", origin]
+          : @"A link wants to open this application.";
+  NSString* checkbox =
+      request.can_remember
+          ? [NSString stringWithFormat:@"Always allow %@ to open %@: links "
+                                       @"in the associated app",
+                                       origin, ToNSString(request.scheme)]
+          : nil;
+  __block brouk::ExternalProtocolDone answer = std::move(done);
+  [_externalProtocolDialog dismiss];
+  _externalProtocolDialog = [[BRTabDialogView alloc]
+      initWithTitle:[NSString stringWithFormat:@"Open %@?", appName]
+            message:message
+            okTitle:[NSString stringWithFormat:@"Open %@", appName]
+        cancelTitle:@"Cancel"
+         promptText:nil
+      checkboxTitle:checkbox
+         completion:^(BOOL ok, NSString*, BOOL always) {
+           answer(ok, ok && always);
+         }];
+  _externalProtocolDialog.frame = _containerView.bounds;
+  [_containerView addSubview:_externalProtocolDialog];
+  if (!_containerView.hidden) {
+    [_externalProtocolDialog focus];
+  }
+}
+
 #pragma mark - Permission prompts
 
 - (void)showPermissionPrompt:(const brouk::PermissionRequest&)request
@@ -450,23 +509,23 @@ class TabDelegateBridge : public TabClientDelegate {
   __block brouk::UnresponsiveDone answer = std::move(done);
   __weak BRTab* weakSelf = self;
   _unresponsiveDialog = [[BRTabDialogView alloc]
-         initWithTitle:@"Page unresponsive"
-               message:[NSString stringWithFormat:
-                                     @"“%@” is not responding. You can wait "
-                                     @"for it to become responsive or exit "
-                                     @"the page.",
-                                     name]
-               okTitle:@"Wait"
-           cancelTitle:@"Exit page"
-            promptText:nil
-      offerSuppression:NO
-            completion:^(BOOL ok, NSString*, BOOL) {
-              BRTab* strongSelf = weakSelf;
-              if (strongSelf) {
-                strongSelf->_unresponsiveDialog = nil;
-              }
-              answer(/*exit_page=*/!ok);
-            }];
+      initWithTitle:@"Page unresponsive"
+            message:[NSString stringWithFormat:
+                                  @"“%@” is not responding. You can wait "
+                                  @"for it to become responsive or exit "
+                                  @"the page.",
+                                  name]
+            okTitle:@"Wait"
+        cancelTitle:@"Exit page"
+         promptText:nil
+      checkboxTitle:nil
+         completion:^(BOOL ok, NSString*, BOOL) {
+           BRTab* strongSelf = weakSelf;
+           if (strongSelf) {
+             strongSelf->_unresponsiveDialog = nil;
+           }
+           answer(/*exit_page=*/!ok);
+         }];
   _unresponsiveDialog.frame = _containerView.bounds;
   [_containerView addSubview:_unresponsiveDialog];
   if (!_containerView.hidden) {

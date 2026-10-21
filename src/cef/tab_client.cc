@@ -8,8 +8,10 @@
 
 #include "cef/context_menu_model.h"
 #include "cef/permission_mapping.h"
+#include "cef/profile_prefs.h"
 #include "core/address_input.h"
 #include "core/crash_error_code.h"
+#include "core/external_protocol.h"
 #include "include/cef_image.h"
 #include "include/cef_parser.h"
 #include "include/cef_request_context.h"
@@ -635,6 +637,62 @@ void TabClient::EndOneTimeGrants(const CefRefPtr<CefBrowser>& browser,
     }
     return true;
   });
+}
+
+bool TabClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
+                               CefRefPtr<CefFrame> frame,
+                               CefRefPtr<CefRequest> request,
+                               bool /*user_gesture*/,
+                               bool /*is_redirect*/) {
+  CEF_REQUIRE_UI_THREAD();
+  std::string url = request->GetURL().ToString();
+  switch (ClassifyScheme(url)) {
+    case SchemeHandling::kBrowser:
+      return false;
+    case SchemeHandling::kBlocked:
+      return true;  // Cancel silently, as Chrome does.
+    case SchemeHandling::kExternal:
+      break;
+  }
+  // Another app's link: never loaded in the tab (the page stays as it is);
+  // opened after asking, unless the user always allowed it for this site.
+  if (!delegate_ || asking_external_protocol_) {
+    return true;
+  }
+  std::string origin = OriginOf(frame->GetURL().ToString());
+  if (origin == "null") {
+    origin.clear();  // Opaque origin (about:blank, data:): nothing to remember.
+  }
+  std::string scheme = SchemeOf(url);
+  CefRefPtr<CefRequestContext> context =
+      browser->GetHost()->GetRequestContext();
+  std::string key = ExternalProtocolAllowKey(origin, scheme);
+  if (!origin.empty() && IsExternalProtocolAllowed(context, key)) {
+    delegate_->OpenExternalUrl(url);
+    return true;
+  }
+  ExternalProtocolRequest ask;
+  ask.url = url;
+  ask.scheme = scheme;
+  ask.origin = origin.empty() ? std::string() : OriginForPrompt(origin);
+  ask.can_remember = !origin.empty();
+  asking_external_protocol_ = true;
+  CefRefPtr<TabClient> self(this);
+  delegate_->AskOpenExternalProtocol(
+      ask, [self, context, key, url](bool open, bool always) {
+        CEF_REQUIRE_UI_THREAD();
+        self->asking_external_protocol_ = false;
+        if (!open) {
+          return;
+        }
+        if (always) {
+          AllowExternalProtocol(context, key);
+        }
+        if (self->delegate_) {
+          self->delegate_->OpenExternalUrl(url);
+        }
+      });
+  return true;
 }
 
 void TabClient::OnRenderProcessTerminated(CefRefPtr<CefBrowser> /*browser*/,
