@@ -206,7 +206,7 @@ class TabDelegateBridge : public TabClientDelegate {
 }
 
 - (CefRefPtr<CefClient>)client {
-  return _client;
+  return _client;  // Null once the browser has closed.
 }
 
 - (CefRefPtr<CefBrowser>)browser {
@@ -536,6 +536,9 @@ class TabDelegateBridge : public TabClientDelegate {
   _browser = nullptr;
   _client->DetachDelegate();
   _clientDetached = YES;
+  // Release CEF objects while CEF is still running: releasing them after
+  // CefShutdown is an error (CEF asserts in debug builds).
+  _client = nullptr;
   [_delegate tabDidClose:self];
 }
 

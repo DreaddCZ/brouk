@@ -1,0 +1,15 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>External protocols test</title>
+<style>body { font: 15px -apple-system, sans-serif; margin: 2em; } a { display: block; margin: .4em 0; }</style>
+<h1>External protocols (spec 012, item 14)</h1>
+<p>Each link should first ask before opening the external app, with an
+option to always allow this site (as in Chrome).</p>
+<a href="mailto:someone@example.com?subject=Brouk%20test">mailto: (Mail)</a>
+<a href="tel:+420123456789">tel: (FaceTime)</a>
+<a href="msteams:/l/chat/0/0">msteams: (Microsoft Teams, if installed)</a>
+<a href="slack://open">slack: (Slack, if installed)</a>
+<a href="zoommtg://zoom.us/join">zoommtg: (Zoom, if installed)</a>
+<script>
+  if (location.hash === '#tel') setTimeout(() => { location.href = 'tel:+420123456789'; }, 500);
+</script>

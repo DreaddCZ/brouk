@@ -19,6 +19,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)relaunched;
 // Cmd+Q / Quit menu: closes all windows, then quits CEF.
 - (void)tryToTerminateApplication;
+// After the message loop ended, before CefShutdown: drops every window, tab
+// and CEF object we still hold.
+- (void)releaseBrowserObjects;
 
 @end
 

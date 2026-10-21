@@ -184,6 +184,11 @@
   [self quitIfDone];
 }
 
+- (void)releaseBrowserObjects {
+  [_windows removeAllObjects];
+  _requestContext = nullptr;
+}
+
 - (void)quitIfDone {
   if (_quitting && _browserCount <= 0 && _windows.count == 0) {
     CefQuitMessageLoop();
