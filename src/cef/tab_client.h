@@ -23,7 +23,7 @@ struct PopupRequest {
 
 // Where the platform UI hosts a popup's browser.
 struct PopupHost {
-  CefWindowHandle parent_view = nullptr;
+  CefWindowHandle parent_view = kNullWindowHandle;
   CefRect bounds;
   CefRefPtr<CefClient> client;
 };
