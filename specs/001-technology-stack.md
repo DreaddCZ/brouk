@@ -1,6 +1,6 @@
 # 001 – Technology stack
 
-- **Status:** ready
+- **Status:** in-progress
 - **Priority:** P1
 - **Depends on:** none (every other spec depends on this one)
 
@@ -93,6 +93,11 @@ Update channel (stable by default), automatic install of updates (on by default)
 None for phase 1. Phase 2 (deferred): final choice of update feed hosting — see "Update process", point 4.
 
 ## Notes
+
+- 2026-10-21 (implementation start): pinned CEF 154.0.34 (Chromium 154.0.8037.98), the current stable build for macOS Intel, macOS Apple Silicon and Linux; the minimal binary distribution is enough (it contains headers, wrapper sources and the Release framework). Build tools are downloaded by `scripts/install_tools` into `.tools/` with checksums instead of Homebrew, because Homebrew no longer ships prebuilt packages for Intel Macs (building LLVM from source would take hours). See `docs/building.md`.
+- 2026-10-21: the app process cannot run under AddressSanitizer — the CEF framework traps at startup. Debug builds of the app use UndefinedBehaviorSanitizer only; the tests (everything testable without CEF) run under AddressSanitizer + UBSan.
+- 2026-10-21: Chromium requires each profile's data folder to be a direct child of its data root (`root_cache_path`) and fills that root with install-wide files. Chromium's data therefore lives in `~/Library/Application Support/Brouk/web/` (`web/<profile-id>/` per profile), separate from our own files in `profiles/<profile-id>/` (004). Deleting a profile (005) must remove both folders.
+- 2026-10-21: local builds are ad-hoc signed, so the signature changes with every build and macOS asks again for the keychain item "Chromium Safe Storage" (and later camera/microphone permissions). A stable self-signed local signing certificate would avoid this; proposed to the user, not decided.
 
 - 2026-10-21 (stack review): release cadence agreed (patch releases automatically, major releases after their PR is merged). Update feed hosting postponed to phase 2 — during the first weeks only the user tests the browser and reinstalls new versions manually. Spec set to `ready` for phase 1.
 

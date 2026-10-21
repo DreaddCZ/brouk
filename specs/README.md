@@ -25,7 +25,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 
 | ID | Title | Status | Priority |
 |---|---|---|---|
-| 001 | [Technology stack](001-technology-stack.md) | ready | P1 |
+| 001 | [Technology stack](001-technology-stack.md) | in-progress | P1 |
 | 002 | [Platform support](002-platform-support.md) | ready (macOS) | P1 |
 | 003 | [Browser UI](003-browser-ui.md) | ready | P1 |
 | 004 | [Configuration system](004-configuration.md) | ready | P1 |
