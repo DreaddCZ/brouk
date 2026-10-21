@@ -41,6 +41,7 @@ n/a
 - Linux: wanted at all? If yes, which phase?
 - Windows on ARM?
 - Distribution: direct download, Homebrew, Mac App Store, winget?
-- Auto-updates: needed from the first release?
 
 ## Notes
+
+- 2026-10-21: automatic, regular updates are required — the user does not want to maintain the app manually. Mechanism is defined in 001 ("Update process").

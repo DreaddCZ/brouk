@@ -40,3 +40,5 @@ Enable/disable addresses, enable/disable payment cards, require OS auth for card
 - Import from other browsers?
 
 ## Notes
+
+- 2026-10-21 (decision in 001): our own implementation (no Chrome autofill in CEF Alloy style); form detection via injected scripts, same storage approach as 008.

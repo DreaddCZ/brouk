@@ -1,6 +1,6 @@
 # web-browser
 
-A lightweight, fully configurable, multiplatform web browser based on Chromium, focused on work.
+A lightweight, fully configurable, multiplatform web browser based on Chromium (via CEF), focused on work.
 
 **Status:** early planning — requirements are being collected.
 

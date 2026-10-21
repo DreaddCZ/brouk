@@ -4,7 +4,7 @@ Guidance for Claude Code when working in this repository.
 
 ## Project
 
-A custom web browser built on Chromium. Goals:
+A custom web browser built on Chromium via CEF (Chromium Embedded Framework). Goals:
 
 - **Multiplatform** – macOS first, then Windows, mobile later (see `specs/002-platform-support.md`).
 - **Lightweight** – low memory and CPU footprint, fast startup, no bloat.
@@ -32,12 +32,18 @@ All features and requirements live in [`specs/`](specs/README.md).
 4. When starting a spec, set its status to `in-progress`; when finished, set it to `done` — in both the spec file and the index.
 5. Do not change a spec's goal, description or acceptance criteria without the user's approval. Add findings under "Notes" instead.
 
+## Decisions
+
+- **Base technology: CEF** with prebuilt binaries, Chrome bootstrap and **Alloy style** browsers for web content. Not a Chromium fork. Details and reasoning: `specs/001-technology-stack.md`.
+- Profiles, developer tools (beyond the stock DevTools frontend), password manager and autofill are **our own implementations**, not Chrome's.
+- The app **updates itself automatically**; CI picks up new CEF releases, builds, signs and publishes them.
+
 ## Open decisions
 
 These are not settled yet — do not assume an answer:
 
-- Base technology (e.g. a Chromium fork, CEF, or another Chromium-based embedding approach).
-- Implementation language(s) and UI toolkit.
+- UI shell: native per platform (Swift/AppKit) vs. HTML/TypeScript UI in CEF vs. hybrid.
+- Implementation language(s).
 - Build system and CI setup.
 - Configuration format and where settings are stored.
 

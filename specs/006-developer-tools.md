@@ -34,3 +34,5 @@ Dock position, remote debugging port (off by default).
 - Any extra developer features beyond Chromium DevTools (e.g. quick viewport switcher, cookie/header editor in toolbar)?
 
 ## Notes
+
+- 2026-10-21 (decision in 001): the user wants developer tools that differ from Chrome's. Plan: phase 1 ships the stock Chromium DevTools frontend included in CEF; our own tools are built on the Chrome DevTools Protocol and replace or extend panels step by step. The "Out of scope" line above should be revisited when this spec is detailed.

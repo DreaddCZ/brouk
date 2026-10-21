@@ -44,3 +44,5 @@ Offer to save (on/off), auto-fill vs. fill on click, generator rules, require OS
 - Breach / weak / reused password warnings?
 
 ## Notes
+
+- 2026-10-21 (decision in 001): with CEF Alloy style there is no Chrome password manager, so this is our own implementation: injected scripts detect login forms, secrets go to the OS keychain, save/fill prompts are our own UI.
