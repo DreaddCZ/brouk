@@ -1,5 +1,6 @@
 #import "platform/mac/browser_tab.h"
 
+#import "platform/mac/permission_prompt_view.h"
 #import "platform/mac/sad_tab_view.h"
 #import "platform/mac/tab_dialog_view.h"
 
@@ -40,6 +41,9 @@ NSString* ToNSString(const std::string& s) {
 - (void)handleUnresponsive:(brouk::UnresponsiveDone)done;
 - (void)handleResponsive;
 - (void)handleFindResult:(int)count active:(int)active final:(BOOL)final;
+- (void)showPermissionPrompt:(const brouk::PermissionRequest&)request
+                        done:(brouk::PermissionDone)done;
+- (void)dismissPermissionPrompt:(std::uint64_t)requestId;
 @end
 
 namespace brouk {
@@ -125,6 +129,13 @@ class TabDelegateBridge : public TabClientDelegate {
     BRTab* tab = tab_;
     [tab.delegate tab:tab downloadUpdated:info];
   }
+  void ShowPermissionPrompt(const PermissionRequest& request,
+                            PermissionDone done) override {
+    [tab_ showPermissionPrompt:request done:std::move(done)];
+  }
+  void DismissPermissionPrompt(std::uint64_t id) override {
+    [tab_ dismissPermissionPrompt:id];
+  }
   void OnFullscreenModeChanged(bool fullscreen) override {
     BRTab* tab = tab_;
     [tab.delegate tab:tab fullscreenChanged:fullscreen];
@@ -164,6 +175,8 @@ class TabDelegateBridge : public TabClientDelegate {
   BRTabDialogView* _unresponsiveDialog;
   BRSadTabView* _sadTab;
   BOOL _clientDetached;
+  // Permission prompts of this tab; the first one is shown.
+  NSMutableArray<BRPermissionPromptView*>* _permissionPrompts;
 }
 
 - (instancetype)initWithId:(brouk::TabId)tabId
@@ -174,6 +187,7 @@ class TabDelegateBridge : public TabClientDelegate {
     _title = @"";
     _url = @"";
     _findText = @"";
+    _permissionPrompts = [NSMutableArray array];
     _containerView = [[NSView alloc] initWithFrame:NSZeroRect];
     _containerView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     _bridge = std::make_unique<brouk::TabDelegateBridge>(self);
@@ -356,6 +370,56 @@ class TabDelegateBridge : public TabClientDelegate {
 - (void)handleAddress:(NSString*)url {
   _url = [url copy];
   [_delegate tabDidChangeState:self];
+}
+
+#pragma mark - Permission prompts
+
+- (void)showPermissionPrompt:(const brouk::PermissionRequest&)request
+                        done:(brouk::PermissionDone)done {
+  __weak BRTab* weakSelf = self;
+  BRPermissionPromptView* prompt = [[BRPermissionPromptView alloc]
+      initWithRequest:request
+                 done:[weakSelf, answer = std::move(done)](
+                          brouk::PermissionChoice choice) {
+                   answer(choice);
+                   [weakSelf showNextPermissionPrompt];
+                 }];
+  [_permissionPrompts addObject:prompt];
+  if (_permissionPrompts.count == 1) {
+    [self layOutPermissionPrompt:prompt];
+  }
+}
+
+// Places a prompt under the address bar, at the top left of the page.
+- (void)layOutPermissionPrompt:(BRPermissionPromptView*)prompt {
+  NSRect b = _containerView.bounds;
+  NSRect f = prompt.frame;
+  f.origin = NSMakePoint(100, b.size.height - f.size.height - 6);
+  prompt.frame = f;
+  prompt.autoresizingMask = NSViewMinYMargin | NSViewMaxXMargin;
+  [_containerView addSubview:prompt];
+}
+
+- (void)showNextPermissionPrompt {
+  NSIndexSet* gone =
+      [_permissionPrompts indexesOfObjectsPassingTest:^BOOL(
+                              BRPermissionPromptView* p, NSUInteger, BOOL*) {
+        return p.superview == nil;
+      }];
+  [_permissionPrompts removeObjectsAtIndexes:gone];
+  BRPermissionPromptView* next = _permissionPrompts.firstObject;
+  if (next && !next.superview) {
+    [self layOutPermissionPrompt:next];
+  }
+}
+
+- (void)dismissPermissionPrompt:(std::uint64_t)requestId {
+  for (BRPermissionPromptView* prompt in [_permissionPrompts copy]) {
+    if (prompt.requestId == requestId) {
+      [prompt dismiss];
+    }
+  }
+  [self showNextPermissionPrompt];
 }
 
 - (void)handleRendererGone:(brouk::RendererGoneReason)reason

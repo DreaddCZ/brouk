@@ -1,15 +1,18 @@
 #include "cef/tab_client.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "cef/context_menu_model.h"
+#include "cef/permission_mapping.h"
 #include "core/address_input.h"
 #include "core/crash_error_code.h"
 #include "include/cef_image.h"
 #include "include/cef_parser.h"
+#include "include/cef_request_context.h"
 #include "include/cef_values.h"
 #include "include/wrapper/cef_helpers.h"
 
@@ -154,7 +157,12 @@ void TabClient::OnAddressChange(CefRefPtr<CefBrowser> /*browser*/,
                                 CefRefPtr<CefFrame> frame,
                                 const CefString& url) {
   CEF_REQUIRE_UI_THREAD();
-  if (delegate_ && frame->IsMain()) {
+  if (!frame->IsMain()) {
+    return;
+  }
+  // "Allow this time" ends when the tab leaves the site.
+  EndOneTimeGrants(frame->GetBrowser(), OriginOf(url.ToString()));
+  if (delegate_) {
     delegate_->OnAddressChanged(url.ToString());
   }
 }
@@ -442,8 +450,9 @@ bool TabClient::DoClose(CefRefPtr<CefBrowser> /*browser*/) {
   return true;
 }
 
-void TabClient::OnBeforeClose(CefRefPtr<CefBrowser> /*browser*/) {
+void TabClient::OnBeforeClose(CefRefPtr<CefBrowser> browser) {
   CEF_REQUIRE_UI_THREAD();
+  EndOneTimeGrants(browser, /*current_origin=*/"");
   if (delegate_) {
     delegate_->OnBrowserClosed();
   }
@@ -457,6 +466,175 @@ void TabClient::OnLoadingStateChange(CefRefPtr<CefBrowser> /*browser*/,
   if (delegate_) {
     delegate_->OnLoadingStateChanged(is_loading, can_go_back, can_go_forward);
   }
+}
+
+bool TabClient::OnShowPermissionPrompt(
+    CefRefPtr<CefBrowser> browser,
+    uint64_t prompt_id,
+    const CefString& requesting_origin,
+    uint32_t requested_permissions,
+    CefRefPtr<CefPermissionPromptCallback> callback) {
+  CEF_REQUIRE_UI_THREAD();
+  if (!delegate_) {
+    return false;  // Default for Alloy style: ignore.
+  }
+  // Chromium asks only when there is no stored decision for the site.
+  PermissionRequest request;
+  request.id = prompt_id;
+  request.origin = OriginForPrompt(requesting_origin.ToString());
+  request.kinds = KindsFromPromptMask(requested_permissions);
+  std::string origin = OriginOf(requesting_origin.ToString());
+  CefRefPtr<TabClient> self(this);
+  std::vector<PermissionKind> kinds = request.kinds;
+  delegate_->ShowPermissionPrompt(request, [self, browser, callback, origin,
+                                            kinds](PermissionChoice choice) {
+    CEF_REQUIRE_UI_THREAD();
+    switch (choice) {
+      case PermissionChoice::kAllow:
+        // Chromium remembers an accepted prompt as a site setting.
+        callback->Continue(CEF_PERMISSION_RESULT_ACCEPT);
+        break;
+      case PermissionChoice::kAllowOnce:
+        callback->Continue(CEF_PERMISSION_RESULT_ACCEPT);
+        self->RecordOneTimeGrants(browser, origin, kinds,
+                                  /*stored_in_content_settings=*/true);
+        break;
+      case PermissionChoice::kBlock:
+        callback->Continue(CEF_PERMISSION_RESULT_DENY);
+        break;
+      case PermissionChoice::kDismiss:
+        callback->Continue(CEF_PERMISSION_RESULT_DISMISS);
+        break;
+    }
+  });
+  return true;
+}
+
+void TabClient::OnDismissPermissionPrompt(
+    CefRefPtr<CefBrowser> /*browser*/,
+    uint64_t prompt_id,
+    cef_permission_request_result_t /*result*/) {
+  CEF_REQUIRE_UI_THREAD();
+  if (delegate_) {
+    delegate_->DismissPermissionPrompt(prompt_id);
+  }
+}
+
+bool TabClient::OnRequestMediaAccessPermission(
+    CefRefPtr<CefBrowser> browser,
+    CefRefPtr<CefFrame> /*frame*/,
+    const CefString& requesting_origin,
+    uint32_t requested_permissions,
+    CefRefPtr<CefMediaAccessCallback> callback) {
+  CEF_REQUIRE_UI_THREAD();
+  if (!delegate_) {
+    return false;  // Default for Alloy style: deny.
+  }
+  std::string origin = OriginOf(requesting_origin.ToString());
+  std::vector<PermissionKind> kinds = KindsFromMediaMask(requested_permissions);
+  CefRefPtr<CefRequestContext> context =
+      browser->GetHost()->GetRequestContext();
+
+  // Camera and microphone use the site's stored decision (shared with
+  // Chromium's own permission checks); screen sharing always asks.
+  if (IsRemembered(kinds)) {
+    bool all_allowed = true;
+    for (PermissionKind kind : kinds) {
+      std::optional<cef_content_setting_types_t> type = ContentSettingFor(kind);
+      cef_content_setting_values_t value =
+          type ? context->GetContentSetting(origin, origin, *type)
+               : CEF_CONTENT_SETTING_VALUE_DEFAULT;
+      if (value == CEF_CONTENT_SETTING_VALUE_BLOCK) {
+        callback->Cancel();
+        return true;
+      }
+      if (value != CEF_CONTENT_SETTING_VALUE_ALLOW &&
+          !HasOneTimeGrant(origin, kind)) {
+        all_allowed = false;
+      }
+    }
+    if (all_allowed) {
+      callback->Continue(requested_permissions);
+      return true;
+    }
+  }
+
+  PermissionRequest request;
+  request.id = next_media_prompt_id_++;
+  request.origin = OriginForPrompt(requesting_origin.ToString());
+  request.kinds = kinds;
+  CefRefPtr<TabClient> self(this);
+  delegate_->ShowPermissionPrompt(
+      request, [self, browser, context, callback, origin, kinds,
+                requested_permissions](PermissionChoice choice) {
+        CEF_REQUIRE_UI_THREAD();
+        switch (choice) {
+          case PermissionChoice::kAllow:
+          case PermissionChoice::kBlock: {
+            cef_content_setting_values_t value =
+                choice == PermissionChoice::kAllow
+                    ? CEF_CONTENT_SETTING_VALUE_ALLOW
+                    : CEF_CONTENT_SETTING_VALUE_BLOCK;
+            for (PermissionKind kind : kinds) {
+              if (auto type = ContentSettingFor(kind)) {
+                context->SetContentSetting(origin, origin, *type, value);
+              }
+            }
+            if (choice == PermissionChoice::kAllow) {
+              callback->Continue(requested_permissions);
+            } else {
+              callback->Cancel();
+            }
+            break;
+          }
+          case PermissionChoice::kAllowOnce:
+            self->RecordOneTimeGrants(browser, origin, kinds,
+                                      /*stored_in_content_settings=*/false);
+            callback->Continue(requested_permissions);
+            break;
+          case PermissionChoice::kDismiss:
+            callback->Cancel();
+            break;
+        }
+      });
+  return true;
+}
+
+void TabClient::RecordOneTimeGrants(const CefRefPtr<CefBrowser>& /*browser*/,
+                                    const std::string& origin,
+                                    const std::vector<PermissionKind>& kinds,
+                                    bool stored_in_content_settings) {
+  for (PermissionKind kind : kinds) {
+    one_time_grants_.push_back({origin, kind, stored_in_content_settings});
+  }
+}
+
+bool TabClient::HasOneTimeGrant(const std::string& origin,
+                                PermissionKind kind) const {
+  return std::ranges::any_of(one_time_grants_, [&](const OneTimeGrant& g) {
+    return g.origin == origin && g.kind == kind;
+  });
+}
+
+void TabClient::EndOneTimeGrants(const CefRefPtr<CefBrowser>& browser,
+                                 const std::string& current_origin) {
+  if (one_time_grants_.empty()) {
+    return;
+  }
+  CefRefPtr<CefRequestContext> context =
+      browser->GetHost()->GetRequestContext();
+  std::erase_if(one_time_grants_, [&](const OneTimeGrant& grant) {
+    if (!current_origin.empty() && grant.origin == current_origin) {
+      return false;
+    }
+    if (grant.stored_in_content_settings) {
+      if (auto type = ContentSettingFor(grant.kind)) {
+        context->SetContentSetting(grant.origin, grant.origin, *type,
+                                   CEF_CONTENT_SETTING_VALUE_DEFAULT);
+      }
+    }
+    return true;
+  });
 }
 
 void TabClient::OnRenderProcessTerminated(CefRefPtr<CefBrowser> /*browser*/,

@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "core/dialog_spam_guard.h"
+#include "core/permissions.h"
 #include "include/cef_client.h"
 
 namespace brouk {
@@ -56,6 +57,14 @@ struct DownloadInfo {
   std::string full_path;  // Empty until the target path is known.
   int percent = -1;       // -1 if unknown.
 };
+
+// A site asks for permissions (camera, location, ...).
+struct PermissionRequest {
+  std::uint64_t id = 0;
+  std::string origin;  // For display, e.g. "meet.google.com".
+  std::vector<PermissionKind> kinds;
+};
+using PermissionDone = std::function<void(PermissionChoice choice)>;
 
 // Why a tab's renderer process is gone (crash page text depends on it).
 enum class RendererGoneReason { kCrashed, kKilled, kOutOfMemory, kOther };
@@ -115,6 +124,13 @@ class TabClientDelegate {
   // The page responds again: remove the question.
   virtual void OnRendererResponsive() = 0;
 
+  // Shows a permission prompt for this tab; `done` is called once with the
+  // user's choice, unless DismissPermissionPrompt comes first.
+  virtual void ShowPermissionPrompt(const PermissionRequest& request,
+                                    PermissionDone done) = 0;
+  // The request went away (navigation, tab closed): remove its prompt.
+  virtual void DismissPermissionPrompt(std::uint64_t id) = 0;
+
   // The page entered or left HTML full screen (video, presentation). The
   // platform makes the window full screen and hides the browser UI.
   virtual void OnFullscreenModeChanged(bool fullscreen) = 0;
@@ -151,6 +167,7 @@ class TabClient : public CefClient,
                   public CefKeyboardHandler,
                   public CefLifeSpanHandler,
                   public CefLoadHandler,
+                  public CefPermissionHandler,
                   public CefRequestHandler {
  public:
   // `delegate` must outlive this client or be detached with DetachDelegate().
@@ -172,6 +189,9 @@ class TabClient : public CefClient,
   CefRefPtr<CefKeyboardHandler> GetKeyboardHandler() override { return this; }
   CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
   CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
+  CefRefPtr<CefPermissionHandler> GetPermissionHandler() override {
+    return this;
+  }
   CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
 
   // CefContextMenuHandler:
@@ -262,6 +282,24 @@ class TabClient : public CefClient,
                             bool can_go_back,
                             bool can_go_forward) override;
 
+  // CefPermissionHandler:
+  bool OnRequestMediaAccessPermission(
+      CefRefPtr<CefBrowser> browser,
+      CefRefPtr<CefFrame> frame,
+      const CefString& requesting_origin,
+      uint32_t requested_permissions,
+      CefRefPtr<CefMediaAccessCallback> callback) override;
+  bool OnShowPermissionPrompt(
+      CefRefPtr<CefBrowser> browser,
+      uint64_t prompt_id,
+      const CefString& requesting_origin,
+      uint32_t requested_permissions,
+      CefRefPtr<CefPermissionPromptCallback> callback) override;
+  void OnDismissPermissionPrompt(
+      CefRefPtr<CefBrowser> browser,
+      uint64_t prompt_id,
+      cef_permission_request_result_t result) override;
+
   // CefRequestHandler:
   void OnRenderProcessTerminated(CefRefPtr<CefBrowser> browser,
                                  TerminationStatus status,
@@ -273,6 +311,23 @@ class TabClient : public CefClient,
   void OnRenderProcessResponsive(CefRefPtr<CefBrowser> browser) override;
 
  private:
+  // "Allow this time": a grant that ends when the tab leaves the site.
+  struct OneTimeGrant {
+    std::string origin;
+    PermissionKind kind;
+    // Chromium stored it as a site setting, which must be reset afterwards.
+    bool stored_in_content_settings;
+  };
+  void RecordOneTimeGrants(const CefRefPtr<CefBrowser>& browser,
+                           const std::string& origin,
+                           const std::vector<PermissionKind>& kinds,
+                           bool stored_in_content_settings);
+  // Ends one-time grants for origins other than `current_origin` (all of
+  // them if empty).
+  void EndOneTimeGrants(const CefRefPtr<CefBrowser>& browser,
+                        const std::string& current_origin);
+  bool HasOneTimeGrant(const std::string& origin, PermissionKind kind) const;
+
   void CopyImageAt(const CefRefPtr<CefBrowser>& browser,
                    const std::string& url);
 
@@ -289,6 +344,9 @@ class TabClient : public CefClient,
   std::set<std::string> save_as_urls_;
   // Reserved download paths by download id, released when it ends.
   std::map<std::uint32_t, std::string> download_paths_;
+  std::vector<OneTimeGrant> one_time_grants_;
+  // Ids for media prompts (CEF's own prompt ids start at 1 and grow).
+  std::uint64_t next_media_prompt_id_ = 1ULL << 62;
   DialogSpamGuard dialog_guard_;
   // The dialog waiting for the user's answer, if any.
   CefRefPtr<CefJSDialogCallback> pending_dialog_;

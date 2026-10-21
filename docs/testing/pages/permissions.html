@@ -1,0 +1,36 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Permissions test</title>
+<style>body { font: 15px -apple-system, sans-serif; margin: 2em; } button { font-size: 15px; margin: .3em; } video { width: 320px; background: #222; }</style>
+<h1>Permissions (spec 012, item 3)</h1>
+<p>Open this page over http://localhost (see docs/testing/README.md) — sites
+must be secure (https or localhost) to ask for these permissions.</p>
+<button id="cam">Camera + microphone</button>
+<button id="screen">Share screen</button>
+<button id="geo">Location</button>
+<button id="notif">Notifications</button>
+<button id="clip">Read clipboard</button>
+<div><video id="video" autoplay muted playsinline></video></div>
+<pre id="log"></pre>
+<script>
+  const log = (t) => { document.getElementById('log').textContent += t + '\n'; };
+  const show = (stream) => { document.getElementById('video').srcObject = stream; };
+  const run = {
+    cam: () => navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+        .then((s) => { show(s); log('camera+mic: allowed'); }, (e) => log('camera+mic: ' + e.name)),
+    screen: () => navigator.mediaDevices.getDisplayMedia({ video: true })
+        .then((s) => { show(s); log('screen: allowed'); }, (e) => log('screen: ' + e.name)),
+    geo: () => navigator.geolocation.getCurrentPosition(
+        (p) => log('location: ' + p.coords.latitude.toFixed(2) + ', ' + p.coords.longitude.toFixed(2)),
+        (e) => log('location: error ' + e.code + ' ' + e.message)),
+    notif: () => Notification.requestPermission().then((r) => {
+        log('notifications: ' + r);
+        if (r === 'granted') new Notification('Hello from Brouk', { body: 'Click me to focus the tab.' });
+    }),
+    clip: () => navigator.clipboard.readText().then((t) => log('clipboard: ' + JSON.stringify(t.slice(0, 40))),
+        (e) => log('clipboard: ' + e.name)),
+  };
+  for (const id of Object.keys(run)) document.getElementById(id).onclick = run[id];
+  const auto = location.hash.slice(1);
+  if (run[auto]) setTimeout(run[auto], 500);
+</script>

@@ -10,6 +10,8 @@ set(BROUK_CORE_SOURCES
   dialog_spam_guard.h
   download_paths.cc
   download_paths.h
+  permissions.cc
+  permissions.h
   tab_strip_model.cc
   tab_strip_model.h
   url_display.cc

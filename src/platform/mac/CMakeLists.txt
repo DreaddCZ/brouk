@@ -26,6 +26,8 @@ add_executable(brouk_app
   find_bar.h
   find_bar.mm
   main.mm
+  permission_prompt_view.h
+  permission_prompt_view.mm
   sad_tab_view.h
   sad_tab_view.mm
   tab_dialog_view.h
@@ -35,7 +37,8 @@ add_executable(brouk_app
 )
 brouk_target_options(brouk_app CEF APP)
 target_link_libraries(brouk_app PRIVATE brouk_cef brouk_core
-  "-framework AppKit" "-framework Cocoa" "-framework IOSurface")
+  "-framework AppKit" "-framework AVFoundation" "-framework Cocoa"
+  "-framework IOSurface")
 set_target_properties(brouk_app PROPERTIES
   OUTPUT_NAME "${APP_EXECUTABLE_NAME}"
   RUNTIME_OUTPUT_DIRECTORY "${APP_BUNDLE}/Contents/MacOS")

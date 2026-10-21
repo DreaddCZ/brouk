@@ -23,6 +23,7 @@ add_executable(brouk_core_tests
   core/crash_error_code_test.cc
   core/dialog_spam_guard_test.cc
   core/download_paths_test.cc
+  core/permissions_test.cc
   core/tab_strip_model_test.cc
   core/url_display_test.cc
   core/zoom_test.cc
