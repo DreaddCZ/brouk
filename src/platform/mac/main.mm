@@ -1,0 +1,67 @@
+// Entry point of the browser (main) process on macOS.
+
+#import <Cocoa/Cocoa.h>
+
+#import "platform/mac/app_delegate.h"
+#import "platform/mac/data_paths.h"
+
+#include "brouk/app_info.h"
+#include "cef/browser_app.h"
+#include "include/cef_app.h"
+#include "include/wrapper/cef_library_loader.h"
+
+int main(int argc, char* argv[]) {
+  // The CEF framework is loaded at runtime, as the macOS sandbox requires.
+  CefScopedLibraryLoader library_loader;
+  if (!library_loader.LoadInMain()) {
+    return 1;
+  }
+
+  CefMainArgs main_args(argc, argv);
+
+  @autoreleasepool {
+    // Must run before anything touches NSApp, so NSApp is a BRApplication.
+    [BRApplication sharedApplication];
+    if (![NSApp isKindOfClass:[BRApplication class]]) {
+      return 1;
+    }
+
+    BRAppDelegate* delegate = [[BRAppDelegate alloc] init];
+    NSApp.delegate = delegate;
+
+    CefSettings settings;
+#if !defined(CEF_USE_SANDBOX)
+    settings.no_sandbox = true;
+#endif
+    // Chromium's data lives in its own folder (see data_paths.h).
+    CefString(&settings.root_cache_path) =
+        brouk::mac::WebDataRootDirectory().UTF8String;
+    NSString* helper =
+        [NSString stringWithFormat:@"%@/%s Helper.app/Contents/MacOS/%s Helper",
+                                   NSBundle.mainBundle.privateFrameworksPath,
+                                   brouk::kAppName, brouk::kAppName];
+    CefString(&settings.browser_subprocess_path) = helper.UTF8String;
+#if defined(NDEBUG)
+    settings.log_severity = LOGSEVERITY_WARNING;
+#endif
+
+    __weak BRAppDelegate* weak_delegate = delegate;
+    brouk::BrowserApp::Callbacks callbacks;
+    callbacks.on_context_initialized = [weak_delegate] {
+      [weak_delegate cefContextInitialized];
+    };
+    callbacks.on_relaunch = [weak_delegate] { [weak_delegate relaunched]; };
+    CefRefPtr<brouk::BrowserApp> app(new brouk::BrowserApp(callbacks));
+
+    // Returns false also when another instance is already running; that
+    // instance gets OnAlreadyRunningAppRelaunch and opens a window.
+    if (!CefInitialize(main_args, settings, app, nullptr)) {
+      return CefGetExitCode();
+    }
+
+    // Runs until CefQuitMessageLoop() (after every browser has closed).
+    CefRunMessageLoop();
+    CefShutdown();
+  }
+  return 0;
+}
