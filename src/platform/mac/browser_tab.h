@@ -24,6 +24,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)tabCloseReady:(BRTab*)tab;
 - (void)tabDidClose:(BRTab*)tab;
 - (BOOL)tab:(BRTab*)tab handleUnhandledKeyEvent:(NSEvent*)event;
+- (void)tab:(BRTab*)tab
+        openURL:(NSString*)url
+    disposition:(brouk::OpenDisposition)disposition;
 @end
 
 @interface BRTab : NSObject

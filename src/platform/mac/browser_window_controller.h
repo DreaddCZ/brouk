@@ -17,6 +17,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)browserWindowDidCreateBrowser;
 - (void)browserWindowDidCloseBrowser;
 - (void)browserWindowWillClose:(BRBrowserWindowController*)controller;
+// "Open Link in New Window".
+- (void)openWindowWithURL:(NSString*)url;
 @end
 
 @interface BRBrowserWindowController : NSWindowController <NSWindowDelegate>

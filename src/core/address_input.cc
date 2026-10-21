@@ -252,8 +252,10 @@ std::string UrlFromSchemelessInput(std::string_view input) {
   return {};
 }
 
-std::string SearchUrl(std::string_view query,
-                      std::string_view search_template) {
+}  // namespace
+
+std::string BuildSearchUrl(std::string_view query,
+                           std::string_view search_template) {
   std::string url(search_template);
   std::size_t pos = url.find("%s");
   if (pos == std::string::npos) {
@@ -262,8 +264,6 @@ std::string SearchUrl(std::string_view query,
   url.replace(pos, 2, EncodeQueryComponent(query));
   return url;
 }
-
-}  // namespace
 
 std::string EncodeQueryComponent(std::string_view text) {
   static constexpr std::string_view kHex = "0123456789ABCDEF";
@@ -307,7 +307,8 @@ AddressInputResult ClassifyAddressInput(std::string_view input,
     }
   }
 
-  return {AddressInputResult::Kind::kSearch, SearchUrl(text, search_template)};
+  return {AddressInputResult::Kind::kSearch,
+          BuildSearchUrl(text, search_template)};
 }
 
 }  // namespace brouk

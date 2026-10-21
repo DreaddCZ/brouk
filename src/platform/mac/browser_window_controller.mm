@@ -413,6 +413,20 @@ NSButton* ToolbarButton(NSString* symbol,
   return [NSApp.mainMenu performKeyEquivalent:event];
 }
 
+- (void)tab:(BRTab*)opener
+        openURL:(NSString*)url
+    disposition:(brouk::OpenDisposition)disposition {
+  if (disposition == brouk::OpenDisposition::kNewWindow) {
+    [_owner openWindowWithURL:url];
+    return;
+  }
+  BOOL foreground = disposition == brouk::OpenDisposition::kNewForegroundTab;
+  BRTab* tab = [self makeTab];
+  _model->InsertFromOpener(tab.tabId, opener.tabId, foreground);
+  [tab createBrowserWithURL:url requestContext:[_owner requestContext]];
+  [self modelDidChange];
+}
+
 - (void)tabDidCreateBrowser:(BRTab*)tab {
   [_owner browserWindowDidCreateBrowser];
   for (NSString* key in [_pendingPopups allKeysForObject:tab]) {

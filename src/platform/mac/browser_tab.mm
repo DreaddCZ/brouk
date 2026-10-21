@@ -98,6 +98,21 @@ class TabDelegateBridge : public TabClientDelegate {
     [tab_ handleUnresponsive:std::move(done)];
   }
   void OnRendererResponsive() override { [tab_ handleResponsive]; }
+  void OpenUrl(const std::string& url, OpenDisposition disposition) override {
+    BRTab* tab = tab_;
+    [tab.delegate tab:tab openURL:ToNSString(url) disposition:disposition];
+  }
+  void CopyTextToClipboard(const std::string& text) override {
+    NSPasteboard* pasteboard = NSPasteboard.generalPasteboard;
+    [pasteboard clearContents];
+    [pasteboard setString:ToNSString(text) forType:NSPasteboardTypeString];
+  }
+  void CopyImageToClipboard(const std::vector<std::uint8_t>& png) override {
+    NSData* data = [NSData dataWithBytes:png.data() length:png.size()];
+    NSPasteboard* pasteboard = NSPasteboard.generalPasteboard;
+    [pasteboard clearContents];
+    [pasteboard setData:data forType:NSPasteboardTypePNG];
+  }
   void OnFindResult(int count, int active, bool final_update) override {
     [tab_ handleFindResult:count active:active final:final_update];
   }

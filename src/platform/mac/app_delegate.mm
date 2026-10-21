@@ -128,6 +128,13 @@
   return controller;
 }
 
+- (void)openWindowWithURL:(NSString*)url {
+  if (_quitting || !_requestContext) {
+    return;
+  }
+  [[self openWindow] openTabWithURL:url activate:YES];
+}
+
 - (IBAction)newWindow:(nullable id)sender {
   if (_quitting || !_requestContext) {
     return;

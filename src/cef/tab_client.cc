@@ -5,6 +5,8 @@
 #include <utility>
 #include <vector>
 
+#include "cef/context_menu_model.h"
+#include "core/address_input.h"
 #include "core/crash_error_code.h"
 #include "include/cef_image.h"
 #include "include/cef_parser.h"
@@ -18,16 +20,17 @@ namespace {
 // Favicons are drawn at 16 pt; 32 px covers Retina displays.
 constexpr std::uint32_t kFaviconMaxSize = 32;
 
-class FaviconCallback : public CefDownloadImageCallback {
+// Delivers a downloaded image as PNG at `scale` (2.0 for Retina favicons).
+class ImageCallback : public CefDownloadImageCallback {
  public:
   using Done = void (*)(const CefRefPtr<TabClient>&,
                         const std::string&,
                         const std::vector<std::uint8_t>&);
 
-  FaviconCallback(CefRefPtr<TabClient> client, Done done)
-      : client_(std::move(client)), done_(done) {}
-  FaviconCallback(const FaviconCallback&) = delete;
-  FaviconCallback& operator=(const FaviconCallback&) = delete;
+  ImageCallback(CefRefPtr<TabClient> client, Done done, float scale)
+      : client_(std::move(client)), done_(done), scale_(scale) {}
+  ImageCallback(const ImageCallback&) = delete;
+  ImageCallback& operator=(const ImageCallback&) = delete;
 
   // UI thread.
   void OnDownloadImageFinished(const CefString& image_url,
@@ -39,7 +42,7 @@ class FaviconCallback : public CefDownloadImageCallback {
       int width = 0;
       int height = 0;
       CefRefPtr<CefBinaryValue> data =
-          image->GetAsPNG(2.0f, /*with_transparency=*/true, width, height);
+          image->GetAsPNG(scale_, /*with_transparency=*/true, width, height);
       if (data && data->GetSize() > 0) {
         png.resize(data->GetSize());
         data->GetData(png.data(), png.size(), 0);
@@ -51,8 +54,9 @@ class FaviconCallback : public CefDownloadImageCallback {
  private:
   CefRefPtr<TabClient> client_;
   Done done_;
+  float scale_;
 
-  IMPLEMENT_REFCOUNTING(FaviconCallback);
+  IMPLEMENT_REFCOUNTING(ImageCallback);
 };
 
 }  // namespace
@@ -60,6 +64,90 @@ class FaviconCallback : public CefDownloadImageCallback {
 void TabClient::DetachDelegate() {
   CEF_REQUIRE_UI_THREAD();
   delegate_ = nullptr;
+}
+
+void TabClient::OnBeforeContextMenu(CefRefPtr<CefBrowser> browser,
+                                    CefRefPtr<CefFrame> /*frame*/,
+                                    CefRefPtr<CefContextMenuParams> params,
+                                    CefRefPtr<CefMenuModel> model) {
+  CEF_REQUIRE_UI_THREAD();
+  ContextMenuContext context =
+      ContextFromParams(params, browser->CanGoBack(), browser->CanGoForward());
+  FillMenuModel(model, BuildContextMenu(context));
+}
+
+bool TabClient::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
+                                     CefRefPtr<CefFrame> /*frame*/,
+                                     CefRefPtr<CefContextMenuParams> params,
+                                     int command_id,
+                                     EventFlags /*event_flags*/) {
+  CEF_REQUIRE_UI_THREAD();
+  std::optional<MenuCommand> command = CustomCommandForId(command_id);
+  if (!command || !delegate_) {
+    return false;  // Chromium's own command (back, copy, ...).
+  }
+  // URLs come from the page: they are only opened, copied or downloaded,
+  // which is what the user asked for by choosing the command.
+  std::string link = params->GetLinkUrl().ToString();
+  std::string source = params->GetSourceUrl().ToString();
+  switch (*command) {
+    case MenuCommand::kOpenLinkInNewTab:
+      delegate_->OpenUrl(link, OpenDisposition::kNewBackgroundTab);
+      break;
+    case MenuCommand::kOpenLinkInNewWindow:
+      delegate_->OpenUrl(link, OpenDisposition::kNewWindow);
+      break;
+    case MenuCommand::kOpenImageInNewTab:
+      delegate_->OpenUrl(source, OpenDisposition::kNewBackgroundTab);
+      break;
+    case MenuCommand::kCopyLinkAddress:
+      delegate_->CopyTextToClipboard(link);
+      break;
+    case MenuCommand::kCopyImageAddress:
+      delegate_->CopyTextToClipboard(source);
+      break;
+    case MenuCommand::kCopyImage:
+      CopyImageAt(browser, source);
+      break;
+    case MenuCommand::kSaveLinkAs:
+      save_as_urls_.insert(link);
+      browser->GetHost()->StartDownload(link);
+      break;
+    case MenuCommand::kSaveImageAs:
+      save_as_urls_.insert(source);
+      browser->GetHost()->StartDownload(source);
+      break;
+    case MenuCommand::kSearchForSelection:
+      delegate_->OpenUrl(BuildSearchUrl(params->GetSelectionText().ToString()),
+                         OpenDisposition::kNewForegroundTab);
+      break;
+    case MenuCommand::kInspect:
+      // Until the dev tools dock (006) exists, DevTools opens in its own
+      // window, with the clicked element selected.
+      browser->GetHost()->ShowDevTools(
+          CefWindowInfo(), nullptr, CefBrowserSettings(),
+          CefPoint(params->GetXCoord(), params->GetYCoord()));
+      break;
+    default:
+      return false;
+  }
+  return true;
+}
+
+void TabClient::CopyImageAt(const CefRefPtr<CefBrowser>& browser,
+                            const std::string& url) {
+  auto done = [](const CefRefPtr<TabClient>& client,
+                 const std::string& /*image_url*/,
+                 const std::vector<std::uint8_t>& png) {
+    if (client->delegate_ && !png.empty()) {
+      client->delegate_->CopyImageToClipboard(png);
+    }
+  };
+  // Full size (0 = no limit), from the cache when possible.
+  browser->GetHost()->DownloadImage(url, /*is_favicon=*/false,
+                                    /*max_image_size=*/0,
+                                    /*bypass_cache=*/false,
+                                    new ImageCallback(this, done, 1.0f));
 }
 
 void TabClient::OnAddressChange(CefRefPtr<CefBrowser> /*browser*/,
@@ -108,7 +196,7 @@ void TabClient::DownloadFavicon(const CefRefPtr<CefBrowser>& browser,
   };
   browser->GetHost()->DownloadImage(url, /*is_favicon=*/true, kFaviconMaxSize,
                                     /*bypass_cache=*/false,
-                                    new FaviconCallback(this, done));
+                                    new ImageCallback(this, done, 2.0f));
 }
 
 void TabClient::OnFindResult(CefRefPtr<CefBrowser> /*browser*/,
@@ -151,7 +239,7 @@ bool TabClient::OnJSDialog(CefRefPtr<CefBrowser> /*browser*/,
   // Chrome names the origin in the title, except for local files, which
   // have no meaningful origin ("This page says").
   std::string origin = origin_url.ToString();
-  if (!origin.empty() && origin.rfind("file:", 0) != 0) {
+  if (!origin.empty() && !origin.starts_with("file:")) {
     request.origin = CefFormatUrlForSecurityDisplay(origin_url).ToString();
   }
   request.message = message_text.ToString();
@@ -178,7 +266,7 @@ bool TabClient::OnBeforeUnloadDialog(CefRefPtr<CefBrowser> /*browser*/,
 }
 
 void TabClient::ShowDialog(const JsDialogRequest& request,
-                           CefRefPtr<CefJSDialogCallback> callback) {
+                           const CefRefPtr<CefJSDialogCallback>& callback) {
   pending_dialog_ = callback;
   CefRefPtr<TabClient> self(this);
   bool counts_for_spam = request.kind != JsDialogRequest::Kind::kBeforeUnload;

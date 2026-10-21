@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <functional>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -42,6 +43,9 @@ struct JsDialogRequest {
 // prompt text; `suppress_more` is the checkbox state.
 using JsDialogDone =
     std::function<void(bool ok, const std::string& input, bool suppress_more)>;
+
+// Where a link from the context menu opens (Chrome's choices).
+enum class OpenDisposition { kNewBackgroundTab, kNewForegroundTab, kNewWindow };
 
 // Why a tab's renderer process is gone (crash page text depends on it).
 enum class RendererGoneReason { kCrashed, kKilled, kOutOfMemory, kOther };
@@ -105,6 +109,11 @@ class TabClientDelegate {
   // the highlighted one; `final_update` is false while still searching.
   virtual void OnFindResult(int count, int active, bool final_update) = 0;
 
+  // Context menu actions that need the platform UI.
+  virtual void OpenUrl(const std::string& url, OpenDisposition disposition) = 0;
+  virtual void CopyTextToClipboard(const std::string& text) = 0;
+  virtual void CopyImageToClipboard(const std::vector<std::uint8_t>& png) = 0;
+
   // A key event the page did not handle, with the native event (NSEvent* on
   // macOS). Return true if the UI handled it (e.g. as a menu shortcut).
   virtual bool OnUnhandledKeyEvent(const CefKeyEvent& event,
@@ -114,6 +123,7 @@ class TabClientDelegate {
 // CefClient for one tab's browser. Translates CEF callbacks into calls on a
 // TabClientDelegate, so platform code never implements CEF interfaces itself.
 class TabClient : public CefClient,
+                  public CefContextMenuHandler,
                   public CefDisplayHandler,
                   public CefFindHandler,
                   public CefJSDialogHandler,
@@ -131,6 +141,9 @@ class TabClient : public CefClient,
   void DetachDelegate();
 
   // CefClient:
+  CefRefPtr<CefContextMenuHandler> GetContextMenuHandler() override {
+    return this;
+  }
   CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
   CefRefPtr<CefFindHandler> GetFindHandler() override { return this; }
   CefRefPtr<CefJSDialogHandler> GetJSDialogHandler() override { return this; }
@@ -138,6 +151,17 @@ class TabClient : public CefClient,
   CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
   CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
   CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
+
+  // CefContextMenuHandler:
+  void OnBeforeContextMenu(CefRefPtr<CefBrowser> browser,
+                           CefRefPtr<CefFrame> frame,
+                           CefRefPtr<CefContextMenuParams> params,
+                           CefRefPtr<CefMenuModel> model) override;
+  bool OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
+                            CefRefPtr<CefFrame> frame,
+                            CefRefPtr<CefContextMenuParams> params,
+                            int command_id,
+                            EventFlags event_flags) override;
 
   // CefDisplayHandler:
   void OnAddressChange(CefRefPtr<CefBrowser> browser,
@@ -212,15 +236,20 @@ class TabClient : public CefClient,
   void OnRenderProcessResponsive(CefRefPtr<CefBrowser> browser) override;
 
  private:
+  void CopyImageAt(const CefRefPtr<CefBrowser>& browser,
+                   const std::string& url);
+
   // Shows a dialog and answers `callback` once the user responds.
   void ShowDialog(const JsDialogRequest& request,
-                  CefRefPtr<CefJSDialogCallback> callback);
+                  const CefRefPtr<CefJSDialogCallback>& callback);
 
   void DownloadFavicon(const CefRefPtr<CefBrowser>& browser,
                        const std::string& url);
 
   TabClientDelegate* delegate_;  // Not owned. Null after DetachDelegate().
   std::string favicon_url_;      // URL of the favicon being shown.
+  // URLs from "Save Link/Image As…": their downloads ask where to save.
+  std::set<std::string> save_as_urls_;
   DialogSpamGuard dialog_guard_;
   // The dialog waiting for the user's answer, if any.
   CefRefPtr<CefJSDialogCallback> pending_dialog_;
