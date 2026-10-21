@@ -1,6 +1,6 @@
 # 006 – Developer tools
 
-- **Status:** draft
+- **Status:** ready
 - **Priority:** P1
 - **Depends on:** 001, 003, 004, 005, 010
 
@@ -21,7 +21,7 @@ Give web developers the full Chromium DevTools they know, plus our own tools for
 
 ### Dev tools toggle (per tab)
 
-- Dev tools are switched **on or off per tab** — not per profile group or profile. Every tab starts with them **off**, including tabs opened from a tab that has them on.
+- Dev tools are switched **on or off per tab** — not per profile group or profile. A new tab starts with them **off**, except a tab opened from another tab (a link, a popup such as a login window, or "open in new tab"): it **inherits** the opener tab's state.
 - A **toggle in the toolbar, next to the address bar** (on its right by default, or on its left — a setting), is **always displayed** and shows the current tab's state. Switching tabs updates it.
 - Turning the toggle **on** for a tab opens its dock and starts recording the tab's requests; request rules start to apply to that tab. Turning it **off** closes the dock, stops recording and stops request rules for that tab. Closing the dock (or its undocked window) turns the toggle off.
 - The state stays with the tab across navigations until the user switches it off or closes the tab.
@@ -64,7 +64,7 @@ Dock and DevTools
 
 Dev tools toggle
 - [ ] The toggle is always displayed next to the address bar, on its right by default; a setting moves it to the left.
-- [ ] Every new tab has dev tools off, including tabs opened from a tab with dev tools on.
+- [ ] A new tab not opened from another tab has dev tools off; a tab opened from another tab (link, popup, "open in new tab") has the same dev tools state as its opener.
 - [ ] Switching the toggle on or off affects only the current tab; other tabs, also of the same profile and window, keep their state.
 - [ ] The toggle shows the state of the current tab and updates when switching tabs.
 - [ ] Turning it on opens the dock; turning it off, or closing the dock or its undocked window, closes the dock and turns the toggle off.
@@ -134,6 +134,7 @@ None.
 - 2026-10-21 (decision in 001): the user wants developer tools that differ from Chrome's. Phase 1 ships the stock Chromium DevTools frontend included in CEF; our own tools are built on the Chrome DevTools Protocol and replace or extend panels step by step.
 - 2026-10-21 (developer tools review): own tools agreed — site data panel, token decoder, JSON viewer, request rules, and export of API calls for Postman/Bruno. Toolbar toggle next to the address bar; Chrome-like docking; our tools as tabs in the same dock; secrets in exports become variables; remote debugging off by default, localhost only, with an indicator.
 - 2026-10-21 (developer tools review): developer mode per profile replaced by a **per-tab** dev tools toggle — off by default, always displayed left or right of the address bar. Request rules apply only to tabs with dev tools on.
+- 2026-10-21 (developer tools review): a tab opened from another tab inherits its dev tools state; other new tabs start off. Spec set to `ready`.
 - CEF (checked against `include/cef_browser.h` and `cef_life_span_handler.h`, master 2026-10-20): `CefBrowserHost::ShowDevTools` opens DevTools in its own browser; with a client-provided parent view we place it ourselves, so docking, resizing and undocking are our native layout code. `OnBeforeDevToolsPopup` applies only to Chrome style.
 - CEF (`include/internal/cef_types.h`): remote debugging is `CefSettings.remote_debugging_port` (app-wide, set at startup) or the `remote-debugging-port` switch; hence global and restart-required. When a cache directory is set, the port is written to `<cache-dir>/DevToolsActivePort`.
 - The stock DevTools frontend cannot get our own context-menu items (e.g. "export" in its Network panel); that is why the Requests tool exists. Request capture uses the CDP Network domain and starts when the tab's dev tools are switched on (requests before that are not listed, as in Chrome).
