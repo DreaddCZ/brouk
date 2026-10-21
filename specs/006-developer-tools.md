@@ -2,37 +2,137 @@
 
 - **Status:** draft
 - **Priority:** P1
-- **Depends on:** 001
+- **Depends on:** 001, 003, 004, 005, 010
 
 ## Goal
 
-Give web developers the full developer tooling they know from Chrome and Firefox.
+Give web developers the full Chromium DevTools they know, plus our own tools for the work this browser is built for: debugging sites and APIs while signed in to many accounts in separate profiles — inspecting and clearing a site's data per profile, reading auth tokens, viewing JSON, changing requests on the fly, and taking API calls over to Postman or Bruno.
 
 ## Description
 
-Provide Chromium DevTools: elements inspector, console, sources/debugger, network, performance, memory, application/storage, device emulation and Lighthouse-style audits where available. Opened with standard shortcuts (`Cmd+Opt+I` on macOS, `F12`/`Ctrl+Shift+I` on Windows) and from the context menu ("Inspect").
+### Dev tools dock
+
+- Developer tools open in a **dock** attached to a tab. The dock has tabs: **Chromium DevTools** (the stock frontend included in CEF) and each of our own tools (below).
+- The dock can sit at the **bottom, right or left** of the page, or be **undocked into a separate window**, as in Chrome. It can be resized. The last position and size are remembered and used the next time the dock opens.
+- The dock belongs to its browser tab: each tab has its own dock state (open or closed, selected tool), and switching tabs shows that tab's dock. In a window with several profiles, a tab's dock always works with that tab's profile.
+- Opening:
+  - a **toolbar button next to the address bar** opens and closes the dock for the current tab, and shows when the dock is open;
+  - standard shortcuts: `Cmd+Opt+I` (open/close), `Cmd+Opt+J` (console), `Cmd+Opt+C` (pick an element) on macOS; `F12`, `Ctrl+Shift+I/J/C` on Windows — all remappable (003);
+  - "Inspect" in the page's context menu, which opens the Elements panel on the clicked element;
+  - the command palette (003).
+- Chromium DevTools provides: Elements, Console, Sources/debugger, Network, Performance, Memory, Application/storage, device/responsive emulation, and further panels such as Lighthouse or Recorder where the CEF build includes them.
+- Our internal HTML pages (settings, history, password manager, etc.) can be inspected the same way, to help develop the browser itself.
+
+### Developer mode (per profile)
+
+- Each profile has a **developer mode** setting. New profiles start with it **off**; the default profile created on first run too.
+- When it is on, the dock, shortcuts, "Inspect" menu item and request rules work in that profile's tabs.
+- When it is off: the toolbar button stays visible; clicking it offers to turn developer mode on for this profile. Shortcuts and the "Inspect" menu item do nothing / are not shown, and request rules are not applied.
+
+### Our own tools (tabs in the dock)
+
+Built as HTML/TypeScript pages (001) on top of the Chrome DevTools Protocol and CEF's request handling. They only read or change data of the tab's own profile.
+
+1. **Site data** — for the current site in the current profile: cookies (name, value, domain, path, expiry, flags), local and session storage, IndexedDB databases, cache storage and service workers. Cookies and storage entries can be viewed, edited, added and deleted; IndexedDB databases, cache and service workers can be deleted. **Clear site data** removes everything for the site in one action, after confirmation, without touching other sites or other profiles.
+2. **Tokens** — finds JWTs in the tab's request and response headers (e.g. `Authorization: Bearer`), cookies and storage, and accepts pasted tokens. Shows the decoded header and payload, expiry and issue times as local time and relative ("expires in 12 min", "expired 3 h ago"), and common claims such as issuer, audience, tenant, subject and scopes. Signatures are not verified, and this is shown. Tokens that are not JWTs are listed as not decodable. Tokens never leave the browser.
+3. **Requests** — a list of the tab's network requests with filters (type, method, status, text), defaulting to fetch/XHR. Requests can be selected and **exported** (see below). It also feeds the Tokens tool.
+4. **Request rules** — per-profile rules that change requests on the fly. A rule has a URL pattern (same syntax as link routing in 010: host, subdomain wildcard, path prefix) and one action: add/replace/remove a request header, add/replace/remove a response header, redirect to another URL, or block. Rules can be switched on and off one by one, and all rules of a profile can be paused at once. While any rule affected the current tab's page, the toolbar button shows an indicator, so changed behaviour is never invisible.
+5. **JSON viewer** — when a tab opens a JSON document (JSON content type, or a body that parses as JSON), it is shown as a formatted, collapsible tree with search, a raw/pretty switch, and copy of a value or its path. Large documents stay responsive. This works in normal tabs whether or not developer mode is on, and can be turned off in settings. The Requests tool uses the same viewer for response bodies.
+
+### Export API calls to Postman / Bruno
+
+- One or more selected requests from the Requests tool are exported as a **Postman Collection (format v2.1) JSON file**, which both Postman and Bruno can import.
+- Each request keeps its method, URL with query parameters, headers and body (JSON, form or raw). Request names are generated from method and path; requests are grouped in folders by host.
+- **Secrets become variables:** `Authorization` and `Cookie` headers and other secret-looking values (a configurable list of header names, e.g. `x-api-key`) are replaced by `{{variables}}`. The real values go into a separate **environment file**; when exporting, the user chooses whether to create it. Without it, the collection contains no secrets.
+- Each host is replaced by a `{{baseUrl…}}` variable defined in the environment file, so the collection can be pointed at another environment.
+
+### Remote debugging
+
+- Remote debugging (Chrome DevTools Protocol over a port, used by Playwright, Puppeteer and Chrome's `chrome://inspect`) is **off by default**.
+- It can be switched on by a global setting or by the `--remote-debugging-port` command-line flag. It applies to the whole app and needs a restart (004).
+- It listens on **localhost only**.
+- While it is on, every window shows a clear indicator in the toolbar, with the port and a warning that tabs of **all profiles**, including their logged-in sessions, can be controlled through it.
 
 ## Acceptance criteria
 
-- [ ] DevTools open via shortcut, menu and right-click "Inspect".
-- [ ] DevTools can be docked (bottom, side) or opened in a separate window.
+Dock and DevTools
+- [ ] With developer mode on, the dock opens and closes via the toolbar button, the shortcut, the command palette and right-click "Inspect"; "Inspect" selects the clicked element in Elements.
+- [ ] The dock can be placed at the bottom, right or left, or undocked into a separate window, and resized; the last position and size are used the next time it opens.
+- [ ] Each tab keeps its own dock state; switching tabs shows the dock of the newly selected tab.
+- [ ] In a window with tabs of several profiles, each tab's dock and tools work only with that tab's profile.
 - [ ] Elements, Console, Sources, Network, Performance, Memory and Application panels work.
 - [ ] Device/responsive emulation works.
-- [ ] Remote debugging can be enabled via a setting or command-line flag.
+- [ ] Internal HTML pages of the browser can be inspected.
+- [ ] Dock shortcuts can be remapped.
+
+Developer mode
+- [ ] Developer mode is a per-profile setting; new profiles have it off.
+- [ ] With developer mode off, shortcuts and "Inspect" do not open the dock and request rules are not applied in that profile's tabs; the toolbar button is visible and clicking it offers to turn developer mode on.
+- [ ] Turning developer mode on or off takes effect without a restart.
+
+Site data
+- [ ] Cookies and local/session storage of the current site can be viewed, edited, added and deleted; IndexedDB databases, cache storage and service workers can be deleted.
+- [ ] "Clear site data", after confirmation, removes all data of the current site in the current profile only; other sites and the same site in other profiles keep their data.
+
+Tokens
+- [ ] JWTs from request/response headers, cookies and storage of the current tab are listed and decoded; a pasted JWT is decoded too.
+- [ ] Expiry and issue times are shown as local time and relative time; expired tokens are marked.
+- [ ] The view states that signatures are not verified; non-JWT tokens are shown as not decodable.
+
+Requests and export
+- [ ] The Requests tool lists the tab's requests and can filter them by type, method, status and text.
+- [ ] Selected requests export to a Postman Collection v2.1 JSON file that imports without errors into current Postman and Bruno, keeping method, URL, query parameters, headers and body.
+- [ ] In the exported collection, `Authorization`, `Cookie` and configured secret headers are `{{variables}}`; the collection file contains no secret values.
+- [ ] The user can choose to also export an environment file with the secret values and base URLs.
+
+Request rules
+- [ ] A rule can add, replace or remove a request header, add, replace or remove a response header, redirect, or block, for URLs matching its pattern (010 syntax).
+- [ ] Rules belong to a profile, are stored in its settings (004), and never apply to tabs of other profiles.
+- [ ] Rules can be switched on and off individually, and all rules of a profile can be paused at once.
+- [ ] When a rule affected the current tab, the toolbar button shows an indicator.
+
+JSON viewer
+- [ ] A tab opening a JSON document shows it as a collapsible tree with search, raw/pretty switch, and copy of value and path.
+- [ ] A JSON document of 10 MB opens without freezing the window.
+- [ ] The JSON viewer can be turned off in settings.
+
+Remote debugging
+- [ ] Remote debugging is off by default and can be enabled by a setting (after restart) or by the command-line flag.
+- [ ] When enabled, it accepts connections only from localhost.
+- [ ] While it is enabled, every window shows an indicator with the port and the all-profiles warning.
 
 ## Out of scope
 
-- Building custom DevTools panels (possible later).
+- Adding panels inside the stock Chromium DevTools frontend; our tools live as separate tabs in the dock.
+- Rewriting the Chromium DevTools frontend.
+- Verifying token signatures.
+- Exporting native Bruno collection folders (Postman format covers both for now).
+- Restricting remote debugging to some profiles.
+- Moving cookies or sessions between profiles (would break profile isolation, 005).
 
 ## Configuration
 
-Dock position, remote debugging port (off by default).
+Per profile:
+- Developer mode (off).
+- Request rules (none).
+
+Global:
+- Dock position (bottom) and size; remembered automatically.
+- JSON viewer (on).
+- Secret header names for export (`Authorization`, `Cookie`, `x-api-key`, `api-key`, `x-auth-token`).
+- Remote debugging (off), port (9222) — restart required.
+- Shortcuts for opening the dock and individual tools (see 003).
 
 ## Open questions
 
-- Should DevTools be hidden by default for non-developers (a "developer mode" toggle)?
-- Any extra developer features beyond Chromium DevTools (e.g. quick viewport switcher, cookie/header editor in toolbar)?
+None.
 
 ## Notes
 
-- 2026-10-21 (decision in 001): the user wants developer tools that differ from Chrome's. Plan: phase 1 ships the stock Chromium DevTools frontend included in CEF; our own tools are built on the Chrome DevTools Protocol and replace or extend panels step by step. The "Out of scope" line above should be revisited when this spec is detailed.
+- 2026-10-21 (decision in 001): the user wants developer tools that differ from Chrome's. Phase 1 ships the stock Chromium DevTools frontend included in CEF; our own tools are built on the Chrome DevTools Protocol and replace or extend panels step by step.
+- 2026-10-21 (developer tools review): own tools agreed — site data panel, token decoder, JSON viewer, request rules, and export of API calls for Postman/Bruno. Toolbar button next to the address bar opens/closes the dock; developer mode per profile; Chrome-like docking; our tools as tabs in the same dock; secrets in exports become variables; remote debugging off by default, localhost only, with an indicator.
+- CEF (checked against `include/cef_browser.h` and `cef_life_span_handler.h`, master 2026-10-20): `CefBrowserHost::ShowDevTools` opens DevTools in its own browser; with a client-provided parent view we place it ourselves, so docking, resizing and undocking are our native layout code. `OnBeforeDevToolsPopup` applies only to Chrome style.
+- CEF (`include/internal/cef_types.h`): remote debugging is `CefSettings.remote_debugging_port` (app-wide, set at startup) or the `remote-debugging-port` switch; hence global and restart-required. When a cache directory is set, the port is written to `<cache-dir>/DevToolsActivePort`.
+- The stock DevTools frontend cannot get our own context-menu items (e.g. "export" in its Network panel); that is why the Requests tool exists. Request capture uses the CDP Network domain and, like Chrome, starts when the tool is attached; whether to record from tab open when developer mode is on can be decided during implementation if it costs little.
+- Request rules: header changes and redirects/blocking can likely be done in CEF's resource request handling (`CefResourceRequestHandler`), without the CDP Fetch domain; check the headers before choosing.
+- Verify during implementation: which extra panels (Lighthouse, Recorder) work in CEF's bundled frontend; whether Bruno imports a Postman environment file alongside the collection (if not, document how to set the variables in Bruno).
