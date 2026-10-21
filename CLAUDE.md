@@ -38,13 +38,14 @@ All features and requirements live in [`specs/`](specs/README.md).
 - Profiles, developer tools (beyond the stock DevTools frontend), password manager and autofill are **our own implementations**, not Chrome's.
 - **UI shell: hybrid** — native (Objective-C++/AppKit on macOS) for windows, tabs, toolbar, address bar, menus and the window picker; HTML/TypeScript pages in CEF for settings, history, password manager, profile manager and custom developer tools. Details: `specs/001-technology-stack.md`.
 - **Languages:** C++20 for the core, Objective-C++ (AppKit) for the macOS UI, TypeScript for the HTML pages. Swift only for a macOS API not reachable from Objective-C. No Rust. Details: `specs/001-technology-stack.md`.
-- The app **updates itself automatically**; CI picks up new CEF releases, builds, signs and publishes them.
+- **Build:** CMake + Ninja, pinned CEF version downloaded by script, `tsc` for TypeScript, GoogleTest and Node's test runner for tests.
+- **Phases:** phase 1 (now) — personal use, builds made locally on the user's Macs, CI runs only Linux core build and tests. Phase 2 — colleagues: signing, notarization, macOS CI, public update feed. Details: `specs/001-technology-stack.md`.
+- From phase 2, the app **updates itself automatically**; CI picks up new CEF releases, builds, signs and publishes them.
 
 ## Open decisions
 
 These are not settled yet — do not assume an answer:
 
-- Build system and CI setup.
 - Configuration format and where settings are stored.
 
 Once decided, record them here and in a dedicated spec.
@@ -55,6 +56,7 @@ Once decided, record them here and in a dedicated spec.
 - Same for macOS APIs that are new or recently changed: verify against the SDK headers.
 - Keep quality checks strict so mistakes surface immediately: compiler warnings as errors, sanitizers (AddressSanitizer, UndefinedBehaviorSanitizer) in debug/test builds and CI, and tests for every change.
 - Keep the build fast: small targets, incremental builds; avoid changes that force full rebuilds without need.
+- **Keep the core portable.** Everything except platform UI must build and pass its tests on Linux. Claude Code cloud sessions run on Linux and cannot build or run the macOS app, so core work is verified there; macOS UI work is done in a session on the user's Mac.
 - TypeScript pages: pin dependency versions; do not add new frameworks or libraries without the user's approval.
 
 ## Conventions

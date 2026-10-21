@@ -44,7 +44,20 @@ Platform-native webviews (e.g. WKWebView on macOS) are excluded because they are
   - **TypeScript** for the HTML pages, plain or with at most one long-established library, with pinned versions. No fast-changing frameworks.
   - Windows UI language/toolkit: decided when Windows work starts (core stays shared C++).
 
+- **Build system and tests** (decided 2026-10-21):
+  - **CMake + Ninja** (CEF's binary distribution and samples use CMake; Ninja keeps incremental builds fast).
+  - A script downloads the **pinned CEF version** and verifies its checksum, so every build uses the same CEF.
+  - TypeScript compiled with the standard TypeScript compiler (`tsc`) only, no bundler.
+  - Tests: **GoogleTest** for C++, **Node's built-in test runner** for TypeScript.
+  - The core (everything that is not platform UI) builds and passes its tests on **Linux** too, so Claude Code cloud sessions (Linux) and cheap Linux CI can work on and verify it. macOS UI work and macOS builds need a Mac.
+- **Phased build and release setup** (decided 2026-10-21):
+  - **Phase 1 — personal use (first weeks):** builds are made locally on the user's Macs (both architectures; the Intel build can also be cross-compiled on an Apple Silicon Mac). GitHub Actions runs only the Linux core build and tests (the repo is private and macOS CI minutes are expensive). No Apple Developer Program, notarization or public update feed yet; updating means rebuilding locally.
+  - **Phase 2 — colleagues:** when the user is satisfied, the browser is shared with colleagues. Then: Apple Developer Program membership for signing and notarization, macOS builds in CI (at least the macOS-specific part), a public update location (public repo or a separately hosted update feed — private-repo releases cannot be downloaded by the updater), and automatic updates as described below.
+
 ### Update process
+
+Applies from phase 2 (see above).
+
 
 Chromium ships a new stable release every ~4 weeks plus security fixes in between, and CEF follows with new builds. Staying current means:
 
@@ -55,11 +68,13 @@ Chromium ships a new stable release every ~4 weeks plus security fixes in betwee
 ## Acceptance criteria
 
 - [x] The base technology is chosen and recorded in this spec and in `CLAUDE.md`.
-- [ ] Implementation language(s), UI toolkit and build system are recorded in this spec and in `CLAUDE.md`.
+- [x] Implementation language(s), UI toolkit and build system are recorded in this spec and in `CLAUDE.md`.
 - [ ] A "hello world" build (CEF, Alloy style) runs on macOS and opens a web page.
-- [ ] CI builds, signs and notarizes the macOS app.
-- [ ] A new CEF stable release is picked up by CI without manual steps other than merging the update PR.
-- [ ] An installed app updates itself to a newer published version without user involvement beyond (optionally) a restart.
+- [ ] Phase 1: one documented command builds the app locally on a Mac, for Apple Silicon and for Intel.
+- [ ] Phase 1: GitHub Actions builds the core and runs its tests on Linux for every push/pull request.
+- [ ] Phase 2: CI builds, signs and notarizes the macOS app.
+- [ ] Phase 2: a new CEF stable release is picked up by CI without manual steps other than merging the update PR.
+- [ ] Phase 2: an installed app updates itself to a newer published version without user involvement beyond (optionally) a restart.
 
 ## Out of scope
 
@@ -72,10 +87,9 @@ Update channel (stable by default), automatic install of updates (on by default)
 
 ## Open questions
 
-- Build system (CMake is CEF's default).
 - Chrome extensions: support at all? (Limited in Alloy style.)
 - Release cadence: ship every CEF stable update, or batch them (security trade-off)?
-- Update feed hosting (GitHub Releases or own server).
+- Phase 2: update feed hosting (make the repo public, a separate public releases repo, or cloud storage).
 
 ## Notes
 
@@ -83,3 +97,4 @@ Update channel (stable by default), automatic install of updates (on by default)
 - CEF runtime styles: Chrome style provides the full Chrome UI layer; Alloy style provides less built-in functionality but more client callbacks and off-screen rendering. Styles are chosen per browser/window and can be mixed.
 - UI shell trade-offs considered: an all-HTML UI (Vivaldi-style) would share one UI across platforms but costs an extra renderer process per UI surface, makes overlays like the address bar dropdown awkward to layer, and does not feel native; an all-native UI needs every page written per platform. The hybrid keeps the always-visible parts native and shares the content-heavy pages.
 - Language trade-offs considered (2026-10-21): **Swift** changes yearly (Swift 6 strict concurrency, SwiftUI updates), which is where models produce outdated code, and its C++ interop is recent with little training data. **Rust** has the strongest compiler checks, but its CEF bindings are young, change with every CEF release and have little training data, its macOS UI crates change often, and builds are slower. **C++** risks memory bugs that compile but crash later; countered with strict warnings, sanitizers and tests in CI.
+- CI cost context (2026-10-21): the repo is private; GitHub counts macOS minutes at 10x against the included minutes (free plan: 2,000 min/month ≈ 200 macOS minutes), with macOS overage around $0.062/min. GitHub's Intel macOS runners end in fall 2027, so the Intel build is compiled on Apple Silicon.

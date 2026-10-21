@@ -22,8 +22,8 @@ Code and architecture should keep platform-specific parts isolated so Windows ca
 
 ## Acceptance criteria
 
-- [ ] macOS: runs natively on Apple Silicon (arm64) and Intel (x86_64) as two separate builds, each signed and notarized so it opens without security warnings.
-- [ ] Each macOS build updates itself from its own update feed; an Intel install never receives an Apple Silicon build and vice versa.
+- [ ] macOS: runs natively on Apple Silicon (arm64) and Intel (x86_64) as two separate builds. Phase 2 (sharing with colleagues, see 001): each build signed and notarized so it opens without security warnings.
+- [ ] Phase 2: each macOS build updates itself from its own update feed; an Intel install never receives an Apple Silicon build and vice versa.
 - [ ] Windows: builds and runs on Windows 10/11 x64 using the same feature set (phase 2).
 - [ ] Platform-specific code is kept in clearly separated modules.
 - [ ] User data (profiles, settings) uses each OS's standard app data location.
