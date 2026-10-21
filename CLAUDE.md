@@ -46,7 +46,7 @@ All features and requirements live in [`specs/`](specs/README.md).
 
 ## Open decisions
 
-None at the moment. When a new one comes up, list it here until it is decided, then record it under Decisions and in the relevant spec.
+- Phase 2 update feed hosting. Preferred, not final: a separate public releases repo (source repo stays private). See `specs/001-technology-stack.md`. When a new one comes up, list it here until it is decided, then record it under Decisions and in the relevant spec.
 
 ## Working with CEF and the code
 

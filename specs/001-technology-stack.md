@@ -1,6 +1,6 @@
 # 001 – Technology stack
 
-- **Status:** draft
+- **Status:** ready
 - **Priority:** P1
 - **Depends on:** none (every other spec depends on this one)
 
@@ -28,7 +28,7 @@ Platform-native webviews (e.g. WKWebView on macOS) are excluded because they are
 
 - **Engine:** CEF, using its prebuilt binary distributions (no Chromium source build).
 - **Runtime style:** Chrome bootstrap (the only bootstrap since CEF M128) with **Alloy style** browsers for web content. Chrome style would bring Chrome's own UI pieces (password prompts, autofill, profile UI) that would compete with ours.
-- **Profiles (005):** our own implementation. Each profile maps to its own CEF request context with its own storage directory (cookies, cache, local storage isolated). Profile management, switching and UI are ours — this also makes per-tab isolation (Firefox-style containers) possible.
+- **Profiles (005):** our own implementation. Each profile maps to its own CEF request context with its own storage directory (cookies, cache, local storage isolated). Profile management, switching and UI are ours — this also lets tabs of several profiles share one window (see 005).
 - **Developer tools (006):** phase 1 ships the standard Chromium DevTools frontend that CEF includes. Our own tooling is built on top of the Chrome DevTools Protocol (exposed by CEF) and replaces or extends panels step by step. Rewriting all of DevTools from scratch is not a goal.
 - **Password manager (008) and autofill (009):** our own implementation — injected scripts detect login/address forms; secrets are stored encrypted via the OS keychain (macOS Keychain, later Windows Credential Manager/DPAPI); save/fill prompts are our own UI.
 - **Updates:** the app updates itself automatically and regularly; the user never maintains it manually (see "Update process" below).
@@ -64,7 +64,9 @@ Chromium ships a new stable release every ~4 weeks plus security fixes in betwee
 
 1. **Automated CEF bump (CI):** a GitHub Actions workflow detects new CEF stable builds, updates the pinned CEF version, builds, runs tests, signs and notarizes the app — on macOS once for Apple Silicon and once for Intel (see 002). API breaks are fixed in a pull request (Claude Code can do this).
 2. **Automatic delivery to the user:** an in-app updater — Sparkle on macOS, WinSparkle or equivalent on Windows — checks a signed update feed and installs new versions in the background.
-3. **Evaluate** the CEF repository's new installer library (automatic CEF version management with background updates) before choosing the final updater; check its maturity first.
+3. **Release cadence:** every CEF patch release (mostly Chromium security fixes, no API change) is built and shipped automatically. Each major release (new Chromium version, ~every 4 weeks) is shipped as soon as its update PR — with any fixes for CEF API changes — is merged. No batching.
+4. **Update feed hosting:** decided at the start of phase 2. Preferred option (not final): a separate public "releases" repo holding only signed builds and the update feed (GitHub Releases, free); the source repo stays private. Alternatives: making the source repo public, or cloud storage (S3, Cloudflare R2).
+5. **Evaluate** the CEF repository's new installer library (automatic CEF version management with background updates) before choosing the final updater; check its maturity first.
 
 ## Acceptance criteria
 
@@ -88,10 +90,11 @@ Update channel (stable by default), automatic install of updates (on by default)
 
 ## Open questions
 
-- Release cadence: ship every CEF stable update, or batch them (security trade-off)?
-- Phase 2: update feed hosting (make the repo public, a separate public releases repo, or cloud storage).
+None for phase 1. Phase 2 (deferred): final choice of update feed hosting — see "Update process", point 4.
 
 ## Notes
+
+- 2026-10-21 (stack review): release cadence agreed (patch releases automatically, major releases after their PR is merged). Update feed hosting postponed to phase 2 — during the first weeks only the user tests the browser and reinstalls new versions manually. Spec set to `ready` for phase 1.
 
 - Superseded leaning (before 2026-10-21): Option A, a Chromium fork based on ungoogled-chromium's patch set.
 - CEF runtime styles: Chrome style provides the full Chrome UI layer; Alloy style provides less built-in functionality but more client callbacks and off-screen rendering. Styles are chosen per browser/window and can be mixed.
