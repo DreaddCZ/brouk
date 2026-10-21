@@ -1,0 +1,43 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Dialogs test</title>
+<style>
+  body { font: 15px -apple-system, sans-serif; margin: 2em; }
+  button { font-size: 15px; margin: 0.3em; }
+  #log { margin-top: 1em; white-space: pre-wrap; font-family: ui-monospace, monospace; }
+</style>
+<h1>JavaScript dialogs (spec 012)</h1>
+<p>Each button opens a dialog; the result is logged below. Adding
+<code>#alert</code>, <code>#confirm</code> or <code>#prompt</code> to the URL
+opens that dialog on load.</p>
+<button id="alert">alert()</button>
+<button id="confirm">confirm()</button>
+<button id="prompt">prompt()</button>
+<button id="spam">Three alerts in a row</button>
+<button id="long">Very long alert</button>
+<label><input type="checkbox" id="unload"> Ask before leaving (beforeunload)</label>
+<div id="log"></div>
+<script>
+  const log = (text) => {
+    document.getElementById('log').textContent += text + '\n';
+  };
+  const run = {
+    alert: () => { alert('Hello from alert()'); log('alert closed'); },
+    confirm: () => log('confirm returned ' + confirm('Do you confirm?')),
+    prompt: () => log('prompt returned ' +
+                      JSON.stringify(prompt('Your name?', 'Brouk'))),
+    spam: () => {
+      for (let i = 1; i <= 3; i++) { alert('Alert ' + i + ' of 3'); }
+      log('spam finished');
+    },
+    long: () => alert('Long text. '.repeat(400)),
+  };
+  for (const id of Object.keys(run)) {
+    document.getElementById(id).onclick = run[id];
+  }
+  document.getElementById('unload').onchange = (e) => {
+    window.onbeforeunload = e.target.checked ? (ev) => { ev.preventDefault(); } : null;
+  };
+  const auto = location.hash.slice(1);
+  if (run[auto]) { setTimeout(run[auto], 300); }
+</script>

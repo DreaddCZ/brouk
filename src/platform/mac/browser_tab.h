@@ -41,6 +41,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, readonly) BOOL canGoForward;
 // Close was requested (unload handlers may still be running).
 @property(nonatomic, readonly) BOOL isClosing;
+// A JavaScript dialog is waiting for the user in this tab.
+@property(nonatomic, readonly) BOOL hasDialog;
 // What the user typed in the address bar but has not submitted yet; kept per
 // tab like in Chrome.
 @property(nonatomic, copy, nullable) NSString* pendingAddressText;

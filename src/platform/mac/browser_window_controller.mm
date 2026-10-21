@@ -277,7 +277,9 @@ NSButton* ToolbarButton(NSString* symbol,
     return;
   }
   std::string display = brouk::FormatUrlForDisplay(tab.url.UTF8String);
-  if (display.empty() || tab.pendingAddressText) {
+  if (tab.hasDialog) {
+    [tab focusContent];  // Focuses the dialog.
+  } else if (display.empty() || tab.pendingAddressText) {
     [_addressField focusAndSelectAll];
   } else {
     [tab focusContent];

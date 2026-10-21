@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "include/cef_image.h"
+#include "include/cef_parser.h"
 #include "include/cef_values.h"
 #include "include/wrapper/cef_helpers.h"
 
@@ -107,6 +108,92 @@ void TabClient::DownloadFavicon(const CefRefPtr<CefBrowser>& browser,
   browser->GetHost()->DownloadImage(url, /*is_favicon=*/true, kFaviconMaxSize,
                                     /*bypass_cache=*/false,
                                     new FaviconCallback(this, done));
+}
+
+bool TabClient::OnJSDialog(CefRefPtr<CefBrowser> /*browser*/,
+                           const CefString& origin_url,
+                           JSDialogType dialog_type,
+                           const CefString& message_text,
+                           const CefString& default_prompt_text,
+                           CefRefPtr<CefJSDialogCallback> callback,
+                           bool& suppress_message) {
+  CEF_REQUIRE_UI_THREAD();
+  if (!delegate_ || dialog_guard_.IsSuppressed() || pending_dialog_) {
+    // Suppressing (rather than answering) lets Chromium detect dialog spam.
+    suppress_message = true;
+    return false;
+  }
+  JsDialogRequest request;
+  switch (dialog_type) {
+    case JSDIALOGTYPE_CONFIRM:
+      request.kind = JsDialogRequest::Kind::kConfirm;
+      break;
+    case JSDIALOGTYPE_PROMPT:
+      request.kind = JsDialogRequest::Kind::kPrompt;
+      break;
+    default:
+      request.kind = JsDialogRequest::Kind::kAlert;
+      break;
+  }
+  // Chrome names the origin in the title, except for local files, which
+  // have no meaningful origin ("This page says").
+  std::string origin = origin_url.ToString();
+  if (!origin.empty() && origin.rfind("file:", 0) != 0) {
+    request.origin = CefFormatUrlForSecurityDisplay(origin_url).ToString();
+  }
+  request.message = message_text.ToString();
+  request.default_prompt_text = default_prompt_text.ToString();
+  request.offer_suppression = dialog_guard_.ShouldOfferSuppression();
+  ShowDialog(request, callback);
+  return true;
+}
+
+bool TabClient::OnBeforeUnloadDialog(CefRefPtr<CefBrowser> /*browser*/,
+                                     const CefString& /*message_text*/,
+                                     bool is_reload,
+                                     CefRefPtr<CefJSDialogCallback> callback) {
+  CEF_REQUIRE_UI_THREAD();
+  if (!delegate_ || pending_dialog_) {
+    return false;
+  }
+  // Like Chrome, the page's own text is not shown (it could be misleading).
+  JsDialogRequest request;
+  request.kind = JsDialogRequest::Kind::kBeforeUnload;
+  request.is_reload = is_reload;
+  ShowDialog(request, callback);
+  return true;
+}
+
+void TabClient::ShowDialog(const JsDialogRequest& request,
+                           CefRefPtr<CefJSDialogCallback> callback) {
+  pending_dialog_ = callback;
+  CefRefPtr<TabClient> self(this);
+  bool counts_for_spam = request.kind != JsDialogRequest::Kind::kBeforeUnload;
+  delegate_->ShowJsDialog(
+      request, [self, callback, counts_for_spam](
+                   bool ok, const std::string& input, bool suppress_more) {
+        CEF_REQUIRE_UI_THREAD();
+        // Ignore answers to a dialog that was already reset by navigation.
+        if (self->pending_dialog_ != callback) {
+          return;
+        }
+        self->pending_dialog_ = nullptr;
+        if (counts_for_spam) {
+          self->dialog_guard_.OnDialogClosed(suppress_more);
+        }
+        callback->Continue(ok, input);
+      });
+}
+
+void TabClient::OnResetDialogState(CefRefPtr<CefBrowser> /*browser*/) {
+  CEF_REQUIRE_UI_THREAD();
+  dialog_guard_.Reset();
+  if (pending_dialog_) {
+    pending_dialog_ = nullptr;
+    if (delegate_) {
+      delegate_->DismissJsDialog();
+    }
+  }
 }
 
 bool TabClient::OnKeyEvent(CefRefPtr<CefBrowser> /*browser*/,

@@ -1,9 +1,12 @@
 #import "platform/mac/browser_tab.h"
 
+#import "platform/mac/tab_dialog_view.h"
+
 #include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "include/cef_browser.h"
@@ -28,6 +31,9 @@ NSString* ToNSString(const std::string& s) {
 - (void)handleFavicon:(NSImage*)image;
 - (void)handleCloseReady;
 - (void)handleBrowserClosed;
+- (void)showJsDialog:(const brouk::JsDialogRequest&)request
+                done:(brouk::JsDialogDone)done;
+- (void)dismissJsDialog;
 @end
 
 namespace brouk {
@@ -73,6 +79,11 @@ class TabDelegateBridge : public TabClientDelegate {
     BRTab* tab = tab_;
     [tab.delegate tab:tab popupAborted:popup_id];
   }
+  void ShowJsDialog(const JsDialogRequest& request,
+                    JsDialogDone done) override {
+    [tab_ showJsDialog:request done:std::move(done)];
+  }
+  void DismissJsDialog() override { [tab_ dismissJsDialog]; }
   void OnCloseReady() override { [tab_ handleCloseReady]; }
   void OnBrowserClosed() override { [tab_ handleBrowserClosed]; }
   // Shortcuts act on key-down only; CEF also reports char and key-up events.
@@ -101,6 +112,7 @@ class TabDelegateBridge : public TabClientDelegate {
   CefRefPtr<CefBrowser> _browser;
   // Set when closing was requested before the browser existed.
   BOOL _closeWhenCreated;
+  BRTabDialogView* _dialog;
 }
 
 - (instancetype)initWithId:(brouk::TabId)tabId
@@ -184,7 +196,15 @@ class TabDelegateBridge : public TabClientDelegate {
   }
 }
 
+- (BOOL)hasDialog {
+  return _dialog != nil && _dialog.superview != nil;
+}
+
 - (void)focusContent {
+  if ([self hasDialog]) {
+    [_dialog focus];
+    return;
+  }
   if (_browser) {
     _browser->GetHost()->SetFocus(true);
   }
@@ -248,7 +268,27 @@ class TabDelegateBridge : public TabClientDelegate {
   [_delegate tabDidChangeState:self];
 }
 
+- (void)showJsDialog:(const brouk::JsDialogRequest&)request
+                done:(brouk::JsDialogDone)done {
+  [_dialog dismiss];
+  _dialog = [[BRTabDialogView alloc] initWithRequest:request
+                                                done:std::move(done)];
+  _dialog.frame = _containerView.bounds;
+  [_containerView addSubview:_dialog];
+  // Only take focus if this tab is visible; otherwise the dialog waits until
+  // the user switches to the tab (Chrome does not steal focus either).
+  if (!_containerView.hidden) {
+    [_dialog focus];
+  }
+}
+
+- (void)dismissJsDialog {
+  [_dialog dismiss];
+  _dialog = nil;
+}
+
 - (void)handleCloseReady {
+  [self dismissJsDialog];
   // The page may close itself (window.close()) without a request from us.
   _isClosing = YES;
   [_delegate tabCloseReady:self];

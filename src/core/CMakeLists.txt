@@ -2,6 +2,8 @@
 set(BROUK_CORE_SOURCES
   address_input.cc
   address_input.h
+  dialog_spam_guard.cc
+  dialog_spam_guard.h
   tab_strip_model.cc
   tab_strip_model.h
   url_display.cc

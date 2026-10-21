@@ -2,10 +2,12 @@
 #define BROUK_CEF_TAB_CLIENT_H_
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
 
+#include "core/dialog_spam_guard.h"
 #include "include/cef_client.h"
 
 namespace brouk {
@@ -20,6 +22,26 @@ struct PopupRequest {
   // popup window instead of a tab.
   bool wants_popup_window = false;
 };
+
+// A JavaScript dialog (alert/confirm/prompt) or the "leave site?" dialog.
+struct JsDialogRequest {
+  enum class Kind { kAlert, kConfirm, kPrompt, kBeforeUnload };
+  Kind kind = Kind::kAlert;
+  // Origin shown in the title ("example.com says"), formatted for security
+  // display by Chromium. Empty for dialogs without an origin.
+  std::string origin;
+  std::string message;
+  std::string default_prompt_text;
+  // For kBeforeUnload: the page is being reloaded, not left.
+  bool is_reload = false;
+  // Show "Prevent this page from creating additional dialogs" (Chrome).
+  bool offer_suppression = false;
+};
+
+// The user's answer to a JS dialog. `ok` is true for OK/Leave; `input` is the
+// prompt text; `suppress_more` is the checkbox state.
+using JsDialogDone =
+    std::function<void(bool ok, const std::string& input, bool suppress_more)>;
 
 // Where the platform UI hosts a popup's browser.
 struct PopupHost {
@@ -55,6 +77,13 @@ class TabClientDelegate {
   // The browser is gone; release all references to it.
   virtual void OnBrowserClosed() = 0;
 
+  // Shows a dialog over this tab only (tab-modal). `done` must be called once
+  // when the user answers, unless DismissJsDialog comes first.
+  virtual void ShowJsDialog(const JsDialogRequest& request,
+                            JsDialogDone done) = 0;
+  // The page navigated or closed: remove the dialog without an answer.
+  virtual void DismissJsDialog() = 0;
+
   // A key event the page did not handle, with the native event (NSEvent* on
   // macOS). Return true if the UI handled it (e.g. as a menu shortcut).
   virtual bool OnUnhandledKeyEvent(const CefKeyEvent& event,
@@ -65,6 +94,7 @@ class TabClientDelegate {
 // TabClientDelegate, so platform code never implements CEF interfaces itself.
 class TabClient : public CefClient,
                   public CefDisplayHandler,
+                  public CefJSDialogHandler,
                   public CefKeyboardHandler,
                   public CefLifeSpanHandler,
                   public CefLoadHandler {
@@ -79,6 +109,7 @@ class TabClient : public CefClient,
 
   // CefClient:
   CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
+  CefRefPtr<CefJSDialogHandler> GetJSDialogHandler() override { return this; }
   CefRefPtr<CefKeyboardHandler> GetKeyboardHandler() override { return this; }
   CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
   CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
@@ -91,6 +122,20 @@ class TabClient : public CefClient,
                      const CefString& title) override;
   void OnFaviconURLChange(CefRefPtr<CefBrowser> browser,
                           const std::vector<CefString>& icon_urls) override;
+
+  // CefJSDialogHandler:
+  bool OnJSDialog(CefRefPtr<CefBrowser> browser,
+                  const CefString& origin_url,
+                  JSDialogType dialog_type,
+                  const CefString& message_text,
+                  const CefString& default_prompt_text,
+                  CefRefPtr<CefJSDialogCallback> callback,
+                  bool& suppress_message) override;
+  bool OnBeforeUnloadDialog(CefRefPtr<CefBrowser> browser,
+                            const CefString& message_text,
+                            bool is_reload,
+                            CefRefPtr<CefJSDialogCallback> callback) override;
+  void OnResetDialogState(CefRefPtr<CefBrowser> browser) override;
 
   // CefKeyboardHandler:
   bool OnKeyEvent(CefRefPtr<CefBrowser> browser,
@@ -124,11 +169,18 @@ class TabClient : public CefClient,
                             bool can_go_forward) override;
 
  private:
+  // Shows a dialog and answers `callback` once the user responds.
+  void ShowDialog(const JsDialogRequest& request,
+                  CefRefPtr<CefJSDialogCallback> callback);
+
   void DownloadFavicon(const CefRefPtr<CefBrowser>& browser,
                        const std::string& url);
 
   TabClientDelegate* delegate_;  // Not owned. Null after DetachDelegate().
   std::string favicon_url_;      // URL of the favicon being shown.
+  DialogSpamGuard dialog_guard_;
+  // The dialog waiting for the user's answer, if any.
+  CefRefPtr<CefJSDialogCallback> pending_dialog_;
 
   IMPLEMENT_REFCOUNTING(TabClient);
 };

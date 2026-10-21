@@ -1,6 +1,6 @@
 # 012 – Web platform basics
 
-- **Status:** ready
+- **Status:** in-progress
 - **Priority:** P1
 - **Depends on:** 001; later integrates with 003, 004, 005
 
