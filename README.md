@@ -1,6 +1,6 @@
-# web-browser
+# Brouk
 
-A lightweight, fully configurable, multiplatform web browser based on Chromium (via CEF), focused on work.
+*Brouk* (Czech for "beetle") is a lightweight, fully configurable, multiplatform web browser based on Chromium (via CEF), focused on work.
 
 **Status:** early planning — requirements are being collected.
 

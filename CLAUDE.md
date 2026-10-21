@@ -37,19 +37,19 @@ All features and requirements live in [`specs/`](specs/README.md).
 
 ## Decisions
 
+- **App name: Brouk** (Czech for "beetle" — a nod to bug hunting). App bundle `Brouk.app`, executable `brouk`, bundle ID `io.github.dreaddcz.brouk` (reverse-DNS of the GitHub account, as no domain is owned; change if one is bought), data folder `~/Library/Application Support/Brouk/`. Keep these in **one place** (CMake variables `APP_NAME`, `APP_EXECUTABLE_NAME`, `APP_BUNDLE_ID`, `APP_DATA_DIR_NAME`, passed to code via a generated header); never hard-code them elsewhere.
 - **Base technology: CEF** with prebuilt binaries, Chrome bootstrap and **Alloy style** browsers for web content. Not a Chromium fork. Details and reasoning: `specs/001-technology-stack.md`.
 - **Profiles:** local only (no online account sign-in); tabs of several profiles can share a window, one tab group per profile per window; links are routed to profiles by URL rules. Details: `specs/005-profiles.md`, `specs/010-link-routing.md`.
 - Profiles, developer tools (beyond the stock DevTools frontend), password manager and autofill are **our own implementations**, not Chrome's.
 - **UI shell: hybrid** — native (Objective-C++/AppKit on macOS) for windows, tabs, toolbar, address bar, menus and the window picker; HTML/TypeScript pages in CEF for settings, history, password manager, profile manager and custom developer tools. Details: `specs/001-technology-stack.md`.
 - **Languages:** C++20 for the core, Objective-C++ (AppKit) for the macOS UI, TypeScript for the HTML pages. Swift only for a macOS API not reachable from Objective-C. No Rust. Details: `specs/001-technology-stack.md`.
-- **Configuration:** YAML files, global and per profile (on macOS in `~/Library/Application Support/<app>/`), live reload, machine-written (comments not preserved). Details: `specs/004-configuration.md`.
+- **Configuration:** YAML files, global and per profile (on macOS in `~/Library/Application Support/Brouk/`), live reload, machine-written (comments not preserved). Details: `specs/004-configuration.md`.
 - **Build:** CMake + Ninja, pinned CEF version downloaded by script, `tsc` for TypeScript, GoogleTest and Node's test runner for tests.
 - **Phases:** phase 1 (now) — personal use, builds made locally on the user's Macs, CI runs only Linux core build and tests. Phase 2 — colleagues: signing, notarization, macOS CI, public update feed. Details: `specs/001-technology-stack.md`. "Phase 1/2" always means these release phases; platforms are rolled out separately (002).
 - From phase 2, the app **updates itself automatically**; CI picks up new CEF releases, builds, signs and publishes them.
 
 ## Open decisions
 
-- **App name** — not chosen yet. Until it is, use the working name `WorkBrowser` (bundle ID `dev.workbrowser.app`). Keep the name, bundle ID and data folder name in **one place** (CMake variables `APP_NAME`, `APP_BUNDLE_ID`, `APP_DATA_DIR_NAME`, passed to code via a generated header) so renaming is a one-line change. Never hard-code the name elsewhere.
 - Phase 2 update feed hosting. Preferred, not final: a separate public releases repo (source repo stays private). See `specs/001-technology-stack.md`.
 
 When a new open decision comes up, list it here until it is decided, then record it under Decisions and in the relevant spec.
