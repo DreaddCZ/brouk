@@ -1,0 +1,10 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Crash and hang test</title>
+<style>body { font: 15px -apple-system, sans-serif; margin: 2em; } button { font-size: 15px; }</style>
+<h1>Crash and hang (spec 012)</h1>
+<p><b>Crash:</b> type <code>chrome://crash</code> in the address bar. Expected:
+"Aw, Snap!" page with "Error code: SIGSEGV" and a Reload button.</p>
+<p><b>Hang:</b> click the button, then click anywhere in the page or press a
+key. After about 15 seconds: "Page unresponsive" with Wait / Exit page.</p>
+<button onclick="for (;;) {}">Freeze this page</button>

@@ -1,5 +1,6 @@
 #import "platform/mac/browser_tab.h"
 
+#import "platform/mac/sad_tab_view.h"
 #import "platform/mac/tab_dialog_view.h"
 
 #include <cstdint>
@@ -34,6 +35,10 @@ NSString* ToNSString(const std::string& s) {
 - (void)showJsDialog:(const brouk::JsDialogRequest&)request
                 done:(brouk::JsDialogDone)done;
 - (void)dismissJsDialog;
+- (void)handleRendererGone:(brouk::RendererGoneReason)reason
+                 errorCode:(NSString*)errorCode;
+- (void)handleUnresponsive:(brouk::UnresponsiveDone)done;
+- (void)handleResponsive;
 @end
 
 namespace brouk {
@@ -84,6 +89,14 @@ class TabDelegateBridge : public TabClientDelegate {
     [tab_ showJsDialog:request done:std::move(done)];
   }
   void DismissJsDialog() override { [tab_ dismissJsDialog]; }
+  void OnRendererGone(RendererGoneReason reason,
+                      const std::string& error_code) override {
+    [tab_ handleRendererGone:reason errorCode:ToNSString(error_code)];
+  }
+  void OnRendererUnresponsive(UnresponsiveDone done) override {
+    [tab_ handleUnresponsive:std::move(done)];
+  }
+  void OnRendererResponsive() override { [tab_ handleResponsive]; }
   void OnCloseReady() override { [tab_ handleCloseReady]; }
   void OnBrowserClosed() override { [tab_ handleBrowserClosed]; }
   // Shortcuts act on key-down only; CEF also reports char and key-up events.
@@ -113,6 +126,8 @@ class TabDelegateBridge : public TabClientDelegate {
   // Set when closing was requested before the browser existed.
   BOOL _closeWhenCreated;
   BRTabDialogView* _dialog;
+  BRTabDialogView* _unresponsiveDialog;
+  BRSadTabView* _sadTab;
 }
 
 - (instancetype)initWithId:(brouk::TabId)tabId
@@ -253,7 +268,69 @@ class TabDelegateBridge : public TabClientDelegate {
   [_delegate tabDidChangeState:self];
 }
 
+- (void)handleRendererGone:(brouk::RendererGoneReason)reason
+                 errorCode:(NSString*)errorCode {
+  [self dismissJsDialog];
+  [self handleResponsive];
+  [_sadTab removeFromSuperview];
+  NSString* message =
+      reason == brouk::RendererGoneReason::kOutOfMemory
+          ? @"The page ran out of memory while displaying this webpage."
+          : @"Something went wrong while displaying this webpage.";
+  __weak BRTab* weakSelf = self;
+  _sadTab = [[BRSadTabView alloc] initWithMessage:message
+                                        errorCode:errorCode
+                                           reload:^{
+                                             [weakSelf reload];
+                                           }];
+  _sadTab.frame = _containerView.bounds;
+  [_containerView addSubview:_sadTab];
+  _isLoading = NO;
+  [_delegate tabDidChangeState:self];
+}
+
+// Chrome's "Page unresponsive" question, shown over the tab.
+- (void)handleUnresponsive:(brouk::UnresponsiveDone)done {
+  [_unresponsiveDialog dismiss];
+  NSString* name = _title.length ? _title : _url;
+  __block brouk::UnresponsiveDone answer = std::move(done);
+  __weak BRTab* weakSelf = self;
+  _unresponsiveDialog = [[BRTabDialogView alloc]
+         initWithTitle:@"Page unresponsive"
+               message:[NSString stringWithFormat:
+                                     @"“%@” is not responding. You can wait "
+                                     @"for it to become responsive or exit "
+                                     @"the page.",
+                                     name]
+               okTitle:@"Wait"
+           cancelTitle:@"Exit page"
+            promptText:nil
+      offerSuppression:NO
+            completion:^(BOOL ok, NSString*, BOOL) {
+              BRTab* strongSelf = weakSelf;
+              if (strongSelf) {
+                strongSelf->_unresponsiveDialog = nil;
+              }
+              answer(/*exit_page=*/!ok);
+            }];
+  _unresponsiveDialog.frame = _containerView.bounds;
+  [_containerView addSubview:_unresponsiveDialog];
+  if (!_containerView.hidden) {
+    [_unresponsiveDialog focus];
+  }
+}
+
+- (void)handleResponsive {
+  [_unresponsiveDialog dismiss];
+  _unresponsiveDialog = nil;
+}
+
 - (void)handleLoading:(BOOL)loading back:(BOOL)back forward:(BOOL)forward {
+  if (loading && _sadTab) {
+    // A new load (e.g. Reload) replaces the crash page.
+    [_sadTab removeFromSuperview];
+    _sadTab = nil;
+  }
   _isLoading = loading;
   _canGoBack = back;
   _canGoForward = forward;
@@ -271,8 +348,7 @@ class TabDelegateBridge : public TabClientDelegate {
 - (void)showJsDialog:(const brouk::JsDialogRequest&)request
                 done:(brouk::JsDialogDone)done {
   [_dialog dismiss];
-  _dialog = [[BRTabDialogView alloc] initWithRequest:request
-                                                done:std::move(done)];
+  _dialog = [BRTabDialogView dialogForRequest:request done:std::move(done)];
   _dialog.frame = _containerView.bounds;
   [_containerView addSubview:_dialog];
   // Only take focus if this tab is visible; otherwise the dialog waits until

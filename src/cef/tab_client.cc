@@ -5,6 +5,7 @@
 #include <utility>
 #include <vector>
 
+#include "core/crash_error_code.h"
 #include "include/cef_image.h"
 #include "include/cef_parser.h"
 #include "include/cef_values.h"
@@ -279,6 +280,55 @@ void TabClient::OnLoadingStateChange(CefRefPtr<CefBrowser> /*browser*/,
   CEF_REQUIRE_UI_THREAD();
   if (delegate_) {
     delegate_->OnLoadingStateChanged(is_loading, can_go_back, can_go_forward);
+  }
+}
+
+void TabClient::OnRenderProcessTerminated(CefRefPtr<CefBrowser> /*browser*/,
+                                          TerminationStatus status,
+                                          int error_code,
+                                          const CefString& /*error_string*/) {
+  CEF_REQUIRE_UI_THREAD();
+  if (!delegate_) {
+    return;
+  }
+  RendererGoneReason reason = RendererGoneReason::kOther;
+  switch (status) {
+    case TS_PROCESS_CRASHED:
+      reason = RendererGoneReason::kCrashed;
+      break;
+    case TS_PROCESS_WAS_KILLED:
+      reason = RendererGoneReason::kKilled;
+      break;
+    case TS_PROCESS_OOM:
+      reason = RendererGoneReason::kOutOfMemory;
+      break;
+    default:
+      break;
+  }
+  delegate_->OnRendererGone(reason, CrashErrorCodeText(error_code));
+}
+
+bool TabClient::OnRenderProcessUnresponsive(
+    CefRefPtr<CefBrowser> /*browser*/,
+    CefRefPtr<CefUnresponsiveProcessCallback> callback) {
+  CEF_REQUIRE_UI_THREAD();
+  if (!delegate_) {
+    return false;
+  }
+  delegate_->OnRendererUnresponsive([callback](bool exit_page) {
+    if (exit_page) {
+      callback->Terminate();
+    } else {
+      callback->Wait();
+    }
+  });
+  return true;
+}
+
+void TabClient::OnRenderProcessResponsive(CefRefPtr<CefBrowser> /*browser*/) {
+  CEF_REQUIRE_UI_THREAD();
+  if (delegate_) {
+    delegate_->OnRendererResponsive();
   }
 }
 

@@ -18,6 +18,7 @@ include(GoogleTest)
 
 add_executable(brouk_core_tests
   core/address_input_test.cc
+  core/crash_error_code_test.cc
   core/dialog_spam_guard_test.cc
   core/tab_strip_model_test.cc
   core/url_display_test.cc

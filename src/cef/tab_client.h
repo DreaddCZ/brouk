@@ -43,6 +43,13 @@ struct JsDialogRequest {
 using JsDialogDone =
     std::function<void(bool ok, const std::string& input, bool suppress_more)>;
 
+// Why a tab's renderer process is gone (crash page text depends on it).
+enum class RendererGoneReason { kCrashed, kKilled, kOutOfMemory, kOther };
+
+// The answer to "page unresponsive": true to exit (kill) the page, false to
+// keep waiting.
+using UnresponsiveDone = std::function<void(bool exit_page)>;
+
 // Where the platform UI hosts a popup's browser.
 struct PopupHost {
   CefWindowHandle parent_view = kNullWindowHandle;
@@ -84,6 +91,16 @@ class TabClientDelegate {
   // The page navigated or closed: remove the dialog without an answer.
   virtual void DismissJsDialog() = 0;
 
+  // The page's renderer process crashed or was killed: show the crash page
+  // ("Aw, Snap!") with a reload button. Cleared when a new load starts.
+  // `error_code` is display text such as "Error code: SIGSEGV", or empty.
+  virtual void OnRendererGone(RendererGoneReason reason,
+                              const std::string& error_code) = 0;
+  // The page stopped responding: ask the user to wait or exit the page.
+  virtual void OnRendererUnresponsive(UnresponsiveDone done) = 0;
+  // The page responds again: remove the question.
+  virtual void OnRendererResponsive() = 0;
+
   // A key event the page did not handle, with the native event (NSEvent* on
   // macOS). Return true if the UI handled it (e.g. as a menu shortcut).
   virtual bool OnUnhandledKeyEvent(const CefKeyEvent& event,
@@ -97,7 +114,8 @@ class TabClient : public CefClient,
                   public CefJSDialogHandler,
                   public CefKeyboardHandler,
                   public CefLifeSpanHandler,
-                  public CefLoadHandler {
+                  public CefLoadHandler,
+                  public CefRequestHandler {
  public:
   // `delegate` must outlive this client or be detached with DetachDelegate().
   explicit TabClient(TabClientDelegate* delegate) : delegate_(delegate) {}
@@ -113,6 +131,7 @@ class TabClient : public CefClient,
   CefRefPtr<CefKeyboardHandler> GetKeyboardHandler() override { return this; }
   CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
   CefRefPtr<CefLoadHandler> GetLoadHandler() override { return this; }
+  CefRefPtr<CefRequestHandler> GetRequestHandler() override { return this; }
 
   // CefDisplayHandler:
   void OnAddressChange(CefRefPtr<CefBrowser> browser,
@@ -167,6 +186,16 @@ class TabClient : public CefClient,
                             bool is_loading,
                             bool can_go_back,
                             bool can_go_forward) override;
+
+  // CefRequestHandler:
+  void OnRenderProcessTerminated(CefRefPtr<CefBrowser> browser,
+                                 TerminationStatus status,
+                                 int error_code,
+                                 const CefString& error_string) override;
+  bool OnRenderProcessUnresponsive(
+      CefRefPtr<CefBrowser> browser,
+      CefRefPtr<CefUnresponsiveProcessCallback> callback) override;
+  void OnRenderProcessResponsive(CefRefPtr<CefBrowser> browser) override;
 
  private:
   // Shows a dialog and answers `callback` once the user responds.

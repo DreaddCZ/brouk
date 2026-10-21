@@ -22,6 +22,8 @@ add_executable(brouk_app
   data_paths.h
   data_paths.mm
   main.mm
+  sad_tab_view.h
+  sad_tab_view.mm
   tab_dialog_view.h
   tab_dialog_view.mm
   tab_strip_view.h

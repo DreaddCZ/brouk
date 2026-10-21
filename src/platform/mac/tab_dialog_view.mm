@@ -20,24 +20,69 @@ NSString* ToNSString(const std::string& s) {
 }  // namespace
 
 @implementation BRTabDialogView {
-  brouk::JsDialogDone _done;
-  brouk::JsDialogRequest::Kind _kind;
+  BRTabDialogCompletion _completion;
+  BOOL _hasCancel;
   NSView* _panel;
   NSTextField* _input;
   NSButton* _suppress;
   NSButton* _okButton;
 }
 
-- (instancetype)initWithRequest:(const brouk::JsDialogRequest&)request
-                           done:(brouk::JsDialogDone)done {
++ (instancetype)dialogForRequest:(const brouk::JsDialogRequest&)request
+                            done:(brouk::JsDialogDone)done {
+  using Kind = brouk::JsDialogRequest::Kind;
+  NSString* title;
+  NSString* message;
+  NSString* okTitle = @"OK";
+  NSString* cancelTitle = request.kind == Kind::kAlert ? nil : @"Cancel";
+  if (request.kind == Kind::kBeforeUnload) {
+    // Like Chrome, the page's own text is not shown (it could mislead).
+    title = request.is_reload ? @"Reload site?" : @"Leave site?";
+    message = @"Changes you made may not be saved.";
+    okTitle = request.is_reload ? @"Reload" : @"Leave";
+  } else {
+    title = request.origin.empty()
+                ? @"This page says"
+                : [NSString
+                      stringWithFormat:@"%@ says", ToNSString(request.origin)];
+    message = ToNSString(request.message);
+  }
+  NSString* prompt = request.kind == Kind::kPrompt
+                         ? ToNSString(request.default_prompt_text)
+                         : nil;
+  __block brouk::JsDialogDone js_done = std::move(done);
+  return [[BRTabDialogView alloc]
+         initWithTitle:title
+               message:message
+               okTitle:okTitle
+           cancelTitle:cancelTitle
+            promptText:prompt
+      offerSuppression:request.offer_suppression
+            completion:^(BOOL ok, NSString* input, BOOL suppress) {
+              js_done(ok, input.UTF8String ?: "", suppress);
+            }];
+}
+
+- (instancetype)initWithTitle:(NSString*)title
+                      message:(NSString*)message
+                      okTitle:(NSString*)okTitle
+                  cancelTitle:(nullable NSString*)cancelTitle
+                   promptText:(nullable NSString*)promptText
+             offerSuppression:(BOOL)offerSuppression
+                   completion:(BRTabDialogCompletion)completion {
   if ((self = [super initWithFrame:NSZeroRect])) {
-    _done = std::move(done);
-    _kind = request.kind;
+    _completion = completion;
+    _hasCancel = cancelTitle != nil;
     self.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     self.wantsLayer = YES;
     self.layer.backgroundColor =
         [NSColor.blackColor colorWithAlphaComponent:0.25].CGColor;
-    [self buildPanel:request];
+    [self buildPanelWithTitle:title
+                      message:message
+                      okTitle:okTitle
+                  cancelTitle:cancelTitle
+                   promptText:promptText
+             offerSuppression:offerSuppression];
   }
   return self;
 }
@@ -55,25 +100,12 @@ NSString* ToNSString(const std::string& s) {
 - (void)mouseDown:(NSEvent*)event {
 }
 
-- (void)buildPanel:(const brouk::JsDialogRequest&)request {
-  using Kind = brouk::JsDialogRequest::Kind;
-  BOOL beforeUnload = request.kind == Kind::kBeforeUnload;
-
-  NSString* title;
-  NSString* message;
-  NSString* okTitle = @"OK";
-  if (beforeUnload) {
-    title = request.is_reload ? @"Reload site?" : @"Leave site?";
-    message = @"Changes you made may not be saved.";
-    okTitle = request.is_reload ? @"Reload" : @"Leave";
-  } else {
-    title = request.origin.empty()
-                ? @"This page says"
-                : [NSString
-                      stringWithFormat:@"%@ says", ToNSString(request.origin)];
-    message = ToNSString(request.message);
-  }
-
+- (void)buildPanelWithTitle:(NSString*)title
+                    message:(NSString*)message
+                    okTitle:(NSString*)okTitle
+                cancelTitle:(nullable NSString*)cancelTitle
+                 promptText:(nullable NSString*)promptText
+           offerSuppression:(BOOL)offerSuppression {
   _panel = [[NSView alloc] initWithFrame:NSZeroRect];
   _panel.wantsLayer = YES;
   _panel.layer.cornerRadius = 10;
@@ -90,13 +122,14 @@ NSString* ToNSString(const std::string& s) {
   titleLabel.font = [NSFont boldSystemFontOfSize:13];
   titleLabel.lineBreakMode = NSLineBreakByTruncatingMiddle;
 
-  // The page's text: selectable, scrolls if very long.
+  // The message: selectable, scrolls if very long.
   NSTextView* text = [[NSTextView alloc] initWithFrame:NSZeroRect];
   text.string = message;
   text.editable = NO;
   text.selectable = YES;
   text.drawsBackground = NO;
   text.font = [NSFont systemFontOfSize:13];
+  text.textColor = NSColor.labelColor;
   text.textContainerInset = NSZeroSize;
   text.textContainer.lineFragmentPadding = 0;
   CGFloat contentWidth = kPanelWidth - 2 * kPadding;
@@ -114,14 +147,13 @@ NSString* ToNSString(const std::string& s) {
   scroll.borderType = NSNoBorder;
   CGFloat messageHeight = std::min(textHeight, kMaxMessageHeight);
 
-  if (request.kind == Kind::kPrompt) {
-    _input = [NSTextField
-        textFieldWithString:ToNSString(request.default_prompt_text)];
+  if (promptText) {
+    _input = [NSTextField textFieldWithString:promptText];
     _input.accessibilityLabel = @"Your answer";
     _input.target = self;
     _input.action = @selector(okClicked:);
   }
-  if (request.offer_suppression) {
+  if (offerSuppression) {
     _suppress = [NSButton
         checkboxWithTitle:@"Prevent this page from creating additional dialogs"
                    target:nil
@@ -133,14 +165,14 @@ NSString* ToNSString(const std::string& s) {
                                  action:@selector(okClicked:)];
   _okButton.keyEquivalent = @"\r";
   NSButton* cancelButton = nil;
-  if (request.kind != Kind::kAlert) {
-    cancelButton = [NSButton buttonWithTitle:@"Cancel"
+  if (cancelTitle) {
+    cancelButton = [NSButton buttonWithTitle:cancelTitle
                                       target:self
                                       action:@selector(cancelClicked:)];
     cancelButton.keyEquivalent = @"\x1b";  // Escape.
   }
 
-  // Layout, top to bottom (the panel is not flipped: build bottom-up).
+  // Layout, bottom-up (the panel is not flipped).
   CGFloat y = kPadding;
   CGFloat buttonHeight = _okButton.fittingSize.height;
   CGFloat okWidth = std::max<CGFloat>(_okButton.fittingSize.width, 80);
@@ -192,13 +224,13 @@ NSString* ToNSString(const std::string& s) {
 }
 
 - (void)finish:(BOOL)ok {
-  brouk::JsDialogDone done = std::move(_done);
-  _done = nullptr;
-  std::string input = _input ? std::string(_input.stringValue.UTF8String) : "";
+  BRTabDialogCompletion completion = _completion;
+  _completion = nil;
+  NSString* input = _input.stringValue ?: @"";
   BOOL suppress = _suppress.state == NSControlStateValueOn;
   [self removeFromSuperview];
-  if (done) {
-    done(ok, input, suppress);
+  if (completion) {
+    completion(ok, input, suppress);
   }
 }
 
@@ -210,13 +242,13 @@ NSString* ToNSString(const std::string& s) {
   [self finish:NO];
 }
 
-// Escape on an alert closes it like OK.
+// Escape without a Cancel button (alert) closes it like OK.
 - (void)cancelOperation:(id)sender {
-  [self finish:_kind == brouk::JsDialogRequest::Kind::kAlert];
+  [self finish:!_hasCancel];
 }
 
 - (void)dismiss {
-  _done = nullptr;
+  _completion = nil;
   [self removeFromSuperview];
 }
 

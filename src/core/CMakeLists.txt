@@ -2,6 +2,8 @@
 set(BROUK_CORE_SOURCES
   address_input.cc
   address_input.h
+  crash_error_code.cc
+  crash_error_code.h
   dialog_spam_guard.cc
   dialog_spam_guard.h
   tab_strip_model.cc

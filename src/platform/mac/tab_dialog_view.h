@@ -1,6 +1,6 @@
-// Tab-modal JavaScript dialog (alert, confirm, prompt, "leave site?"): covers
-// only its tab's page, so other tabs stay usable, as in Chrome (012).
-// Main thread only.
+// Tab-modal dialog: covers only its tab's page, so other tabs stay usable,
+// as in Chrome (012). Used for JavaScript dialogs (alert, confirm, prompt,
+// "leave site?") and for "page unresponsive". Main thread only.
 
 #import <Cocoa/Cocoa.h>
 
@@ -8,11 +8,25 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+// Called once when the user answers (not when dismissed). `input` is the
+// prompt text (empty without a prompt field).
+typedef void (^BRTabDialogCompletion)(BOOL ok, NSString* input, BOOL suppress);
+
 @interface BRTabDialogView : NSView
 
-// `done` is called once when the user answers (not when dismissed).
-- (instancetype)initWithRequest:(const brouk::JsDialogRequest&)request
-                           done:(brouk::JsDialogDone)done;
+// `promptText` non-nil adds a text field; `cancelTitle` nil means no Cancel
+// button (Escape then answers OK, like an alert).
+- (instancetype)initWithTitle:(NSString*)title
+                      message:(NSString*)message
+                      okTitle:(NSString*)okTitle
+                  cancelTitle:(nullable NSString*)cancelTitle
+                   promptText:(nullable NSString*)promptText
+             offerSuppression:(BOOL)offerSuppression
+                   completion:(BRTabDialogCompletion)completion;
+
+// A JavaScript dialog; `done` is called once when the user answers.
++ (instancetype)dialogForRequest:(const brouk::JsDialogRequest&)request
+                            done:(brouk::JsDialogDone)done;
 
 // Gives keyboard focus to the dialog (prompt field or default button).
 - (void)focus;
