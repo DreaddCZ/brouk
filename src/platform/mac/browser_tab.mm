@@ -197,6 +197,11 @@ class TabDelegateBridge : public TabClientDelegate {
   BOOL _closeWhenCreated;
   BRTabDialogView* _dialog;
   BRTabDialogView* _unresponsiveDialog;
+  // An unresponsive report that arrived while a modal panel (e.g. the print
+  // dialog, which blocks the page) was up; shown once the panel is gone.
+  std::optional<brouk::UnresponsiveDone> _pendingUnresponsive;
+  NSTimer* _pendingUnresponsiveTimer;
+  NSDate* _modalPanelLastSeen;
   BRTabDialogView* _externalProtocolDialog;
   BRSadTabView* _sadTab;
   BOOL _clientDetached;
@@ -520,9 +525,62 @@ class TabDelegateBridge : public TabClientDelegate {
   [_delegate tabDidChangeState:self];
 }
 
+// Main thread. True while a modal panel or sheet is up. The print dialog
+// keeps the page busy until it closes, so the page then looks unresponsive;
+// Chrome does not ask about it, and our question could not be answered
+// anyway (it sits behind the panel).
+- (BOOL)isBehindModalPanel {
+  return NSApp.modalWindow != nil || _containerView.window.attachedSheet != nil;
+}
+
+- (void)cancelPendingUnresponsive {
+  [_pendingUnresponsiveTimer invalidate];
+  _pendingUnresponsiveTimer = nil;
+  _pendingUnresponsive.reset();
+}
+
+// Main thread. Called by a timer while an unresponsive report waits for a
+// modal panel to close.
+- (void)checkPendingUnresponsive {
+  if (!_pendingUnresponsive) {
+    return;
+  }
+  if ([self isBehindModalPanel]) {
+    _modalPanelLastSeen = [NSDate date];
+    return;
+  }
+  // The page needs a moment after the panel closes to answer again.
+  if (-_modalPanelLastSeen.timeIntervalSinceNow < 2) {
+    return;
+  }
+  brouk::UnresponsiveDone done = std::move(*_pendingUnresponsive);
+  [self cancelPendingUnresponsive];
+  [self handleUnresponsive:std::move(done)];
+}
+
 // Chrome's "Page unresponsive" question, shown over the tab.
 - (void)handleUnresponsive:(brouk::UnresponsiveDone)done {
+  CEF_REQUIRE_UI_THREAD();
   [_unresponsiveDialog dismiss];
+  _unresponsiveDialog = nil;
+  if ([self isBehindModalPanel]) {
+    // Ask only if the page is still unresponsive after the panel closes
+    // (handleResponsive cancels it). The timer also runs in the modal run
+    // loop mode, but does nothing until the panel is gone.
+    [self cancelPendingUnresponsive];
+    _pendingUnresponsive = std::move(done);
+    _modalPanelLastSeen = [NSDate date];
+    __weak BRTab* weakSelf = self;
+    _pendingUnresponsiveTimer =
+        [NSTimer timerWithTimeInterval:0.5
+                               repeats:YES
+                                 block:^(NSTimer*) {
+                                   [weakSelf checkPendingUnresponsive];
+                                 }];
+    [NSRunLoop.mainRunLoop addTimer:_pendingUnresponsiveTimer
+                            forMode:NSRunLoopCommonModes];
+    return;
+  }
   NSString* name = _title.length ? _title : _url;
   __block brouk::UnresponsiveDone answer = std::move(done);
   __weak BRTab* weakSelf = self;
@@ -552,6 +610,8 @@ class TabDelegateBridge : public TabClientDelegate {
 }
 
 - (void)handleResponsive {
+  CEF_REQUIRE_UI_THREAD();
+  [self cancelPendingUnresponsive];
   [_unresponsiveDialog dismiss];
   _unresponsiveDialog = nil;
 }
@@ -644,6 +704,7 @@ class TabDelegateBridge : public TabClientDelegate {
 
 - (void)handleBrowserClosed {
   _browser = nullptr;
+  [self cancelPendingUnresponsive];  // Holds a CEF callback.
   _client->DetachDelegate();
   _clientDetached = YES;
   // Release CEF objects while CEF is still running: releasing them after
