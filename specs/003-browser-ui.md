@@ -14,7 +14,7 @@ Core UI elements:
 
 - Windows with tabs, an address/search bar, back/forward/reload.
 - **Address bar search:** text that is not a URL is searched with the default search engine — **Google** by default. The search engine is configurable: choose from a built-in list (Google, Bing, DuckDuckGo, Startpage, Ecosia) or add a custom one with a URL template (`https://example.com/search?q=%s`).
-- **Address bar suggestions,** in this order: (1) **history** of the active tab's profile, (2) **bookmarks** of that profile, (3) **search suggestions** from the search engine, last. Each source can be turned off; search suggestions send what the user types to the search engine (as in Chrome) and are on by default.
+- **Address bar suggestions,** in this order: (1) **history** of the active tab's profile, (2) **bookmarks** visible in that profile (general ones and those linked to it, see 011), (3) **search suggestions** from the search engine, last. Each source can be turned off; search suggestions send what the user types to the search engine (as in Chrome) and are on by default.
 - Minimal chrome by default: no promotional content, news feed or unnecessary buttons.
 - Keyboard-first: every action reachable by a shortcut; shortcuts remappable.
 - A command palette (search for any action, tab, bookmark or setting).

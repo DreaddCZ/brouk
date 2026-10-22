@@ -10,7 +10,7 @@ Keep separate work contexts (e.g. different clients, employers, personal) fully 
 
 ## Description
 
-A profile is a completely separate set of browser data: cookies and logins, history, bookmarks, saved passwords, extensions (if ever added), settings and cache. The one deliberate exception is autofill data (addresses, contact details, payment cards), which is shared by all profiles (see 009).
+A profile is a completely separate set of browser data: cookies and logins, history, saved passwords, extensions (if ever added), settings and cache. Two deliberate exceptions: autofill data (addresses, contact details, payment cards) is shared by all profiles (see 009), and bookmarks are one shared tree in which a bookmark or folder can be linked to a profile, so that it shows and opens only in that profile (see 011).
 
 - Profiles are **local only**: there is no Google or other account sign-in for a profile.
 - Create, rename, delete and pick a colour/icon for a profile. Each profile has its own colour.
@@ -22,20 +22,21 @@ A profile is a completely separate set of browser data: cookies and logins, hist
 - Links are opened in the right profile by routing rules (see 010).
 - Several profiles can run at the same time, in separate windows or in the same window.
 - A profile can be exported to a file and imported on another device. The export contains:
-  - name, colour and icon, settings and bookmarks;
+  - name, colour and icon, settings, and the bookmarks linked to the profile (see 011);
   - saved passwords, encrypted with a password the user enters when exporting (and again when importing);
   - history, if the user chooses: when exporting, the user decides whether to include it and how much — e.g. the last N days or the last N visited pages.
   - It does not contain cookies or logged-in sessions, or cache: after importing, the user logs in to sites again.
 - Deleting a profile that has open tabs is allowed: after the user confirms, its tabs close and its data is removed. The default profile cannot be deleted; the user first makes another profile the default.
 - A profile can be launched directly, e.g. from the command line (`--profile <name>`) or a dock/desktop shortcut.
-- Nothing leaks between profiles, apart from the shared autofill data.
+- Nothing leaks between profiles, apart from the shared autofill data and general (unlinked) bookmarks.
 
 ## Acceptance criteria
 
 - [ ] User can create, rename and delete profiles, and set a name and colour.
 - [ ] Creating or using a profile never requires signing in to any online account.
 - [ ] Logging into a site in profile A does not log in profile B, including when tabs of A and B are in the same window.
-- [ ] History, bookmarks, passwords, extensions and settings are separate per profile. (History after 013, bookmarks after 011, passwords after 008; cookies, cache, storage and settings now.)
+- [ ] History, passwords, extensions and settings are separate per profile. (History after 013, passwords after 008; cookies, cache, storage and settings now.)
+- [ ] Bookmarks linked to a profile appear only in that profile; general bookmarks appear in all profiles. (after 011)
 - [ ] Autofill entries are shared: an entry saved in one profile is offered in every profile. (after 009)
 - [ ] Two or more profiles can be open simultaneously, both in separate windows and in the same window.
 - [ ] In each window, a profile's tabs form exactly one group, shown with the profile's name and colour.
@@ -44,7 +45,7 @@ A profile is a completely separate set of browser data: cookies and logins, hist
 - [ ] The bookmarks bar and password filling use the active tab's profile. (after 011 and 008)
 - [ ] A specific profile can be started from the command line.
 - [ ] The profile manager can be set to appear at startup or be skipped (opening a default profile).
-- [ ] Deleting a profile removes all of its data, after confirmation; if it has open tabs, the confirmation says so and the tabs close.
+- [ ] Deleting a profile removes all of its data, after confirmation; if it has open tabs, the confirmation says so and the tabs close. Bookmarks linked to it become general, and the confirmation says how many (after 011).
 - [ ] The default profile cannot be deleted while it is the default.
 - [ ] A profile can be exported to a single file and imported on another device, keeping its name, colour, settings, bookmarks and passwords. (Name, colour and settings now; bookmarks after 011; passwords after 008.)
 - [ ] Passwords in the export file are encrypted with a user-chosen export password; the file cannot be imported without it. (after 008)
@@ -84,4 +85,4 @@ None.
 - 2026-10-22 (implementation, part 2): the profile manager is its own window (like Chrome's profile picker) showing the internal page `brouk://profiles`, opened from Profiles → Manage Profiles…, or instead of a browser window at startup when "Show this window when Brouk starts" is on (not when the launch names URLs or a profile). Opening a profile from it at startup closes it, as Chrome does. It lists profiles with their open tabs and can create, rename, recolour, make default, delete and open them. Deleting asks in a native dialog (saying how many tabs will close), closes the profile's tabs without asking their pages, and removes `profiles/<id>/` at once; Chromium's data in `web/<id>/` is removed at the next start, since Chromium may still use it. A profile icon (mentioned in the description) is not offered yet; the acceptance criteria ask for name and colour.
 - 2026-10-22 (implementation): internal pages are TypeScript compiled by `tsc` into the app bundle and served from `brouk://<page>/` in a separate in-memory request context, with a strict Content-Security-Policy. They talk to the browser only through `web/shared/bridge.ts` (CEF's message router), which is added to brouk:// pages only; the browser accepts a page's messages only from that page's own URL and checks every field. Web tabs cannot open brouk:// URLs.
 - 2026-10-22 (implementation, part 3): export and import from the profile manager ("Export…" per profile, "Import…"). The file (`.brouk-profile`) is YAML with `format: brouk-profile`, `version: 1`, the export time and the profile's settings (name, colour, ...); it contains no cookies, sessions or cache. Bookmarks (011), encrypted passwords (008) and optional history (013) will be added as further sections; `version` is raised only for changes older versions cannot read, and such files are refused with "exported by a newer version". Sections a version cannot import are listed after the import. An imported profile gets a new id; if its name exists, " 2", " 3", ... is added.
-
+- 2026-10-22 (bookmarks review, 011, approved by the user): bookmarks are no longer separate per profile. There is one shared tree; a bookmark or folder can be linked to a profile and then shows and opens only in that profile. The profile export carries the linked bookmarks; deleting a profile makes its linked bookmarks general.
