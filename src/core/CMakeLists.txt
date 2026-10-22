@@ -14,6 +14,8 @@ set(BROUK_CORE_SOURCES
   download_paths.h
   external_protocol.cc
   external_protocol.h
+  internal_pages.cc
+  internal_pages.h
   launch_args.cc
   launch_args.h
   page_events.cc

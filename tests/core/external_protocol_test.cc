@@ -27,6 +27,8 @@ TEST(ExternalProtocolTest, DangerousSchemesAreBlocked) {
   EXPECT_EQ(ClassifyScheme("shell:startup"), SchemeHandling::kBlocked);
   EXPECT_EQ(ClassifyScheme("vbscript:msgbox"), SchemeHandling::kBlocked);
   EXPECT_EQ(ClassifyScheme("ms-help://x"), SchemeHandling::kBlocked);
+  // Internal pages never load in web tabs.
+  EXPECT_EQ(ClassifyScheme("brouk://profiles/"), SchemeHandling::kBlocked);
 }
 
 TEST(ExternalProtocolTest, InvalidSchemesAreLeftToTheBrowser) {

@@ -18,10 +18,11 @@ constexpr std::array<std::string_view, 14> kBrowserSchemes = {
 };
 
 // Chrome's ExternalProtocolHandler deny list: schemes that could run code
-// or reach local files if handed to the OS.
-constexpr std::array<std::string_view, 12> kBlockedSchemes = {
-    "afp",  "disk", "disks", "hcp",      "ie.http",      "ms-help",
-    "nntp", "res",  "shell", "vbscript", "vnd.ms.radio", "cid",
+// or reach local files if handed to the OS. Plus our internal pages
+// (brouk://): they run only in their own windows, never in a web tab.
+constexpr std::array<std::string_view, 13> kBlockedSchemes = {
+    "afp", "disk",  "disks",    "hcp",          "ie.http", "ms-help", "nntp",
+    "res", "shell", "vbscript", "vnd.ms.radio", "cid",     "brouk",
 };
 
 bool IsSchemeChar(char c, bool first) {
