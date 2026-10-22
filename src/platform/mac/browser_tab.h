@@ -4,6 +4,7 @@
 #import <Cocoa/Cocoa.h>
 
 #include <optional>
+#include <string>
 
 #include "cef/tab_client.h"
 #include "core/tab_strip_model.h"
@@ -24,6 +25,14 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)tabCloseReady:(BRTab*)tab;
 - (void)tabDidClose:(BRTab*)tab;
 - (BOOL)tab:(BRTab*)tab handleUnhandledKeyEvent:(NSEvent*)event;
+- (std::string)tab:(BRTab*)tab
+    reserveDownloadPath:(const std::string&)suggested;
+- (void)tab:(BRTab*)tab releaseDownloadPath:(const std::string&)path;
+- (void)tab:(BRTab*)tab downloadUpdated:(const brouk::DownloadInfo&)info;
+- (void)tab:(BRTab*)tab fullscreenChanged:(BOOL)fullscreen;
+- (void)tab:(BRTab*)tab
+        openURL:(NSString*)url
+    disposition:(brouk::OpenDisposition)disposition;
 @end
 
 @interface BRTab : NSObject
@@ -41,6 +50,23 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, readonly) BOOL canGoForward;
 // Close was requested (unload handlers may still be running).
 @property(nonatomic, readonly) BOOL isClosing;
+// A JavaScript dialog is waiting for the user in this tab.
+@property(nonatomic, readonly) BOOL hasDialog;
+
+// The page plays sound (estimated by the page script) / the tab is muted.
+@property(nonatomic, readonly) BOOL isAudible;
+@property(nonatomic, readonly) BOOL isMuted;
+- (void)toggleMute;
+
+// Popups blocked on the current page (newest last).
+@property(nonatomic, readonly) NSArray<NSString*>* blockedPopupURLs;
+- (void)clearBlockedPopups;
+
+// Find in page state, kept per tab as in Chrome.
+@property(nonatomic) BOOL findBarVisible;
+@property(nonatomic, copy) NSString* findText;
+@property(nonatomic, readonly) int findCount;
+@property(nonatomic, readonly) int findActiveMatch;
 // What the user typed in the address bar but has not submitted yet; kept per
 // tab like in Chrome.
 @property(nonatomic, copy, nullable) NSString* pendingAddressText;
@@ -63,6 +89,19 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)reloadIgnoringCache;
 - (void)stopLoading;
 - (void)focusContent;
+
+// Find in page; an empty text stops finding.
+- (void)findText:(NSString*)text forward:(BOOL)forward findNext:(BOOL)findNext;
+- (void)stopFinding;
+
+// Zoom with Chrome's preset steps, remembered per site in the profile.
+- (void)zoom:(cef_zoom_command_t)command;
+// Chromium zoom level of the page (0 = 100 %).
+- (double)zoomLevel;
+
+- (void)print;
+// Leaves HTML full screen (if the page is in it).
+- (void)exitFullscreen;
 
 // Starts closing: runs the page's beforeunload handler, which may cancel.
 - (void)requestClose;

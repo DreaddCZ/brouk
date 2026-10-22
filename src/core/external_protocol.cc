@@ -1,0 +1,71 @@
+#include "core/external_protocol.h"
+
+#include <algorithm>
+#include <array>
+#include <cstddef>
+#include <string>
+#include <string_view>
+
+namespace brouk {
+
+namespace {
+
+// Schemes the browser handles itself.
+constexpr std::array<std::string_view, 14> kBrowserSchemes = {
+    "http",       "https",      "ws",          "wss",          "file",
+    "data",       "blob",       "about",       "chrome",       "devtools",
+    "filesystem", "javascript", "view-source", "chrome-error",
+};
+
+// Chrome's ExternalProtocolHandler deny list: schemes that could run code
+// or reach local files if handed to the OS.
+constexpr std::array<std::string_view, 12> kBlockedSchemes = {
+    "afp",  "disk", "disks", "hcp",      "ie.http",      "ms-help",
+    "nntp", "res",  "shell", "vbscript", "vnd.ms.radio", "cid",
+};
+
+bool IsSchemeChar(char c, bool first) {
+  bool alpha = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+  if (first) {
+    return alpha;
+  }
+  return alpha || (c >= '0' && c <= '9') || c == '+' || c == '-' || c == '.';
+}
+
+}  // namespace
+
+std::string SchemeOf(std::string_view url) {
+  std::size_t colon = url.find(':');
+  if (colon == std::string_view::npos || colon == 0) {
+    return {};
+  }
+  std::string scheme;
+  for (std::size_t i = 0; i < colon; ++i) {
+    char c = url[i];
+    if (!IsSchemeChar(c, i == 0)) {
+      return {};
+    }
+    scheme.push_back(c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a')
+                                          : c);
+  }
+  return scheme;
+}
+
+SchemeHandling ClassifyScheme(std::string_view url) {
+  std::string scheme = SchemeOf(url);
+  if (scheme.empty() ||
+      std::ranges::find(kBrowserSchemes, scheme) != kBrowserSchemes.end()) {
+    return SchemeHandling::kBrowser;
+  }
+  if (std::ranges::find(kBlockedSchemes, scheme) != kBlockedSchemes.end()) {
+    return SchemeHandling::kBlocked;
+  }
+  return SchemeHandling::kExternal;
+}
+
+std::string ExternalProtocolAllowKey(std::string_view origin,
+                                     std::string_view scheme) {
+  return std::string(origin) + " " + std::string(scheme);
+}
+
+}  // namespace brouk

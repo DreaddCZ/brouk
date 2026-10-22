@@ -2,10 +2,28 @@
 set(BROUK_CORE_SOURCES
   address_input.cc
   address_input.h
+  context_menu.cc
+  context_menu.h
+  crash_error_code.cc
+  crash_error_code.h
+  dialog_spam_guard.cc
+  dialog_spam_guard.h
+  download_paths.cc
+  download_paths.h
+  external_protocol.cc
+  external_protocol.h
+  page_events.cc
+  page_events.h
+  permissions.cc
+  permissions.h
+  security_state.cc
+  security_state.h
   tab_strip_model.cc
   tab_strip_model.h
   url_display.cc
   url_display.h
+  zoom.cc
+  zoom.h
 )
 
 # Built twice with different sanitizers (see BroukCompilerOptions.cmake):

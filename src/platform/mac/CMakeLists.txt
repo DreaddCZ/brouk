@@ -21,13 +21,26 @@ add_executable(brouk_app
   browser_window_controller.mm
   data_paths.h
   data_paths.mm
+  download_notice.h
+  download_notice.mm
+  find_bar.h
+  find_bar.mm
   main.mm
+  permission_prompt_view.h
+  permission_prompt_view.mm
+  sad_tab_view.h
+  sad_tab_view.mm
+  site_info_popover.h
+  site_info_popover.mm
+  tab_dialog_view.h
+  tab_dialog_view.mm
   tab_strip_view.h
   tab_strip_view.mm
 )
 brouk_target_options(brouk_app CEF APP)
 target_link_libraries(brouk_app PRIVATE brouk_cef brouk_core
-  "-framework AppKit" "-framework Cocoa" "-framework IOSurface")
+  "-framework AppKit" "-framework AVFoundation" "-framework Cocoa"
+  "-framework IOSurface" "-framework SecurityInterface")
 set_target_properties(brouk_app PROPERTIES
   OUTPUT_NAME "${APP_EXECUTABLE_NAME}"
   RUNTIME_OUTPUT_DIRECTORY "${APP_BUNDLE}/Contents/MacOS")
@@ -37,7 +50,7 @@ configure_file(Info.plist.in "${APP_BUNDLE}/Contents/Info.plist" @ONLY)
 # sanitizers here: helpers run sandboxed and cannot load the sanitizer runtime.
 add_executable(brouk_helper helper_main.cc)
 brouk_target_options(brouk_helper CEF NO_SANITIZE)
-target_link_libraries(brouk_helper PRIVATE libcef_dll_wrapper)
+target_link_libraries(brouk_helper PRIVATE brouk_renderer libcef_dll_wrapper)
 set_target_properties(brouk_helper PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/helper")
 add_dependencies(brouk_app brouk_helper)

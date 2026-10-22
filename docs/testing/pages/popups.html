@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Popups test</title>
+<style>body { font: 15px -apple-system, sans-serif; margin: 2em; } button { font-size: 15px; margin: .3em; }</style>
+<h1>Popups (spec 012, item 15)</h1>
+<ol>
+  <li>On load this page tries to open a popup without a click → it is
+    blocked; the address bar shows an orange pop-up icon. Its menu lists the
+    blocked popup (click it to open it) and offers "Always allow pop-ups and
+    redirects from …". After allowing, reload: the popup opens directly.</li>
+  <li><button onclick="window.open('https://example.com/', '_blank')">Open link popup</button>
+    → opens as a new tab next to this one.</li>
+  <li><button onclick="window.open('https://example.com/', 'login', 'width=480,height=600')">Open popup window</button>
+    → opens a small separate window (480 × 600) without tabs, address read-only.
+    Sign-in popups (Microsoft, Google) look like this.</li>
+</ol>
+<script>
+  setTimeout(() => { window.open('https://example.com/?blocked-popup', '_blank'); }, 500);
+</script>

@@ -1,0 +1,16 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Full screen test</title>
+<style>body { font: 15px -apple-system, sans-serif; margin: 2em; } #box { background: #36c; color: white; padding: 2em; }</style>
+<h1>Full screen (spec 012, item 11)</h1>
+<ol>
+  <li>Click the button → the page fills the screen, tabs and toolbar hide,
+    "Press Esc to exit full screen" shows for a few seconds.</li>
+  <li>Esc → back to the normal window.</li>
+  <li>Again, then Ctrl+⌘F (or the green window button) → also exits.</li>
+  <li>Again, then Ctrl+Tab to another tab → exits full screen.</li>
+  <li>⌃⌘F on a normal page → macOS full screen with tabs and toolbar kept.</li>
+  <li>YouTube: the player's full-screen button works the same way.</li>
+</ol>
+<div id="box">This box goes full screen.
+<button onclick="document.getElementById('box').requestFullscreen()">Enter full screen</button></div>

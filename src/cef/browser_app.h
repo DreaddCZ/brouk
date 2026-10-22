@@ -33,6 +33,9 @@ class BrowserApp : public CefApp, public CefBrowserProcessHandler {
       CefRefPtr<CefCommandLine> command_line) override;
 
   // CefBrowserProcessHandler:
+  void OnRegisterCustomPreferences(
+      cef_preferences_type_t type,
+      CefRawPtr<CefPreferenceRegistrar> registrar) override;
   void OnContextInitialized() override;
   bool OnAlreadyRunningAppRelaunch(CefRefPtr<CefCommandLine> command_line,
                                    const CefString& current_directory) override;

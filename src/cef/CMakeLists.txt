@@ -2,6 +2,14 @@
 add_library(brouk_cef STATIC
   browser_app.cc
   browser_app.h
+  context_menu_model.cc
+  context_menu_model.h
+  permission_mapping.cc
+  permission_mapping.h
+  profile_prefs.cc
+  profile_prefs.h
+  site_info.cc
+  site_info.h
   tab_client.cc
   tab_client.h
 )

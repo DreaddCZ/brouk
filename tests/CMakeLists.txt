@@ -9,17 +9,27 @@ FetchContent_Declare(googletest
 set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
 set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
-# GoogleTest must match our sanitizer settings to avoid false reports.
+# GoogleTest must match our sanitizer and RTTI settings.
 foreach(gtest_target gtest gtest_main)
-  target_compile_options(${gtest_target} PRIVATE ${BROUK_SANITIZER_FLAGS})
+  target_compile_options(${gtest_target} PRIVATE ${BROUK_SANITIZER_FLAGS}
+                         -fno-rtti)
 endforeach()
 
 include(GoogleTest)
 
 add_executable(brouk_core_tests
   core/address_input_test.cc
+  core/context_menu_test.cc
+  core/crash_error_code_test.cc
+  core/dialog_spam_guard_test.cc
+  core/download_paths_test.cc
+  core/external_protocol_test.cc
+  core/page_events_test.cc
+  core/permissions_test.cc
+  core/security_state_test.cc
   core/tab_strip_model_test.cc
   core/url_display_test.cc
+  core/zoom_test.cc
 )
 brouk_target_options(brouk_core_tests)
 target_link_libraries(brouk_core_tests PRIVATE brouk_core_testing GTest::gtest_main)

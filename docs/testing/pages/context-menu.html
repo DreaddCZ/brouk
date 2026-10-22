@@ -1,0 +1,20 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Context menu test</title>
+<style>body { font: 15px -apple-system, sans-serif; margin: 2em; } textarea { width: 30em; height: 4em; }</style>
+<h1>Context menu (spec 012)</h1>
+<p>Right-click each item; compare with Chrome.</p>
+<ol>
+  <li>Empty page area → Back, Forward, Reload, Print…, View Page Source, Inspect.</li>
+  <li><a href="https://example.com/">A link</a> → Open Link in New Tab (opens
+    in the background, right of this tab), Open Link in New Window, Save Link
+    As… (asks where to save), Copy Link Address, Inspect.</li>
+  <li>The image → Open Image in New Tab, Save Image As…, Copy Image (paste
+    into Preview → New from Clipboard), Copy Image Address.<br>
+    <img alt="test image" width="120" height="80" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='80'><rect width='120' height='80' fill='%23c33'/><circle cx='60' cy='40' r='25' fill='%23222'/></svg>"></li>
+  <li>Select some words of this sentence → Copy, Search Google for “…” (opens
+    a new tab), Print…, Inspect.</li>
+  <li>Text field → Undo, Redo, Cut, Copy, Paste, Paste and Match Style,
+    Select All. Type <code>brouc</code> and right-click it → spelling
+    suggestions first.<br><textarea>Type here</textarea></li>
+</ol>

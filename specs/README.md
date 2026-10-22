@@ -36,7 +36,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 009 | [Form autofill](009-autofill.md) | draft | P1 |
 | 010 | [Link routing and window picker](010-link-routing.md) | draft | P1 |
 | 011 | [Bookmark manager](011-bookmarks.md) | draft | P1 |
-| 012 | [Web platform basics](012-web-platform-basics.md) | ready | P1 |
+| 012 | [Web platform basics](012-web-platform-basics.md) | in-progress | P1 |
 | 013 | [History](013-history.md) | idea | P1 |
 | 014 | [Downloads](014-downloads.md) | idea | P2 |
 

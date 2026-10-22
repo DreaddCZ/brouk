@@ -1,6 +1,6 @@
 # 012 – Web platform basics
 
-- **Status:** ready
+- **Status:** in-progress
 - **Priority:** P1
 - **Depends on:** 001; later integrates with 003, 004, 005
 
@@ -78,6 +78,13 @@ None. Behaviour not described here follows Chrome; ask the user when unsure.
 
 ## Notes
 
+- 2026-10-21 (decided with the user): permission prompts copy Chrome's current prompt — a panel under the address bar, "<site> wants to" plus one line per permission; camera, microphone and location offer "Allow while visiting the site" / "Allow this time" / "Never allow"; other permissions "Allow" / "Block"; screen sharing is asked every time and never remembered. Decisions are stored in Chromium's content settings of the tab's request context, i.e. per site and per profile. "Allow this time" ends when the tab leaves the site or closes.
+- 2026-10-21 (implementation): network error pages, certificate interstitials (with HSTS handling) and the PDF viewer come from Chromium itself through CEF's Chrome bootstrap. CEF reports no "tab is playing audio" event (its audio handler captures audio instead of playing it), so the audio indicator needs another approach.
+- 2026-10-22 (implementation): through CEF's Chrome bootstrap, Chromium itself provides the HTTP sign-in dialog (Chrome's), the certificate interstitial, network error pages and the PDF viewer; CEF does not call our handlers for these.
+- 2026-10-22 (implementation): CEF reports neither popups blocked by Chromium's popup blocker nor whether a tab plays audio. A small script added to every page reports both to the browser (renderer process code in `src/renderer/`); the reports are treated as untrusted hints that only update indicators. The audio indicator is an estimate (playing media with sound, or a running Web Audio context), not Chrome's measured audio output.
+- 2026-10-22 (implementation, open): screen sharing captures the whole main screen — CEF's Alloy media path has no source picker (it uses the full desktop unless the page names a source). A Chrome-like screen/window picker would need our own picker plus rewriting `getDisplayMedia` in the page script to request the chosen source; to be decided with the user.
+- 2026-10-22 (implementation, open): web notifications are granted and macOS has authorised Brouk to show notifications, but none appeared in the first tests; still being investigated (Chromium's macOS notification path or a Focus mode).
+- 2026-10-22 (implementation): a tab opened only to start a download stays open (Chrome closes it). In CEF a download continues after its tab closes, but without further callbacks, so the download notice would lose track of it.
 - 2026-10-21: spec created from the readiness review. The user's instruction: copy Chrome or Firefox behaviour, check what users prefer when unsure, or ask during development.
 - Roadmap: built in milestone 1 ("browse the web") together with 001 and a minimal shell (see roadmap in `specs/README.md`). Until profiles exist (005), everything is stored for one implicit default profile; storage keys are already per profile so nothing needs migrating.
 - CEF hooks to check in the headers before implementing: `CefJSDialogHandler`, `CefDialogHandler`, `CefPermissionHandler`, `CefRequestHandler` (auth, certificate errors, client certificates, render process termination), `CefFindHandler`, `CefPrintHandler`, `CefDisplayHandler` (full screen, title, favicon), `CefContextMenuHandler`, `CefDownloadHandler`, `CefLifeSpanHandler` (popups). Some functions may have default implementations in CEF on macOS; use them where they match Chrome's behaviour and our UI.

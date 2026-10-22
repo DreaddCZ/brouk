@@ -26,6 +26,12 @@ int main(int argc, char* argv[]) {
       return 1;
     }
 
+    // Session restore will be our own (003): macOS must not restore windows
+    // or offer to "reopen windows" after a crash.
+    [NSUserDefaults.standardUserDefaults registerDefaults:@{
+      @"ApplePersistenceIgnoreState" : @YES
+    }];
+
     BRAppDelegate* delegate = [[BRAppDelegate alloc] init];
     NSApp.delegate = delegate;
 
@@ -59,8 +65,13 @@ int main(int argc, char* argv[]) {
       return CefGetExitCode();
     }
 
-    // Runs until CefQuitMessageLoop() (after every browser has closed).
-    CefRunMessageLoop();
+    // Runs until CefQuitMessageLoop() (after every browser has closed). The
+    // inner pool makes sure windows, views and CEF objects created while
+    // running are freed before CefShutdown, not after it.
+    @autoreleasepool {
+      CefRunMessageLoop();
+      [delegate releaseBrowserObjects];
+    }
     CefShutdown();
   }
   return 0;

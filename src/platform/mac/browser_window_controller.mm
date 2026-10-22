@@ -1,6 +1,7 @@
 #import "platform/mac/browser_window_controller.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -9,11 +10,17 @@
 #import "platform/mac/address_field.h"
 #import "platform/mac/browser_tab.h"
 #import "platform/mac/browser_window.h"
+#import "platform/mac/download_notice.h"
+#import "platform/mac/find_bar.h"
+#import "platform/mac/site_info_popover.h"
+
+#include "cef/site_info.h"
 #import "platform/mac/tab_strip_view.h"
 
 #include "core/address_input.h"
 #include "core/tab_strip_model.h"
 #include "core/url_display.h"
+#include "core/zoom.h"
 #include "include/wrapper/cef_helpers.h"
 
 namespace {
@@ -69,7 +76,8 @@ NSButton* ToolbarButton(NSString* symbol,
 
 @interface BRBrowserWindowController () <BRTabDelegate,
                                          BRTabStripDelegate,
-                                         BRAddressFieldDelegate>
+                                         BRAddressFieldDelegate,
+                                         BRFindBarDelegate>
 @end
 
 @implementation BRBrowserWindowController {
@@ -89,35 +97,78 @@ NSButton* ToolbarButton(NSString* symbol,
   NSButton* _forwardButton;
   NSButton* _reloadButton;
   BRAddressField* _addressField;
+  NSButton* _siteInfoButton;
+  NSButton* _zoomButton;
   NSView* _contentArea;
+  BRFindBar* _findBar;
+  BRDownloadNotice* _downloadNotice;
+  // The tab whose page is in HTML full screen, if any.
+  __weak BRTab* _fullscreenTab;
+  // We put the window into macOS full screen for that page (and leave it
+  // again afterwards).
+  BOOL _windowFullscreenForPage;
+  NSTextField* _fullscreenHint;
+  // Popup window (window.open with features): one tab, no tab strip,
+  // read-only address, as in Chrome.
+  BOOL _isPopup;
+  CGFloat _stripHeight;
+  NSButton* _popupBlockedButton;
 }
 
 - (instancetype)initWithOwner:(id<BRBrowserWindowOwner>)owner {
+  return [self initWithOwner:owner popupContentSize:NSZeroSize];
+}
+
+- (instancetype)initWithOwner:(id<BRBrowserWindowOwner>)owner
+             popupContentSize:(NSSize)popupSize {
+  BOOL isPopup = popupSize.width > 0 && popupSize.height > 0;
   NSRect frame = NSMakeRect(0, 0, 1200, 800);
   NSScreen* screen = NSScreen.mainScreen;
-  if (screen) {
-    NSRect visible = screen.visibleFrame;
+  NSRect visible = screen ? screen.visibleFrame : NSMakeRect(0, 0, 1280, 800);
+  if (isPopup) {
+    // The page asked for its content size; add our toolbar, stay on screen.
+    frame.size.width =
+        std::clamp<CGFloat>(popupSize.width, 260, visible.size.width);
+    frame.size.height = std::clamp<CGFloat>(popupSize.height + kToolbarHeight,
+                                            200, visible.size.height);
+  } else {
     frame.size.width = std::min<CGFloat>(1280, visible.size.width - 80);
     frame.size.height = std::min<CGFloat>(860, visible.size.height - 60);
   }
-  BRBrowserWindow* window = [[BRBrowserWindow alloc]
-      initWithContentRect:frame
-                styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
-                          NSWindowStyleMaskMiniaturizable |
-                          NSWindowStyleMaskResizable |
-                          NSWindowStyleMaskFullSizeContentView
-                  backing:NSBackingStoreBuffered
-                    defer:NO];
-  window.titlebarAppearsTransparent = YES;
-  window.titleVisibility = NSWindowTitleHidden;
-  window.minSize = NSMakeSize(480, 300);
+  NSWindowStyleMask style =
+      NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+      NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable;
+  if (!isPopup) {
+    style |= NSWindowStyleMaskFullSizeContentView;
+  }
+  BRBrowserWindow* window =
+      [[BRBrowserWindow alloc] initWithContentRect:frame
+                                         styleMask:style
+                                           backing:NSBackingStoreBuffered
+                                             defer:NO];
+  if (!isPopup) {
+    window.titlebarAppearsTransparent = YES;
+    window.titleVisibility = NSWindowTitleHidden;
+  }
+  window.minSize = isPopup ? NSMakeSize(260, 200) : NSMakeSize(480, 300);
   window.releasedWhenClosed = NO;
   window.tabbingMode = NSWindowTabbingModeDisallowed;
+  // Session restore will be our own (003); macOS window restoration would
+  // reopen empty windows after a crash.
+  window.restorable = NO;
   window.collectionBehavior |= NSWindowCollectionBehaviorFullScreenPrimary;
-  [window center];
+  if (isPopup && NSApp.keyWindow) {
+    [window cascadeTopLeftFromPoint:NSMakePoint(
+                                        NSMinX(NSApp.keyWindow.frame) + 40,
+                                        NSMaxY(NSApp.keyWindow.frame) - 40)];
+  } else {
+    [window center];
+  }
 
   if ((self = [super initWithWindow:window])) {
     _owner = owner;
+    _isPopup = isPopup;
+    _stripHeight = isPopup ? 0 : kTabStripHeight;
     _model = std::make_unique<brouk::TabStripModel>();
     _tabs = [NSMutableDictionary dictionary];
     _closingTabs = [NSMutableSet set];
@@ -135,16 +186,14 @@ NSButton* ToolbarButton(NSString* symbol,
   root.wantsLayer = YES;
   NSRect b = root.bounds;
 
-  _contentArea =
-      [[NSView alloc] initWithFrame:NSMakeRect(0, 0, b.size.width,
-                                               b.size.height - kTabStripHeight -
-                                                   kToolbarHeight)];
+  _contentArea = [[NSView alloc]
+      initWithFrame:NSMakeRect(0, 0, b.size.width,
+                               b.size.height - _stripHeight - kToolbarHeight)];
   _contentArea.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
   [root addSubview:_contentArea];
 
   _toolbar = [[BRToolbarView alloc]
-      initWithFrame:NSMakeRect(0,
-                               b.size.height - kTabStripHeight - kToolbarHeight,
+      initWithFrame:NSMakeRect(0, b.size.height - _stripHeight - kToolbarHeight,
                                b.size.width, kToolbarHeight)];
   _toolbar.autoresizingMask = NSViewWidthSizable | NSViewMinYMargin;
   [root addSubview:_toolbar];
@@ -155,6 +204,7 @@ NSButton* ToolbarButton(NSString* symbol,
   _tabStrip.autoresizingMask = NSViewWidthSizable | NSViewMinYMargin;
   _tabStrip.leadingInset = kTrafficLightsInset;
   _tabStrip.delegate = self;
+  _tabStrip.hidden = _isPopup;
   [root addSubview:_tabStrip];
 
   _backButton = ToolbarButton(@"chevron.left", @"Back", @"Back (⌘[)", self,
@@ -164,18 +214,71 @@ NSButton* ToolbarButton(NSString* symbol,
   _reloadButton = ToolbarButton(@"arrow.clockwise", @"Reload", @"Reload (⌘R)",
                                 self, @selector(reloadOrStop:));
   CGFloat x = 8;
-  for (NSButton* button in @[ _backButton, _forwardButton, _reloadButton ]) {
-    button.frame = NSMakeRect(x, 6, 30, 28);
-    button.autoresizingMask = NSViewMaxXMargin;
-    [_toolbar addSubview:button];
-    x += 32;
+  // Popup windows show only the (read-only) address, as in Chrome.
+  if (!_isPopup) {
+    for (NSButton* button in @[ _backButton, _forwardButton, _reloadButton ]) {
+      button.frame = NSMakeRect(x, 6, 30, 28);
+      button.autoresizingMask = NSViewMaxXMargin;
+      [_toolbar addSubview:button];
+      x += 32;
+    }
   }
+
+  // Site info (lock) at the left of the address bar, as in Chrome.
+  _siteInfoButton =
+      ToolbarButton(@"info.circle", @"Site information",
+                    @"View site information", self, @selector(showSiteInfo:));
+  _siteInfoButton.frame = NSMakeRect(x + 4, 8, 26, 24);
+  _siteInfoButton.autoresizingMask = NSViewMaxXMargin;
+  _siteInfoButton.symbolConfiguration = [NSImageSymbolConfiguration
+      configurationWithPointSize:12
+                          weight:NSFontWeightMedium];
+  [_toolbar addSubview:_siteInfoButton];
+  x += 30;
 
   _addressField = [[BRAddressField alloc]
       initWithFrame:NSMakeRect(x + 6, 8, b.size.width - x - 18, 24)];
   _addressField.autoresizingMask = NSViewWidthSizable;
   _addressField.addressDelegate = self;
+  _addressField.editable = !_isPopup;
   [_toolbar addSubview:_addressField];
+
+  // Zoom indicator at the right end of the address bar; click resets to
+  // 100 % (Chrome shows a popup with the same reset button).
+  _zoomButton = [NSButton buttonWithTitle:@""
+                                   target:self
+                                   action:@selector(resetZoom:)];
+  _zoomButton.bezelStyle = NSBezelStyleInline;
+  _zoomButton.font = [NSFont systemFontOfSize:11];
+  _zoomButton.hidden = YES;
+  _zoomButton.autoresizingMask = NSViewMinXMargin;
+  _zoomButton.frame = NSMakeRect(NSMaxX(_addressField.frame) - 58, 10, 54, 20);
+  [_toolbar addSubview:_zoomButton];
+
+  // "Pop-up blocked" indicator, left of the zoom indicator (Chrome).
+  _popupBlockedButton =
+      ToolbarButton(@"macwindow.badge.plus", @"Pop-ups blocked",
+                    @"Pop-ups were blocked on this page", self,
+                    @selector(showBlockedPopups:));
+  _popupBlockedButton.contentTintColor = NSColor.systemOrangeColor;
+  _popupBlockedButton.hidden = YES;
+  _popupBlockedButton.autoresizingMask = NSViewMinXMargin;
+  _popupBlockedButton.frame =
+      NSMakeRect(NSMinX(_zoomButton.frame) - 30, 8, 26, 24);
+  [_toolbar addSubview:_popupBlockedButton];
+
+  _findBar = [[BRFindBar alloc]
+      initWithFrame:NSMakeRect(_contentArea.frame.size.width - 380,
+                               NSMaxY(_contentArea.frame) - 44, 368, 36)];
+  _findBar.autoresizingMask = NSViewMinXMargin | NSViewMinYMargin;
+  _findBar.delegate = self;
+  _findBar.hidden = YES;
+  [root addSubview:_findBar];
+
+  _downloadNotice =
+      [[BRDownloadNotice alloc] initWithFrame:NSMakeRect(12, 12, 420, 40)];
+  _downloadNotice.autoresizingMask = NSViewMaxXMargin | NSViewMaxYMargin;
+  [root addSubview:_downloadNotice];
 }
 
 #pragma mark - Tabs
@@ -256,11 +359,40 @@ NSButton* ToolbarButton(NSString* symbol,
   [_addressField showPendingText:tab.pendingAddressText];
   NSString* title = tab.title.length ? tab.title : @"New Tab";
   self.window.title = title;
+
+  CefRefPtr<CefBrowser> browser = [tab browser];
+  _siteInfoButton.image = [NSImage
+      imageWithSystemSymbolName:[BRSiteInfoPopover symbolForBrowser:browser]
+       accessibilityDescription:[BRSiteInfoPopover labelForBrowser:browser]];
+  _siteInfoButton.contentTintColor = [BRSiteInfoPopover tintForBrowser:browser];
+
+  _popupBlockedButton.hidden = tab.blockedPopupURLs.count == 0;
+
+  double level = [tab zoomLevel];
+  _zoomButton.hidden = !brouk::IsZoomIndicatorShown(level);
+  _zoomButton.title =
+      [NSString stringWithFormat:@"%d %%", brouk::ZoomPercentFromLevel(level)];
+  _zoomButton.toolTip = @"Zoom: click to reset to 100 % (⌘0)";
+  _zoomButton.accessibilityLabel =
+      [NSString stringWithFormat:@"Zoom %d percent, reset",
+                                 brouk::ZoomPercentFromLevel(level)];
+
+  _findBar.hidden = !tab.findBarVisible;
+  if (tab.findBarVisible) {
+    if (![_findBar.text isEqualToString:tab.findText]) {
+      _findBar.text = tab.findText;
+    }
+    [_findBar setActiveMatch:tab.findActiveMatch ofCount:tab.findCount];
+  }
 }
 
 - (void)activateTab:(BRTab*)tab {
   if (!tab) {
     return;
+  }
+  // Like Chrome, switching tabs ends a page's full screen.
+  if (_fullscreenTab && _fullscreenTab != tab) {
+    [_fullscreenTab exitFullscreen];
   }
   BRTab* previous = [self activeTab];
   _model->ActivateTab(tab.tabId);
@@ -277,7 +409,9 @@ NSButton* ToolbarButton(NSString* symbol,
     return;
   }
   std::string display = brouk::FormatUrlForDisplay(tab.url.UTF8String);
-  if (display.empty() || tab.pendingAddressText) {
+  if (tab.hasDialog) {
+    [tab focusContent];  // Focuses the dialog.
+  } else if (display.empty() || tab.pendingAddressText) {
     [_addressField focusAndSelectAll];
   } else {
     [tab focusContent];
@@ -295,19 +429,20 @@ NSButton* ToolbarButton(NSString* symbol,
 
 - (std::optional<brouk::PopupHost>)tab:(BRTab*)opener
                             wantsPopup:(const brouk::PopupRequest&)request {
-  // Chrome's popup blocker: only popups the user asked for (click, key press)
-  // may open. TODO(012): address bar indicator to allow blocked popups.
-  if (!request.user_gesture) {
-    return std::nullopt;
+  // window.open() with size features opens a popup window (Chrome); other
+  // popups become tabs next to their opener.
+  BRBrowserWindowController* target = self;
+  if (request.wants_popup_window) {
+    NSSize size = NSMakeSize(request.width > 0 ? request.width : 640,
+                             request.height > 0 ? request.height : 480);
+    target = [_owner openPopupWindowWithContentSize:size];
   }
   BOOL foreground = request.disposition != CEF_WOD_NEW_BACKGROUND_TAB;
-  BRTab* tab = [self makeTab];
-  _model->InsertFromOpener(tab.tabId, opener.tabId, foreground);
+  BRTab* tab = [target insertTabFromOpener:opener foreground:foreground];
   NSString* key = [NSString
       stringWithFormat:@"%lld:%d", static_cast<long long>(opener.tabId),
                        request.popup_id];
   _pendingPopups[key] = tab;
-  [self modelDidChange];
 
   brouk::PopupHost host;
   host.parent_view = (__bridge void*)tab.containerView;
@@ -316,6 +451,31 @@ NSButton* ToolbarButton(NSString* symbol,
                         static_cast<int>(bounds.size.height));
   host.client = [tab client];
   return host;
+}
+
+// A tab for a popup or a link, placed after its opener when the opener is in
+// this window. The caller creates the browser.
+- (BRTab*)insertTabFromOpener:(nullable BRTab*)opener
+                   foreground:(BOOL)foreground {
+  BRTab* tab = [self makeTab];
+  if (opener) {
+    _model->InsertFromOpener(tab.tabId, opener.tabId, foreground);
+  } else {
+    _model->AppendTab(tab.tabId, foreground);
+  }
+  [self modelDidChange];
+  return tab;
+}
+
+// Removes a tab whose browser was never created (popup creation failed).
+- (void)removeUncreatedTab:(BRTab*)tab {
+  [tab.containerView removeFromSuperview];
+  _model->RemoveTab(tab.tabId);
+  [_tabs removeObjectForKey:@(tab.tabId)];
+  [self modelDidChange];
+  if (self.liveTabCount == 0) {
+    [self.window close];
+  }
 }
 
 - (void)tab:(BRTab*)opener popupAborted:(int)popupId {
@@ -327,10 +487,70 @@ NSButton* ToolbarButton(NSString* symbol,
     return;
   }
   [_pendingPopups removeObjectForKey:key];
-  [tab.containerView removeFromSuperview];
-  _model->RemoveTab(tab.tabId);
-  [_tabs removeObjectForKey:@(tab.tabId)];
-  [self modelDidChange];
+  // The tab may live in a popup window, owned by that window's controller.
+  [static_cast<BRBrowserWindowController*>(tab.delegate)
+      removeUncreatedTab:tab];
+}
+
+#pragma mark - Blocked popups
+
+// Chrome's "Pop-ups blocked" bubble as a menu: open a blocked popup, or
+// allow pop-ups for the site from now on.
+- (IBAction)showBlockedPopups:(id)sender {
+  BRTab* tab = [self activeTab];
+  NSMenu* menu = [[NSMenu alloc] initWithTitle:@"Pop-ups blocked"];
+  NSMenuItem* header = [menu addItemWithTitle:@"Pop-ups blocked on this page:"
+                                       action:nil
+                                keyEquivalent:@""];
+  header.enabled = NO;
+  for (NSString* url in tab.blockedPopupURLs) {
+    NSString* title = url.length > 70 ? [[url substringToIndex:67]
+                                            stringByAppendingString:@"…"]
+                                      : url;
+    NSMenuItem* item = [menu addItemWithTitle:title
+                                       action:@selector(openBlockedPopup:)
+                                keyEquivalent:@""];
+    item.representedObject = url;
+    item.target = self;
+  }
+  [menu addItem:NSMenuItem.separatorItem];
+  std::string origin = brouk::GetSiteInfo([tab browser]).origin;
+  if (!origin.empty()) {
+    NSMenuItem* allow = [menu
+        addItemWithTitle:[NSString stringWithFormat:@"Always allow pop-ups and "
+                                                    @"redirects from %s",
+                                                    origin.c_str()]
+                  action:@selector(allowPopupsForSite:)
+           keyEquivalent:@""];
+    allow.target = self;
+  }
+  [menu
+      popUpMenuPositioningItem:nil
+                    atLocation:NSMakePoint(
+                                   0, NSHeight(_popupBlockedButton.bounds) + 4)
+                        inView:_popupBlockedButton];
+}
+
+- (void)openBlockedPopup:(NSMenuItem*)item {
+  BRTab* opener = [self activeTab];
+  NSString* url = item.representedObject;
+  if (!opener || !url) {
+    return;
+  }
+  BRTab* tab = [self insertTabFromOpener:opener foreground:YES];
+  [tab createBrowserWithURL:url requestContext:[_owner requestContext]];
+}
+
+- (void)allowPopupsForSite:(id)sender {
+  BRTab* tab = [self activeTab];
+  CefRefPtr<CefBrowser> browser = [tab browser];
+  if (!browser) {
+    return;
+  }
+  std::string origin = brouk::GetSiteInfo(browser).origin;
+  brouk::SetSitePermission(browser, origin, brouk::PermissionKind::kPopups,
+                           brouk::PermissionSetting::kAllow);
+  [tab clearBlockedPopups];
 }
 
 - (void)tabCloseReady:(BRTab*)tab {
@@ -369,6 +589,110 @@ NSButton* ToolbarButton(NSString* symbol,
   return [NSApp.mainMenu performKeyEquivalent:event];
 }
 
+- (void)tab:(BRTab*)opener
+        openURL:(NSString*)url
+    disposition:(brouk::OpenDisposition)disposition {
+  if (disposition == brouk::OpenDisposition::kNewWindow) {
+    [_owner openWindowWithURL:url];
+    return;
+  }
+  BOOL foreground = disposition == brouk::OpenDisposition::kNewForegroundTab;
+  BRTab* tab = [self insertTabFromOpener:opener foreground:foreground];
+  [tab createBrowserWithURL:url requestContext:[_owner requestContext]];
+}
+
+- (std::string)tab:(BRTab*)tab
+    reserveDownloadPath:(const std::string&)suggested {
+  return [_owner reserveDownloadPath:suggested];
+}
+
+- (void)tab:(BRTab*)tab releaseDownloadPath:(const std::string&)path {
+  [_owner releaseDownloadPath:path];
+}
+
+- (void)tab:(BRTab*)tab downloadUpdated:(const brouk::DownloadInfo&)info {
+  [_downloadNotice updateWithInfo:info];
+}
+
+#pragma mark - HTML full screen
+
+- (BOOL)isWindowFullscreen {
+  return (self.window.styleMask & NSWindowStyleMaskFullScreen) != 0;
+}
+
+- (void)tab:(BRTab*)tab fullscreenChanged:(BOOL)fullscreen {
+  if (fullscreen) {
+    if (tab != [self activeTab]) {
+      [tab exitFullscreen];
+      return;
+    }
+    _fullscreenTab = tab;
+    [self setBrowserUIHidden:YES];
+    if (![self isWindowFullscreen]) {
+      _windowFullscreenForPage = YES;
+      [self.window toggleFullScreen:nil];
+    }
+    [self showFullscreenHint];
+  } else if (tab == _fullscreenTab) {
+    _fullscreenTab = nil;
+    [self setBrowserUIHidden:NO];
+    if (_windowFullscreenForPage && [self isWindowFullscreen]) {
+      [self.window toggleFullScreen:nil];
+    }
+    _windowFullscreenForPage = NO;
+  }
+}
+
+// Page full screen: the page fills the whole window.
+- (void)setBrowserUIHidden:(BOOL)hidden {
+  NSRect b = self.window.contentView.bounds;
+  _tabStrip.hidden = hidden || _isPopup;
+  _toolbar.hidden = hidden;
+  _findBar.hidden = hidden || ![self activeTab].findBarVisible;
+  _contentArea.frame =
+      hidden ? b
+             : NSMakeRect(0, 0, b.size.width,
+                          b.size.height - _stripHeight - kToolbarHeight);
+}
+
+// Chrome's hint: "Press Esc to exit full screen", fading after 4 s.
+- (void)showFullscreenHint {
+  if (!_fullscreenHint) {
+    _fullscreenHint =
+        [NSTextField labelWithString:@"Press  Esc  to exit full screen"];
+    _fullscreenHint.font = [NSFont systemFontOfSize:15
+                                             weight:NSFontWeightMedium];
+    _fullscreenHint.textColor = NSColor.whiteColor;
+    _fullscreenHint.alignment = NSTextAlignmentCenter;
+    _fullscreenHint.wantsLayer = YES;
+    _fullscreenHint.layer.backgroundColor =
+        [NSColor colorWithWhite:0.1 alpha:0.85].CGColor;
+    _fullscreenHint.layer.cornerRadius = 10;
+    _fullscreenHint.autoresizingMask =
+        NSViewMinXMargin | NSViewMaxXMargin | NSViewMinYMargin;
+  }
+  NSView* root = self.window.contentView;
+  NSRect b = root.bounds;
+  _fullscreenHint.frame = NSMakeRect(std::floor((b.size.width - 320) / 2),
+                                     b.size.height - 80, 320, 40);
+  _fullscreenHint.alphaValue = 1;
+  [root addSubview:_fullscreenHint];
+  NSTextField* hint = _fullscreenHint;
+  dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 4 * NSEC_PER_SEC),
+                 dispatch_get_main_queue(), ^{
+                   [NSAnimationContext
+                       runAnimationGroup:^(NSAnimationContext* context) {
+                         context.duration = 0.5;
+                         hint.animator.alphaValue = 0;
+                       }
+                       completionHandler:^{
+                         if (hint.alphaValue == 0) {
+                           [hint removeFromSuperview];
+                         }
+                       }];
+                 });
+}
+
 - (void)tabDidCreateBrowser:(BRTab*)tab {
   [_owner browserWindowDidCreateBrowser];
   for (NSString* key in [_pendingPopups allKeysForObject:tab]) {
@@ -389,6 +713,10 @@ NSButton* ToolbarButton(NSString* symbol,
 - (void)tabStripDidMoveTab:(brouk::TabId)tabId toIndex:(NSUInteger)index {
   _model->MoveTab(tabId, index);
   [self modelDidChange];
+}
+
+- (void)tabStripDidToggleMute:(brouk::TabId)tabId {
+  [_tabs[@(tabId)] toggleMute];
 }
 
 - (void)tabStripDidRequestNewTab {
@@ -426,6 +754,10 @@ NSButton* ToolbarButton(NSString* symbol,
 #pragma mark - Menu and toolbar actions
 
 - (IBAction)newTab:(id)sender {
+  if (_isPopup) {
+    [_owner openNewWindow];  // Popup windows hold a single page (Chrome).
+    return;
+  }
   [self openTabWithURL:nil activate:YES];
 }
 
@@ -468,6 +800,79 @@ NSButton* ToolbarButton(NSString* symbol,
 
 - (IBAction)focusLocation:(id)sender {
   [_addressField focusAndSelectAll];
+}
+
+#pragma mark - Find
+
+- (IBAction)showFindBar:(id)sender {
+  BRTab* tab = [self activeTab];
+  if (!tab) {
+    return;
+  }
+  tab.findBarVisible = YES;
+  [self updateToolbar];
+  [_findBar focus];
+}
+
+- (IBAction)findNext:(id)sender {
+  [self findInActiveTabForward:YES];
+}
+
+- (IBAction)findPrevious:(id)sender {
+  [self findInActiveTabForward:NO];
+}
+
+- (void)findInActiveTabForward:(BOOL)forward {
+  BRTab* tab = [self activeTab];
+  if (!tab.findBarVisible || tab.findText.length == 0) {
+    [self showFindBar:nil];
+    return;
+  }
+  [tab findText:tab.findText forward:forward findNext:YES];
+}
+
+- (void)findBar:(BRFindBar*)bar
+       findText:(NSString*)text
+        forward:(BOOL)forward
+       findNext:(BOOL)findNext {
+  [[self activeTab] findText:text forward:forward findNext:findNext];
+  [self updateToolbar];
+}
+
+- (void)findBarDidClose:(BRFindBar*)bar {
+  BRTab* tab = [self activeTab];
+  tab.findBarVisible = NO;
+  [tab stopFinding];
+  [self updateToolbar];
+  [tab focusContent];
+}
+
+- (IBAction)showSiteInfo:(id)sender {
+  BRTab* tab = [self activeTab];
+  __weak BRTab* weakTab = tab;
+  [BRSiteInfoPopover showForBrowser:[tab browser]
+                         relativeTo:_siteInfoButton
+                             reload:^{
+                               [weakTab reload];
+                             }];
+}
+
+- (IBAction)printPage:(id)sender {
+  [[self activeTab] print];
+}
+
+#pragma mark - Zoom
+
+- (IBAction)zoomIn:(id)sender {
+  [[self activeTab] zoom:CEF_ZOOM_COMMAND_IN];
+}
+
+- (IBAction)zoomOut:(id)sender {
+  [[self activeTab] zoom:CEF_ZOOM_COMMAND_OUT];
+}
+
+- (IBAction)resetZoom:(id)sender {
+  [[self activeTab] zoom:CEF_ZOOM_COMMAND_RESET];
 }
 
 - (IBAction)selectNextTab:(id)sender {
@@ -532,6 +937,8 @@ NSButton* ToolbarButton(NSString* symbol,
 - (void)windowWillExitFullScreen:(NSNotification*)notification {
   _tabStrip.leadingInset = kTrafficLightsInset;
   _tabStrip.needsLayout = YES;
+  _windowFullscreenForPage = NO;
+  [_fullscreenTab exitFullscreen];
 }
 
 @end

@@ -1,0 +1,29 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Audio test</title>
+<style>body { font: 15px -apple-system, sans-serif; margin: 2em; } button { font-size: 15px; margin: .3em; }</style>
+<h1>Tab audio (spec 012, item 17)</h1>
+<p>While the tone plays, the tab shows a speaker icon; clicking it mutes the
+tab (crossed-out speaker) and clicking again unmutes. Stopping the tone hides
+the icon (unless the tab is muted). YouTube shows the same.</p>
+<button onclick="start(0.2)">Play tone</button>
+<button onclick="stop()">Stop</button>
+<script>
+  // A generated sine tone as a WAV file (no network needed).
+  function toneUrl(seconds) {
+    const rate = 22050, n = rate * seconds, data = new DataView(new ArrayBuffer(44 + n * 2));
+    const text = (o, s) => { for (let i = 0; i < s.length; i++) data.setUint8(o + i, s.charCodeAt(i)); };
+    text(0, 'RIFF'); data.setUint32(4, 36 + n * 2, true); text(8, 'WAVEfmt ');
+    data.setUint32(16, 16, true); data.setUint16(20, 1, true); data.setUint16(22, 1, true);
+    data.setUint32(24, rate, true); data.setUint32(28, rate * 2, true);
+    data.setUint16(32, 2, true); data.setUint16(34, 16, true); text(36, 'data'); data.setUint32(40, n * 2, true);
+    for (let i = 0; i < n; i++) data.setInt16(44 + i * 2, Math.sin(i / rate * 2 * Math.PI * 440) * 12000, true);
+    return URL.createObjectURL(new Blob([data], { type: 'audio/wav' }));
+  }
+  const audio = new Audio(toneUrl(2));
+  audio.loop = true;
+  function start(volume) { audio.volume = volume; audio.play(); }
+  function stop() { audio.pause(); }
+  // #quiet: start almost silently on load (for automated checks).
+  if (location.hash === '#quiet') start(0.001);
+</script>

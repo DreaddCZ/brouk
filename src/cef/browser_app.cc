@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 
+#include "cef/profile_prefs.h"
 #include "include/cef_command_line.h"
 #include "include/wrapper/cef_helpers.h"
 
@@ -17,6 +18,12 @@ void BrowserApp::OnBeforeCommandLineProcessing(
   if (process_type.empty() && std::getenv("BROUK_DEV_MOCK_KEYCHAIN")) {
     command_line->AppendSwitch("use-mock-keychain");
   }
+}
+
+void BrowserApp::OnRegisterCustomPreferences(
+    cef_preferences_type_t type,
+    CefRawPtr<CefPreferenceRegistrar> registrar) {
+  RegisterProfilePreferences(type, registrar);
 }
 
 void BrowserApp::OnContextInitialized() {

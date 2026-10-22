@@ -1,5 +1,6 @@
 #import "platform/mac/app_delegate.h"
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -8,6 +9,7 @@
 
 #include "brouk/app_info.h"
 #include "core/address_input.h"
+#include "core/download_paths.h"
 #include "include/cef_app.h"
 #include "include/cef_command_line.h"
 #include "include/cef_request_context.h"
@@ -46,11 +48,17 @@
   CefRefPtr<CefRequestContext> _requestContext;
   int _browserCount;
   BOOL _quitting;
+  std::unique_ptr<brouk::DownloadPathReserver> _downloadPaths;
 }
 
 - (instancetype)init {
   if ((self = [super init])) {
     _windows = [NSMutableArray array];
+    _downloadPaths =
+        std::make_unique<brouk::DownloadPathReserver>([](const std::string& p) {
+          return [NSFileManager.defaultManager
+              fileExistsAtPath:[NSString stringWithUTF8String:p.c_str()]];
+        });
   }
   return self;
 }
@@ -128,6 +136,44 @@
   return controller;
 }
 
+- (void)openWindowWithURL:(NSString*)url {
+  if (_quitting || !_requestContext) {
+    return;
+  }
+  [[self openWindow] openTabWithURL:url activate:YES];
+}
+
+- (std::string)reserveDownloadPath:(const std::string&)suggested {
+  // Chrome's default: ~/Downloads (configurable later, see 012/004).
+  NSURL* downloads =
+      [NSFileManager.defaultManager URLForDirectory:NSDownloadsDirectory
+                                           inDomain:NSUserDomainMask
+                                  appropriateForURL:nil
+                                             create:YES
+                                              error:nil];
+  NSString* dir =
+      downloads.path
+          ?: [NSHomeDirectory() stringByAppendingPathComponent:@"Downloads"];
+  return _downloadPaths->Reserve(dir.UTF8String, suggested);
+}
+
+- (void)releaseDownloadPath:(const std::string&)path {
+  _downloadPaths->Release(path);
+}
+
+- (BRBrowserWindowController*)openPopupWindowWithContentSize:(NSSize)size {
+  BRBrowserWindowController* controller =
+      [[BRBrowserWindowController alloc] initWithOwner:self
+                                      popupContentSize:size];
+  [_windows addObject:controller];
+  [controller showWindow:nil];
+  return controller;
+}
+
+- (void)openNewWindow {
+  [self newWindow:nil];
+}
+
 - (IBAction)newWindow:(nullable id)sender {
   if (_quitting || !_requestContext) {
     return;
@@ -149,6 +195,11 @@
     [controller closeAllTabs];
   }
   [self quitIfDone];
+}
+
+- (void)releaseBrowserObjects {
+  [_windows removeAllObjects];
+  _requestContext = nullptr;
 }
 
 - (void)quitIfDone {
@@ -254,6 +305,12 @@
       modifiers:cmd];
   [file addItem:NSMenuItem.separatorItem];
   [self addItem:file
+          title:@"Print…"
+         action:@selector(printPage:)
+            key:@"p"
+      modifiers:cmd];
+  [file addItem:NSMenuItem.separatorItem];
+  [self addItem:file
           title:@"Close Window"
          action:@selector(performClose:)
             key:@"w"
@@ -306,6 +363,24 @@
          action:@selector(selectAll:)
             key:@"a"
       modifiers:cmd];
+  [edit addItem:NSMenuItem.separatorItem];
+  NSMenu* find = [[NSMenu alloc] initWithTitle:@"Find"];
+  [edit addItemWithTitle:@"Find" action:nil keyEquivalent:@""].submenu = find;
+  [self addItem:find
+          title:@"Find…"
+         action:@selector(showFindBar:)
+            key:@"f"
+      modifiers:cmd];
+  [self addItem:find
+          title:@"Find Next"
+         action:@selector(findNext:)
+            key:@"g"
+      modifiers:cmd];
+  [self addItem:find
+          title:@"Find Previous"
+         action:@selector(findPrevious:)
+            key:@"g"
+      modifiers:cmd | shift];
 
   NSMenu* view = [self submenu:@"View" in:bar];
   [self addItem:view
@@ -323,6 +398,30 @@
          action:@selector(reloadIgnoringCache:)
             key:@"r"
       modifiers:cmd | shift];
+  [view addItem:NSMenuItem.separatorItem];
+  [self addItem:view
+          title:@"Actual Size"
+         action:@selector(resetZoom:)
+            key:@"0"
+      modifiers:cmd];
+  [self addItem:view
+          title:@"Zoom In"
+         action:@selector(zoomIn:)
+            key:@"+"
+      modifiers:cmd];
+  [self addItem:view
+          title:@"Zoom Out"
+         action:@selector(zoomOut:)
+            key:@"-"
+      modifiers:cmd];
+  // Cmd+= zooms in too (the + key without Shift), as in Chrome.
+  NSMenuItem* zoomInAlt = [self addItem:view
+                                  title:@"Zoom In"
+                                 action:@selector(zoomIn:)
+                                    key:@"="
+                              modifiers:cmd];
+  zoomInAlt.hidden = YES;
+  zoomInAlt.allowsKeyEquivalentWhenHidden = YES;
   [view addItem:NSMenuItem.separatorItem];
   [self addItem:view
           title:@"Enter Full Screen"

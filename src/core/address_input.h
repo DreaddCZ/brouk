@@ -34,6 +34,12 @@ AddressInputResult ClassifyAddressInput(
     std::string_view input,
     std::string_view search_template = kDefaultSearchTemplate);
 
+// The search URL for `query`: "%s" in `search_template` replaced by the
+// form-encoded query (used for "Search Google for …" too).
+std::string BuildSearchUrl(
+    std::string_view query,
+    std::string_view search_template = kDefaultSearchTemplate);
+
 // Form-encodes text for a query string: unreserved characters stay, spaces
 // become '+', everything else becomes %XX of its UTF-8 bytes.
 std::string EncodeQueryComponent(std::string_view text);
