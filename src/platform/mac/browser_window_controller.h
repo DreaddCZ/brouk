@@ -48,6 +48,9 @@ NS_ASSUME_NONNULL_BEGIN
 // Number of tabs, including tabs that are still closing.
 - (NSUInteger)liveTabCount;
 
+// A popup window (window.open with features): has no tab strip.
+@property(nonatomic, readonly) BOOL isPopup;
+
 @end
 
 NS_ASSUME_NONNULL_END

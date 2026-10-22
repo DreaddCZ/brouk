@@ -3,6 +3,9 @@
 
 #import <Cocoa/Cocoa.h>
 
+#include <string>
+#include <vector>
+
 #include "include/cef_application_mac.h"
 
 NS_ASSUME_NONNULL_BEGIN
@@ -15,8 +18,8 @@ NS_ASSUME_NONNULL_BEGIN
 
 // Called once CEF is initialized (CefBrowserProcessHandler).
 - (void)cefContextInitialized;
-// The app was launched again while running.
-- (void)relaunched;
+// The app was launched again while running, with these arguments.
+- (void)relaunchedWithURLs:(const std::vector<std::string>&)urls;
 // Cmd+Q / Quit menu: closes all windows, then quits CEF.
 - (void)tryToTerminateApplication;
 // After the message loop ended, before CefShutdown: drops every window, tab

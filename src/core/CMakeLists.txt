@@ -19,6 +19,8 @@ set(BROUK_CORE_SOURCES
   permissions.cc
   permissions.h
   result.h
+  screen_share.cc
+  screen_share.h
   security_state.cc
   security_state.h
   settings.cc

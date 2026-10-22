@@ -11,6 +11,7 @@
 
 #include "core/dialog_spam_guard.h"
 #include "core/permissions.h"
+#include "core/screen_share.h"
 #include "include/cef_client.h"
 
 namespace brouk {
@@ -159,6 +160,12 @@ class TabClientDelegate {
 
   // Whether the page plays sound (reported by the page script; an estimate).
   virtual void OnAudibleChanged(bool audible) = 0;
+
+  // The page asked to share a screen or window: show the picker. `done` gets
+  // the user's choice, or nullopt if cancelled or no picker can be shown;
+  // it is called once.
+  using DesktopSourceDone = std::function<void(std::optional<DesktopSource>)>;
+  virtual void ChooseDesktopSource(DesktopSourceDone done) = 0;
 
   // Find in page progress: `count` matches, `active` is the 1-based index of
   // the highlighted one; `final_update` is false while still searching.
@@ -392,6 +399,11 @@ class TabClient : public CefClient,
   void SetFrameAudible(const std::string& frame_id, bool audible);
   // An external-protocol question is open (one at a time, like Chrome).
   bool asking_external_protocol_ = false;
+  // Screen sharing picker: one at a time; choosing grants the capture.
+  void ChooseDesktopSourceForFrame(const CefRefPtr<CefFrame>& frame,
+                                   std::uint32_t request_id);
+  bool choosing_desktop_source_ = false;
+  ScreenShareGrant screen_share_grant_;
   // Ids for media prompts (CEF's own prompt ids start at 1 and grow).
   std::uint64_t next_media_prompt_id_ = 1ULL << 62;
   DialogSpamGuard dialog_guard_;

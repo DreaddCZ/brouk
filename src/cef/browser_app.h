@@ -2,7 +2,9 @@
 #define BROUK_CEF_BROWSER_APP_H_
 
 #include <functional>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include "include/cef_app.h"
 
@@ -16,8 +18,10 @@ class BrowserApp : public CefApp, public CefBrowserProcessHandler {
     // UI thread. CEF is ready: open the first window.
     std::function<void()> on_context_initialized;
     // UI thread. The app was started again while running (CEF's process
-    // singleton); open a new window like Chrome does.
-    std::function<void()> on_relaunch;
+    // singleton). `urls` are the new launch's arguments (untrusted input,
+    // like anything typed into the address bar): Chrome opens them as tabs,
+    // or a new window when there are none.
+    std::function<void(std::vector<std::string> urls)> on_relaunch;
   };
 
   explicit BrowserApp(Callbacks callbacks) : callbacks_(std::move(callbacks)) {}

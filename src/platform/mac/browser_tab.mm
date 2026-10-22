@@ -2,6 +2,7 @@
 
 #import "platform/mac/permission_prompt_view.h"
 #import "platform/mac/sad_tab_view.h"
+#import "platform/mac/screen_share_picker.h"
 #import "platform/mac/tab_dialog_view.h"
 
 #include <cstdint>
@@ -41,6 +42,7 @@ NSString* StripFragment(NSString* url) {
 - (void)handleBrowserClosed;
 - (void)handlePopupBlocked:(NSString*)url;
 - (void)handleAudible:(BOOL)audible;
+- (void)chooseDesktopSource:(brouk::TabClientDelegate::DesktopSourceDone)done;
 - (void)showJsDialog:(const brouk::JsDialogRequest&)request
                 done:(brouk::JsDialogDone)done;
 - (void)dismissJsDialog;
@@ -164,6 +166,9 @@ class TabDelegateBridge : public TabClientDelegate {
     [tab.delegate tab:tab fullscreenChanged:fullscreen];
   }
   void OnAudibleChanged(bool audible) override { [tab_ handleAudible:audible]; }
+  void ChooseDesktopSource(DesktopSourceDone done) override {
+    [tab_ chooseDesktopSource:std::move(done)];
+  }
   void OnFindResult(int count, int active, bool final_update) override {
     [tab_ handleFindResult:count active:active final:final_update];
   }
@@ -202,6 +207,10 @@ class TabDelegateBridge : public TabClientDelegate {
   std::optional<brouk::UnresponsiveDone> _pendingUnresponsive;
   NSTimer* _pendingUnresponsiveTimer;
   NSDate* _modalPanelLastSeen;
+  // Waiting for the screen sharing picker. Holds CEF objects, so it is
+  // dropped when the browser closes.
+  std::optional<brouk::TabClientDelegate::DesktopSourceDone>
+      _pendingDesktopSource;
   BRTabDialogView* _externalProtocolDialog;
   BRSadTabView* _sadTab;
   BOOL _clientDetached;
@@ -654,6 +663,34 @@ class TabDelegateBridge : public TabClientDelegate {
   _dialog = nil;
 }
 
+// The page asked to share a screen or window (getDisplayMedia).
+- (void)chooseDesktopSource:(brouk::TabClientDelegate::DesktopSourceDone)done {
+  CEF_REQUIRE_UI_THREAD();
+  // Only the tab the user is looking at may open the picker.
+  if (_pendingDesktopSource || _containerView.hidden ||
+      !_containerView.window.isVisible) {
+    done(std::nullopt);
+    return;
+  }
+  _pendingDesktopSource = std::move(done);
+  __weak BRTab* weakSelf = self;
+  [BRScreenSharePicker
+      pickWithCompletion:^(std::optional<brouk::DesktopSource> source) {
+        BRTab* strongSelf = weakSelf;
+        if (!strongSelf || !strongSelf->_pendingDesktopSource) {
+          return;  // The tab closed meanwhile.
+        }
+        brouk::TabClientDelegate::DesktopSourceDone answer =
+            std::move(*strongSelf->_pendingDesktopSource);
+        strongSelf->_pendingDesktopSource.reset();
+        // The system picker takes the focus; give it back to the tab's
+        // window, where the user continues.
+        [NSApp activateIgnoringOtherApps:YES];
+        [strongSelf->_containerView.window makeKeyAndOrderFront:nil];
+        answer(source);
+      }];
+}
+
 - (void)handleAudible:(BOOL)audible {
   _isAudible = audible;
   [_delegate tabDidChangeState:self];
@@ -705,6 +742,7 @@ class TabDelegateBridge : public TabClientDelegate {
 - (void)handleBrowserClosed {
   _browser = nullptr;
   [self cancelPendingUnresponsive];  // Holds a CEF callback.
+  _pendingDesktopSource.reset();
   _client->DetachDelegate();
   _clientDetached = YES;
   // Release CEF objects while CEF is still running: releasing them after

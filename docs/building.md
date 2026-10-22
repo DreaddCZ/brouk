@@ -68,6 +68,15 @@ For automated developer test runs only, `BROUK_DEV_MOCK_KEYCHAIN=1` makes
 Chromium use a throwaway key instead of the keychain. Do not use it for normal
 browsing.
 
+`BROUK_DEV_DATA_DIR=/absolute/path` stores all data in that folder instead of
+the one below, so a test instance can run next to your own Brouk (one instance
+runs per data folder):
+
+```sh
+open -n --env BROUK_DEV_MOCK_KEYCHAIN=1 --env BROUK_DEV_DATA_DIR=/tmp/brouk-test \
+  build/debug-x86_64/Brouk.app --args https://example.com/
+```
+
 ### Data
 
 All data is stored in `~/Library/Application Support/Brouk/`:
