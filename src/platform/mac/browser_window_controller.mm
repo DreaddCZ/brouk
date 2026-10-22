@@ -386,6 +386,24 @@ NSButton* ToolbarButton(NSString* symbol,
   [self updateToolbar];
 }
 
+- (NSUInteger)tabCountInProfile:(const brouk::ProfileId&)profile {
+  NSUInteger count = 0;
+  for (BRTab* tab in _tabs.allValues) {
+    count += tab.profileId == profile ? 1 : 0;
+  }
+  return count;
+}
+
+- (void)closeTabsInProfile:(const brouk::ProfileId&)profile {
+  for (BRTab* tab in _tabs.allValues) {
+    if (tab.profileId == profile) {
+      // Without asking the page (beforeunload): the user confirmed deleting
+      // the profile with its tabs.
+      [tab forceClose];
+    }
+  }
+}
+
 - (void)profilesDidChange {
   _model->SetDefaultProfile([_owner defaultProfileId]);
   [self modelDidChange];
@@ -408,7 +426,10 @@ NSButton* ToolbarButton(NSString* symbol,
   _reloadButton.toolTip = loading ? @"Stop loading (⌘.)" : @"Reload (⌘R)";
   _addressField.pageURL = tab.url ?: @"";
   [_addressField showPendingText:tab.pendingAddressText];
-  NSString* title = tab.title.length ? tab.title : @"New Tab";
+  NSString* title =
+      tab.title.length && ![tab.title isEqualToString:@"about:blank"]
+          ? tab.title
+          : @"New Tab";
   self.window.title = title;
 
   CefRefPtr<CefBrowser> browser = [tab browser];

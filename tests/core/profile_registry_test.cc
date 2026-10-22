@@ -128,5 +128,52 @@ TEST_F(ProfileRegistryTest, UnusedColor) {
   EXPECT_EQ(registry.UnusedColor(), "red");
 }
 
+TEST_F(ProfileRegistryTest, ShowManagerAtStartup) {
+  ProfileRegistry registry(dir_);
+  registry.Load();
+  EXPECT_FALSE(registry.show_manager_at_startup());
+  EXPECT_FALSE(registry.SetShowManagerAtStartup(true));
+  ProfileRegistry again(dir_);
+  again.Load();
+  EXPECT_TRUE(again.show_manager_at_startup());
+}
+
+TEST_F(ProfileRegistryTest, DeleteProfile) {
+  ProfileRegistry registry(dir_);
+  registry.Load();
+  EXPECT_TRUE(registry.DeleteProfile("default"));  // Default and last.
+  Result<ProfileId> work = registry.CreateProfile("Work", "green");
+  ASSERT_TRUE(work);
+  EXPECT_TRUE(registry.DeleteProfile("default"));  // Still the default.
+  EXPECT_TRUE(registry.DeleteProfile("p-missing"));
+  EXPECT_FALSE(registry.DeleteProfile(work.value()));
+  EXPECT_FALSE(registry.Find(work.value()));
+  EXPECT_FALSE(std::filesystem::exists(dir_ / "profiles" / work.value()));
+  ProfileRegistry again(dir_);
+  again.Load();
+  EXPECT_EQ(again.profiles().size(), 1u);
+}
+
+TEST_F(ProfileRegistryTest, RemovesWebDataOfDeletedProfilesOnly) {
+  ProfileRegistry registry(dir_);
+  registry.Load();
+  Result<ProfileId> work = registry.CreateProfile("Work", "green");
+  ASSERT_TRUE(work);
+  std::filesystem::path web = dir_ / "web";
+  for (const char* name :
+       {"default", "p-0000abcd", "Crashpad", "component_crx_cache", "p-1"}) {
+    std::filesystem::create_directories(web / name);
+  }
+  std::filesystem::create_directories(web / work.value());
+  Write("web/p-0000abcd/Cookies", "x");
+  EXPECT_EQ(registry.RemoveWebDataOfDeletedProfiles(web), 1);
+  EXPECT_FALSE(std::filesystem::exists(web / "p-0000abcd"));
+  for (const std::string& kept :
+       {std::string("default"), work.value(), std::string("Crashpad"),
+        std::string("component_crx_cache"), std::string("p-1")}) {
+    EXPECT_TRUE(std::filesystem::exists(web / kept)) << kept;
+  }
+}
+
 }  // namespace
 }  // namespace brouk

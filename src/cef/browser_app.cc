@@ -6,6 +6,7 @@
 #include <utility>
 #include <vector>
 
+#include "cef/internal_scheme.h"
 #include "cef/profile_prefs.h"
 #include "include/cef_command_line.h"
 #include "include/wrapper/cef_helpers.h"
@@ -35,6 +36,11 @@ void BrowserApp::OnContextInitialized() {
   if (callbacks_.on_context_initialized) {
     callbacks_.on_context_initialized();
   }
+}
+
+void BrowserApp::OnRegisterCustomSchemes(
+    CefRawPtr<CefSchemeRegistrar> registrar) {
+  AddInternalScheme(registrar);
 }
 
 // static

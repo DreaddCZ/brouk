@@ -30,6 +30,8 @@ add_executable(brouk_app
   permission_prompt_view.mm
   profile_colors.h
   profile_colors.mm
+  profile_manager_window.h
+  profile_manager_window.mm
   sad_tab_view.h
   sad_tab_view.mm
   screen_share_picker.h
@@ -68,6 +70,19 @@ add_dependencies(brouk_app brouk_helper)
 # only the helper changed (renderer code), which does not relink the app.
 set(_bundle_stamp "${CMAKE_CURRENT_BINARY_DIR}/bundle.stamp")
 set(_bundle_commands "")
+
+# Internal pages (web/, TypeScript), compiled into the bundle's resources.
+file(GLOB_RECURSE _web_sources CONFIGURE_DEPENDS
+  "${PROJECT_SOURCE_DIR}/web/shared/*" "${PROJECT_SOURCE_DIR}/web/profiles/*")
+set(_web_stamp "${CMAKE_CURRENT_BINARY_DIR}/web.stamp")
+add_custom_command(OUTPUT "${_web_stamp}"
+  COMMAND "${PROJECT_SOURCE_DIR}/scripts/web" build
+          "${APP_BUNDLE}/Contents/Resources/web"
+  COMMAND ${CMAKE_COMMAND} -E touch "${_web_stamp}"
+  DEPENDS ${_web_sources} "${PROJECT_SOURCE_DIR}/web/tsconfig.json"
+          "${PROJECT_SOURCE_DIR}/web/package-lock.json"
+  COMMENT "Building internal pages"
+  VERBATIM)
 
 # Copy the CEF framework. (CEF's COPY_MAC_FRAMEWORK macro uses "ln -sf", which
 # on a rebuild follows the existing directory links and nests new links inside
@@ -130,7 +145,7 @@ list(APPEND _bundle_commands
 
 add_custom_command(OUTPUT "${_bundle_stamp}"
   ${_bundle_commands}
-  DEPENDS brouk_app brouk_helper
+  DEPENDS brouk_app brouk_helper "${_web_stamp}"
           "$<TARGET_FILE:brouk_app>" "$<TARGET_FILE:brouk_helper>"
   COMMENT "Assembling and signing ${APP_NAME}.app (${BROUK_CODESIGN_IDENTITY})"
   VERBATIM)

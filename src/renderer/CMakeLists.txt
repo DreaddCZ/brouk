@@ -5,6 +5,8 @@ add_library(brouk_renderer STATIC
   # Validates the browser's answer to the screen sharing picker. Compiled in
   # directly: brouk_core is built with sanitizers, which helpers cannot load.
   "${PROJECT_SOURCE_DIR}/src/core/screen_share.cc"
+  # Which pages get the internal pages' bridge.
+  "${PROJECT_SOURCE_DIR}/src/core/internal_pages.cc"
 )
 # The helper processes cannot load the sanitizer runtime (sandbox).
 brouk_target_options(brouk_renderer CEF NO_SANITIZE)

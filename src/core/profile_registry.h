@@ -55,6 +55,21 @@ class ProfileRegistry {
                                      std::string_view name,
                                      std::string_view color);
   std::optional<Error> SetDefaultProfile(std::string_view id);
+  std::optional<Error> SetShowManagerAtStartup(bool show);
+  bool show_manager_at_startup() const {
+    return global_.GetBool("profiles.show_manager_at_startup");
+  }
+
+  // Deletes a profile's own files (profiles/<id>/). The default profile
+  // cannot be deleted. Chromium may still use the profile's web data while
+  // its tabs close, so that is removed at the next start, see below.
+  std::optional<Error> DeleteProfile(std::string_view id);
+
+  // Removes web data folders (<web_root>/<id>) of profiles that no longer
+  // exist. Only folders named like our generated ids (p-xxxxxxxx) are
+  // touched; Chromium's own files in the same folder are left alone. Call
+  // after Load(), before CEF uses the folder. Returns how many were removed.
+  int RemoveWebDataOfDeletedProfiles(const std::filesystem::path& web_root);
 
   // A colour not used by any profile yet (the first one if all are used).
   std::string UnusedColor() const;
@@ -63,6 +78,8 @@ class ProfileRegistry {
   std::filesystem::path ProfileSettingsPath(std::string_view id) const;
   std::optional<Error> CheckName(std::string_view name,
                                  std::string_view except_id) const;
+  std::optional<Error> SetGlobalSetting(std::string_view key,
+                                        SettingValue value);
   void Sort();
 
   std::filesystem::path data_dir_;

@@ -54,6 +54,11 @@ NS_ASSUME_NONNULL_BEGIN
 // Profile names, colours or the default profile changed: redraw.
 - (void)profilesDidChange;
 
+// Tabs of a profile in this window (including tabs still closing), and
+// closing them (a profile is deleted, 005).
+- (NSUInteger)tabCountInProfile:(const brouk::ProfileId&)profile;
+- (void)closeTabsInProfile:(const brouk::ProfileId&)profile;
+
 // Starts closing every tab (pages may ask to stay via beforeunload); the
 // window closes when the last tab is gone.
 - (void)closeAllTabs;

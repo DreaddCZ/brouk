@@ -28,6 +28,13 @@ bool EqualsIgnoringCase(std::string_view a, std::string_view b) {
       a, b, [](char x, char y) { return ToLowerAscii(x) == ToLowerAscii(y); });
 }
 
+// "p-" and 8 lower-case hex digits, as NewProfileId() makes them.
+bool IsGeneratedProfileId(std::string_view id) {
+  return id.size() == 10 && id.starts_with("p-") &&
+         id.substr(2).find_first_not_of("0123456789abcdef") ==
+             std::string_view::npos;
+}
+
 std::string NewProfileId() {
   std::random_device random;
   std::uniform_int_distribution<int> hex(0, 15);
@@ -193,10 +200,20 @@ std::optional<Error> ProfileRegistry::SetDefaultProfile(std::string_view id) {
   if (!Find(id)) {
     return Error{"There is no such profile."};
   }
+  return SetGlobalSetting("profiles.default", std::string(id));
+}
+
+std::optional<Error> ProfileRegistry::SetShowManagerAtStartup(bool show) {
+  return SetGlobalSetting("profiles.show_manager_at_startup", show);
+}
+
+std::optional<Error> ProfileRegistry::SetGlobalSetting(std::string_view key,
+                                                       SettingValue value) {
+  // Keep the other values of the file as they are.
   LoadedSettings loaded =
       LoadSettingsFile(data_dir_ / kSettingsFile, SettingScope::kGlobal);
   if (std::optional<std::string> problem =
-          loaded.settings.Set("profiles.default", std::string(id))) {
+          loaded.settings.Set(key, std::move(value))) {
     return Error{*problem};
   }
   if (std::optional<Error> save =
@@ -205,6 +222,52 @@ std::optional<Error> ProfileRegistry::SetDefaultProfile(std::string_view id) {
   }
   global_ = loaded.settings;
   return std::nullopt;
+}
+
+std::optional<Error> ProfileRegistry::DeleteProfile(std::string_view id) {
+  auto it = std::ranges::find(profiles_, id, &ProfileInfo::id);
+  if (it == profiles_.end()) {
+    return Error{"There is no such profile."};
+  }
+  if (default_profile().id == id) {
+    return Error{
+        "The default profile cannot be deleted. Make another profile the "
+        "default first."};
+  }
+  if (profiles_.size() == 1) {
+    return Error{"The last profile cannot be deleted."};
+  }
+  std::error_code error;
+  std::filesystem::remove_all(data_dir_ / kProfilesDir / std::string(id),
+                              error);
+  if (error) {
+    return Error{"The profile's files could not be removed: " +
+                 error.message()};
+  }
+  profiles_.erase(it);
+  return std::nullopt;
+}
+
+int ProfileRegistry::RemoveWebDataOfDeletedProfiles(
+    const std::filesystem::path& web_root) {
+  int removed = 0;
+  std::error_code error;
+  std::vector<std::filesystem::path> orphans;
+  for (std::filesystem::directory_iterator it(web_root, error), end;
+       !error && it != end; it.increment(error)) {
+    std::string name = it->path().filename().string();
+    if (IsGeneratedProfileId(name) && !Find(name) && it->is_directory(error)) {
+      orphans.push_back(it->path());
+    }
+  }
+  for (const std::filesystem::path& path : orphans) {
+    std::error_code remove_error;
+    std::filesystem::remove_all(path, remove_error);
+    if (!remove_error) {
+      ++removed;
+    }
+  }
+  return removed;
 }
 
 std::string ProfileRegistry::UnusedColor() const {
