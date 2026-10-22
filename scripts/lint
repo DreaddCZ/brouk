@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # Runs clang-tidy on the portable C++ sources (core and CEF integration).
 # Needs a configured build directory with compile_commands.json.
-#   scripts/lint [build-dir]     default: build/debug
+#   scripts/lint [build-dir]     default: the debug build of scripts/build
+#                                (build/debug-<arch>)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-BUILD_DIR="${1:-$ROOT/build/debug}"
+BUILD_DIR="${1:-$ROOT/build/debug-$(uname -m)}"
 CLANG_TIDY="${CLANG_TIDY:-$ROOT/.tools/bin/clang-tidy}"
 command -v "$CLANG_TIDY" >/dev/null || CLANG_TIDY=clang-tidy
 
