@@ -159,6 +159,43 @@ bool ProfileManagerHandler::OnQuery(CefRefPtr<CefBrowser> /*browser*/,
             callback->Success(ToJson(answer));
           });
     }
+  } else if (*type == "profiles.export") {
+    std::optional<ProfileId> id = IdField(message);
+    if (!id) {
+      callback->Failure(kBadRequest, "Invalid request.");
+      return true;
+    }
+    delegate.ExportProfile(
+        *id, [callback](bool saved, std::optional<Error> error) {
+          if (error) {
+            callback->Failure(kFailed, error->message);
+            return;
+          }
+          CefRefPtr<CefDictionaryValue> answer = CefDictionaryValue::Create();
+          answer->SetBool("saved", saved);
+          callback->Success(ToJson(answer));
+        });
+  } else if (*type == "profiles.import") {
+    delegate.ImportProfile(
+        [callback](Result<ProfileManagerDelegate::ImportResult> result) {
+          if (!result) {
+            callback->Failure(kFailed, result.error().message);
+            return;
+          }
+          CefRefPtr<CefDictionaryValue> answer = CefDictionaryValue::Create();
+          if (result.value().id) {
+            answer->SetString("id", *result.value().id);
+          } else {
+            answer->SetNull("id");
+          }
+          CefRefPtr<CefListValue> problems = CefListValue::Create();
+          std::size_t index = 0;
+          for (const std::string& problem : result.value().problems) {
+            problems->SetString(index++, problem);
+          }
+          answer->SetList("problems", problems);
+          callback->Success(ToJson(answer));
+        });
   } else if (*type == "profiles.setShowAtStartup") {
     if (message->GetType("show") != VTYPE_BOOL) {
       callback->Failure(kBadRequest, "Invalid request.");

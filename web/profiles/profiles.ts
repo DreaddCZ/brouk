@@ -4,7 +4,7 @@
  * the browser is set with textContent, never as HTML.
  */
 import { cefTransport } from '../shared/bridge.js';
-import { ProfilesApi, type Profile, type ProfilesState } from './api.js';
+import { ProfilesApi, type ImportResult, type Profile, type ProfilesState } from './api.js';
 import { colorLabel, nameProblem, tabsLabel } from './logic.js';
 
 const api = new ProfilesApi(cefTransport());
@@ -37,21 +37,41 @@ function button(text: string, onClick: () => void, className?: string): HTMLButt
   return node;
 }
 
+/** An information box (not an error), e.g. what an import left out. */
+function showNotice(title: string | null, lines: readonly string[] = []): void {
+  const box = byId<HTMLDivElement>('notice');
+  box.replaceChildren();
+  box.hidden = title === null;
+  if (title === null) {
+    return;
+  }
+  box.append(element('p', { className: 'notice-title', text: title }));
+  if (lines.length > 0) {
+    const list = element('ul');
+    list.append(...lines.map((line) => element('li', { text: line })));
+    box.append(list);
+  }
+  box.append(button('OK', () => showNotice(null)));
+}
+
 function showError(message: string | null): void {
   const box = byId<HTMLParagraphElement>('error');
   box.textContent = message ?? '';
   box.hidden = message === null;
 }
 
-/** Runs a browser call, shows its error if it fails, then reloads the list. */
-async function run(action: () => Promise<unknown>): Promise<boolean> {
+/**
+ * Runs a browser call, shows its error if it fails, then reloads the list.
+ * Resolves with the call's result, or null if it failed.
+ */
+async function run<T>(action: () => Promise<T>): Promise<T | null> {
   try {
-    await action();
+    const result = await action();
     showError(null);
-    return true;
+    return result;
   } catch (error) {
     showError(error instanceof Error ? error.message : String(error));
-    return false;
+    return null;
   } finally {
     await refresh();
   }
@@ -162,7 +182,9 @@ function profileItem(profile: Profile): HTMLLIElement {
     render();
   });
   edit.setAttribute('aria-label', `Rename or recolour ${profile.name}`);
-  actions.append(open, edit);
+  const exportButton = button('Export…', () => void run(() => api.exportProfile(profile.id)));
+  exportButton.setAttribute('aria-label', `Export ${profile.name} to a file`);
+  actions.append(open, edit, exportButton);
   if (!profile.isDefault) {
     const makeDefault = button('Make default', () => void run(() => api.setDefault(profile.id)));
     makeDefault.setAttribute('aria-label', `Make ${profile.name} the default profile`);
@@ -184,15 +206,34 @@ function render(): void {
   const list = byId<HTMLUListElement>('list');
   list.replaceChildren(...state.profiles.map(profileItem));
   const area = byId<HTMLDivElement>('new-area');
-  area.replaceChildren(
-    editing === 'new'
-      ? editForm(null)
-      : button('New profile', () => {
-          editing = 'new';
-          render();
-        }),
-  );
+  if (editing === 'new') {
+    area.replaceChildren(editForm(null));
+  } else {
+    const row = element('div', { className: 'new-buttons' });
+    row.append(
+      button('New profile', () => {
+        editing = 'new';
+        render();
+      }),
+      button('Import…', () => void importProfile()),
+    );
+    area.replaceChildren(row);
+  }
   byId<HTMLInputElement>('startup').checked = state.showAtStartup;
+}
+
+async function importProfile(): Promise<void> {
+  const imported: ImportResult | null = await run(() => api.importProfile());
+  if (imported === null || imported.id === null) {
+    return;  // Cancelled, or the error is shown.
+  }
+  const name = state.profiles.find((p) => p.id === imported.id)?.name ?? 'The profile';
+  showNotice(
+    imported.problems.length === 0
+      ? `“${name}” was imported. Sign in to your sites again in it.`
+      : `“${name}” was imported, except for:`,
+    imported.problems,
+  );
 }
 
 async function refresh(): Promise<void> {
