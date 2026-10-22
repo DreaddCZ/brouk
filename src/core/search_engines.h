@@ -12,6 +12,10 @@ namespace brouk {
 // template falls back to Google.
 std::string SearchTemplate(const Settings& global);
 
+// The engine's name for menus ("Search Google for …"); for a custom engine
+// the host of its address.
+std::string SearchEngineName(const Settings& global);
+
 }  // namespace brouk
 
 #endif  // BROUK_CORE_SEARCH_ENGINES_H_

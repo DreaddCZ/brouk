@@ -11,6 +11,15 @@ namespace brouk {
 
 namespace {
 
+constexpr std::array<std::pair<std::string_view, std::string_view>, 5> kNames =
+    {{
+        {"google", "Google"},
+        {"bing", "Bing"},
+        {"duckduckgo", "DuckDuckGo"},
+        {"startpage", "Startpage"},
+        {"ecosia", "Ecosia"},
+    }};
+
 // The built-in list of 003.
 constexpr std::array<std::pair<std::string_view, std::string_view>, 5>
     kEngines = {{
@@ -38,6 +47,25 @@ std::string SearchTemplate(const Settings& global) {
     }
   }
   return std::string(kDefaultSearchTemplate);
+}
+
+std::string SearchEngineName(const Settings& global) {
+  std::string url = SearchTemplate(global);
+  for (const auto& [engine, name] : kNames) {
+    for (const auto& [engine2, template_url] : kEngines) {
+      if (engine == engine2 && template_url == url) {
+        return std::string(name);
+      }
+    }
+  }
+  // A custom engine: its host, e.g. "kagi.com".
+  std::string_view host = url;
+  host.remove_prefix(host.find("://") + 3);
+  host = host.substr(0, host.find_first_of("/?#:"));
+  if (host.starts_with("www.")) {
+    host.remove_prefix(4);
+  }
+  return std::string(host);
 }
 
 }  // namespace brouk

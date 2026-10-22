@@ -22,6 +22,18 @@ TEST(SearchEnginesTest, CustomTemplate) {
   ASSERT_FALSE(global.Set("search.custom_template",
                           std::string("https://kagi.com/search?q=%s")));
   EXPECT_EQ(SearchTemplate(global), "https://kagi.com/search?q=%s");
+  EXPECT_EQ(SearchEngineName(global), "kagi.com");
+}
+
+TEST(SearchEnginesTest, Names) {
+  Settings global(SettingScope::kGlobal);
+  EXPECT_EQ(SearchEngineName(global), "Google");
+  ASSERT_FALSE(global.Set("search.engine", std::string("duckduckgo")));
+  EXPECT_EQ(SearchEngineName(global), "DuckDuckGo");
+  ASSERT_FALSE(global.Set("search.engine", std::string("custom")));
+  ASSERT_FALSE(global.Set("search.custom_template",
+                          std::string("https://www.example.org:8080/s?q=%s")));
+  EXPECT_EQ(SearchEngineName(global), "example.org");
 }
 
 TEST(SearchEnginesTest, TemplateAndFolderFormatsAreChecked) {

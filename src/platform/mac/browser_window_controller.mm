@@ -130,6 +130,7 @@ NSButton* ToolbarButton(NSString* symbol,
   // one tab, no tab strip, read-only address, as in Chrome).
   CGFloat _stripHeight;
   NSButton* _popupBlockedButton;
+  NSButton* _settingsProblemButton;
 }
 
 - (instancetype)initWithOwner:(id<BRBrowserWindowOwner>)owner {
@@ -288,6 +289,19 @@ NSButton* ToolbarButton(NSString* symbol,
       NSMakeRect(NSMinX(_zoomButton.frame) - 30, 8, 26, 24);
   [_toolbar addSubview:_popupBlockedButton];
 
+  // Problems in the settings files (004: reported, not ignored); opens
+  // Settings, which lists them.
+  _settingsProblemButton = ToolbarButton(
+      @"exclamationmark.triangle.fill", @"Problems in settings",
+      @"Some settings in the settings files are invalid. Click to see them.",
+      nil, @selector(openSettings:));
+  _settingsProblemButton.contentTintColor = NSColor.systemYellowColor;
+  _settingsProblemButton.hidden = YES;
+  _settingsProblemButton.autoresizingMask = NSViewMinXMargin;
+  _settingsProblemButton.frame =
+      NSMakeRect(NSMinX(_popupBlockedButton.frame) - 30, 8, 26, 24);
+  [_toolbar addSubview:_settingsProblemButton];
+
   _findBar = [[BRFindBar alloc]
       initWithFrame:NSMakeRect(_contentArea.frame.size.width - 380,
                                NSMaxY(_contentArea.frame) - 44, 368, 36)];
@@ -384,6 +398,11 @@ NSButton* ToolbarButton(NSString* symbol,
   }
   [_tabStrip setGroups:groups activeTabId:active ? active.tabId : 0];
   [self updateToolbar];
+}
+
+- (void)setSettingsProblemCount:(NSUInteger)count {
+  _settingsProblemCount = count;
+  _settingsProblemButton.hidden = count == 0;
 }
 
 - (NSUInteger)tabCountInProfile:(const brouk::ProfileId&)profile {
@@ -679,6 +698,17 @@ NSButton* ToolbarButton(NSString* symbol,
              requestContext:[_owner requestContextForProfile:tab.profileId]];
 }
 
+- (brouk::TabClientDelegate::SearchEngine)searchEngine {
+  id<BRBrowserWindowOwner> owner = _owner;
+  return owner ? [owner searchEngine]
+               : brouk::TabClientDelegate::SearchEngine{
+                     "Google", std::string(brouk::kDefaultSearchTemplate)};
+}
+
+- (BOOL)askWhereToSaveDownloads {
+  return [_owner askWhereToSaveDownloads];
+}
+
 - (std::string)tab:(BRTab*)tab
     reserveDownloadPath:(const std::string&)suggested {
   return [_owner reserveDownloadPath:suggested];
@@ -871,8 +901,8 @@ NSButton* ToolbarButton(NSString* symbol,
   if (!tab) {
     return;
   }
-  brouk::AddressInputResult result =
-      brouk::ClassifyAddressInput(text.UTF8String);
+  brouk::AddressInputResult result = brouk::ClassifyAddressInput(
+      text.UTF8String, [self searchEngine].url_template);
   tab.pendingAddressText = nil;
   if (result.kind == brouk::AddressInputResult::Kind::kEmpty) {
     [self updateToolbar];

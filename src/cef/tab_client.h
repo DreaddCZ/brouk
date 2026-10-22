@@ -176,6 +176,15 @@ class TabClientDelegate {
   virtual void CopyTextToClipboard(const std::string& text) = 0;
   virtual void CopyImageToClipboard(const std::vector<std::uint8_t>& png) = 0;
 
+  // Settings (004) the tab follows.
+  struct SearchEngine {
+    std::string name;          // "Google", for "Search Google for …".
+    std::string url_template;  // With %s for the query.
+  };
+  virtual SearchEngine CurrentSearchEngine() = 0;
+  // Every download asks where to save (otherwise only "Save As…").
+  virtual bool AskWhereToSaveDownloads() = 0;
+
   // Downloads: a unique path in the downloads folder for the suggested
   // (untrusted) file name, reserved until released.
   virtual std::string ReserveDownloadPath(const std::string& suggested) = 0;
