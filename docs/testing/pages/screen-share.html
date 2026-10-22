@@ -1,0 +1,40 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Screen sharing test</title>
+<style>body { font: 15px -apple-system, sans-serif; margin: 2em; } button { font-size: 15px; margin: .3em; }
+video { width: 640px; max-width: 100%; border: 1px solid #888; display: block; margin-top: 1em; }</style>
+<h1>Screen sharing (spec 012, item 3)</h1>
+<p>Must be opened from <code>http://localhost</code> or https (screen sharing
+needs a secure page). Each button opens macOS's screen sharing picker: choose
+a window or a whole screen, and only that one appears below. Cancel → "denied".</p>
+<button onclick="share({ video: true })">Share screen or window</button>
+<button onclick="share({ video: true, audio: true })">… with audio</button>
+<button onclick="setTimeout(() => share({ video: true }), 6000)">Without a click (after 6 s)</button>
+<button onclick="stop()">Stop</button>
+<pre id="out"></pre>
+<video id="video" autoplay muted></video>
+<script>
+  let stream = null;
+  const out = document.getElementById('out');
+  async function share(options) {
+    stop();
+    out.textContent = 'asking…';
+    try {
+      stream = await navigator.mediaDevices.getDisplayMedia(options);
+      document.getElementById('video').srcObject = stream;
+      const track = stream.getVideoTracks()[0];
+      const s = track.getSettings();
+      out.textContent = `sharing ${s.width}×${s.height} at ${s.frameRate} fps` +
+          `, audio tracks: ${stream.getAudioTracks().length}`;
+      track.onended = () => { out.textContent = 'ended'; };
+    } catch (e) {
+      // Expected: NotAllowedError when cancelled, InvalidStateError without a click.
+      out.textContent = `denied: ${e.name}: ${e.message}`;
+    }
+  }
+  function stop() {
+    if (stream) stream.getTracks().forEach((t) => t.stop());
+    stream = null;
+    document.getElementById('video').srcObject = null;
+  }
+</script>

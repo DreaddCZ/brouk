@@ -16,6 +16,8 @@ set(BROUK_CORE_SOURCES
   page_events.h
   permissions.cc
   permissions.h
+  screen_share.cc
+  screen_share.h
   security_state.cc
   security_state.h
   tab_strip_model.cc
