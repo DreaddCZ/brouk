@@ -1,6 +1,6 @@
 # 004 – Configuration system
 
-- **Status:** ready
+- **Status:** in-progress
 - **Priority:** P1
 - **Depends on:** 001
 
@@ -49,3 +49,4 @@ None. (Windows location to be decided together with Windows support, see 002.)
 - 2026-10-21 (readiness review): profile folders are named by a stable profile ID, not the profile name, so renaming a profile never moves its data. The data folder name `Brouk` comes from the app name (decided 2026-10-21, see "Decisions" in `CLAUDE.md`; kept in one CMake variable).
 - 2026-10-21 (implementation, 001): Chromium's own data for a profile lives in `Brouk/web/<profile-id>/`, not in `profiles/<profile-id>/` (Chromium requires profile folders to be direct children of its data root). Our files, including `settings.yaml`, stay in `profiles/<profile-id>/` as specified.
 - YAML 1.1 parsers read unquoted `no`, `on`, `off` and similar words as booleans; values must be checked against a typed schema of all settings so such mix-ups are reported as errors (fits the "invalid values are reported" rule).
+- 2026-10-22 (implementation): YAML is read and written with yaml-cpp 0.8.0 (MIT, approved by the user). It throws exceptions, so only `src/core/yaml_io.cc` uses it, compiled with exceptions, and turns every error into a returned message; files over 1 MB, nested over 32 levels or with over 100,000 values (alias bombs) are refused. All settings are declared in `src/core/settings_schema.cc` with type, default and limits; booleans accept only `true`/`false`. Unknown keys are reported as problems ("unknown setting"). Files are written atomically (temporary file, then rename) and readable by the user only. Built first: the parts profiles need (files, typed settings, live reload); the settings page later.

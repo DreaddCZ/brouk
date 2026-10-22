@@ -28,8 +28,11 @@ add_executable(brouk_core_tests
   core/screen_share_test.cc
   core/permissions_test.cc
   core/security_state_test.cc
+  core/settings_file_test.cc
+  core/settings_test.cc
   core/tab_strip_model_test.cc
   core/url_display_test.cc
+  core/yaml_io_test.cc
   core/zoom_test.cc
 )
 brouk_target_options(brouk_core_tests)
