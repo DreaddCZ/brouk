@@ -7,23 +7,14 @@
 #include <string_view>
 #include <vector>
 
+#include "core/profile_id.h"
 #include "core/result.h"
 #include "core/settings.h"
 
 namespace brouk {
 
-// A profile's stable id (005): names its folders (profiles/<id>/, web/<id>/)
-// and never changes, unlike its name.
-using ProfileId = std::string;
-
-// The profile that exists from the first start. It can be renamed, and
-// another profile can become the default.
-inline constexpr std::string_view kFirstProfileId = "default";
+// The first profile's name on first start.
 inline constexpr std::string_view kFirstProfileName = "Main";
-
-// Lower-case letters, digits and '-', 1 to 32 characters: safe as a folder
-// name on every platform.
-bool IsValidProfileId(std::string_view id);
 
 struct ProfileInfo {
   ProfileId id;

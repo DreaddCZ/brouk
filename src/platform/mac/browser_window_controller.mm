@@ -169,7 +169,8 @@ NSButton* ToolbarButton(NSString* symbol,
     _owner = owner;
     _isPopup = isPopup;
     _stripHeight = isPopup ? 0 : kTabStripHeight;
-    _model = std::make_unique<brouk::TabStripModel>();
+    _model = std::make_unique<brouk::TabStripModel>(
+        brouk::ProfileId(brouk::kFirstProfileId));
     _tabs = [NSMutableDictionary dictionary];
     _closingTabs = [NSMutableSet set];
     _pendingPopups = [NSMutableDictionary dictionary];
