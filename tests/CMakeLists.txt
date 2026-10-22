@@ -24,6 +24,7 @@ add_executable(brouk_core_tests
   core/dialog_spam_guard_test.cc
   core/download_paths_test.cc
   core/external_protocol_test.cc
+  core/launch_args_test.cc
   core/page_events_test.cc
   core/screen_share_test.cc
   core/permissions_test.cc

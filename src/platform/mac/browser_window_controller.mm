@@ -12,6 +12,7 @@
 #import "platform/mac/browser_window.h"
 #import "platform/mac/download_notice.h"
 #import "platform/mac/find_bar.h"
+#import "platform/mac/profile_colors.h"
 #import "platform/mac/site_info_popover.h"
 
 #include "cef/site_info.h"
@@ -59,18 +60,35 @@ NSButton* ToolbarButton(NSString* symbol,
 
 }  // namespace
 
-// Toolbar background with a hairline separating it from the page.
+// Toolbar background with a line in the active tab's profile colour
+// separating it from the page (005: the toolbar shows the profile).
 @interface BRToolbarView : NSView
+@property(nonatomic, copy) NSString* profileColorName;
 @end
 
 @implementation BRToolbarView
+// Empty toolbar space moves the window, as in Chrome (the window is not
+// movable by itself, see the window setup).
+- (void)mouseDown:(NSEvent*)event {
+  if (event.clickCount == 2) {
+    [self.window performZoom:nil];
+  } else {
+    [self.window performWindowDragWithEvent:event];
+  }
+}
+
+- (void)setProfileColorName:(NSString*)name {
+  _profileColorName = [name copy];
+  self.needsDisplay = YES;
+}
+
 // Fill only our bounds: since macOS 14 views do not clip to their bounds and
 // dirtyRect may extend beyond them.
 - (void)drawRect:(NSRect)dirtyRect {
   [NSColor.windowBackgroundColor setFill];
   NSRectFill(self.bounds);
-  [NSColor.separatorColor setFill];
-  NSRectFill(NSMakeRect(0, 0, self.bounds.size.width, 1));
+  [brouk::mac::ProfileColor(_profileColorName.UTF8String ?: "") setFill];
+  NSRectFill(NSMakeRect(0, 0, self.bounds.size.width, 2));
 }
 @end
 
@@ -148,6 +166,10 @@ NSButton* ToolbarButton(NSString* symbol,
   if (!isPopup) {
     window.titlebarAppearsTransparent = YES;
     window.titleVisibility = NSWindowTitleHidden;
+    // The tab strip fills the title bar. macOS would move the window when a
+    // drag starts in the title bar's height, even on a tab; instead the
+    // strip and toolbar move the window from their empty areas themselves.
+    window.movable = NO;
   }
   window.minSize = isPopup ? NSMakeSize(260, 200) : NSMakeSize(480, 300);
   window.releasedWhenClosed = NO;
@@ -168,8 +190,7 @@ NSButton* ToolbarButton(NSString* symbol,
     _owner = owner;
     _isPopup = isPopup;
     _stripHeight = isPopup ? 0 : kTabStripHeight;
-    _model = std::make_unique<brouk::TabStripModel>(
-        brouk::ProfileId(brouk::kFirstProfileId));
+    _model = std::make_unique<brouk::TabStripModel>([owner defaultProfileId]);
     _tabs = [NSMutableDictionary dictionary];
     _closingTabs = [NSMutableSet set];
     _pendingPopups = [NSMutableDictionary dictionary];
@@ -292,8 +313,10 @@ NSButton* ToolbarButton(NSString* symbol,
   return active ? _tabs[@(*active)] : nil;
 }
 
-- (BRTab*)makeTab {
-  BRTab* tab = [[BRTab alloc] initWithId:NextTabId() delegate:self];
+- (BRTab*)makeTabInProfile:(const brouk::ProfileId&)profile {
+  BRTab* tab = [[BRTab alloc] initWithId:NextTabId()
+                                 profile:profile
+                                delegate:self];
   _tabs[@(tab.tabId)] = tab;
   tab.containerView.frame = _contentArea.bounds;
   tab.containerView.hidden = YES;
@@ -302,10 +325,16 @@ NSButton* ToolbarButton(NSString* symbol,
 }
 
 - (void)openTabWithURL:(nullable NSString*)url activate:(BOOL)activate {
-  BRTab* tab = [self makeTab];
-  _model->AppendTab(tab.tabId, activate);
+  [self openTabWithURL:url profile:_model->default_profile() activate:activate];
+}
+
+- (void)openTabWithURL:(nullable NSString*)url
+               profile:(const brouk::ProfileId&)profile
+              activate:(BOOL)activate {
+  BRTab* tab = [self makeTabInProfile:profile];
+  _model->AppendTab(tab.tabId, profile, activate);
   [tab createBrowserWithURL:url ?: @"about:blank"
-             requestContext:[_owner requestContext]];
+             requestContext:[_owner requestContextForProfile:profile]];
   [self modelDidChange];
   if (activate && !url) {
     [_addressField focusAndSelectAll];
@@ -331,23 +360,45 @@ NSButton* ToolbarButton(NSString* symbol,
 
 // Shows the active tab, hides the others, refreshes strip and toolbar.
 - (void)modelDidChange {
-  NSMutableArray<BRTab*>* ordered = [NSMutableArray array];
-  for (std::size_t i = 0; i < _model->count(); ++i) {
-    [ordered addObject:_tabs[@(_model->id_at(i))]];
-  }
   BRTab* active = [self activeTab];
-  for (BRTab* tab in ordered) {
-    BOOL hidden = tab != active;
-    if (tab.containerView.hidden != hidden) {
-      tab.containerView.hidden = hidden;
+  NSMutableArray<BRTabGroupInfo*>* groups = [NSMutableArray array];
+  for (const brouk::TabStripModel::Group& group : _model->groups()) {
+    brouk::ProfileInfo info = [_owner profileInfo:group.profile];
+    BRTabGroupInfo* item = [[BRTabGroupInfo alloc] init];
+    item.profileId = @(group.profile.c_str());
+    item.name = @(info.name.c_str());
+    item.colorName = @(info.color.c_str());
+    item.collapsed = group.collapsed;
+    item.startIndex = group.start;
+    NSMutableArray<BRTab*>* tabs = [NSMutableArray array];
+    for (std::size_t i = group.start; i < group.start + group.count; ++i) {
+      BRTab* tab = _tabs[@(_model->id_at(i))];
+      [tabs addObject:tab];
+      BOOL hidden = tab != active;
+      if (tab.containerView.hidden != hidden) {
+        tab.containerView.hidden = hidden;
+      }
     }
+    item.tabs = tabs;
+    [groups addObject:item];
   }
-  [_tabStrip setTabs:ordered activeTabId:active ? active.tabId : 0];
+  [_tabStrip setGroups:groups activeTabId:active ? active.tabId : 0];
   [self updateToolbar];
+}
+
+- (void)profilesDidChange {
+  _model->SetDefaultProfile([_owner defaultProfileId]);
+  [self modelDidChange];
 }
 
 - (void)updateToolbar {
   BRTab* tab = [self activeTab];
+  if (tab) {
+    brouk::ProfileInfo info = [_owner profileInfo:tab.profileId];
+    _toolbar.profileColorName = @(info.color.c_str());
+    _toolbar.accessibilityLabel =
+        [NSString stringWithFormat:@"Toolbar, profile %s", info.name.c_str()];
+  }
   _backButton.enabled = tab.canGoBack;
   _forwardButton.enabled = tab.canGoForward;
   BOOL loading = tab.isLoading;
@@ -457,11 +508,15 @@ NSButton* ToolbarButton(NSString* symbol,
 // this window. The caller creates the browser.
 - (BRTab*)insertTabFromOpener:(nullable BRTab*)opener
                    foreground:(BOOL)foreground {
-  BRTab* tab = [self makeTab];
-  if (opener) {
+  // The new tab is in the opener's profile, also when the opener is in
+  // another window (popup windows, 005).
+  brouk::ProfileId profile =
+      opener ? opener.profileId : _model->default_profile();
+  BRTab* tab = [self makeTabInProfile:profile];
+  if (opener && _model->IndexOf(opener.tabId)) {
     _model->InsertFromOpener(tab.tabId, opener.tabId, foreground);
   } else {
-    _model->AppendTab(tab.tabId, foreground);
+    _model->AppendTab(tab.tabId, profile, foreground);
   }
   [self modelDidChange];
   return tab;
@@ -538,7 +593,8 @@ NSButton* ToolbarButton(NSString* symbol,
     return;
   }
   BRTab* tab = [self insertTabFromOpener:opener foreground:YES];
-  [tab createBrowserWithURL:url requestContext:[_owner requestContext]];
+  [tab createBrowserWithURL:url
+             requestContext:[_owner requestContextForProfile:tab.profileId]];
 }
 
 - (void)allowPopupsForSite:(id)sender {
@@ -593,12 +649,13 @@ NSButton* ToolbarButton(NSString* symbol,
         openURL:(NSString*)url
     disposition:(brouk::OpenDisposition)disposition {
   if (disposition == brouk::OpenDisposition::kNewWindow) {
-    [_owner openWindowWithURL:url];
+    [_owner openWindowWithURL:url profile:opener.profileId];
     return;
   }
   BOOL foreground = disposition == brouk::OpenDisposition::kNewForegroundTab;
   BRTab* tab = [self insertTabFromOpener:opener foreground:foreground];
-  [tab createBrowserWithURL:url requestContext:[_owner requestContext]];
+  [tab createBrowserWithURL:url
+             requestContext:[_owner requestContextForProfile:tab.profileId]];
 }
 
 - (std::string)tab:(BRTab*)tab
@@ -719,8 +776,71 @@ NSButton* ToolbarButton(NSString* symbol,
   [_tabs[@(tabId)] toggleMute];
 }
 
-- (void)tabStripDidRequestNewTab {
-  [self newTab:nil];
+- (void)tabStripDidRequestNewTabInProfile:(NSString*)profileId {
+  [self openTabWithURL:nil profile:profileId.UTF8String activate:YES];
+}
+
+- (void)tabStripDidToggleGroup:(NSString*)profileId {
+  const brouk::ProfileId profile = profileId.UTF8String;
+  BRTab* previous = [self activeTab];
+  bool collapsed = false;
+  for (const brouk::TabStripModel::Group& group : _model->groups()) {
+    if (group.profile == profile) {
+      collapsed = group.collapsed;
+    }
+  }
+  if (!_model->SetGroupCollapsed(profile, !collapsed)) {
+    return;
+  }
+  [self modelDidChange];
+  if ([self activeTab] != previous) {
+    [self focusActiveTab];
+  }
+}
+
+- (void)tabStripDidDropTab:(brouk::TabId)tabId onProfile:(NSString*)profileId {
+  [self moveTab:_tabs[@(tabId)] toProfile:profileId.UTF8String];
+}
+
+// Moving a tab to another profile (005): its URL reopens in that profile and
+// the old tab closes; the page's session and form state do not move, so the
+// user is asked first.
+- (void)moveTab:(nullable BRTab*)tab
+      toProfile:(const brouk::ProfileId&)profile {
+  if (!tab || tab.isClosing || tab.profileId == profile) {
+    [self modelDidChange];
+    return;
+  }
+  brouk::ProfileInfo target = [_owner profileInfo:profile];
+  NSAlert* alert = [[NSAlert alloc] init];
+  alert.messageText = [NSString
+      stringWithFormat:@"Move this tab to “%s”?", target.name.c_str()];
+  alert.informativeText = [NSString
+      stringWithFormat:@"The page reloads in the %s profile. You may need to "
+                       @"sign in again there, and anything typed into the "
+                       @"page is lost.",
+                       target.name.c_str()];
+  [alert addButtonWithTitle:@"Move"];
+  [alert addButtonWithTitle:@"Cancel"];
+  __weak BRBrowserWindowController* weakSelf = self;
+  __weak BRTab* weakTab = tab;
+  brouk::ProfileId targetId = profile;
+  [alert beginSheetModalForWindow:self.window
+                completionHandler:^(NSModalResponse response) {
+                  BRBrowserWindowController* strongSelf = weakSelf;
+                  BRTab* strongTab = weakTab;
+                  if (!strongSelf) {
+                    return;
+                  }
+                  if (response != NSAlertFirstButtonReturn || !strongTab ||
+                      strongTab.isClosing) {
+                    [strongSelf modelDidChange];  // Undo the drag.
+                    return;
+                  }
+                  NSString* url = strongTab.url.length ? strongTab.url : nil;
+                  [strongSelf openTabWithURL:url profile:targetId activate:YES];
+                  [strongSelf closeTab:strongTab];
+                }];
 }
 
 #pragma mark - BRAddressFieldDelegate

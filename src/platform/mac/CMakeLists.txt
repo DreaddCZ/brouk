@@ -28,10 +28,14 @@ add_executable(brouk_app
   main.mm
   permission_prompt_view.h
   permission_prompt_view.mm
+  profile_colors.h
+  profile_colors.mm
   sad_tab_view.h
   sad_tab_view.mm
   screen_share_picker.h
   screen_share_picker.mm
+  settings_watcher.h
+  settings_watcher.mm
   site_info_popover.h
   site_info_popover.mm
   tab_dialog_view.h
@@ -42,6 +46,7 @@ add_executable(brouk_app
 brouk_target_options(brouk_app CEF APP)
 target_link_libraries(brouk_app PRIVATE brouk_cef brouk_core
   "-framework AppKit" "-framework AVFoundation" "-framework Cocoa"
+  "-framework CoreServices"
   "-framework IOSurface" "-framework ScreenCaptureKit"
   "-framework SecurityInterface")
 set_target_properties(brouk_app PROPERTIES

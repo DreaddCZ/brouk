@@ -1,0 +1,32 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Profile isolation test</title>
+<style>body { font: 15px -apple-system, sans-serif; margin: 2em; } button { font-size: 15px; margin: .3em; }</style>
+<h1>Profiles (spec 005)</h1>
+<p>Open this page in two profiles (each group's "+" button, then this address).
+"Remember" stores a cookie and local storage in the current profile only: the
+other profile shows nothing until you press "Remember" there too.</p>
+<button id="remember">Remember something in this profile</button>
+<button id="forget">Forget</button>
+<pre id="out"></pre>
+<script>
+  const out = document.getElementById('out');
+  function show() {
+    const cookie = document.cookie.split('; ').find((c) => c.startsWith('brouk_test=')) || '';
+    out.textContent =
+        `cookie: ${cookie ? decodeURIComponent(cookie.split('=')[1]) : '(none)'}\n` +
+        `local storage: ${localStorage.getItem('brouk_test') ?? '(none)'}`;
+  }
+  document.getElementById('remember').onclick = () => {
+    const value = 'saved ' + new Date().toLocaleTimeString();
+    document.cookie = 'brouk_test=' + encodeURIComponent(value) + '; max-age=86400; path=/';
+    localStorage.setItem('brouk_test', value);
+    show();
+  };
+  document.getElementById('forget').onclick = () => {
+    document.cookie = 'brouk_test=; max-age=0; path=/';
+    localStorage.removeItem('brouk_test');
+    show();
+  };
+  show();
+</script>

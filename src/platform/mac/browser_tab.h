@@ -7,6 +7,7 @@
 #include <string>
 
 #include "cef/tab_client.h"
+#include "core/profile_id.h"
 #include "core/tab_strip_model.h"
 #include "include/cef_browser.h"
 #include "include/cef_request_context.h"
@@ -71,8 +72,14 @@ NS_ASSUME_NONNULL_BEGIN
 // tab like in Chrome.
 @property(nonatomic, copy, nullable) NSString* pendingAddressText;
 
+// `profileId`: the profile the tab belongs to (005); its browser must be
+// created in that profile's request context. It never changes: moving a tab
+// to another profile opens a new tab there.
 - (instancetype)initWithId:(brouk::TabId)tabId
+                   profile:(const brouk::ProfileId&)profileId
                   delegate:(id<BRTabDelegate>)delegate;
+
+@property(nonatomic, readonly) const brouk::ProfileId& profileId;
 
 // Creates the browser in the container view and loads `url`.
 - (void)createBrowserWithURL:(NSString*)url

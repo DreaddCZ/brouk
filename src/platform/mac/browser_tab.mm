@@ -195,6 +195,7 @@ class TabDelegateBridge : public TabClientDelegate {
 }  // namespace brouk
 
 @implementation BRTab {
+  brouk::ProfileId _profileId;
   std::unique_ptr<brouk::TabDelegateBridge> _bridge;
   CefRefPtr<brouk::TabClient> _client;
   CefRefPtr<CefBrowser> _browser;
@@ -220,9 +221,11 @@ class TabDelegateBridge : public TabClientDelegate {
 }
 
 - (instancetype)initWithId:(brouk::TabId)tabId
+                   profile:(const brouk::ProfileId&)profileId
                   delegate:(id<BRTabDelegate>)delegate {
   if ((self = [super init])) {
     _tabId = tabId;
+    _profileId = profileId;
     _delegate = delegate;
     _title = @"";
     _url = @"";
@@ -244,6 +247,10 @@ class TabDelegateBridge : public TabClientDelegate {
   if (_client && !_clientDetached) {
     _client->DetachDelegate();
   }
+}
+
+- (const brouk::ProfileId&)profileId {
+  return _profileId;
 }
 
 - (CefRefPtr<CefClient>)client {
