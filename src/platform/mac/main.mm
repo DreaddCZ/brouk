@@ -56,11 +56,13 @@ int main(int argc, char* argv[]) {
     callbacks.on_context_initialized = [weak_delegate] {
       [weak_delegate cefContextInitialized];
     };
-    callbacks.on_relaunch = [weak_delegate] { [weak_delegate relaunched]; };
+    callbacks.on_relaunch = [weak_delegate](std::vector<std::string> urls) {
+      [weak_delegate relaunchedWithURLs:urls];
+    };
     CefRefPtr<brouk::BrowserApp> app(new brouk::BrowserApp(callbacks));
 
     // Returns false also when another instance is already running; that
-    // instance gets OnAlreadyRunningAppRelaunch and opens a window.
+    // instance gets OnAlreadyRunningAppRelaunch and opens the URLs.
     if (!CefInitialize(main_args, settings, app, nullptr)) {
       return CefGetExitCode();
     }
