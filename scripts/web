@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Internal pages (web/, TypeScript; specs/001): build and test.
+#
+#   scripts/web build <out-dir>   compiles the pages into <out-dir> (what the
+#                                 app bundle gets: .js, .html, .css; no tests)
+#   scripts/web test              type-checks and runs the unit tests
+#
+# TypeScript comes from web/package-lock.json (pinned, integrity-checked).
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=/dev/null
+source "$ROOT/scripts/env.sh"
+cd "$ROOT/web"
+
+# Install (or update) the pinned TypeScript when the lockfile changed.
+if [[ ! -x node_modules/.bin/tsc ||
+      package-lock.json -nt node_modules/.package-lock.json ]]; then
+  npm ci --ignore-scripts --no-audit --no-fund --loglevel=error
+fi
+TSC=node_modules/.bin/tsc
+
+compile() {  # compile <dir>
+  rm -rf "$1"
+  "$TSC" -p tsconfig.json --outDir "$1"
+  # Pages and styles next to their scripts.
+  find shared profiles -name '*.html' -o -name '*.css' | while read -r f; do
+    mkdir -p "$1/$(dirname "$f")"
+    cp "$f" "$1/$f"
+  done
+}
+
+case "${1:-}" in
+  build)
+    out="${2:?usage: scripts/web build <out-dir>}"
+    compile "$out"
+    find "$out" -name '*.test.js' -delete
+    ;;
+  test)
+    out="$ROOT/build/web-test"
+    compile "$out"
+    # Node runs the compiled ES modules as modules.
+    echo '{"type": "module"}' > "$out/package.json"
+    find "$out" -name '*.test.js' -print0 | xargs -0 node --test
+    ;;
+  *)
+    echo "usage: scripts/web build <out-dir> | scripts/web test" >&2
+    exit 2
+    ;;
+esac

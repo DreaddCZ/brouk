@@ -6,6 +6,7 @@
 
 #include "include/cef_app.h"
 #include "include/cef_v8.h"
+#include "include/wrapper/cef_message_router.h"
 
 namespace brouk {
 
@@ -17,7 +18,7 @@ namespace brouk {
 // the renderer main thread.
 class RendererApp : public CefApp, public CefRenderProcessHandler {
  public:
-  RendererApp() = default;
+  RendererApp();
   RendererApp(const RendererApp&) = delete;
   RendererApp& operator=(const RendererApp&) = delete;
 
@@ -25,6 +26,8 @@ class RendererApp : public CefApp, public CefRenderProcessHandler {
   CefRefPtr<CefRenderProcessHandler> GetRenderProcessHandler() override {
     return this;
   }
+  void OnRegisterCustomSchemes(
+      CefRawPtr<CefSchemeRegistrar> registrar) override;
 
   // CefRenderProcessHandler:
   void OnContextCreated(CefRefPtr<CefBrowser> browser,
@@ -50,6 +53,9 @@ class RendererApp : public CefApp, public CefRenderProcessHandler {
   };
   // By frame identifier.
   std::map<std::string, DisplayMediaHandler> display_media_handlers_;
+  // The bridge of internal pages (window.cefQuery), added to brouk:// pages
+  // only.
+  CefRefPtr<CefMessageRouterRendererSide> router_;
 
   IMPLEMENT_REFCOUNTING(RendererApp);
 };

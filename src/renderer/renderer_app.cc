@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <string>
 
+#include "cef/internal_scheme.h"
+#include "core/internal_pages.h"
 #include "core/page_events.h"
 #include "core/screen_share.h"
 #include "include/cef_process_message.h"
@@ -224,10 +226,24 @@ class SetDisplayMediaHandlerFunction : public CefV8Handler {
 
 }  // namespace
 
-void RendererApp::OnContextCreated(CefRefPtr<CefBrowser> /*browser*/,
+RendererApp::RendererApp()
+    : router_(CefMessageRouterRendererSide::Create(CefMessageRouterConfig())) {}
+
+void RendererApp::OnRegisterCustomSchemes(
+    CefRawPtr<CefSchemeRegistrar> registrar) {
+  AddInternalScheme(registrar);
+}
+
+void RendererApp::OnContextCreated(CefRefPtr<CefBrowser> browser,
                                    CefRefPtr<CefFrame> frame,
                                    CefRefPtr<CefV8Context> context) {
   CEF_REQUIRE_RENDERER_THREAD();
+  if (IsInternalPageUrl(frame->GetURL().ToString())) {
+    // Internal pages get the bridge, web pages never; the browser checks
+    // the sender of every message again.
+    router_->OnContextCreated(browser, frame, context);
+    return;
+  }
   CefRefPtr<CefV8Value> global = context->GetGlobal();
   global->SetValue(
       kReportFunction,
@@ -243,10 +259,11 @@ void RendererApp::OnContextCreated(CefRefPtr<CefBrowser> /*browser*/,
   context->Eval(kPageScript, frame->GetURL(), 0, result, exception);
 }
 
-void RendererApp::OnContextReleased(CefRefPtr<CefBrowser> /*browser*/,
+void RendererApp::OnContextReleased(CefRefPtr<CefBrowser> browser,
                                     CefRefPtr<CefFrame> frame,
                                     CefRefPtr<CefV8Context> context) {
   CEF_REQUIRE_RENDERER_THREAD();
+  router_->OnContextReleased(browser, frame, context);
   auto it = display_media_handlers_.find(frame->GetIdentifier().ToString());
   if (it != display_media_handlers_.end() &&
       it->second.context->IsSame(context)) {
@@ -268,11 +285,15 @@ void RendererApp::SetDisplayMediaHandler(CefRefPtr<CefV8Context> context,
 }
 
 bool RendererApp::OnProcessMessageReceived(
-    CefRefPtr<CefBrowser> /*browser*/,
+    CefRefPtr<CefBrowser> browser,
     CefRefPtr<CefFrame> frame,
     CefProcessId source_process,
     CefRefPtr<CefProcessMessage> message) {
   CEF_REQUIRE_RENDERER_THREAD();
+  if (router_->OnProcessMessageReceived(browser, frame, source_process,
+                                        message)) {
+    return true;
+  }
   if (source_process != PID_BROWSER ||
       message->GetName().ToString() != kDisplayMediaChoiceMessage) {
     return false;

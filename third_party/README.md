@@ -12,4 +12,7 @@ pinned version and licence. Adding one needs the user's approval (see
 
 Build tools (not linked into the app) are pinned in `scripts/install_tools`:
 CMake 4.4.4, Ninja 1.13.2, Node.js 24.21.0 LTS, GitHub CLI 2.102.0,
-clang-format and clang-tidy 22.1.8.
+clang-format and clang-tidy 22.1.8. The TypeScript compiler (`tsc`, chosen in
+spec 001) is pinned in `web/package-lock.json` with its integrity hash:
+TypeScript 6.0.3 (Apache-2.0), installed by `scripts/web`. The internal pages
+use no other packages.

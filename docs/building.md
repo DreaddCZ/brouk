@@ -45,6 +45,10 @@ To use the pinned tools directly in a terminal: `source scripts/env.sh`.
 - Compiler warnings are errors.
 - `scripts/format` formats the code (`--check` only reports), `scripts/lint
   [build-dir]` runs clang-tidy on the portable code.
+- Internal pages (`web/`, TypeScript) are compiled into
+  `Brouk.app/Contents/Resources/web/` by the build; `scripts/web test`
+  type-checks them and runs their unit tests (Node's test runner). The first
+  build installs the pinned TypeScript compiler into `web/node_modules/`.
 
 ### Signing certificate (once per Mac)
 
@@ -110,3 +114,6 @@ Without CEF (core only): add `-DBROUK_WITH_CEF=OFF`.
 - CEF: `CEF_VERSION` and checksums in `scripts/fetch_cef` (the comment there
   explains how to verify a new download).
 - GoogleTest: `tests/CMakeLists.txt`, and `third_party/README.md`.
+- yaml-cpp: `cmake/BroukYaml.cmake`, and `third_party/README.md`.
+- TypeScript: `cd web && npm install --save-exact typescript@<version>`
+  (updates `web/package-lock.json`), and `third_party/README.md`.

@@ -1,0 +1,9 @@
+{
+  "name": "brouk-web",
+  "private": true,
+  "description": "Internal pages of Brouk (settings, profile manager, ...). Built with tsc only, no bundler (specs/001).",
+  "type": "module",
+  "devDependencies": {
+    "typescript": "6.0.3"
+  }
+}

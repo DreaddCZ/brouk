@@ -2,16 +2,21 @@
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #import "platform/mac/browser_window_controller.h"
 #import "platform/mac/data_paths.h"
 #import "platform/mac/profile_colors.h"
+#import "platform/mac/profile_manager_window.h"
 #import "platform/mac/settings_watcher.h"
 
 #include "brouk/app_info.h"
 #include "cef/browser_app.h"
+#include "cef/internal_scheme.h"
+#include "cef/profile_manager_handler.h"
 #include "core/address_input.h"
 #include "core/download_paths.h"
 #include "core/profile_registry.h"
@@ -62,8 +67,86 @@ NSImage* ProfileDot(const std::string& color) {
 
 @end
 
-@interface BRAppDelegate () <BRBrowserWindowOwner, NSMenuDelegate>
+@interface BRAppDelegate () <BRBrowserWindowOwner,
+                             BRProfileManagerOwner,
+                             NSMenuDelegate>
+- (std::vector<brouk::ProfileManagerDelegate::Summary>)profileSummaries;
+- (brouk::Result<brouk::ProfileId>)createProfileNamed:(const std::string&)name
+                                                color:(const std::string&)color;
+- (std::optional<brouk::Error>)updateProfile:(const brouk::ProfileId&)profile
+                                        name:(const std::string&)name
+                                       color:(const std::string&)color;
+- (std::optional<brouk::Error>)makeDefaultProfile:
+    (const brouk::ProfileId&)profile;
+- (std::optional<brouk::Error>)setShowProfileManagerAtStartup:(BOOL)show;
+- (BOOL)showProfileManagerAtStartup;
+- (std::optional<brouk::Error>)openProfile:(const brouk::ProfileId&)profile;
+- (void)deleteProfile:(const brouk::ProfileId&)profile
+                 done:(brouk::ProfileManagerDelegate::DeleteDone)done;
 @end
+
+namespace brouk {
+
+// Answers the profile manager page with the app delegate's profiles and
+// windows.
+class AppProfileManager : public ProfileManagerDelegate {
+ public:
+  explicit AppProfileManager(BRAppDelegate* app) : app_(app) {}
+
+  // Messages to nil returning C++ objects do not construct them, so every
+  // call checks the (weak) app delegate first.
+  std::vector<Summary> Profiles() override {
+    BRAppDelegate* app = app_;
+    return app ? [app profileSummaries] : std::vector<Summary>();
+  }
+  bool ShowAtStartup() override {
+    BRAppDelegate* app = app_;
+    return app && [app showProfileManagerAtStartup];
+  }
+  Result<ProfileId> CreateProfile(const std::string& name,
+                                  const std::string& color) override {
+    BRAppDelegate* app = app_;
+    if (!app) {
+      return Error{kClosing};
+    }
+    return [app createProfileNamed:name color:color];
+  }
+  std::optional<Error> UpdateProfile(const ProfileId& id,
+                                     const std::string& name,
+                                     const std::string& color) override {
+    BRAppDelegate* app = app_;
+    return app ? [app updateProfile:id name:name color:color]
+               : std::optional<Error>(Error{kClosing});
+  }
+  std::optional<Error> SetDefaultProfile(const ProfileId& id) override {
+    BRAppDelegate* app = app_;
+    return app ? [app makeDefaultProfile:id]
+               : std::optional<Error>(Error{kClosing});
+  }
+  std::optional<Error> SetShowAtStartup(bool show) override {
+    BRAppDelegate* app = app_;
+    return app ? [app setShowProfileManagerAtStartup:show]
+               : std::optional<Error>(Error{kClosing});
+  }
+  std::optional<Error> OpenProfile(const ProfileId& id) override {
+    BRAppDelegate* app = app_;
+    return app ? [app openProfile:id] : std::optional<Error>(Error{kClosing});
+  }
+  void DeleteProfile(const ProfileId& id, DeleteDone done) override {
+    BRAppDelegate* app = app_;
+    if (!app) {
+      done(false, Error{kClosing});
+      return;
+    }
+    [app deleteProfile:id done:std::move(done)];
+  }
+
+ private:
+  static constexpr char kClosing[] = "Brouk is closing.";
+  __weak BRAppDelegate* app_;
+};
+
+}  // namespace brouk
 
 @implementation BRAppDelegate {
   NSMutableArray<BRBrowserWindowController*>* _windows;
@@ -74,6 +157,13 @@ NSImage* ProfileDot(const std::string& color) {
   std::map<brouk::ProfileId, CefRefPtr<CefRequestContext>> _requestContexts;
   BOOL _profilesLoaded;
   BRSettingsWatcher* _settingsWatcher;
+  // Internal pages (brouk://) load in their own in-memory request context,
+  // never in a profile's.
+  CefRefPtr<CefRequestContext> _internalContext;
+  std::unique_ptr<brouk::AppProfileManager> _profileManagerDelegate;
+  BRProfileManagerWindowController* _profileManager;
+  // Shown instead of a window at startup: opening a profile closes it.
+  BOOL _profileManagerAtStartup;
   int _browserCount;
   BOOL _quitting;
   std::unique_ptr<brouk::DownloadPathReserver> _downloadPaths;
@@ -85,6 +175,10 @@ NSImage* ProfileDot(const std::string& color) {
     _profiles = std::make_unique<brouk::ProfileRegistry>(
         brouk::mac::AppDataDirectory().fileSystemRepresentation);
     _profiles->Load();
+    // Web data of profiles deleted earlier; Chromium is not running yet.
+    _profiles->RemoveWebDataOfDeletedProfiles(
+        brouk::mac::WebDataRootDirectory().fileSystemRepresentation);
+    _profileManagerDelegate = std::make_unique<brouk::AppProfileManager>(self);
     _downloadPaths =
         std::make_unique<brouk::DownloadPathReserver>([](const std::string& p) {
           return [NSFileManager.defaultManager
@@ -111,9 +205,15 @@ NSImage* ProfileDot(const std::string& color) {
                   [weakSelf settingsFilesChanged];
                 }];
   // Like Chrome, URLs given on the command line open as tabs.
-  [self openLaunchRequest:brouk::BrowserApp::LaunchRequestFrom(
-                              CefCommandLine::GetGlobalCommandLine())
-             inController:nil];
+  brouk::LaunchRequest request = brouk::BrowserApp::LaunchRequestFrom(
+      CefCommandLine::GetGlobalCommandLine());
+  if (_profiles->show_manager_at_startup() && request.urls.empty() &&
+      !request.profile) {
+    _profileManagerAtStartup = YES;
+    [self manageProfiles:nil];
+    return;
+  }
+  [self openLaunchRequest:request inController:nil];
 }
 
 - (void)relaunchedWithRequest:(const brouk::LaunchRequest&)request {
@@ -308,6 +408,7 @@ NSImage* ProfileDot(const std::string& color) {
     return;
   }
   _quitting = YES;
+  [_profileManager closeManager];
   for (BRBrowserWindowController* controller in [_windows copy]) {
     [controller closeAllTabs];
   }
@@ -316,12 +417,15 @@ NSImage* ProfileDot(const std::string& color) {
 
 - (void)releaseBrowserObjects {
   _settingsWatcher = nil;
+  _profileManager = nil;
   [_windows removeAllObjects];
   _requestContexts.clear();
+  _internalContext = nullptr;
 }
 
 - (void)quitIfDone {
-  if (_quitting && _browserCount <= 0 && _windows.count == 0) {
+  if (_quitting && _browserCount <= 0 && _windows.count == 0 &&
+      !_profileManager) {
     CefQuitMessageLoop();
   }
 }
@@ -369,6 +473,179 @@ NSImage* ProfileDot(const std::string& color) {
   [menu addItemWithTitle:@"New Profile…"
                   action:@selector(newProfile:)
            keyEquivalent:@""];
+  [menu addItemWithTitle:@"Manage Profiles…"
+                  action:@selector(manageProfiles:)
+           keyEquivalent:@""];
+}
+
+#pragma mark - Profile manager (brouk://profiles)
+
+- (IBAction)manageProfiles:(nullable id)sender {
+  CEF_REQUIRE_UI_THREAD();
+  if (_quitting || !_profilesLoaded) {
+    return;
+  }
+  if (_profileManager) {
+    [_profileManager showWindow:nil];
+    return;
+  }
+  if (!_internalContext) {
+    CefRequestContextSettings settings;  // No cache path: in memory only.
+    _internalContext = CefRequestContext::CreateContext(settings, nullptr);
+    NSString* web = [NSBundle.mainBundle.resourcePath
+        stringByAppendingPathComponent:@"web"];
+    brouk::InstallInternalPages(_internalContext, web.UTF8String);
+  }
+  _profileManager = [[BRProfileManagerWindowController alloc]
+      initWithOwner:self
+           delegate:_profileManagerDelegate.get()
+            context:_internalContext];
+  [_profileManager showWindow:nil];
+}
+
+- (void)profileManagerDidCreateBrowser {
+  ++_browserCount;
+}
+
+- (void)profileManagerDidClose:(BRProfileManagerWindowController*)controller {
+  --_browserCount;
+  if (_profileManager == controller) {
+    _profileManager = nil;
+  }
+  _profileManagerAtStartup = NO;
+  [self quitIfDone];
+}
+
+- (BOOL)profileManagerHandleKeyEvent:(NSEvent*)event {
+  return [NSApp.mainMenu performKeyEquivalent:event];
+}
+
+// The profiles changed here (not through the files): redraw at once.
+- (void)profilesChangedInApp {
+  for (BRBrowserWindowController* controller in _windows) {
+    [controller profilesDidChange];
+  }
+}
+
+- (std::vector<brouk::ProfileManagerDelegate::Summary>)profileSummaries {
+  std::vector<brouk::ProfileManagerDelegate::Summary> summaries;
+  const std::string& default_id = _profiles->default_profile().id;
+  for (const brouk::ProfileInfo& profile : _profiles->profiles()) {
+    NSUInteger tabs = 0;
+    for (BRBrowserWindowController* controller in _windows) {
+      tabs += [controller tabCountInProfile:profile.id];
+    }
+    summaries.push_back(
+        {profile, profile.id == default_id, static_cast<int>(tabs)});
+  }
+  return summaries;
+}
+
+- (brouk::Result<brouk::ProfileId>)createProfileNamed:(const std::string&)name
+                                                color:
+                                                    (const std::string&)color {
+  brouk::Result<brouk::ProfileId> created =
+      _profiles->CreateProfile(name, color);
+  [self profilesChangedInApp];
+  return created;
+}
+
+- (std::optional<brouk::Error>)updateProfile:(const brouk::ProfileId&)profile
+                                        name:(const std::string&)name
+                                       color:(const std::string&)color {
+  std::optional<brouk::Error> error =
+      _profiles->UpdateProfile(profile, name, color);
+  [self profilesChangedInApp];
+  return error;
+}
+
+- (std::optional<brouk::Error>)makeDefaultProfile:
+    (const brouk::ProfileId&)profile {
+  std::optional<brouk::Error> error = _profiles->SetDefaultProfile(profile);
+  [self profilesChangedInApp];
+  return error;
+}
+
+- (std::optional<brouk::Error>)setShowProfileManagerAtStartup:(BOOL)show {
+  return _profiles->SetShowManagerAtStartup(show);
+}
+
+- (BOOL)showProfileManagerAtStartup {
+  return _profiles->show_manager_at_startup();
+}
+
+- (std::optional<brouk::Error>)openProfile:(const brouk::ProfileId&)profile {
+  if (!_profiles->Find(profile)) {
+    return brouk::Error{"There is no such profile."};
+  }
+  if (_quitting) {
+    return brouk::Error{"Brouk is closing."};
+  }
+  [[self openWindow] openTabWithURL:nil profile:profile activate:YES];
+  // Chrome's profile picker closes once a profile is chosen at startup.
+  if (_profileManagerAtStartup) {
+    [_profileManager closeManager];
+  }
+  return std::nullopt;
+}
+
+// Deleting asks natively, so the page cannot delete without the user (005:
+// "after confirmation; if it has open tabs, the confirmation says so").
+- (void)deleteProfile:(const brouk::ProfileId&)profile
+                 done:(brouk::ProfileManagerDelegate::DeleteDone)done {
+  const brouk::ProfileInfo* info = _profiles->Find(profile);
+  if (!info) {
+    done(false, brouk::Error{"There is no such profile."});
+    return;
+  }
+  if (_profiles->default_profile().id == profile) {
+    done(false, brouk::Error{"The default profile cannot be deleted. Make "
+                             "another profile the default first."});
+    return;
+  }
+  NSUInteger tabs = 0;
+  for (BRBrowserWindowController* controller in _windows) {
+    tabs += [controller tabCountInProfile:profile];
+  }
+  NSAlert* alert = [[NSAlert alloc] init];
+  alert.alertStyle = NSAlertStyleWarning;
+  alert.messageText = [NSString
+      stringWithFormat:@"Delete the profile “%s”?", info->name.c_str()];
+  NSString* tabsText =
+      tabs == 0 ? @""
+                : [NSString stringWithFormat:@" Its %lu open %@ will close.",
+                                             static_cast<unsigned long>(tabs),
+                                             tabs == 1 ? @"tab" : @"tabs"];
+  alert.informativeText = [NSString
+      stringWithFormat:@"Its sign-ins, cookies, history and settings are "
+                       @"removed from this Mac. This cannot be undone.%@",
+                       tabsText];
+  [alert addButtonWithTitle:@"Delete"].hasDestructiveAction = YES;
+  [alert addButtonWithTitle:@"Cancel"];
+  __block brouk::ProfileManagerDelegate::DeleteDone answer = std::move(done);
+  brouk::ProfileId target = profile;
+  __weak BRAppDelegate* weakSelf = self;
+  void (^completion)(NSModalResponse) = ^(NSModalResponse response) {
+    BRAppDelegate* strongSelf = weakSelf;
+    if (!strongSelf || response != NSAlertFirstButtonReturn) {
+      answer(false, std::nullopt);
+      return;
+    }
+    for (BRBrowserWindowController* controller in [strongSelf->_windows copy]) {
+      [controller closeTabsInProfile:target];
+    }
+    strongSelf->_requestContexts.erase(target);
+    std::optional<brouk::Error> error =
+        strongSelf->_profiles->DeleteProfile(target);
+    [strongSelf profilesChangedInApp];
+    answer(!error, error);
+  };
+  NSWindow* sheetParent = _profileManager.window;
+  if (sheetParent.visible) {
+    [alert beginSheetModalForWindow:sheetParent completionHandler:completion];
+  } else {
+    completion([alert runModal]);
+  }
 }
 
 - (void)newTabInProfile:(NSMenuItem*)sender {

@@ -1,6 +1,7 @@
 # Phase 1 CI (specs/001): builds the portable code (core and CEF integration)
-# on Linux and runs its tests under AddressSanitizer + UBSan. macOS builds
-# are made locally on the user's Macs.
+# on Linux and runs its tests under AddressSanitizer + UBSan, and type-checks
+# and tests the internal pages (web/). macOS builds are made locally on the
+# user's Macs.
 name: linux
 
 on:
@@ -37,6 +38,9 @@ jobs:
 
       - name: Check formatting
         run: scripts/format --check
+
+      - name: Internal pages (TypeScript type-check and tests)
+        run: scripts/web test
 
       - name: Fetch CEF
         run: scripts/fetch_cef linux64
