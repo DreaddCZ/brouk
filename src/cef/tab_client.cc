@@ -775,6 +775,43 @@ bool TabClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
   return true;
 }
 
+// Links clicked with a modifier or the middle button (Chrome: Cmd+click opens
+// a background tab, Cmd+Shift+click a foreground tab, Shift+click a new
+// window, Option+click downloads). Chromium has already worked out the
+// disposition from the click; without this handler CEF would load the link
+// in the current tab.
+bool TabClient::OnOpenURLFromTab(CefRefPtr<CefBrowser> browser,
+                                 CefRefPtr<CefFrame> /*frame*/,
+                                 const CefString& target_url,
+                                 WindowOpenDisposition target_disposition,
+                                 bool user_gesture) {
+  CEF_REQUIRE_UI_THREAD();
+  std::string url = target_url.ToString();
+  // Only clicks open new tabs, and only for pages the browser loads itself;
+  // anything else (another app's link) goes through OnBeforeBrowse in the
+  // current tab, which asks first.
+  if (!delegate_ || !user_gesture ||
+      ClassifyScheme(url) != SchemeHandling::kBrowser) {
+    return false;
+  }
+  switch (target_disposition) {
+    case CEF_WOD_NEW_BACKGROUND_TAB:
+      delegate_->OpenUrl(url, OpenDisposition::kNewBackgroundTab);
+      return true;
+    case CEF_WOD_NEW_FOREGROUND_TAB:
+      delegate_->OpenUrl(url, OpenDisposition::kNewForegroundTab);
+      return true;
+    case CEF_WOD_NEW_WINDOW:
+      delegate_->OpenUrl(url, OpenDisposition::kNewWindow);
+      return true;
+    case CEF_WOD_SAVE_TO_DISK:
+      browser->GetHost()->StartDownload(url);
+      return true;
+    default:
+      return false;
+  }
+}
+
 void TabClient::OnRenderProcessTerminated(CefRefPtr<CefBrowser> /*browser*/,
                                           TerminationStatus status,
                                           int error_code,
