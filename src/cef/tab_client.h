@@ -182,6 +182,8 @@ class TabClientDelegate {
     std::string url_template;  // With %s for the query.
   };
   virtual SearchEngine CurrentSearchEngine() = 0;
+  // "Inspect" in the context menu, at page coordinates (006).
+  virtual void InspectElement(int x, int y) = 0;
   // Every download asks where to save (otherwise only "Save As…").
   virtual bool AskWhereToSaveDownloads() = 0;
 

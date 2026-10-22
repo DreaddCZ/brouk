@@ -21,6 +21,8 @@ add_executable(brouk_app
   browser_window_controller.mm
   data_paths.h
   data_paths.mm
+  devtools_dock.h
+  devtools_dock.mm
   download_notice.h
   download_notice.mm
   find_bar.h

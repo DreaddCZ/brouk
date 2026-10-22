@@ -1,10 +1,12 @@
 #import "platform/mac/browser_tab.h"
 
+#import "platform/mac/devtools_dock.h"
 #import "platform/mac/permission_prompt_view.h"
 #import "platform/mac/sad_tab_view.h"
 #import "platform/mac/screen_share_picker.h"
 #import "platform/mac/tab_dialog_view.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -140,6 +142,9 @@ class TabDelegateBridge : public TabClientDelegate {
                ? [delegate searchEngine]
                : SearchEngine{"Google", std::string(kDefaultSearchTemplate)};
   }
+  void InspectElement(int x, int y) override {
+    [tab_ inspectElementAt:NSMakePoint(x, y)];
+  }
   bool AskWhereToSaveDownloads() override {
     return [tab_.delegate askWhereToSaveDownloads];
   }
@@ -205,8 +210,74 @@ class TabDelegateBridge : public TabClientDelegate {
 
 }  // namespace brouk
 
+// Calls `layoutHandler` whenever its size changes (window resizes).
+@interface BRTabOuterView : NSView
+@property(nonatomic, copy, nullable) void (^layoutHandler)(void);
+@end
+
+@implementation BRTabOuterView
+- (void)resizeSubviewsWithOldSize:(NSSize)oldSize {
+  if (_layoutHandler) {
+    _layoutHandler();
+  } else {
+    [super resizeSubviewsWithOldSize:oldSize];
+  }
+}
+@end
+
+// The line between page and dock; dragging it resizes the dock.
+@interface BRDockDivider : NSView
+@property(nonatomic) BOOL vertical;  // A vertical line (dock left or right).
+@property(nonatomic, copy, nullable) void (^dragged)(CGFloat delta);
+@property(nonatomic, copy, nullable) void (^finished)(void);
+@end
+
+@implementation BRDockDivider
+- (void)drawRect:(NSRect)dirtyRect {
+  [NSColor.separatorColor setFill];
+  NSRectFill(self.bounds);
+}
+- (void)resetCursorRects {
+  [self addCursorRect:self.bounds
+               cursor:_vertical ? NSCursor.resizeLeftRightCursor
+                                : NSCursor.resizeUpDownCursor];
+}
+- (void)mouseDown:(NSEvent*)event {
+  NSPoint last = [self.superview convertPoint:event.locationInWindow
+                                     fromView:nil];
+  while (true) {
+    NSEvent* next =
+        [self.window nextEventMatchingMask:NSEventMaskLeftMouseDragged |
+                                           NSEventMaskLeftMouseUp];
+    if (next.type == NSEventTypeLeftMouseUp) {
+      break;
+    }
+    NSPoint p = [self.superview convertPoint:next.locationInWindow
+                                    fromView:nil];
+    if (_dragged) {
+      _dragged(_vertical ? p.x - last.x : p.y - last.y);
+    }
+    last = p;
+  }
+  if (_finished) {
+    _finished();
+  }
+}
+@end
+
+@interface BRTab () <BRDevToolsDockDelegate, NSWindowDelegate>
+@end
+
 @implementation BRTab {
   brouk::ProfileId _profileId;
+  // Developer tools (006).
+  BRDevToolsDock* _dock;
+  BRDockDivider* _divider;
+  NSWindow* _dockWindow;  // While undocked.
+  NSString* _dockPosition;
+  CGFloat _dockSize;
+  BOOL _devToolsWhenCreated;
+  NSPoint _inspectWhenCreated;
   std::unique_ptr<brouk::TabDelegateBridge> _bridge;
   CefRefPtr<brouk::TabClient> _client;
   CefRefPtr<CefBrowser> _browser;
@@ -243,8 +314,19 @@ class TabDelegateBridge : public TabClientDelegate {
     _findText = @"";
     _permissionPrompts = [NSMutableArray array];
     _blockedPopupURLs = [NSMutableArray array];
+    BRTabOuterView* outer = [[BRTabOuterView alloc] initWithFrame:NSZeroRect];
+    outer.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    __weak BRTab* weakSelf = self;
+    outer.layoutHandler = ^{
+      [weakSelf layoutTabView];
+    };
+    _tabView = outer;
     _containerView = [[NSView alloc] initWithFrame:NSZeroRect];
     _containerView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    [_tabView addSubview:_containerView];
+    _dockPosition = @"bottom";
+    _dockSize = 320;
+    _inspectWhenCreated = NSMakePoint(NSNotFound, NSNotFound);
     _bridge = std::make_unique<brouk::TabDelegateBridge>(self);
     _client = new brouk::TabClient(_bridge.get());
   }
@@ -417,6 +499,11 @@ class TabDelegateBridge : public TabClientDelegate {
   browserView.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
   if (_closeWhenCreated) {
     _browser->GetHost()->CloseBrowser(true);
+  } else if (_devToolsWhenCreated) {
+    // Dev tools were switched on (or inherited from the opener, 006)
+    // before the page existed.
+    _devToolsWhenCreated = NO;
+    [self openDockInspecting:_inspectWhenCreated];
   }
   [_delegate tabDidChangeState:self];
 }
@@ -476,7 +563,7 @@ class TabDelegateBridge : public TabClientDelegate {
          }];
   _externalProtocolDialog.frame = _containerView.bounds;
   [_containerView addSubview:_externalProtocolDialog];
-  if (!_containerView.hidden) {
+  if (!_tabView.isHiddenOrHasHiddenAncestor) {
     [_externalProtocolDialog focus];
   }
 }
@@ -557,7 +644,7 @@ class TabDelegateBridge : public TabClientDelegate {
 // Chrome does not ask about it, and our question could not be answered
 // anyway (it sits behind the panel).
 - (BOOL)isBehindModalPanel {
-  return NSApp.modalWindow != nil || _containerView.window.attachedSheet != nil;
+  return NSApp.modalWindow != nil || _tabView.window.attachedSheet != nil;
 }
 
 - (void)cancelPendingUnresponsive {
@@ -631,7 +718,7 @@ class TabDelegateBridge : public TabClientDelegate {
          }];
   _unresponsiveDialog.frame = _containerView.bounds;
   [_containerView addSubview:_unresponsiveDialog];
-  if (!_containerView.hidden) {
+  if (!_tabView.isHiddenOrHasHiddenAncestor) {
     [_unresponsiveDialog focus];
   }
 }
@@ -671,7 +758,7 @@ class TabDelegateBridge : public TabClientDelegate {
   [_containerView addSubview:_dialog];
   // Only take focus if this tab is visible; otherwise the dialog waits until
   // the user switches to the tab (Chrome does not steal focus either).
-  if (!_containerView.hidden) {
+  if (!_tabView.isHiddenOrHasHiddenAncestor) {
     [_dialog focus];
   }
 }
@@ -685,8 +772,8 @@ class TabDelegateBridge : public TabClientDelegate {
 - (void)chooseDesktopSource:(brouk::TabClientDelegate::DesktopSourceDone)done {
   CEF_REQUIRE_UI_THREAD();
   // Only the tab the user is looking at may open the picker.
-  if (_pendingDesktopSource || _containerView.hidden ||
-      !_containerView.window.isVisible) {
+  if (_pendingDesktopSource || _tabView.isHiddenOrHasHiddenAncestor ||
+      !_tabView.window.isVisible) {
     done(std::nullopt);
     return;
   }
@@ -704,7 +791,7 @@ class TabDelegateBridge : public TabClientDelegate {
         // The system picker takes the focus; give it back to the tab's
         // window, where the user continues.
         [NSApp activateIgnoringOtherApps:YES];
-        [strongSelf->_containerView.window makeKeyAndOrderFront:nil];
+        [strongSelf->_tabView.window makeKeyAndOrderFront:nil];
         answer(source);
       }];
 }
@@ -754,11 +841,247 @@ class TabDelegateBridge : public TabClientDelegate {
         (__bridge NSView*)_browser->GetHost()->GetWindowHandle();
     [browserView removeFromSuperview];
   }
-  [_containerView removeFromSuperview];
+  [_tabView removeFromSuperview];
+}
+
+#pragma mark - Developer tools (006)
+
+- (void)setDevToolsOn:(BOOL)on {
+  CEF_REQUIRE_UI_THREAD();
+  if (on == _devToolsOn) {
+    return;
+  }
+  _devToolsOn = on;
+  if (on) {
+    [self openDockInspecting:NSMakePoint(NSNotFound, NSNotFound)];
+  } else {
+    _devToolsWhenCreated = NO;
+    [_dock close];  // devToolsDockDidClose: finishes.
+  }
+  [_delegate tabDevToolsChanged:self];
+}
+
+- (void)inspectElementAt:(NSPoint)point {
+  if (_dock) {
+    [_dock inspectAt:point];
+    return;
+  }
+  _devToolsOn = YES;
+  [self openDockInspecting:point];
+  [_delegate tabDevToolsChanged:self];
+}
+
+- (void)showDevToolsConsole {
+  [self setDevToolsOn:YES];
+  [_dock showPanel:@"console"];
+}
+
+- (void)startDevToolsElementPicker {
+  [self setDevToolsOn:YES];
+  [_dock enterInspectElementMode];
+}
+
+- (void)openDockInspecting:(NSPoint)point {
+  if (_dock) {
+    return;
+  }
+  if (!_browser) {
+    _devToolsWhenCreated = YES;
+    _inspectWhenCreated = point;
+    return;
+  }
+  _dockPosition = [_delegate dockPosition] ?: @"bottom";
+  _dockSize = [_delegate dockSize];
+  _dock = [[BRDevToolsDock alloc]
+      initWithInspectedBrowser:_browser
+                       inspect:point
+                       context:[_delegate devToolsContext]
+                   preferences:[_delegate devToolsPreferences]
+                       counter:[_delegate browserCounter]
+                      delegate:self];
+  _dock.position = _dockPosition;
+  [self placeDock];
+}
+
+- (void)setDockPosition:(NSString*)position size:(CGFloat)size {
+  BOOL moved = ![position isEqualToString:_dockPosition];
+  _dockPosition = [position copy];
+  _dockSize = size;
+  if (!_dock) {
+    return;
+  }
+  _dock.position = position;
+  if (moved) {
+    [self placeDock];
+  } else {
+    [self layoutTabView];
+  }
+}
+
+// Puts the dock into the tab (with a divider) or into its own window.
+- (void)placeDock {
+  if ([_dockPosition isEqualToString:@"window"]) {
+    [_divider removeFromSuperview];
+    _divider = nil;
+    if (!_dockWindow) {
+      _dockWindow = [[NSWindow alloc]
+          initWithContentRect:NSMakeRect(0, 0, 900, 600)
+                    styleMask:NSWindowStyleMaskTitled |
+                              NSWindowStyleMaskClosable |
+                              NSWindowStyleMaskMiniaturizable |
+                              NSWindowStyleMaskResizable
+                      backing:NSBackingStoreBuffered
+                        defer:NO];
+      _dockWindow.releasedWhenClosed = NO;
+      _dockWindow.restorable = NO;
+      _dockWindow.delegate = self;
+      [_dockWindow
+          cascadeTopLeftFromPoint:NSMakePoint(
+                                      NSMinX(_tabView.window.frame) + 60,
+                                      NSMaxY(_tabView.window.frame) - 60)];
+    }
+    _dockWindow.title =
+        [NSString stringWithFormat:@"Developer Tools – %@",
+                                   _title.length ? _title : _url];
+    _dock.view.frame = _dockWindow.contentView.bounds;
+    _dock.view.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    [_dockWindow.contentView addSubview:_dock.view];
+    [_dockWindow makeKeyAndOrderFront:nil];
+  } else {
+    if (_dockWindow) {
+      _dockWindow.delegate = nil;
+      [_dockWindow orderOut:nil];
+      [_dockWindow close];
+      _dockWindow = nil;
+    }
+    _dock.view.autoresizingMask = NSViewNotSizable;
+    [_tabView addSubview:_dock.view];
+    if (!_divider) {
+      _divider = [[BRDockDivider alloc] initWithFrame:NSZeroRect];
+      __weak BRTab* weakSelf = self;
+      _divider.dragged = ^(CGFloat delta) {
+        [weakSelf dragDividerBy:delta];
+      };
+      _divider.finished = ^{
+        BRTab* strongSelf = weakSelf;
+        if (strongSelf) {
+          [strongSelf->_delegate tab:strongSelf
+                       resizedDockTo:strongSelf->_dockSize];
+        }
+      };
+      [_tabView addSubview:_divider];
+    }
+    _divider.vertical = ![_dockPosition isEqualToString:@"bottom"];
+    [_divider.window invalidateCursorRectsForView:_divider];
+  }
+  [self layoutTabView];
+}
+
+- (void)dragDividerBy:(CGFloat)delta {
+  // The tab view is not flipped: y grows upwards.
+  if ([_dockPosition isEqualToString:@"bottom"]) {
+    _dockSize += delta;
+  } else if ([_dockPosition isEqualToString:@"right"]) {
+    _dockSize -= delta;
+  } else {
+    _dockSize += delta;
+  }
+  [self layoutTabView];
+}
+
+// Page and dock side by side (or the page alone).
+- (void)layoutTabView {
+  NSRect bounds = _tabView.bounds;
+  BOOL docked = _dock && ![_dockPosition isEqualToString:@"window"];
+  if (!docked) {
+    _containerView.frame = bounds;
+    return;
+  }
+  constexpr CGFloat kMin = 120;
+  constexpr CGFloat kDivider = 1;
+  BOOL bottom = [_dockPosition isEqualToString:@"bottom"];
+  CGFloat total = bottom ? bounds.size.height : bounds.size.width;
+  _dockSize =
+      std::clamp<CGFloat>(_dockSize, kMin, std::max(kMin, total - kMin));
+  CGFloat size = std::min(_dockSize, total);
+  NSRect page = bounds;
+  NSRect dock = bounds;
+  NSRect line = bounds;
+  if (bottom) {
+    dock.size.height = size;
+    line = NSMakeRect(0, size, bounds.size.width, kDivider);
+    page.origin.y = size + kDivider;
+    page.size.height = std::max<CGFloat>(0, total - size - kDivider);
+  } else if ([_dockPosition isEqualToString:@"right"]) {
+    dock.origin.x = total - size;
+    dock.size.width = size;
+    line = NSMakeRect(total - size - kDivider, 0, kDivider, bounds.size.height);
+    page.size.width = std::max<CGFloat>(0, total - size - kDivider);
+  } else {
+    dock.size.width = size;
+    line = NSMakeRect(size, 0, kDivider, bounds.size.height);
+    page.origin.x = size + kDivider;
+    page.size.width = std::max<CGFloat>(0, total - size - kDivider);
+  }
+  _containerView.frame = page;
+  _dock.view.frame = dock;
+  // A wider area than the line itself is easier to grab.
+  _divider.frame = bottom ? NSInsetRect(line, 0, -2) : NSInsetRect(line, -2, 0);
+}
+
+#pragma mark - BRDevToolsDockDelegate
+
+- (void)devToolsDockDidClose:(BRDevToolsDock*)dock {
+  if (dock != _dock) {
+    return;
+  }
+  [_dock.view removeFromSuperview];
+  [_dock detach];
+  _dock = nil;
+  [_divider removeFromSuperview];
+  _divider = nil;
+  if (_dockWindow) {
+    _dockWindow.delegate = nil;
+    [_dockWindow close];
+    _dockWindow = nil;
+  }
+  [self layoutTabView];
+  if (_devToolsOn) {
+    _devToolsOn = NO;
+    [_delegate tabDevToolsChanged:self];
+  }
+}
+
+- (void)devToolsDock:(BRDevToolsDock*)dock wantsPosition:(NSString*)position {
+  [_delegate tab:self wantsDockPosition:position];
+}
+
+- (BOOL)devToolsDockHandleKeyEvent:(NSEvent*)event {
+  return [_delegate tab:self handleUnhandledKeyEvent:event];
+}
+
+- (void)devToolsDock:(BRDevToolsDock*)dock openURL:(NSString*)url {
+  // A link in DevTools opens next to the tab, in its profile.
+  [_delegate tab:self
+          openURL:url
+      disposition:brouk::OpenDisposition::kNewForegroundTab];
+}
+
+#pragma mark - NSWindowDelegate (the undocked DevTools window)
+
+- (BOOL)windowShouldClose:(NSWindow*)sender {
+  // Closing the window turns the tab's dev tools off (006).
+  [self setDevToolsOn:NO];
+  return NO;  // Closed once DevTools has closed.
 }
 
 - (void)handleBrowserClosed {
   _browser = nullptr;
+  // CEF closes the tab's DevTools with it; drop its objects now.
+  [_dock detach];
+  _dock = nil;
+  [_dockWindow close];
+  _dockWindow = nil;
   [self cancelPendingUnresponsive];  // Holds a CEF callback.
   _pendingDesktopSource.reset();
   _client->DetachDelegate();

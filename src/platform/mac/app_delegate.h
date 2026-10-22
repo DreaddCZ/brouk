@@ -14,6 +14,9 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface BRAppDelegate : NSObject <NSApplicationDelegate>
 
+// The remote debugging port the settings ask for (0: off); main() passes it
+// to CefInitialize (006).
+- (int)remoteDebuggingPortSetting;
 // Called once CEF is initialized (CefBrowserProcessHandler).
 - (void)cefContextInitialized;
 // The app was launched again while running, with these arguments.
