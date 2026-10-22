@@ -27,15 +27,79 @@ Record visited pages per profile, so the user can find them again, the address b
 - An internal HTML page, `brouk://history`, opened with **⌘Y** or History → Show Full History.
 - It shows the **history of all profiles**:
   - a **profile filter** (All / one profile), set to All when the page opens;
-  - each entry shows its profile's colour, favicon, title, domain and time;
-  - entries are grouped by day, newest first.
-- A **search** box matches titles and URLs.
-- **Opening an entry** opens it in the profile it was visited in. When that is not the current tab's profile, the window is chosen as in 010. ⌘-click opens it in a new tab.
-- **Actions:**
-  - delete one entry, or several selected ones (⌘-click, ⇧-click);
-  - "More from this site" (filters the list to the domain);
-  - "Delete all from this site";
-  - "Clear browsing data…".
+  - every site and entry shows its profile's colour.
+
+**Grouped by site (default view), to reduce clutter:**
+- One row per **exact host**. For example, `companya.atlassian.net` and `companyb.atlassian.net` are two separate rows, and `github.com` is one row.
+- Each row shows the favicon, the host, the number of visits, the number of different pages, and the last visit.
+- Rows are sorted by last visit, newest first. They can also be sorted by number of visits or by host name.
+- With the profile filter set to All, the same host visited in two profiles gives two rows, each with its profile's colour.
+- **Expanding a row** shows that host's pages, newest first: title, path and last visit. A page visited several times is listed once, with its visit count.
+- A **"By day"** toggle switches to Chrome's list of single visits grouped by day.
+
+**Opening an entry:** it opens in the profile it was visited in. When that is not the current tab's profile, the window is chosen as in 010. ⌘-click opens it in a new tab.
+
+**Actions:**
+- delete a page, a whole site row, or several selected rows or pages (⌘-click, ⇧-click);
+- "Clean up…" (see below);
+- "Clear browsing data…".
+
+### Clean up
+
+The "Clean up…" dialog removes clutter while keeping the sites the user cares about. It is opened from the history page.
+
+- **Choose the scope:**
+  - **profile** — the active tab's profile (preselected), another profile, or all profiles;
+  - **time range** — last 24 hours, last 7 days, last 4 weeks, all time.
+- **The dialog lists every host** in that scope, with a checkbox, visit count and last visit. Hosts are sorted by visit count, and the list can be filtered by typing.
+- **Two modes:**
+  - **Delete selected sites** — removes the checked hosts.
+  - **Keep selected, delete everything else** (the default) — removes all hosts except the checked ones.
+- **Preselected in "keep" mode:**
+  - the profile's **keep list** — the hosts kept the last time, remembered per profile;
+  - plus the **10 most visited hosts** of the scope, marked "suggested".
+  - The user can check and uncheck freely. On confirm, the checked hosts become the profile's new keep list.
+  - With "all profiles", each profile uses its own keep list and suggestions.
+- **Confirm** shows how many entries and sites will be deleted. Deleting cannot be undone.
+- Clean up runs only when the user starts it; there is no automatic clean up. The 90-day retention still applies.
+
+### Search
+
+The search box filters the current view: in "by site" view it shows the hosts and pages that match; in "by day" view, the matching visits.
+
+**Plain words** match the title or the URL. All words must match (AND), and the match ignores case and accents.
+
+**Field filters,** which can be combined:
+
+| Filter | Meaning |
+|---|---|
+| `"exact phrase"` | phrase in title or URL |
+| `-word`, `-site:x` | exclude |
+| `a OR b` | either term |
+| `site:atlassian.net` | host is this or a subdomain of it |
+| `host:companya.atlassian.net` | exactly this host |
+| `title:sprint` | in the title only |
+| `url:/browse/` | in the URL only |
+| `after:2026-10-01`, `before:…`, `on:…` | visit date; also relative values like `after:7d` |
+| `visits:>3` | pages with more than 3 visits (also `<`, `=`) |
+| `profile:Work` | profile by name |
+| `type:typed` | how the visit started: `typed`, `link`, `bookmark`, `reload` |
+
+**Filter chips** under the search box (Site, Date, Profile, Visits, Type) add filters without typing; they write the same text into the box. An invalid filter is underlined with a short hint, and the rest of the query still applies.
+
+**SQL (advanced):** an "SQL" toggle replaces the search box with a query editor for read-only SQL (SQLite dialect).
+
+- **Views available:**
+  - `pages(profile, host, url, title, visit_count, typed_count, last_visit)`
+  - `visits(profile, host, url, title, visit_time, transition)`
+  - They cover every profile; `profile` is the profile's name.
+  - The views and their columns are listed next to the editor, with a few example queries.
+- **Results** are shown as a table. URLs are clickable and open as described above. Results can be copied as CSV.
+- **Safety:**
+  - queries run on a separate **read-only** connection that can see only these views;
+  - anything other than `SELECT` is rejected;
+  - a query stops after **2 seconds** and returns at most **1,000 rows**;
+  - errors are shown as SQLite reports them.
 
 ### History menu
 
@@ -93,10 +157,17 @@ As specified in 005, history can be included in a profile export, limited to the
 - [ ] Entries older than the retention limit (90 days by default) are removed automatically.
 
 **History page**
-- [ ] ⌘Y opens the history page; it lists all profiles' history grouped by day, with each entry's profile colour, and can be filtered by profile.
-- [ ] Searching on the history page matches titles and URLs.
+- [ ] ⌘Y opens the history page grouped by exact host (companya.atlassian.net and companyb.atlassian.net are separate rows), with visit counts, last visit and profile colour; a row expands to its pages; it can be filtered by profile and sorted by last visit, visits or host.
+- [ ] The "By day" toggle shows single visits grouped by day.
+- [ ] Clean up in "keep selected" mode deletes every host in the chosen profile and time range except the checked ones, and shows the counts before confirming.
+- [ ] Clean up preselects the profile's remembered keep list plus the 10 most visited hosts; the hosts kept become the new keep list.
+- [ ] Clean up in "delete selected" mode deletes only the checked hosts.
+- [ ] Search with plain words matches title or URL, all words required; the filters `site:`, `host:`, `title:`, `url:`, `after:`/`before:`/`on:` (absolute and relative), `visits:`, `profile:`, `type:`, phrases, `-` and `OR` work as described, alone and combined.
+- [ ] The filter chips add the same filters as typing them.
+- [ ] The SQL editor runs SELECT queries over `pages` and `visits` for all profiles and shows the results as a table, which can be copied as CSV.
+- [ ] Any statement that would change data is rejected, and queries are stopped after 2 seconds or 1,000 rows.
 - [ ] An entry opened from the history page opens in the profile it was visited in, in the window chosen by the rules of 010.
-- [ ] Single entries, a multi-selection, or all entries of one site can be deleted.
+- [ ] A page, a site row, or a multi-selection of them can be deleted.
 
 **Menu and closed tabs**
 - [ ] ⇧⌘T reopens the last closed tab (or window) in its profile, at its previous position when possible, up to the last 10 tabs or windows of the current run.
@@ -114,7 +185,9 @@ As specified in 005, history can be included in a profile export, limited to the
 
 - History sync between devices.
 - Chrome's "Journeys" / grouping of history by topic.
-- Full-text search of page contents.
+- Full-text search of page contents (search covers titles and URLs only).
+- Automatic clean up of rarely visited sites (only the retention limit runs automatically).
+- SQL that changes data, or SQL over other data (bookmarks, downloads, passwords).
 - Session restore at startup and keeping closed tabs after quitting (003, left for testing).
 - Import of history from other browsers (in line with 005).
 - A private/incognito mode.
@@ -125,6 +198,8 @@ As specified in 005, history can be included in a profile export, limited to the
 |---|---|---|
 | Keep history for | 90 days (alternatives: 30 days, 1 year, forever) | global |
 | History in address bar suggestions | on (already in 003) | global |
+| History page view | by site (alternative: by day; the page remembers the last choice) | global |
+| Clean up keep list | empty; updated by Clean up | per profile |
 
 ## Open questions
 
@@ -134,3 +209,4 @@ None.
 
 - 2026-10-21: placeholder created from the readiness review. Until this spec is ready, Claude Code may store visited URLs and titles per profile only as far as address bar suggestions (003) need it, in a storage module this spec will later extend.
 - 2026-10-22 (history review with the user): agreed on Chrome-like history, 90-day retention, and the history page showing all profiles with a profile filter, like the bookmark manager. Clear browsing data, the History menu and ⇧⌘T reopening closed tabs (current run only) were taken from Chrome. Storage is SQLite per profile. Spec set to `ready`.
+- 2026-10-22 (history review, part 2, with the user): to reduce clutter, the history page groups entries by exact host (default view; Chrome's by-day list is a toggle). A manual "Clean up" dialog deletes selected hosts or everything except kept hosts; the keep list is remembered per profile and topped up with the 10 most visited hosts. No automatic clean up. Search uses field filters with chips, plus a read-only SQL editor over `pages` and `visits` views.
