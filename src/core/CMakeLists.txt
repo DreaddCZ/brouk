@@ -50,8 +50,10 @@ brouk_target_options(brouk_core_testing)
 # yaml-cpp throws; the one file using it catches everything (see the file).
 set_source_files_properties(yaml_io.cc PROPERTIES COMPILE_OPTIONS -fexceptions)
 
+target_link_libraries(brouk_core PRIVATE brouk_yaml_cpp)
+target_link_libraries(brouk_core_testing PRIVATE brouk_yaml_cpp_testing)
+
 foreach(target brouk_core brouk_core_testing)
-  target_link_libraries(${target} PRIVATE yaml-cpp::yaml-cpp)
   target_include_directories(${target} PUBLIC
     "${PROJECT_SOURCE_DIR}/src"
     "${PROJECT_BINARY_DIR}/generated")
