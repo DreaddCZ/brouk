@@ -17,6 +17,13 @@ enum class SettingScope { kGlobal, kProfile };
 // instead of silently ignored.
 struct SettingDef {
   enum class Type { kBool, kString, kChoice };
+  // What a kString holds; checked when the value is set.
+  enum class Format {
+    kText,         // A single line of text.
+    kUrlTemplate,  // An http(s) URL containing %s (a search engine).
+    kFolder,       // Empty (the default folder), an absolute path or ~/...
+    kProfileId,    // A profile id (the settings page offers the profiles).
+  };
 
   // Dotted path; "profile.color" is `color:` under `profile:` in the file.
   std::string_view key;
@@ -25,9 +32,17 @@ struct SettingDef {
   // As written in the file: "true"/"false", the text, or one of `choices`.
   std::string_view default_value;
   std::span<const std::string_view> choices = {};  // kChoice
-  std::size_t max_length = 0;                      // kString, in bytes
+  // kChoice: what the settings page shows for each choice (same order).
+  std::span<const std::string_view> choice_labels = {};
+  Format format = Format::kText;  // kString
+  std::size_t max_length = 0;     // kString, in bytes
   bool requires_restart = false;
-  std::string_view description;
+  // Only in the file, not on the settings page (004: "like about:config").
+  bool advanced = false;
+  // Settings page grouping and wording.
+  std::string_view section = {};
+  std::string_view label = {};
+  std::string_view description = {};
 };
 
 std::span<const SettingDef> AllSettingDefs();

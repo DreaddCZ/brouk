@@ -95,6 +95,16 @@ TEST(SettingsTest, FileFormat) {
             "  name: \"Work\"\n"
             "  color: blue\n");
   EXPECT_EQ(EmitYaml(Settings(SettingScope::kGlobal).ToYaml()),
+            "appearance:\n"
+            "  theme: system\n"
+            "search:\n"
+            "  engine: google\n"
+            "  custom_template: \"\"\n"
+            "downloads:\n"
+            "  folder: \"\"\n"
+            "  ask_where_to_save: false\n"
+            "content:\n"
+            "  spellcheck: true\n"
             "profiles:\n"
             "  default: \"default\"\n"
             "  show_manager_at_startup: false\n");
