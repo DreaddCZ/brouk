@@ -81,26 +81,57 @@
   // Like Chrome, URLs given on the command line open as tabs.
   std::vector<CefString> args;
   CefCommandLine::GetGlobalCommandLine()->GetArguments(args);
-  if (args.empty()) {
+  std::vector<std::string> urls;
+  for (const CefString& arg : args) {
+    urls.push_back(arg.ToString());
+  }
+  [self openURLs:urls inController:nil];
+}
+
+- (void)relaunchedWithURLs:(const std::vector<std::string>&)urls {
+  CEF_REQUIRE_UI_THREAD();
+  if (_quitting || !_requestContext) {
+    return;
+  }
+  [NSApp activateIgnoringOtherApps:YES];
+  // Chrome adds the URLs as tabs to the front window; without URLs it opens
+  // a new window.
+  [self openURLs:urls inController:urls.empty() ? nil : [self frontController]];
+}
+
+// Main thread. The front normal (non-popup) browser window, if any.
+- (nullable BRBrowserWindowController*)frontController {
+  for (NSWindow* window in NSApp.orderedWindows) {
+    for (BRBrowserWindowController* controller in _windows) {
+      if (controller.window == window && !controller.isPopup) {
+        return controller;
+      }
+    }
+  }
+  return nil;
+}
+
+// Main thread. Opens command line arguments as tabs, in `controller` or a new
+// window; an empty new tab when none of them is usable.
+- (void)openURLs:(const std::vector<std::string>&)urls
+    inController:(nullable BRBrowserWindowController*)controller {
+  if (urls.empty()) {
     [self newWindow:nil];
     return;
   }
-  BRBrowserWindowController* controller = [self openWindow];
-  for (const CefString& arg : args) {
-    brouk::AddressInputResult input =
-        brouk::ClassifyAddressInput(arg.ToString());
+  BRBrowserWindowController* target = controller ?: [self openWindow];
+  NSUInteger opened = 0;
+  for (const std::string& url : urls) {
+    brouk::AddressInputResult input = brouk::ClassifyAddressInput(url);
     if (input.kind != brouk::AddressInputResult::Kind::kEmpty) {
-      [controller openTabWithURL:@(input.url.c_str()) activate:YES];
+      [target openTabWithURL:@(input.url.c_str()) activate:YES];
+      ++opened;
     }
   }
-  if (controller.liveTabCount == 0) {
-    [controller openTabWithURL:nil activate:YES];
+  if (opened == 0 && !controller) {
+    [target openTabWithURL:nil activate:YES];
   }
-}
-
-- (void)relaunched {
-  [NSApp activateIgnoringOtherApps:YES];
-  [self newWindow:nil];
+  [target showWindow:nil];
 }
 
 #pragma mark - BRBrowserWindowOwner

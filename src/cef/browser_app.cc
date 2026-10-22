@@ -34,11 +34,18 @@ void BrowserApp::OnContextInitialized() {
 }
 
 bool BrowserApp::OnAlreadyRunningAppRelaunch(
-    CefRefPtr<CefCommandLine> /*command_line*/,
+    CefRefPtr<CefCommandLine> command_line,
     const CefString& /*current_directory*/) {
   CEF_REQUIRE_UI_THREAD();
   if (callbacks_.on_relaunch) {
-    callbacks_.on_relaunch();
+    std::vector<CefString> args;
+    command_line->GetArguments(args);
+    std::vector<std::string> urls;
+    urls.reserve(args.size());
+    for (const CefString& arg : args) {
+      urls.push_back(arg.ToString());
+    }
+    callbacks_.on_relaunch(std::move(urls));
   }
   return true;
 }

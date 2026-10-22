@@ -1,5 +1,7 @@
 #import "platform/mac/data_paths.h"
 
+#include <cstdlib>
+
 #include "brouk/app_info.h"
 
 namespace brouk::mac {
@@ -20,6 +22,12 @@ NSString* EnsureDirectory(NSString* path) {
 }  // namespace
 
 NSString* AppDataDirectory() {
+  // For developer test runs only: a separate data folder lets a test instance
+  // run next to the user's own (CEF allows one instance per data folder).
+  const char* dev_dir = std::getenv("BROUK_DEV_DATA_DIR");
+  if (dev_dir && dev_dir[0] == '/') {
+    return EnsureDirectory(@(dev_dir));
+  }
   NSURL* support = [NSFileManager.defaultManager
         URLForDirectory:NSApplicationSupportDirectory
                inDomain:NSUserDomainMask

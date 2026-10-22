@@ -15,6 +15,7 @@
 #include "core/page_events.h"
 #include "include/cef_image.h"
 #include "include/cef_parser.h"
+#include "include/cef_process_message.h"
 #include "include/cef_request_context.h"
 #include "include/cef_values.h"
 #include "include/wrapper/cef_helpers.h"
@@ -103,8 +104,59 @@ bool TabClient::OnProcessMessageReceived(CefRefPtr<CefBrowser> /*browser*/,
                         event->type == PageEvent::Type::kAudible);
       }
       break;
+    case PageEvent::Type::kDisplayMedia:
+      if (frame) {
+        ChooseDesktopSourceForFrame(frame, event->request_id);
+      }
+      break;
   }
   return true;
+}
+
+namespace {
+
+// UI thread. Answers the page script's getDisplayMedia() request; an empty
+// `source_id` means cancelled.
+void SendDisplayMediaChoice(const CefRefPtr<CefFrame>& frame,
+                            std::uint32_t request_id,
+                            const std::string& source_id) {
+  if (!frame->IsValid()) {
+    return;  // The page is gone.
+  }
+  CefRefPtr<CefProcessMessage> message =
+      CefProcessMessage::Create(std::string(kDisplayMediaChoiceMessage));
+  CefRefPtr<CefListValue> args = message->GetArgumentList();
+  args->SetDouble(0, request_id);  // Exact: any uint32 fits in a double.
+  args->SetString(1, source_id);
+  frame->SendProcessMessage(PID_RENDERER, message);
+}
+
+}  // namespace
+
+void TabClient::ChooseDesktopSourceForFrame(const CefRefPtr<CefFrame>& frame,
+                                            std::uint32_t request_id) {
+  CEF_REQUIRE_UI_THREAD();
+  std::string origin = OriginOf(frame->GetURL().ToString());
+  // One picker at a time, and only for pages with an origin to grant to.
+  if (choosing_desktop_source_ || !delegate_ || origin.empty() ||
+      origin == "null") {
+    SendDisplayMediaChoice(frame, request_id, "");
+    return;
+  }
+  choosing_desktop_source_ = true;
+  CefRefPtr<TabClient> self(this);
+  delegate_->ChooseDesktopSource(
+      [self, frame, request_id, origin](std::optional<DesktopSource> source) {
+        CEF_REQUIRE_UI_THREAD();
+        self->choosing_desktop_source_ = false;
+        if (!source || !self->delegate_) {
+          SendDisplayMediaChoice(frame, request_id, "");
+          return;
+        }
+        // The script's getUserMedia() call for this source follows at once.
+        self->screen_share_grant_.Issue(origin, ScreenShareGrant::Clock::now());
+        SendDisplayMediaChoice(frame, request_id, DesktopSourceId(*source));
+      });
 }
 
 void TabClient::SetFrameAudible(const std::string& frame_id, bool audible) {
@@ -614,6 +666,18 @@ bool TabClient::OnRequestMediaAccessPermission(
   }
   std::string origin = OriginOf(requesting_origin.ToString());
   std::vector<PermissionKind> kinds = KindsFromMediaMask(requested_permissions);
+
+  // Screen capture right after the user chose a source in the picker: the
+  // choice was the question (Chrome does not ask twice either).
+  constexpr std::uint32_t kDesktopCapture =
+      CEF_MEDIA_PERMISSION_DESKTOP_VIDEO_CAPTURE |
+      CEF_MEDIA_PERMISSION_DESKTOP_AUDIO_CAPTURE;
+  if ((requested_permissions & CEF_MEDIA_PERMISSION_DESKTOP_VIDEO_CAPTURE) &&
+      (requested_permissions & ~kDesktopCapture) == 0 &&
+      screen_share_grant_.Consume(origin, ScreenShareGrant::Clock::now())) {
+    callback->Continue(requested_permissions);
+    return true;
+  }
   CefRefPtr<CefRequestContext> context =
       browser->GetHost()->GetRequestContext();
 

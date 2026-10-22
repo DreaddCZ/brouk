@@ -21,6 +21,8 @@ set(BROUK_CORE_SOURCES
   profile_registry.cc
   profile_registry.h
   result.h
+  screen_share.cc
+  screen_share.h
   security_state.cc
   security_state.h
   settings.cc

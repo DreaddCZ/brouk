@@ -12,7 +12,8 @@ NS_ASSUME_NONNULL_BEGIN
 
 namespace brouk::mac {
 
-// Creates the directory if needed.
+// Creates the directory if needed. The environment variable
+// BROUK_DEV_DATA_DIR (an absolute path) replaces it for developer test runs.
 NSString* AppDataDirectory();
 // `profile_id` is a stable id (never the display name, see 005).
 NSString* ProfileDirectory(NSString* profile_id);
