@@ -4,48 +4,83 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <set>
+#include <string_view>
 #include <vector>
+
+#include "core/profile_id.h"
 
 namespace brouk {
 
 using TabId = std::int64_t;
 
-// Order and selection of the tabs in one window, independent of any UI or
-// CEF. Implements Chrome's rules for where new tabs go and which tab becomes
-// active when the active tab closes, so the platform UI only renders it.
+// Order, selection and profile groups of the tabs in one window, independent
+// of any UI or CEF. Implements Chrome's rules for where new tabs go and which
+// tab becomes active when the active tab closes, so the platform UI only
+// renders it.
 //
-// Profile groups (003, 005) are added on top of this model in milestone 3.
+// Profile groups (003, 005): all tabs of one profile form exactly one group.
+// The default profile's group is always last (rightmost) and always exists,
+// even without tabs; other groups appear with their first tab, in the order
+// they appeared, and disappear with their last.
 class TabStripModel {
  public:
-  TabStripModel() = default;
+  explicit TabStripModel(ProfileId default_profile);
   TabStripModel(const TabStripModel&) = delete;
   TabStripModel& operator=(const TabStripModel&) = delete;
 
-  // Appends a tab at the end (Cmd+T) and returns its index.
+  struct Group {
+    ProfileId profile;
+    std::size_t start = 0;  // Index of its first tab.
+    std::size_t count = 0;  // 0 only for the default profile's group.
+    bool collapsed = false;
+  };
+
+  // Appends a tab at the end of `profile`'s group (Cmd+T, a group's "+")
+  // and returns its index.
+  std::size_t AppendTab(TabId id, const ProfileId& profile, bool activate);
+  // The same, in the default profile.
   std::size_t AppendTab(TabId id, bool activate);
 
-  // Inserts a tab opened from `opener` (a link, a popup) right after the
-  // opener and after tabs opened from it earlier, as Chrome does. Falls back
-  // to appending if the opener is not in this strip. Returns its index.
+  // Inserts a tab opened from `opener` (a link, a popup) in the opener's
+  // profile, right after the opener and after tabs opened from it earlier,
+  // as Chrome does. Falls back to appending in the default profile if the
+  // opener is not in this strip. Returns its index.
   std::size_t InsertFromOpener(TabId id, TabId opener, bool activate);
 
   // Removes a tab. If it was active, picks the next active tab: another tab
   // opened by the same opener, then the opener, then the tab to the right,
-  // then the one to the left. Returns false if the id is unknown.
+  // then the one to the left; tabs in collapsed groups only if there is no
+  // other. Returns false if the id is unknown.
   bool RemoveTab(TabId id);
 
-  // Activates a tab chosen by the user. Like Chrome, this forgets opener
-  // relations, so closing the tab later does not jump back to an old opener.
+  // Activates a tab chosen by the user, expanding its group. Like Chrome,
+  // this forgets opener relations, so closing the tab later does not jump
+  // back to an old opener.
   bool ActivateTab(TabId id);
   bool ActivateIndex(std::size_t index);
-  // Cmd+Opt+Right / Ctrl+Tab and Cmd+Opt+Left / Ctrl+Shift+Tab; wraps around.
+  // Cmd+Opt+Right / Ctrl+Tab and Cmd+Opt+Left / Ctrl+Shift+Tab; wraps
+  // around and skips collapsed groups.
   void ActivateNext();
   void ActivatePrevious();
   // Cmd+1 ... Cmd+8 activate tab 1..8 (if it exists); Cmd+9 the last tab.
   void ActivateByShortcutNumber(int number);
 
-  // Moves a tab to `to_index` (clamped to the end).
+  // Moves a tab to `to_index`, kept inside its own group (dragging a tab to
+  // another profile reopens it there instead, see 005).
   bool MoveTab(TabId id, std::size_t to_index);
+
+  // Collapses or expands a group (clicking its label). Collapsing the group
+  // of the active tab activates the nearest tab outside it; if there is none,
+  // the group stays expanded. Returns whether the state changed.
+  bool SetGroupCollapsed(std::string_view profile, bool collapsed);
+
+  // The default profile changed (settings): its group moves to the end.
+  void SetDefaultProfile(const ProfileId& profile);
+  const ProfileId& default_profile() const { return default_profile_; }
+
+  // Left to right, always ending with the default profile's group.
+  std::vector<Group> groups() const;
 
   std::size_t count() const { return tabs_.size(); }
   bool empty() const { return tabs_.empty(); }
@@ -54,17 +89,31 @@ class TabStripModel {
   std::optional<TabId> active_id() const;
   std::optional<std::size_t> active_index() const { return active_index_; }
   std::optional<TabId> OpenerOf(TabId id) const;
+  // Null for unknown tabs.
+  const ProfileId* ProfileOf(TabId id) const;
 
  private:
   struct Entry {
     TabId id;
+    ProfileId profile;
     std::optional<TabId> opener;
   };
 
+  // Where `profile`'s group ends (one past its last tab); for a profile
+  // without tabs, where its group would start.
+  std::size_t GroupEnd(const ProfileId& profile) const;
+  std::size_t InsertAt(std::size_t index, Entry entry, bool activate);
+  bool IsCollapsedAt(std::size_t index) const;
   void ForgetOpeners();
+  // Reorders tabs_ to follow group_order_ (stable inside groups).
+  void ArrangeGroups();
 
+  ProfileId default_profile_;
   std::vector<Entry> tabs_;
   std::optional<std::size_t> active_index_;
+  // Non-default groups in the order they appeared.
+  std::vector<ProfileId> group_order_;
+  std::set<ProfileId, std::less<>> collapsed_;
 };
 
 }  // namespace brouk

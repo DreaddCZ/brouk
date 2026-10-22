@@ -2,11 +2,11 @@
 #define BROUK_CEF_BROWSER_APP_H_
 
 #include <functional>
-#include <string>
 #include <utility>
-#include <vector>
 
+#include "core/launch_args.h"
 #include "include/cef_app.h"
+#include "include/cef_command_line.h"
 
 namespace brouk {
 
@@ -18,11 +18,15 @@ class BrowserApp : public CefApp, public CefBrowserProcessHandler {
     // UI thread. CEF is ready: open the first window.
     std::function<void()> on_context_initialized;
     // UI thread. The app was started again while running (CEF's process
-    // singleton). `urls` are the new launch's arguments (untrusted input,
-    // like anything typed into the address bar): Chrome opens them as tabs,
-    // or a new window when there are none.
-    std::function<void(std::vector<std::string> urls)> on_relaunch;
+    // singleton). The request's URLs are untrusted input, like anything typed
+    // into the address bar: Chrome opens them as tabs, or a new window when
+    // there are none.
+    std::function<void(LaunchRequest request)> on_relaunch;
   };
+
+  // What a command line asks for: URLs and --profile (005).
+  static LaunchRequest LaunchRequestFrom(
+      const CefRefPtr<CefCommandLine>& command_line);
 
   explicit BrowserApp(Callbacks callbacks) : callbacks_(std::move(callbacks)) {}
   BrowserApp(const BrowserApp&) = delete;

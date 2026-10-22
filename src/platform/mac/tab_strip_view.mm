@@ -1,16 +1,22 @@
 #import "platform/mac/tab_strip_view.h"
 
 #import "platform/mac/browser_tab.h"
+#import "platform/mac/profile_colors.h"
 
 #include <algorithm>
 #include <cmath>
+#include <string>
 
 namespace {
 
 constexpr CGFloat kMaxTabWidth = 220;
 constexpr CGFloat kMinTabWidth = 44;
 constexpr CGFloat kTabGap = 1;
-constexpr CGFloat kNewTabButtonWidth = 32;
+constexpr CGFloat kNewTabButtonWidth = 26;
+constexpr CGFloat kGroupGap = 8;
+constexpr CGFloat kLabelGap = 4;
+constexpr CGFloat kMaxLabelWidth = 160;
+constexpr CGFloat kGroupLineHeight = 2;
 constexpr CGFloat kCloseButtonSize = 16;
 constexpr CGFloat kIconSize = 16;
 constexpr CGFloat kTabPadding = 8;
@@ -33,6 +39,7 @@ NSColor* ActiveTabColor() {
 
 @interface BRTabStripView ()
 - (void)tabViewMouseDown:(BRTabView*)tabView event:(NSEvent*)event;
+- (void)groupLabelClicked:(NSString*)profileId;
 - (void)tabViewClose:(BRTabView*)tabView;
 - (void)tabViewToggleMute:(BRTabView*)tabView;
 @end
@@ -146,7 +153,7 @@ NSColor* ActiveTabColor() {
 
 - (void)updateFromTab:(BRTab*)tab {
   NSString* title = tab.title.length ? tab.title : tab.url;
-  if (title.length == 0) {
+  if (title.length == 0 || [title isEqualToString:@"about:blank"]) {
     title = @"New Tab";
   }
   _label.stringValue = title;
@@ -253,22 +260,138 @@ NSColor* ActiveTabColor() {
 
 @end
 
+@implementation BRTabGroupInfo
+@end
+
+// A group's label: a chip in the profile's colour with its name and number
+// of tabs. Clicking it collapses or expands the group (003).
+@interface BRGroupLabelView : NSView
+@property(nonatomic, copy) NSString* profileId;
+@property(nonatomic, weak) BRTabStripView* strip;
+- (void)updateWithGroup:(BRTabGroupInfo*)group;
+- (CGFloat)preferredWidth;
+@end
+
+@implementation BRGroupLabelView {
+  NSString* _colorName;
+  NSString* _text;
+  BOOL _collapsed;
+}
+
+- (BOOL)isFlipped {
+  return YES;
+}
+
+- (BOOL)mouseDownCanMoveWindow {
+  return NO;
+}
+
+- (NSDictionary*)textAttributes {
+  return @{
+    NSFontAttributeName : [NSFont systemFontOfSize:11
+                                            weight:NSFontWeightSemibold],
+    NSForegroundColorAttributeName :
+        brouk::mac::ProfileTextColor(_colorName.UTF8String ?: ""),
+  };
+}
+
+- (void)updateWithGroup:(BRTabGroupInfo*)group {
+  _colorName = group.colorName;
+  _collapsed = group.collapsed;
+  NSUInteger count = group.tabs.count;
+  _text = count > 0
+              ? [NSString stringWithFormat:@"%@  %lu", group.name,
+                                           static_cast<unsigned long>(count)]
+              : group.name;
+  self.toolTip =
+      [NSString stringWithFormat:@"%@: %lu %@. Click to %@.", group.name,
+                                 static_cast<unsigned long>(count),
+                                 count == 1 ? @"tab" : @"tabs",
+                                 _collapsed ? @"expand" : @"collapse"];
+  self.accessibilityRole = NSAccessibilityButtonRole;
+  self.accessibilityLabel =
+      [NSString stringWithFormat:@"Profile %@, %lu %@, %@", group.name,
+                                 static_cast<unsigned long>(count),
+                                 count == 1 ? @"tab" : @"tabs",
+                                 _collapsed ? @"collapsed" : @"expanded"];
+  self.needsDisplay = YES;
+}
+
+- (CGFloat)preferredWidth {
+  CGFloat text = [_text sizeWithAttributes:[self textAttributes]].width;
+  return std::min(std::ceil(text) + 16, kMaxLabelWidth);
+}
+
+- (void)drawRect:(NSRect)dirtyRect {
+  NSRect chip = NSInsetRect(self.bounds, 0, (self.bounds.size.height - 20) / 2);
+  chip.origin.y += 2;
+  NSColor* color = brouk::mac::ProfileColor(_colorName.UTF8String ?: "");
+  NSBezierPath* path = [NSBezierPath bezierPathWithRoundedRect:chip
+                                                       xRadius:6
+                                                       yRadius:6];
+  if (_collapsed) {
+    // Collapsed: outlined, so it reads as "closed" at a glance.
+    [color setStroke];
+    path.lineWidth = 1.5;
+    [[color colorWithAlphaComponent:0.15] setFill];
+    [path fill];
+    [path stroke];
+  } else {
+    [color setFill];
+    [path fill];
+  }
+  NSMutableDictionary* attributes = [[self textAttributes] mutableCopy];
+  if (_collapsed) {
+    attributes[NSForegroundColorAttributeName] = NSColor.labelColor;
+  }
+  NSMutableParagraphStyle* style = [[NSMutableParagraphStyle alloc] init];
+  style.lineBreakMode = NSLineBreakByTruncatingTail;
+  style.alignment = NSTextAlignmentCenter;
+  attributes[NSParagraphStyleAttributeName] = style;
+  NSRect textRect = NSInsetRect(chip, 6, 0);
+  textRect.origin.y += (chip.size.height - 14) / 2;
+  textRect.size.height = 14;
+  [_text drawInRect:textRect withAttributes:attributes];
+}
+
+- (void)mouseDown:(NSEvent*)event {
+  [_strip groupLabelClicked:_profileId];
+}
+
+- (BOOL)accessibilityPerformPress {
+  [_strip groupLabelClicked:_profileId];
+  return YES;
+}
+
+@end
+
+// The coloured line under a group's tabs.
+@interface BRGroupLineView : NSView
+@property(nonatomic, copy) NSString* colorName;
+@end
+
+@implementation BRGroupLineView
+- (void)drawRect:(NSRect)dirtyRect {
+  [brouk::mac::ProfileColor(_colorName.UTF8String ?: "") setFill];
+  NSRectFill(self.bounds);
+}
+@end
+
 @implementation BRTabStripView {
-  NSMutableArray<BRTabView*>* _tabViews;
-  NSButton* _newTabButton;
+  NSArray<BRTabGroupInfo*>* _groups;
+  NSMutableArray<BRTabView*>* _tabViews;  // All visible tabs, left to right.
+  NSMutableDictionary<NSString*, BRGroupLabelView*>* _labels;
+  NSMutableDictionary<NSString*, NSButton*>* _plusButtons;
+  NSMutableDictionary<NSString*, BRGroupLineView*>* _lines;
 }
 
 - (instancetype)initWithFrame:(NSRect)frame {
   if ((self = [super initWithFrame:frame])) {
+    _groups = @[];
     _tabViews = [NSMutableArray array];
-    _newTabButton =
-        [NSButton buttonWithImage:[NSImage imageWithSystemSymbolName:@"plus"
-                                            accessibilityDescription:@"New tab"]
-                           target:self
-                           action:@selector(newTabClicked:)];
-    _newTabButton.bordered = NO;
-    _newTabButton.toolTip = @"New tab (⌘T)";
-    [self addSubview:_newTabButton];
+    _labels = [NSMutableDictionary dictionary];
+    _plusButtons = [NSMutableDictionary dictionary];
+    _lines = [NSMutableDictionary dictionary];
     self.accessibilityRole = NSAccessibilityTabGroupRole;
     self.accessibilityLabel = @"Tabs";
   }
@@ -295,26 +418,71 @@ NSColor* ActiveTabColor() {
   }
 }
 
-- (void)setTabs:(NSArray<BRTab*>*)tabs activeTabId:(brouk::TabId)activeTabId {
-  // Reuse views by id so hover and animation state survive updates.
+- (BRTabView*)tabViewForTab:(BRTab*)tab {
+  for (BRTabView* existing in _tabViews) {
+    if (existing.tabId == tab.tabId) {
+      return existing;
+    }
+  }
+  BRTabView* view = [[BRTabView alloc] initWithFrame:NSZeroRect];
+  view.tabId = tab.tabId;
+  view.strip = self;
+  [self addSubview:view];
+  return view;
+}
+
+- (void)setGroups:(NSArray<BRTabGroupInfo*>*)groups
+      activeTabId:(brouk::TabId)activeTabId {
+  _groups = [groups copy];
+  // Reuse views so hover and animation state survive updates.
   NSMutableArray<BRTabView*>* views = [NSMutableArray array];
-  for (BRTab* tab in tabs) {
-    BRTabView* view = nil;
-    for (BRTabView* existing in _tabViews) {
-      if (existing.tabId == tab.tabId) {
-        view = existing;
-        break;
-      }
+  NSMutableSet<NSString*>* profiles = [NSMutableSet set];
+  for (BRTabGroupInfo* group in groups) {
+    [profiles addObject:group.profileId];
+    BRGroupLabelView* label = _labels[group.profileId];
+    if (!label) {
+      label = [[BRGroupLabelView alloc] initWithFrame:NSZeroRect];
+      label.profileId = group.profileId;
+      label.strip = self;
+      [self addSubview:label];
+      _labels[group.profileId] = label;
     }
-    if (!view) {
-      view = [[BRTabView alloc] initWithFrame:NSZeroRect];
-      view.tabId = tab.tabId;
-      view.strip = self;
-      [self addSubview:view];
+    [label updateWithGroup:group];
+
+    NSButton* plus = _plusButtons[group.profileId];
+    if (!plus) {
+      plus = [NSButton
+          buttonWithImage:[NSImage imageWithSystemSymbolName:@"plus"
+                                    accessibilityDescription:@"New tab"]
+                   target:self
+                   action:@selector(plusClicked:)];
+      plus.bordered = NO;
+      plus.identifier = group.profileId;
+      [self addSubview:plus];
+      _plusButtons[group.profileId] = plus;
     }
-    view.active = tab.tabId == activeTabId;
-    [view updateFromTab:tab];
-    [views addObject:view];
+    plus.toolTip = [NSString stringWithFormat:@"New tab in %@", group.name];
+    plus.accessibilityLabel = plus.toolTip;
+    plus.contentTintColor =
+        brouk::mac::ProfileColor(group.colorName.UTF8String ?: "");
+
+    BRGroupLineView* line = _lines[group.profileId];
+    if (!line) {
+      line = [[BRGroupLineView alloc] initWithFrame:NSZeroRect];
+      _lines[group.profileId] = line;
+    }
+    line.colorName = group.colorName;
+    line.needsDisplay = YES;
+
+    if (group.collapsed) {
+      continue;
+    }
+    for (BRTab* tab in group.tabs) {
+      BRTabView* view = [self tabViewForTab:tab];
+      view.active = tab.tabId == activeTabId;
+      [view updateFromTab:tab];
+      [views addObject:view];
+    }
   }
   for (BRTabView* old in _tabViews) {
     if (![views containsObject:old]) {
@@ -322,6 +490,16 @@ NSColor* ActiveTabColor() {
     }
   }
   _tabViews = views;
+  for (NSString* profile in [_labels.allKeys copy]) {
+    if (![profiles containsObject:profile]) {
+      [_labels[profile] removeFromSuperview];
+      [_plusButtons[profile] removeFromSuperview];
+      [_lines[profile] removeFromSuperview];
+      [_labels removeObjectForKey:profile];
+      [_plusButtons removeObjectForKey:profile];
+      [_lines removeObjectForKey:profile];
+    }
+  }
   self.needsLayout = YES;
 }
 
@@ -333,11 +511,16 @@ NSColor* ActiveTabColor() {
   }
 }
 
+// Labels and "+" buttons keep their size; the tabs share the rest.
 - (CGFloat)tabWidth {
-  CGFloat available =
-      self.bounds.size.width - _leadingInset - kNewTabButtonWidth - 8;
+  CGFloat fixed = _leadingInset;
+  for (BRTabGroupInfo* group in _groups) {
+    fixed += [_labels[group.profileId] preferredWidth] + kLabelGap +
+             kNewTabButtonWidth + kGroupGap;
+  }
   NSUInteger count = std::max<NSUInteger>(_tabViews.count, 1);
-  CGFloat width = std::floor(available / count) - kTabGap;
+  CGFloat width =
+      std::floor((self.bounds.size.width - fixed) / count) - kTabGap;
   return std::clamp(width, kMinTabWidth, kMaxTabWidth);
 }
 
@@ -346,12 +529,31 @@ NSColor* ActiveTabColor() {
   CGFloat width = [self tabWidth];
   CGFloat height = self.bounds.size.height;
   CGFloat x = _leadingInset;
-  for (BRTabView* view in _tabViews) {
-    view.frame = NSMakeRect(x, 0, width, height);
-    x += width + kTabGap;
+  NSUInteger next = 0;
+  for (BRTabGroupInfo* group in _groups) {
+    BRGroupLabelView* label = _labels[group.profileId];
+    CGFloat labelWidth = [label preferredWidth];
+    label.frame = NSMakeRect(x, 0, labelWidth, height);
+    CGFloat groupStart = x;
+    x += labelWidth + kLabelGap;
+    if (!group.collapsed) {
+      for (NSUInteger i = 0; i < group.tabs.count; ++i) {
+        _tabViews[next++].frame = NSMakeRect(x, 0, width, height);
+        x += width + kTabGap;
+      }
+    }
+    _plusButtons[group.profileId].frame =
+        NSMakeRect(x, (height - 24) / 2 + 2, kNewTabButtonWidth - 4, 24);
+    x += kNewTabButtonWidth;
+    // The group's line runs under its label, tabs and "+".
+    BRGroupLineView* line = _lines[group.profileId];
+    line.frame = NSMakeRect(groupStart, height - kGroupLineHeight,
+                            x - groupStart - 4, kGroupLineHeight);
+    if (line.superview != self) {
+      [self addSubview:line positioned:NSWindowAbove relativeTo:nil];
+    }
+    x += kGroupGap;
   }
-  _newTabButton.frame =
-      NSMakeRect(x + 2, (height - 24) / 2 + 2, kNewTabButtonWidth - 4, 24);
 }
 
 #pragma mark - Tab interaction
@@ -364,15 +566,54 @@ NSColor* ActiveTabColor() {
   [_delegate tabStripDidToggleMute:tabView.tabId];
 }
 
-// Click selects; horizontal drag reorders (the dragged tab follows the mouse
-// and the drop position is the slot under its center).
+- (void)groupLabelClicked:(NSString*)profileId {
+  [_delegate tabStripDidToggleGroup:profileId];
+}
+
+- (void)plusClicked:(NSButton*)sender {
+  [_delegate tabStripDidRequestNewTabInProfile:sender.identifier];
+}
+
+- (nullable BRTabGroupInfo*)groupOfTab:(brouk::TabId)tabId {
+  for (BRTabGroupInfo* group in _groups) {
+    for (BRTab* tab in group.tabs) {
+      if (tab.tabId == tabId) {
+        return group;
+      }
+    }
+  }
+  return nil;
+}
+
+// The group whose area (label to "+") is under `x`, or the nearest one.
+- (nullable BRTabGroupInfo*)groupAtX:(CGFloat)x {
+  BRTabGroupInfo* nearest = nil;
+  CGFloat best = CGFLOAT_MAX;
+  for (BRTabGroupInfo* group in _groups) {
+    CGFloat start = NSMinX(_labels[group.profileId].frame);
+    CGFloat end = NSMaxX(_plusButtons[group.profileId].frame);
+    if (x >= start && x <= end) {
+      return group;
+    }
+    CGFloat distance = std::min(std::fabs(x - start), std::fabs(x - end));
+    if (distance < best) {
+      best = distance;
+      nearest = group;
+    }
+  }
+  return nearest;
+}
+
+// Click selects; a horizontal drag moves the tab (the dragged tab follows
+// the mouse). Dropped in its own group, the slot under its centre is the new
+// position; dropped on another profile's group, the delegate reopens it
+// there.
 - (void)tabViewMouseDown:(BRTabView*)tabView event:(NSEvent*)event {
   [_delegate tabStripDidSelectTab:tabView.tabId];
 
   NSPoint start = [self convertPoint:event.locationInWindow fromView:nil];
   NSRect startFrame = tabView.frame;
   BOOL dragging = NO;
-  CGFloat width = [self tabWidth];
   while (true) {
     NSEvent* next =
         [self.window nextEventMatchingMask:NSEventMaskLeftMouseDragged |
@@ -387,27 +628,41 @@ NSColor* ActiveTabColor() {
     }
     dragging = YES;
     NSRect f = startFrame;
-    f.origin.x =
-        std::clamp(startFrame.origin.x + dx, _leadingInset,
-                   _leadingInset + (width + kTabGap) * (_tabViews.count - 1));
+    f.origin.x = std::clamp(startFrame.origin.x + dx, _leadingInset,
+                            NSMaxX(self.bounds) - f.size.width);
     tabView.frame = f;
     [tabView.superview addSubview:tabView
                        positioned:NSWindowAbove
                        relativeTo:nil];
   }
-  if (dragging) {
-    CGFloat center = NSMidX(tabView.frame) - _leadingInset;
-    NSInteger index = static_cast<NSInteger>(center / (width + kTabGap));
-    index = std::clamp<NSInteger>(index, 0,
-                                  static_cast<NSInteger>(_tabViews.count) - 1);
-    [_delegate tabStripDidMoveTab:tabView.tabId
-                          toIndex:static_cast<NSUInteger>(index)];
-    self.needsLayout = YES;
+  if (!dragging) {
+    return;
   }
-}
-
-- (void)newTabClicked:(id)sender {
-  [_delegate tabStripDidRequestNewTab];
+  CGFloat center = NSMidX(tabView.frame);
+  BRTabGroupInfo* source = [self groupOfTab:tabView.tabId];
+  BRTabGroupInfo* target = [self groupAtX:center];
+  self.needsLayout = YES;
+  if (!source || !target) {
+    return;
+  }
+  if (![target.profileId isEqualToString:source.profileId]) {
+    [_delegate tabStripDidDropTab:tabView.tabId onProfile:target.profileId];
+    return;
+  }
+  // Position among the group's other tabs.
+  NSUInteger position = 0;
+  for (BRTab* tab in source.tabs) {
+    if (tab.tabId == tabView.tabId) {
+      continue;
+    }
+    for (BRTabView* view in _tabViews) {
+      if (view.tabId == tab.tabId && NSMidX(view.frame) < center) {
+        ++position;
+      }
+    }
+  }
+  [_delegate tabStripDidMoveTab:tabView.tabId
+                        toIndex:source.startIndex + position];
 }
 
 @end

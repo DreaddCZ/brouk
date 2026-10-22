@@ -1,5 +1,8 @@
-// Horizontal tab strip drawn in the window's title bar area.
-// Main thread only. Renders BRTab state; user actions go to the delegate.
+// Horizontal tab strip drawn in the window's title bar area, with one group
+// per profile (003, 005): a label with the profile's name, colour and tab
+// count (click collapses or expands the group), the group's tabs, and a "+"
+// for a new tab in that profile. Main thread only. Renders state; user
+// actions go to the delegate.
 
 #import <Cocoa/Cocoa.h>
 
@@ -9,11 +12,27 @@ NS_ASSUME_NONNULL_BEGIN
 
 @class BRTab;
 
+// One profile group as the strip shows it.
+@interface BRTabGroupInfo : NSObject
+@property(nonatomic, copy) NSString* profileId;
+@property(nonatomic, copy) NSString* name;
+// One of brouk::ProfileColorNames().
+@property(nonatomic, copy) NSString* colorName;
+@property(nonatomic) BOOL collapsed;
+// Model index of the group's first tab.
+@property(nonatomic) NSUInteger startIndex;
+@property(nonatomic, copy) NSArray<BRTab*>* tabs;
+@end
+
 @protocol BRTabStripDelegate <NSObject>
 - (void)tabStripDidSelectTab:(brouk::TabId)tabId;
 - (void)tabStripDidCloseTab:(brouk::TabId)tabId;
+// Reordered inside its group; `index` is the model index.
 - (void)tabStripDidMoveTab:(brouk::TabId)tabId toIndex:(NSUInteger)index;
-- (void)tabStripDidRequestNewTab;
+// Dropped on another profile's group: reopen it there (after asking, 005).
+- (void)tabStripDidDropTab:(brouk::TabId)tabId onProfile:(NSString*)profileId;
+- (void)tabStripDidRequestNewTabInProfile:(NSString*)profileId;
+- (void)tabStripDidToggleGroup:(NSString*)profileId;
 - (void)tabStripDidToggleMute:(brouk::TabId)tabId;
 @end
 
@@ -23,8 +42,9 @@ NS_ASSUME_NONNULL_BEGIN
 // Space kept free on the left for the window's traffic-light buttons.
 @property(nonatomic) CGFloat leadingInset;
 
-// Shows `tabs` in this order with `activeTabId` highlighted.
-- (void)setTabs:(NSArray<BRTab*>*)tabs activeTabId:(brouk::TabId)activeTabId;
+// Shows `groups` left to right with `activeTabId` highlighted.
+- (void)setGroups:(NSArray<BRTabGroupInfo*>*)groups
+      activeTabId:(brouk::TabId)activeTabId;
 // Refreshes title, icon and loading state of one tab.
 - (void)updateTab:(BRTab*)tab;
 

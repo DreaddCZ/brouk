@@ -29,7 +29,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 002 | [Platform support](002-platform-support.md) | ready (macOS) | P1 |
 | 003 | [Browser UI](003-browser-ui.md) | ready | P1 |
 | 004 | [Configuration system](004-configuration.md) | in-progress | P1 |
-| 005 | [Profiles](005-profiles.md) | ready | P1 |
+| 005 | [Profiles](005-profiles.md) | in-progress | P1 |
 | 006 | [Developer tools](006-developer-tools.md) | ready | P1 |
 | 007 | [Ad and tracker blocking](007-adblock.md) | draft | P1 |
 | 008 | [Password manager](008-password-manager.md) | draft | P1 |

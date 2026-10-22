@@ -1,19 +1,41 @@
 #import "platform/mac/app_delegate.h"
 
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
 
 #import "platform/mac/browser_window_controller.h"
 #import "platform/mac/data_paths.h"
+#import "platform/mac/profile_colors.h"
+#import "platform/mac/settings_watcher.h"
 
 #include "brouk/app_info.h"
+#include "cef/browser_app.h"
 #include "core/address_input.h"
 #include "core/download_paths.h"
+#include "core/profile_registry.h"
 #include "include/cef_app.h"
 #include "include/cef_command_line.h"
 #include "include/cef_request_context.h"
 #include "include/wrapper/cef_helpers.h"
+
+namespace {
+
+// A small filled circle in the profile's colour, for menus.
+NSImage* ProfileDot(const std::string& color) {
+  NSColor* fill = brouk::mac::ProfileColor(color);
+  return [NSImage
+       imageWithSize:NSMakeSize(12, 12)
+             flipped:NO
+      drawingHandler:^BOOL(NSRect rect) {
+        [fill setFill];
+        [[NSBezierPath bezierPathWithOvalInRect:NSInsetRect(rect, 1, 1)] fill];
+        return YES;
+      }];
+}
+
+}  // namespace
 
 @implementation BRApplication {
   BOOL _handlingSendEvent;
@@ -40,12 +62,18 @@
 
 @end
 
-@interface BRAppDelegate () <BRBrowserWindowOwner>
+@interface BRAppDelegate () <BRBrowserWindowOwner, NSMenuDelegate>
 @end
 
 @implementation BRAppDelegate {
   NSMutableArray<BRBrowserWindowController*>* _windows;
-  CefRefPtr<CefRequestContext> _requestContext;
+  // Profiles (005); loaded at launch, before CEF starts.
+  std::unique_ptr<brouk::ProfileRegistry> _profiles;
+  // Each profile's request context (its isolated web data), created when the
+  // profile is first used.
+  std::map<brouk::ProfileId, CefRefPtr<CefRequestContext>> _requestContexts;
+  BOOL _profilesLoaded;
+  BRSettingsWatcher* _settingsWatcher;
   int _browserCount;
   BOOL _quitting;
   std::unique_ptr<brouk::DownloadPathReserver> _downloadPaths;
@@ -54,6 +82,9 @@
 - (instancetype)init {
   if ((self = [super init])) {
     _windows = [NSMutableArray array];
+    _profiles = std::make_unique<brouk::ProfileRegistry>(
+        brouk::mac::AppDataDirectory().fileSystemRepresentation);
+    _profiles->Load();
     _downloadPaths =
         std::make_unique<brouk::DownloadPathReserver>([](const std::string& p) {
           return [NSFileManager.defaultManager
@@ -71,32 +102,30 @@
 
 - (void)cefContextInitialized {
   CEF_REQUIRE_UI_THREAD();
-  // One profile ("default") until profiles (005) exist. Its data lives in its
-  // own directory so later profiles are separate request contexts the same way.
-  CefRequestContextSettings settings;
-  CefString(&settings.cache_path) =
-      brouk::mac::ProfileWebDataDirectory(@"default").UTF8String;
-  _requestContext = CefRequestContext::CreateContext(settings, nullptr);
-
+  _profilesLoaded = YES;
+  [self reportProfileProblems];
+  __weak BRAppDelegate* weakSelf = self;
+  _settingsWatcher = [[BRSettingsWatcher alloc]
+      initWithDirectory:brouk::mac::AppDataDirectory()
+                changed:^{
+                  [weakSelf settingsFilesChanged];
+                }];
   // Like Chrome, URLs given on the command line open as tabs.
-  std::vector<CefString> args;
-  CefCommandLine::GetGlobalCommandLine()->GetArguments(args);
-  std::vector<std::string> urls;
-  for (const CefString& arg : args) {
-    urls.push_back(arg.ToString());
-  }
-  [self openURLs:urls inController:nil];
+  [self openLaunchRequest:brouk::BrowserApp::LaunchRequestFrom(
+                              CefCommandLine::GetGlobalCommandLine())
+             inController:nil];
 }
 
-- (void)relaunchedWithURLs:(const std::vector<std::string>&)urls {
+- (void)relaunchedWithRequest:(const brouk::LaunchRequest&)request {
   CEF_REQUIRE_UI_THREAD();
-  if (_quitting || !_requestContext) {
+  if (_quitting || !_profilesLoaded) {
     return;
   }
   [NSApp activateIgnoringOtherApps:YES];
   // Chrome adds the URLs as tabs to the front window; without URLs it opens
   // a new window.
-  [self openURLs:urls inController:urls.empty() ? nil : [self frontController]];
+  [self openLaunchRequest:request
+             inController:request.urls.empty() ? nil : [self frontController]];
 }
 
 // Main thread. The front normal (non-popup) browser window, if any.
@@ -111,33 +140,89 @@
   return nil;
 }
 
-// Main thread. Opens command line arguments as tabs, in `controller` or a new
-// window; an empty new tab when none of them is usable.
-- (void)openURLs:(const std::vector<std::string>&)urls
-    inController:(nullable BRBrowserWindowController*)controller {
-  if (urls.empty()) {
-    [self newWindow:nil];
-    return;
+// Main thread. Opens a launch's URLs as tabs of its profile (the default
+// profile if none or an unknown one is named), in `controller` or a new
+// window; an empty new tab when none of the URLs is usable.
+- (void)openLaunchRequest:(const brouk::LaunchRequest&)request
+             inController:(nullable BRBrowserWindowController*)controller {
+  brouk::ProfileId profile = _profiles->default_profile().id;
+  if (request.profile) {
+    const brouk::ProfileInfo* named = _profiles->FindByName(*request.profile);
+    if (!named) {
+      named = _profiles->Find(*request.profile);
+    }
+    if (named) {
+      profile = named->id;
+    } else {
+      NSLog(@"No profile called \"%s\"; opening the default profile.",
+            request.profile->c_str());
+    }
   }
   BRBrowserWindowController* target = controller ?: [self openWindow];
   NSUInteger opened = 0;
-  for (const std::string& url : urls) {
+  for (const std::string& url : request.urls) {
     brouk::AddressInputResult input = brouk::ClassifyAddressInput(url);
     if (input.kind != brouk::AddressInputResult::Kind::kEmpty) {
-      [target openTabWithURL:@(input.url.c_str()) activate:YES];
+      [target openTabWithURL:@(input.url.c_str()) profile:profile activate:YES];
       ++opened;
     }
   }
   if (opened == 0 && !controller) {
-    [target openTabWithURL:nil activate:YES];
+    [target openTabWithURL:nil profile:profile activate:YES];
   }
   [target showWindow:nil];
 }
 
+// A settings file changed (by hand or by us): re-read the profiles and
+// redraw names, colours and the default profile's place (004 live reload).
+- (void)settingsFilesChanged {
+  _profiles->Load();
+  [self reportProfileProblems];
+  for (BRBrowserWindowController* controller in _windows) {
+    [controller profilesDidChange];
+  }
+}
+
+// Problems in the settings files are reported, not ignored (004). Until the
+// settings page exists they go to the log.
+- (void)reportProfileProblems {
+  for (const std::string& problem : _profiles->problems()) {
+    NSLog(@"Settings: %s", problem.c_str());
+  }
+}
+
 #pragma mark - BRBrowserWindowOwner
 
-- (CefRefPtr<CefRequestContext>)requestContext {
-  return _requestContext;
+- (CefRefPtr<CefRequestContext>)requestContextForProfile:
+    (const brouk::ProfileId&)profile {
+  CEF_REQUIRE_UI_THREAD();
+  auto it = _requestContexts.find(profile);
+  if (it != _requestContexts.end()) {
+    return it->second;
+  }
+  // Ids are validated when profiles are read; never build a path from
+  // anything else.
+  brouk::ProfileId id = brouk::IsValidProfileId(profile)
+                            ? profile
+                            : _profiles->default_profile().id;
+  CefRequestContextSettings settings;
+  CefString(&settings.cache_path) =
+      brouk::mac::ProfileWebDataDirectory(@(id.c_str())).UTF8String;
+  CefRefPtr<CefRequestContext> context =
+      CefRequestContext::CreateContext(settings, nullptr);
+  _requestContexts[profile] = context;
+  return context;
+}
+
+- (brouk::ProfileId)defaultProfileId {
+  return _profiles->default_profile().id;
+}
+
+- (brouk::ProfileInfo)profileInfo:(const brouk::ProfileId&)profile {
+  if (const brouk::ProfileInfo* info = _profiles->Find(profile)) {
+    return *info;
+  }
+  return {profile, profile, "grey"};
 }
 
 - (void)browserWindowDidCreateBrowser {
@@ -167,11 +252,12 @@
   return controller;
 }
 
-- (void)openWindowWithURL:(NSString*)url {
-  if (_quitting || !_requestContext) {
+- (void)openWindowWithURL:(NSString*)url
+                  profile:(const brouk::ProfileId&)profile {
+  if (_quitting || !_profilesLoaded) {
     return;
   }
-  [[self openWindow] openTabWithURL:url activate:YES];
+  [[self openWindow] openTabWithURL:url profile:profile activate:YES];
 }
 
 - (std::string)reserveDownloadPath:(const std::string&)suggested {
@@ -206,7 +292,7 @@
 }
 
 - (IBAction)newWindow:(nullable id)sender {
-  if (_quitting || !_requestContext) {
+  if (_quitting || !_profilesLoaded) {
     return;
   }
   [[self openWindow] openTabWithURL:nil activate:YES];
@@ -229,8 +315,9 @@
 }
 
 - (void)releaseBrowserObjects {
+  _settingsWatcher = nil;
   [_windows removeAllObjects];
-  _requestContext = nullptr;
+  _requestContexts.clear();
 }
 
 - (void)quitIfDone {
@@ -249,6 +336,127 @@
 
 - (BOOL)applicationSupportsSecureRestorableState:(NSApplication*)app {
   return YES;
+}
+
+#pragma mark - Profiles
+
+// NSMenuDelegate: the Profiles menu lists the current profiles. A profile
+// opens a new tab in the front window; with Option, a new window.
+- (void)menuNeedsUpdate:(NSMenu*)menu {
+  [menu removeAllItems];
+  const std::string& default_id = _profiles->default_profile().id;
+  for (const brouk::ProfileInfo& profile : _profiles->profiles()) {
+    NSString* name = @(profile.name.c_str());
+    NSString* title = profile.id == default_id
+                          ? [NSString stringWithFormat:@"%@ (default)", name]
+                          : name;
+    NSMenuItem* tab = [menu addItemWithTitle:title
+                                      action:@selector(newTabInProfile:)
+                               keyEquivalent:@""];
+    tab.representedObject = @(profile.id.c_str());
+    tab.image = ProfileDot(profile.color);
+    tab.toolTip = [NSString stringWithFormat:@"New tab in %@", name];
+    NSMenuItem* window = [menu
+        addItemWithTitle:[NSString stringWithFormat:@"New Window in %@", name]
+                  action:@selector(newWindowInProfile:)
+           keyEquivalent:@""];
+    window.representedObject = tab.representedObject;
+    window.image = tab.image;
+    window.alternate = YES;
+    window.keyEquivalentModifierMask = NSEventModifierFlagOption;
+  }
+  [menu addItem:NSMenuItem.separatorItem];
+  [menu addItemWithTitle:@"New Profile…"
+                  action:@selector(newProfile:)
+           keyEquivalent:@""];
+}
+
+- (void)newTabInProfile:(NSMenuItem*)sender {
+  NSString* profile = sender.representedObject;
+  BRBrowserWindowController* front = [self frontController];
+  if (!profile || _quitting || !_profilesLoaded) {
+    return;
+  }
+  if (!front) {
+    front = [self openWindow];
+  }
+  [front openTabWithURL:nil profile:profile.UTF8String activate:YES];
+  [front showWindow:nil];
+}
+
+- (void)newWindowInProfile:(NSMenuItem*)sender {
+  NSString* profile = sender.representedObject;
+  if (!profile || _quitting || !_profilesLoaded) {
+    return;
+  }
+  [[self openWindow] openTabWithURL:nil
+                            profile:profile.UTF8String
+                           activate:YES];
+}
+
+// Asks for a name and a colour and creates the profile; then opens a tab in
+// it, so its group appears.
+- (IBAction)newProfile:(nullable id)sender {
+  [self askForNewProfileWithName:@"" color:_profiles->UnusedColor() error:nil];
+}
+
+- (void)askForNewProfileWithName:(NSString*)name
+                           color:(const std::string&)color
+                           error:(nullable NSString*)error {
+  NSAlert* alert = [[NSAlert alloc] init];
+  alert.messageText = @"New Profile";
+  alert.informativeText =
+      error
+          ?: @"A profile keeps its own sign-ins, cookies and settings. Its "
+             @"tabs form their own group in each window.";
+  [alert addButtonWithTitle:@"Create"];
+  [alert addButtonWithTitle:@"Cancel"];
+
+  NSView* fields = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 260, 60)];
+  NSTextField* nameField =
+      [[NSTextField alloc] initWithFrame:NSMakeRect(0, 32, 260, 24)];
+  nameField.placeholderString = @"Name, e.g. Work or Client A";
+  nameField.stringValue = name;
+  nameField.accessibilityLabel = @"Profile name";
+  [fields addSubview:nameField];
+  NSPopUpButton* colorButton =
+      [[NSPopUpButton alloc] initWithFrame:NSMakeRect(0, 0, 160, 26)
+                                 pullsDown:NO];
+  colorButton.accessibilityLabel = @"Profile colour";
+  for (std::string_view colorName : brouk::ProfileColorNames()) {
+    NSString* title = @(std::string(colorName).c_str());
+    [colorButton addItemWithTitle:title.capitalizedString];
+    colorButton.lastItem.representedObject = title;
+    colorButton.lastItem.image = ProfileDot(std::string(colorName));
+    if (colorName == color) {
+      [colorButton selectItem:colorButton.lastItem];
+    }
+  }
+  [fields addSubview:colorButton];
+  alert.accessoryView = fields;
+  alert.window.initialFirstResponder = nameField;
+
+  if ([alert runModal] != NSAlertFirstButtonReturn) {
+    return;
+  }
+  NSString* newName = [nameField.stringValue
+      stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
+  std::string newColor =
+      [colorButton.selectedItem.representedObject UTF8String] ?: color;
+  brouk::Result<brouk::ProfileId> created =
+      _profiles->CreateProfile(newName.UTF8String, newColor);
+  if (!created) {
+    [self askForNewProfileWithName:newName
+                             color:newColor
+                             error:@(created.error().message.c_str())];
+    return;
+  }
+  BRBrowserWindowController* front = [self frontController];
+  if (!front) {
+    front = [self openWindow];
+  }
+  [front openTabWithURL:nil profile:created.value() activate:YES];
+  [front showWindow:nil];
 }
 
 #pragma mark - Main menu
@@ -471,6 +679,10 @@
          action:@selector(goForward:)
             key:@"]"
       modifiers:cmd];
+
+  // Profiles (005), like Chrome's Profiles menu; filled when opened.
+  NSMenu* profiles = [self submenu:@"Profiles" in:bar];
+  profiles.delegate = self;
 
   NSMenu* window = [self submenu:@"Window" in:bar];
   [self addItem:window

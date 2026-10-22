@@ -1,6 +1,10 @@
 #include "cef/browser_app.h"
 
 #include <cstdlib>
+#include <optional>
+#include <string>
+#include <utility>
+#include <vector>
 
 #include "cef/profile_prefs.h"
 #include "include/cef_command_line.h"
@@ -33,19 +37,29 @@ void BrowserApp::OnContextInitialized() {
   }
 }
 
+// static
+LaunchRequest BrowserApp::LaunchRequestFrom(
+    const CefRefPtr<CefCommandLine>& command_line) {
+  std::vector<CefString> args;
+  command_line->GetArguments(args);
+  std::vector<std::string> arguments;
+  arguments.reserve(args.size());
+  for (const CefString& arg : args) {
+    arguments.push_back(arg.ToString());
+  }
+  std::optional<std::string> profile;
+  if (command_line->HasSwitch("profile")) {
+    profile = command_line->GetSwitchValue("profile").ToString();
+  }
+  return ParseLaunchRequest(std::move(arguments), std::move(profile));
+}
+
 bool BrowserApp::OnAlreadyRunningAppRelaunch(
     CefRefPtr<CefCommandLine> command_line,
     const CefString& /*current_directory*/) {
   CEF_REQUIRE_UI_THREAD();
   if (callbacks_.on_relaunch) {
-    std::vector<CefString> args;
-    command_line->GetArguments(args);
-    std::vector<std::string> urls;
-    urls.reserve(args.size());
-    for (const CefString& arg : args) {
-      urls.push_back(arg.ToString());
-    }
-    callbacks_.on_relaunch(std::move(urls));
+    callbacks_.on_relaunch(LaunchRequestFrom(command_line));
   }
   return true;
 }

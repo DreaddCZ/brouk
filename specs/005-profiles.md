@@ -1,6 +1,6 @@
 # 005 – Profiles
 
-- **Status:** ready
+- **Status:** in-progress
 - **Priority:** P1
 - **Depends on:** 001, 004
 
@@ -78,3 +78,7 @@ None.
 - 2026-10-21 (UI and profiles review): profiles are local only and can be mixed in one window, one group per profile per window. Containers are not needed. "Open links from other apps in which profile?" is answered by the routing rules in 010. Autofill is shared across profiles; passwords stay per profile. The default profile's group is always present in each window; every group has a "+" button for a new tab in its profile.
 - 2026-10-21 (profiles review): no import from other browsers in the current phase; no temporary profiles; profiles can be exported/imported between devices; deleting a profile with open tabs is allowed after confirmation. The default profile cannot be deleted, because its group must exist in every window (003).
 - 2026-10-21 (profiles review): export contents agreed — settings, bookmarks, encrypted passwords, optional history limited by age or count; no cookies, sessions or cache. Spec set to `ready`.
+- 2026-10-22 (implementation, part 1): the first profile has the id `default` and is named "Main" (renameable); new profiles get ids like `p-1a2b3c4d`. Names are unique (ignoring case). Profile colours are Chrome's nine tab group colours. Each profile gets its own CEF request context (`web/<id>/`), created when first used. Tabs opened from a page (links, popups, popup windows, "Open Link in New Window") stay in the opener's profile; Cmd+T, Cmd+N and links from other apps use the default profile, as specified. The Profiles menu (like Chrome's) opens a new tab in a profile, with Option a new window, and has "New Profile…" (name and colour); renaming, recolouring and deleting come with the profile manager. `--profile Work` and `--profile=Work` (name or id) both work, also for a second launch while Brouk runs; an unknown name opens the default profile.
+- 2026-10-22 (implementation): collapsing a group follows Chrome: if it holds the active tab, the nearest visible tab outside the group (to the right first) becomes active; a group whose tabs are the only visible ones does not collapse. Ctrl+Tab skips collapsed groups; activating a tab expands its group.
+- 2026-10-22 (implementation): the browser window is no longer moved by macOS itself: in the title bar's height a drag on a tab moved the window instead of the tab. Empty space in the tab strip and toolbar moves the window instead (double-click zooms), as in Chrome.
+

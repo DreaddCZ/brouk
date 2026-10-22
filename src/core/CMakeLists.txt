@@ -14,10 +14,15 @@ set(BROUK_CORE_SOURCES
   download_paths.h
   external_protocol.cc
   external_protocol.h
+  launch_args.cc
+  launch_args.h
   page_events.cc
   page_events.h
   permissions.cc
   permissions.h
+  profile_id.h
+  profile_registry.cc
+  profile_registry.h
   result.h
   screen_share.cc
   screen_share.h

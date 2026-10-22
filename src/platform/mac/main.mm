@@ -56,8 +56,8 @@ int main(int argc, char* argv[]) {
     callbacks.on_context_initialized = [weak_delegate] {
       [weak_delegate cefContextInitialized];
     };
-    callbacks.on_relaunch = [weak_delegate](std::vector<std::string> urls) {
-      [weak_delegate relaunchedWithURLs:urls];
+    callbacks.on_relaunch = [weak_delegate](brouk::LaunchRequest request) {
+      [weak_delegate relaunchedWithRequest:request];
     };
     CefRefPtr<brouk::BrowserApp> app(new brouk::BrowserApp(callbacks));
 

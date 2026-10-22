@@ -6,6 +6,7 @@
 
 #include <string>
 
+#include "core/profile_registry.h"
 #include "include/cef_request_context.h"
 
 NS_ASSUME_NONNULL_BEGIN
@@ -15,12 +16,18 @@ NS_ASSUME_NONNULL_BEGIN
 // Implemented by the app delegate: app-wide bookkeeping of windows and
 // browsers (needed to quit CEF only after every browser has closed).
 @protocol BRBrowserWindowOwner <NSObject>
-- (CefRefPtr<CefRequestContext>)requestContext;
+// Profiles (005): each has its own request context (isolated web data).
+- (CefRefPtr<CefRequestContext>)requestContextForProfile:
+    (const brouk::ProfileId&)profile;
+- (brouk::ProfileId)defaultProfileId;
+// Name and colour; a placeholder for a profile that no longer exists.
+- (brouk::ProfileInfo)profileInfo:(const brouk::ProfileId&)profile;
 - (void)browserWindowDidCreateBrowser;
 - (void)browserWindowDidCloseBrowser;
 - (void)browserWindowWillClose:(BRBrowserWindowController*)controller;
-// "Open Link in New Window".
-- (void)openWindowWithURL:(NSString*)url;
+// "Open Link in New Window": a new window with a tab in `profile`.
+- (void)openWindowWithURL:(NSString*)url
+                  profile:(const brouk::ProfileId&)profile;
 // A popup window for window.open() with features; `size` is the content size
 // the page asked for.
 - (BRBrowserWindowController*)openPopupWindowWithContentSize:(NSSize)size;
@@ -37,9 +44,15 @@ NS_ASSUME_NONNULL_BEGIN
 - (instancetype)initWithOwner:(id<BRBrowserWindowOwner>)owner
              popupContentSize:(NSSize)popupSize;
 
-// Opens a tab at the end of the strip. `url` nil opens an empty new tab with
-// the address bar focused.
+// Opens a tab at the end of `profile`'s group (the default profile's for the
+// first form). `url` nil opens an empty new tab with the address bar focused.
 - (void)openTabWithURL:(nullable NSString*)url activate:(BOOL)activate;
+- (void)openTabWithURL:(nullable NSString*)url
+               profile:(const brouk::ProfileId&)profile
+              activate:(BOOL)activate;
+
+// Profile names, colours or the default profile changed: redraw.
+- (void)profilesDidChange;
 
 // Starts closing every tab (pages may ask to stay via beforeunload); the
 // window closes when the last tab is gone.
