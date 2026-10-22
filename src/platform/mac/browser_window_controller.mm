@@ -108,9 +108,8 @@ NSButton* ToolbarButton(NSString* symbol,
   // again afterwards).
   BOOL _windowFullscreenForPage;
   NSTextField* _fullscreenHint;
-  // Popup window (window.open with features): one tab, no tab strip,
-  // read-only address, as in Chrome.
-  BOOL _isPopup;
+  // Height of the tab strip; 0 in popup windows (window.open with features:
+  // one tab, no tab strip, read-only address, as in Chrome).
   CGFloat _stripHeight;
   NSButton* _popupBlockedButton;
 }
