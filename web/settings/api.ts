@@ -9,7 +9,7 @@ export interface Choice {
   readonly label: string;
 }
 
-export type SettingType = 'bool' | 'string' | 'choice';
+export type SettingType = 'bool' | 'string' | 'choice' | 'integer';
 export type SettingFormat = 'text' | 'urlTemplate' | 'folder' | 'profileId';
 
 export interface SettingItem {
@@ -22,7 +22,10 @@ export interface SettingItem {
   /** Changing it needs a restart of Brouk. */
   readonly restart: boolean;
   readonly choices: readonly Choice[];
-  readonly value: boolean | string;
+  /** Limits of an integer setting. */
+  readonly min: number;
+  readonly max: number;
+  readonly value: boolean | string | number;
 }
 
 export interface ProfileRef {
@@ -47,7 +50,7 @@ export interface FileResult {
   readonly problems: readonly string[];
 }
 
-const kTypes: readonly string[] = ['bool', 'string', 'choice'];
+const kTypes: readonly string[] = ['bool', 'string', 'choice', 'integer'];
 const kFormats: readonly string[] = ['text', 'urlTemplate', 'folder', 'profileId'];
 
 function invalid(): BridgeError {
@@ -70,15 +73,18 @@ function parseChoice(value: unknown): Choice {
 
 export function parseItem(value: unknown): SettingItem {
   if (!isRecord(value)) throw invalid();
-  const { key, type, format, section, label, description, restart, choices } = value;
+  const { key, type, format, section, label, description, restart, choices, min, max } = value;
   const current = value['value'];
+  const expected = type === 'bool' ? 'boolean' : type === 'integer' ? 'number' : 'string';
   if (
+    typeof min !== 'number' || typeof max !== 'number' ||
+    (type === 'integer' && !Number.isInteger(current)) ||
     typeof key !== 'string' || typeof type !== 'string' || !kTypes.includes(type) ||
     typeof format !== 'string' || !kFormats.includes(format) ||
     typeof section !== 'string' || typeof label !== 'string' ||
     typeof description !== 'string' || typeof restart !== 'boolean' ||
     !Array.isArray(choices) ||
-    (type === 'bool' ? typeof current !== 'boolean' : typeof current !== 'string')
+    typeof current !== expected
   ) {
     throw invalid();
   }
@@ -92,7 +98,9 @@ export function parseItem(value: unknown): SettingItem {
     description,
     restart,
     choices: list.map(parseChoice),
-    value: current as boolean | string,
+    min,
+    max,
+    value: current as boolean | string | number,
   };
 }
 
@@ -144,7 +152,7 @@ export class SettingsApi {
    * Changes one setting; `profile` is null for settings of all profiles.
    * Resolves with whether a restart is needed for it to apply.
    */
-  async set(profile: string | null, key: string, value: boolean | string): Promise<boolean> {
+  async set(profile: string | null, key: string, value: boolean | string | number): Promise<boolean> {
     const args =
       profile === null ? { scope: 'global', key, value } : { scope: 'profile', profile, key, value };
     const answer = await send('settings.set', args, this.#transport);

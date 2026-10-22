@@ -36,7 +36,11 @@ function showNotice(title: string | null, lines: readonly string[] = []): void {
   box.append(button('OK', () => showNotice(null)));
 }
 
-async function change(scopeProfile: string | null, item: SettingItem, value: boolean | string): Promise<void> {
+async function change(
+  scopeProfile: string | null,
+  item: SettingItem,
+  value: boolean | string | number,
+): Promise<void> {
   const id = `${scopeProfile ?? 'global'}:${item.key}`;
   try {
     const restart = await api.set(scopeProfile, item.key, value);
@@ -72,6 +76,17 @@ function control(scopeProfile: string | null, item: SettingItem, inputId: string
     }
     select.addEventListener('change', () => void change(scopeProfile, item, select.value));
     return select;
+  }
+  if (item.type === 'integer') {
+    const number = element('input');
+    number.type = 'number';
+    number.id = inputId;
+    number.min = String(item.min);
+    number.max = String(item.max);
+    number.step = '1';
+    number.value = String(item.value);
+    number.addEventListener('change', () => void change(scopeProfile, item, Number(number.value)));
+    return number;
   }
   const input = element('input');
   input.type = 'text';

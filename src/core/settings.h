@@ -1,6 +1,7 @@
 #ifndef BROUK_CORE_SETTINGS_H_
 #define BROUK_CORE_SETTINGS_H_
 
+#include <cstdint>
 #include <functional>
 #include <map>
 #include <optional>
@@ -14,8 +15,9 @@
 
 namespace brouk {
 
-// kBool settings hold bool, kString and kChoice settings hold std::string.
-using SettingValue = std::variant<bool, std::string>;
+// kBool settings hold bool, kString and kChoice settings hold std::string,
+// kInteger settings hold std::int64_t.
+using SettingValue = std::variant<bool, std::string, std::int64_t>;
 
 // Something wrong in a settings file. The setting keeps its default.
 struct SettingProblem {
@@ -46,6 +48,7 @@ class Settings {
   // `key` must be a setting of this scope with that type.
   bool GetBool(std::string_view key) const;
   const std::string& GetString(std::string_view key) const;
+  std::int64_t GetInt(std::string_view key) const;
 
   // Checks and sets a value; returns the problem if it is not valid (the
   // setting then keeps its value).
