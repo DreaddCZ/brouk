@@ -50,7 +50,7 @@ target_link_libraries(brouk_app PRIVATE brouk_cef brouk_core
   "-framework AppKit" "-framework AVFoundation" "-framework Cocoa"
   "-framework CoreServices"
   "-framework IOSurface" "-framework ScreenCaptureKit"
-  "-framework SecurityInterface")
+  "-framework SecurityInterface" "-framework UniformTypeIdentifiers")
 set_target_properties(brouk_app PROPERTIES
   OUTPUT_NAME "${APP_EXECUTABLE_NAME}"
   RUNTIME_OUTPUT_DIRECTORY "${APP_BUNDLE}/Contents/MacOS")

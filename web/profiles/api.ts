@@ -67,6 +67,26 @@ export function parseState(value: unknown): ProfilesState {
   };
 }
 
+export interface ImportResult {
+  /** The new profile's id; null if the user cancelled. */
+  readonly id: string | null;
+  /** What in the file was not imported, for the user. */
+  readonly problems: readonly string[];
+}
+
+export function parseImportResult(value: unknown): ImportResult {
+  if (!isRecord(value) || !Array.isArray(value['problems'])) {
+    throw invalid();
+  }
+  const id = value['id'];
+  const problems: unknown[] = value['problems'];
+  if ((id !== null && typeof id !== 'string') ||
+      !problems.every((p): p is string => typeof p === 'string')) {
+    throw invalid();
+  }
+  return { id, problems };
+}
+
 export class ProfilesApi {
   readonly #transport: Transport | null;
 
@@ -102,6 +122,23 @@ export class ProfilesApi {
   /** Opens a window with a new tab in the profile. */
   async open(id: string): Promise<void> {
     await send('profiles.open', { id }, this.#transport);
+  }
+
+  /**
+   * Asks where to save (natively) and exports the profile. Resolves with
+   * false if the user cancelled.
+   */
+  async exportProfile(id: string): Promise<boolean> {
+    const answer = await send('profiles.export', { id }, this.#transport);
+    if (!isRecord(answer) || typeof answer['saved'] !== 'boolean') {
+      throw invalid();
+    }
+    return answer['saved'];
+  }
+
+  /** Asks for an export file (natively) and imports it as a new profile. */
+  async importProfile(): Promise<ImportResult> {
+    return parseImportResult(await send('profiles.import', {}, this.#transport));
   }
 
   /**

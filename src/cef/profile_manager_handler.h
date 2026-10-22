@@ -25,6 +25,14 @@ class ProfileManagerDelegate {
   // deleted is false when the user cancelled the confirmation.
   using DeleteDone =
       std::function<void(bool deleted, std::optional<Error> error)>;
+  // saved is false when the user cancelled the save panel.
+  using ExportDone =
+      std::function<void(bool saved, std::optional<Error> error)>;
+  struct ImportResult {
+    std::optional<ProfileId> id;  // Nullopt when the user cancelled.
+    std::vector<std::string> problems;
+  };
+  using ImportDone = std::function<void(Result<ImportResult> result)>;
 
   virtual ~ProfileManagerDelegate() = default;
   virtual std::vector<Summary> Profiles() = 0;
@@ -39,6 +47,10 @@ class ProfileManagerDelegate {
   virtual std::optional<Error> OpenProfile(const ProfileId& id) = 0;
   // Asks the user first (natively), then deletes; `done` is called once.
   virtual void DeleteProfile(const ProfileId& id, DeleteDone done) = 0;
+  // Asks where to save (natively) and writes the export file.
+  virtual void ExportProfile(const ProfileId& id, ExportDone done) = 0;
+  // Asks for a file (natively) and imports it as a new profile.
+  virtual void ImportProfile(ImportDone done) = 0;
 };
 
 // Answers the profile manager page's bridge messages (web/profiles/api.ts):

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { BridgeError } from '../shared/bridge.js';
-import { ProfilesApi, parseState } from './api.js';
+import { ProfilesApi, parseImportResult, parseState } from './api.js';
 
 const state = {
   profiles: [
@@ -61,4 +61,19 @@ test('ProfilesApi rejects malformed answers and passes on errors', async () => {
     throw new BridgeError('Another profile is already called “A”.');
   });
   await assert.rejects(failing.create('A', 'red'), /already called/);
+});
+
+test('import and export answers', async () => {
+  assert.deepEqual(parseImportResult({ id: 'p-1', problems: ['x'] }), {
+    id: 'p-1',
+    problems: ['x'],
+  });
+  assert.deepEqual(parseImportResult({ id: null, problems: [] }), { id: null, problems: [] });
+  assert.throws(() => parseImportResult({ id: 3, problems: [] }), BridgeError);
+  assert.throws(() => parseImportResult({ id: null, problems: [1] }), BridgeError);
+  const api = new ProfilesApi(async (request) =>
+    request.includes('profiles.export') ? '{"saved":true}' : '{"id":null,"problems":[]}',
+  );
+  assert.equal(await api.exportProfile('p-1'), true);
+  assert.deepEqual(await api.importProfile(), { id: null, problems: [] });
 });

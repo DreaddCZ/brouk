@@ -71,3 +71,8 @@ fieldset.colors legend { font-weight: 600; margin-bottom: 4px; padding: 0; }
 [data-color=green] { --c: var(--green); } [data-color=pink] { --c: var(--pink); }
 [data-color=purple] { --c: var(--purple); } [data-color=cyan] { --c: var(--cyan); }
 [data-color=orange] { --c: var(--orange); }
+.notice { background: var(--card); border: 1px solid var(--accent); border-radius: 8px;
+  padding: 8px 12px; margin-bottom: 12px; }
+.notice-title { margin: 0 0 6px; font-weight: 600; }
+.notice ul { margin: 0 0 8px; padding-left: 20px; }
+.new-buttons { display: flex; gap: 8px; }

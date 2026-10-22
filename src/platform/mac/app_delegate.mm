@@ -1,5 +1,7 @@
 #import "platform/mac/app_delegate.h"
 
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
+
 #include <map>
 #include <memory>
 #include <optional>
@@ -19,6 +21,7 @@
 #include "cef/profile_manager_handler.h"
 #include "core/address_input.h"
 #include "core/download_paths.h"
+#include "core/profile_export.h"
 #include "core/profile_registry.h"
 #include "include/cef_app.h"
 #include "include/cef_command_line.h"
@@ -83,6 +86,9 @@ NSImage* ProfileDot(const std::string& color) {
 - (std::optional<brouk::Error>)openProfile:(const brouk::ProfileId&)profile;
 - (void)deleteProfile:(const brouk::ProfileId&)profile
                  done:(brouk::ProfileManagerDelegate::DeleteDone)done;
+- (void)exportProfile:(const brouk::ProfileId&)profile
+                 done:(brouk::ProfileManagerDelegate::ExportDone)done;
+- (void)importProfileWithDone:(brouk::ProfileManagerDelegate::ImportDone)done;
 @end
 
 namespace brouk {
@@ -139,6 +145,22 @@ class AppProfileManager : public ProfileManagerDelegate {
       return;
     }
     [app deleteProfile:id done:std::move(done)];
+  }
+  void ExportProfile(const ProfileId& id, ExportDone done) override {
+    BRAppDelegate* app = app_;
+    if (!app) {
+      done(false, Error{kClosing});
+      return;
+    }
+    [app exportProfile:id done:std::move(done)];
+  }
+  void ImportProfile(ImportDone done) override {
+    BRAppDelegate* app = app_;
+    if (!app) {
+      done(Error{kClosing});
+      return;
+    }
+    [app importProfileWithDone:std::move(done)];
   }
 
  private:
@@ -587,6 +609,124 @@ class AppProfileManager : public ProfileManagerDelegate {
     [_profileManager closeManager];
   }
   return std::nullopt;
+}
+
+// Export (005): the user picks where to save; the file holds the profile's
+// settings only (see core/profile_export.h).
+- (void)exportProfile:(const brouk::ProfileId&)profile
+                 done:(brouk::ProfileManagerDelegate::ExportDone)done {
+  std::optional<brouk::Settings> settings = _profiles->ProfileSettings(profile);
+  const brouk::ProfileInfo* info = _profiles->Find(profile);
+  if (!settings || !info) {
+    done(false, brouk::Error{"There is no such profile."});
+    return;
+  }
+  NSString* name = @(info->name.c_str());
+  // File names cannot contain "/" or ":" on macOS.
+  NSString* fileName =
+      [[[name componentsSeparatedByCharactersInSet:
+                  [NSCharacterSet characterSetWithCharactersInString:@"/:"]]
+          componentsJoinedByString:@"-"]
+          stringByAppendingPathExtension:@(std::string(
+                                               brouk::kProfileExportExtension)
+                                               .c_str())];
+  NSSavePanel* panel = [NSSavePanel savePanel];
+  panel.title = [NSString stringWithFormat:@"Export “%@”", name];
+  panel.message = @"The file contains the profile's name, colour and "
+                  @"settings. It contains no sign-ins, cookies or cache.";
+  panel.nameFieldStringValue = fileName;
+  UTType* type = [UTType
+      typeWithFilenameExtension:@(std::string(brouk::kProfileExportExtension)
+                                      .c_str())];
+  if (type) {
+    panel.allowedContentTypes = @[ type ];
+  }
+  std::string exportedAt =
+      [NSISO8601DateFormatter
+          stringFromDate:[NSDate date]
+                timeZone:NSTimeZone.localTimeZone
+           formatOptions:NSISO8601DateFormatWithInternetDateTime]
+          .UTF8String;
+  std::string text = brouk::ExportProfile(*settings, exportedAt);
+  __block brouk::ProfileManagerDelegate::ExportDone answer = std::move(done);
+  void (^completion)(NSModalResponse) = ^(NSModalResponse response) {
+    if (response != NSModalResponseOK || !panel.URL) {
+      answer(false, std::nullopt);
+      return;
+    }
+    NSData* data = [NSData dataWithBytes:text.data() length:text.size()];
+    NSError* error = nil;
+    if (![data writeToURL:panel.URL options:NSDataWritingAtomic error:&error]) {
+      answer(false, brouk::Error{std::string("The file could not be saved: ") +
+                                 error.localizedDescription.UTF8String});
+      return;
+    }
+    answer(true, std::nullopt);
+  };
+  NSWindow* parent = _profileManager.window;
+  if (parent.visible) {
+    [panel beginSheetModalForWindow:parent completionHandler:completion];
+  } else {
+    completion([panel runModal]);
+  }
+}
+
+// Import (005): the user picks an export file; it becomes a new profile.
+- (void)importProfileWithDone:(brouk::ProfileManagerDelegate::ImportDone)done {
+  NSOpenPanel* panel = [NSOpenPanel openPanel];
+  panel.title = @"Import a Profile";
+  panel.message = @"Choose a profile exported from Brouk.";
+  panel.canChooseDirectories = NO;
+  panel.allowsMultipleSelection = NO;
+  UTType* type = [UTType
+      typeWithFilenameExtension:@(std::string(brouk::kProfileExportExtension)
+                                      .c_str())];
+  if (type) {
+    panel.allowedContentTypes = @[ type ];
+  }
+  __block brouk::ProfileManagerDelegate::ImportDone answer = std::move(done);
+  __weak BRAppDelegate* weakSelf = self;
+  void (^completion)(NSModalResponse) = ^(NSModalResponse response) {
+    BRAppDelegate* strongSelf = weakSelf;
+    if (!strongSelf || response != NSModalResponseOK || !panel.URL) {
+      answer(brouk::ProfileManagerDelegate::ImportResult{});
+      return;
+    }
+    // Export files are small; anything big is not one (the parser has a
+    // limit too).
+    NSNumber* size = nil;
+    [panel.URL getResourceValue:&size forKey:NSURLFileSizeKey error:nil];
+    if (size.unsignedLongLongValue > 1024 * 1024) {
+      answer(brouk::Error{"This file is not a Brouk profile export."});
+      return;
+    }
+    NSData* data = [NSData dataWithContentsOfURL:panel.URL];
+    if (!data) {
+      answer(brouk::Error{"The file could not be read."});
+      return;
+    }
+    brouk::Result<brouk::ImportedProfile> parsed = brouk::ParseProfileExport(
+        std::string_view(static_cast<const char*>(data.bytes), data.length));
+    if (!parsed) {
+      answer(parsed.error());
+      return;
+    }
+    brouk::Result<brouk::ProfileId> created =
+        strongSelf->_profiles->ImportProfile(parsed.value().settings);
+    if (!created) {
+      answer(created.error());
+      return;
+    }
+    [strongSelf profilesChangedInApp];
+    answer(brouk::ProfileManagerDelegate::ImportResult{
+        created.value(), parsed.value().problems});
+  };
+  NSWindow* parent = _profileManager.window;
+  if (parent.visible) {
+    [panel beginSheetModalForWindow:parent completionHandler:completion];
+  } else {
+    completion([panel runModal]);
+  }
 }
 
 // Deleting asks natively, so the page cannot delete without the user (005:
