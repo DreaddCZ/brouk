@@ -55,6 +55,12 @@ class ProfileRegistry {
                                      std::string_view name,
                                      std::string_view color);
   std::optional<Error> SetDefaultProfile(std::string_view id);
+
+  // A profile's settings as stored (for export), or nullopt if unknown.
+  std::optional<Settings> ProfileSettings(std::string_view id) const;
+  // Creates a profile from imported settings, with a new id. If its name is
+  // taken, " 2", " 3", ... is added.
+  Result<ProfileId> ImportProfile(Settings settings);
   std::optional<Error> SetShowManagerAtStartup(bool show);
   bool show_manager_at_startup() const {
     return global_.GetBool("profiles.show_manager_at_startup");

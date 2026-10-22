@@ -22,6 +22,8 @@ set(BROUK_CORE_SOURCES
   page_events.h
   permissions.cc
   permissions.h
+  profile_export.cc
+  profile_export.h
   profile_id.h
   profile_registry.cc
   profile_registry.h

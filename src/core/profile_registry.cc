@@ -166,6 +166,44 @@ Result<ProfileId> ProfileRegistry::CreateProfile(std::string_view name,
   return id;
 }
 
+std::optional<Settings> ProfileRegistry::ProfileSettings(
+    std::string_view id) const {
+  if (!Find(id)) {
+    return std::nullopt;
+  }
+  return LoadSettingsFile(ProfileSettingsPath(id), SettingScope::kProfile)
+      .settings;
+}
+
+Result<ProfileId> ProfileRegistry::ImportProfile(Settings settings) {
+  std::string base = settings.GetString("profile.name");
+  if (base.find_first_not_of(" \t") == std::string::npos) {
+    base = "Imported profile";
+  }
+  std::string name = base;
+  for (int n = 2; CheckName(name, {}); ++n) {
+    std::string suffix = " " + std::to_string(n);
+    // Keep within the name's length limit.
+    name = base.substr(0, 64 - suffix.size()) + suffix;
+  }
+  if (std::optional<std::string> problem = settings.Set("profile.name", name)) {
+    return Error{"Name " + *problem};
+  }
+  std::string id = NewProfileId();
+  std::error_code error;
+  while (Find(id) ||
+         std::filesystem::exists(data_dir_ / kProfilesDir / id, error)) {
+    id = NewProfileId();
+  }
+  if (std::optional<Error> save =
+          SaveSettingsFile(ProfileSettingsPath(id), settings)) {
+    return *save;
+  }
+  profiles_.push_back(InfoFrom(id, settings));
+  Sort();
+  return id;
+}
+
 std::optional<Error> ProfileRegistry::UpdateProfile(std::string_view id,
                                                     std::string_view name,
                                                     std::string_view color) {

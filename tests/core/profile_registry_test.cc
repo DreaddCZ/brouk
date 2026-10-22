@@ -175,5 +175,31 @@ TEST_F(ProfileRegistryTest, RemovesWebDataOfDeletedProfilesOnly) {
   }
 }
 
+TEST_F(ProfileRegistryTest, ImportProfileGetsAUniqueName) {
+  ProfileRegistry registry(dir_);
+  registry.Load();
+  Result<ProfileId> work = registry.CreateProfile("Work", "green");
+  ASSERT_TRUE(work);
+  std::optional<Settings> exported = registry.ProfileSettings(work.value());
+  ASSERT_TRUE(exported);
+  EXPECT_EQ(exported->GetString("profile.color"), "green");
+  EXPECT_FALSE(registry.ProfileSettings("p-missing"));
+
+  Result<ProfileId> first = registry.ImportProfile(*exported);
+  Result<ProfileId> second = registry.ImportProfile(*exported);
+  ASSERT_TRUE(first);
+  ASSERT_TRUE(second);
+  EXPECT_EQ(registry.Find(first.value())->name, "Work 2");
+  EXPECT_EQ(registry.Find(second.value())->name, "Work 3");
+  EXPECT_EQ(registry.Find(second.value())->color, "green");
+
+  Settings long_name(SettingScope::kProfile);
+  ASSERT_FALSE(long_name.Set("profile.name", std::string(64, 'x')));
+  ASSERT_TRUE(registry.ImportProfile(long_name));
+  Result<ProfileId> again = registry.ImportProfile(long_name);
+  ASSERT_TRUE(again);
+  EXPECT_EQ(registry.Find(again.value())->name, std::string(62, 'x') + " 2");
+}
+
 }  // namespace
 }  // namespace brouk
