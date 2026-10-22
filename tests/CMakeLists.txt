@@ -26,6 +26,7 @@ add_executable(brouk_core_tests
   core/external_protocol_test.cc
   core/page_events_test.cc
   core/permissions_test.cc
+  core/profile_registry_test.cc
   core/security_state_test.cc
   core/settings_file_test.cc
   core/settings_test.cc

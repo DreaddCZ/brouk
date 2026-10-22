@@ -18,6 +18,8 @@ set(BROUK_CORE_SOURCES
   page_events.h
   permissions.cc
   permissions.h
+  profile_registry.cc
+  profile_registry.h
   result.h
   security_state.cc
   security_state.h
