@@ -31,6 +31,30 @@ TEST(PageEventsTest, AudioEvents) {
   EXPECT_FALSE(ParsePageEvent("audible", "unexpected payload"));
 }
 
+TEST(PageEventsTest, DisplayMediaRequest) {
+  std::optional<PageEvent> event = ParsePageEvent("display-media", "7");
+  ASSERT_TRUE(event);
+  EXPECT_EQ(event->type, PageEvent::Type::kDisplayMedia);
+  EXPECT_EQ(event->request_id, 7u);
+  EXPECT_FALSE(event->wants_audio);
+
+  event = ParsePageEvent("display-media", "4294967295:audio");
+  ASSERT_TRUE(event);
+  EXPECT_EQ(event->request_id, 4294967295u);
+  EXPECT_TRUE(event->wants_audio);
+}
+
+TEST(PageEventsTest, DisplayMediaRejectsBadIds) {
+  EXPECT_FALSE(ParsePageEvent("display-media", ""));
+  EXPECT_FALSE(ParsePageEvent("display-media", ":audio"));
+  EXPECT_FALSE(ParsePageEvent("display-media", "-1"));
+  EXPECT_FALSE(ParsePageEvent("display-media", "4294967296"));
+  EXPECT_FALSE(ParsePageEvent("display-media", "12345678901"));
+  EXPECT_FALSE(ParsePageEvent("display-media", "1 "));
+  EXPECT_FALSE(ParsePageEvent("display-media", "0x10"));
+  EXPECT_FALSE(ParsePageEvent("display-media", "1:video"));
+}
+
 TEST(PageEventsTest, UnknownTypes) {
   EXPECT_FALSE(ParsePageEvent("open-file", "/etc/passwd"));
   EXPECT_FALSE(ParsePageEvent("", ""));

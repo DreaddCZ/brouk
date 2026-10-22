@@ -30,6 +30,8 @@ add_executable(brouk_app
   permission_prompt_view.mm
   sad_tab_view.h
   sad_tab_view.mm
+  screen_share_picker.h
+  screen_share_picker.mm
   site_info_popover.h
   site_info_popover.mm
   tab_dialog_view.h
@@ -40,7 +42,8 @@ add_executable(brouk_app
 brouk_target_options(brouk_app CEF APP)
 target_link_libraries(brouk_app PRIVATE brouk_cef brouk_core
   "-framework AppKit" "-framework AVFoundation" "-framework Cocoa"
-  "-framework IOSurface" "-framework SecurityInterface")
+  "-framework IOSurface" "-framework ScreenCaptureKit"
+  "-framework SecurityInterface")
 set_target_properties(brouk_app PROPERTIES
   OUTPUT_NAME "${APP_EXECUTABLE_NAME}"
   RUNTIME_OUTPUT_DIRECTORY "${APP_BUNDLE}/Contents/MacOS")
@@ -55,12 +58,18 @@ set_target_properties(brouk_helper PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/helper")
 add_dependencies(brouk_app brouk_helper)
 
+# Assembling the bundle: copy the CEF framework and the helpers, then sign.
+# A separate step (not POST_BUILD of brouk_app) so that it also runs when
+# only the helper changed (renderer code), which does not relink the app.
+set(_bundle_stamp "${CMAKE_CURRENT_BINARY_DIR}/bundle.stamp")
+set(_bundle_commands "")
+
 # Copy the CEF framework. (CEF's COPY_MAC_FRAMEWORK macro uses "ln -sf", which
 # on a rebuild follows the existing directory links and nests new links inside
 # the framework, breaking its signature; "ln -sfn" replaces them.)
 set(_framework
   "${APP_BUNDLE}/Contents/Frameworks/Chromium Embedded Framework.framework")
-add_custom_command(TARGET brouk_app POST_BUILD
+list(APPEND _bundle_commands
   COMMAND ${CMAKE_COMMAND} -E copy_directory
           "${BROUK_CEF_BINARY_DIR}/Chromium Embedded Framework.framework"
           "${_framework}/Versions/A"
@@ -68,8 +77,7 @@ add_custom_command(TARGET brouk_app POST_BUILD
   COMMAND ln -sfn "Versions/Current/Chromium Embedded Framework"
           "${_framework}/Chromium Embedded Framework"
   COMMAND ln -sfn Versions/Current/Libraries "${_framework}/Libraries"
-  COMMAND ln -sfn Versions/Current/Resources "${_framework}/Resources"
-  VERBATIM)
+  COMMAND ln -sfn Versions/Current/Resources "${_framework}/Resources")
 
 set(_signed_helpers "")
 foreach(_suffix_list ${CEF_HELPER_APP_SUFFIXES})
@@ -80,12 +88,11 @@ foreach(_suffix_list ${CEF_HELPER_APP_SUFFIXES})
   set(HELPER_NAME "${HELPER_NAME_BASE}${_name_suffix}")
   set(_helper_app "${APP_BUNDLE}/Contents/Frameworks/${HELPER_NAME}.app")
   configure_file(helper-Info.plist.in "${_helper_app}/Contents/Info.plist" @ONLY)
-  add_custom_command(TARGET brouk_app POST_BUILD
+  list(APPEND _bundle_commands
     COMMAND ${CMAKE_COMMAND} -E make_directory "${_helper_app}/Contents/MacOS"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    COMMAND ${CMAKE_COMMAND} -E copy
             "$<TARGET_FILE:brouk_helper>"
-            "${_helper_app}/Contents/MacOS/${HELPER_NAME}"
-    VERBATIM)
+            "${_helper_app}/Contents/MacOS/${HELPER_NAME}")
   list(APPEND _signed_helpers "${_helper_app}")
 endforeach()
 
@@ -106,7 +113,7 @@ else()
   message(STATUS "Signing ad-hoc; run scripts/create_dev_certificate to "
                  "keep keychain access and permissions across builds.")
 endif()
-add_custom_command(TARGET brouk_app POST_BUILD
+list(APPEND _bundle_commands
   COMMAND codesign --force --sign "${BROUK_CODESIGN_IDENTITY}"
           "${_framework}/Libraries/libcef_sandbox.dylib"
           "${_framework}/Libraries/libvk_swiftshader.dylib"
@@ -114,5 +121,12 @@ add_custom_command(TARGET brouk_app POST_BUILD
   COMMAND codesign --force --sign "${BROUK_CODESIGN_IDENTITY}" "${_framework}"
   COMMAND codesign --force --sign "${BROUK_CODESIGN_IDENTITY}" ${_signed_helpers}
   COMMAND codesign --force --sign "${BROUK_CODESIGN_IDENTITY}" "${APP_BUNDLE}"
-  COMMENT "Signing ${APP_NAME}.app (${BROUK_CODESIGN_IDENTITY})"
+  COMMAND ${CMAKE_COMMAND} -E touch "${_bundle_stamp}")
+
+add_custom_command(OUTPUT "${_bundle_stamp}"
+  ${_bundle_commands}
+  DEPENDS brouk_app brouk_helper
+          "$<TARGET_FILE:brouk_app>" "$<TARGET_FILE:brouk_helper>"
+  COMMENT "Assembling and signing ${APP_NAME}.app (${BROUK_CODESIGN_IDENTITY})"
   VERBATIM)
+add_custom_target(brouk_bundle ALL DEPENDS "${_bundle_stamp}")
