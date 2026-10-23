@@ -69,9 +69,36 @@ After a form is submitted with at least three recognised fields, including a nam
 
 ### Managing entries
 
-- The autofill section of settings (`brouk://settings`, 004) lists entries and custom fields.
-- **Actions:** add, edit, delete (with undo), Find duplicates.
-- Autofill can be turned off entirely, or separately for entries and for custom fields. Offering to save can be turned off.
+Saved data is reviewed and edited in **Settings → Autofill** (`brouk://settings/autofill`, an internal page as in 004). It opens from:
+- settings;
+- "Manage autofill…" at the bottom of every autofill drop-down;
+- the right-click Autofill menu;
+- the save and update prompts ("Edit…").
+
+**Entries list:**
+- one row per entry: label, name, company, email, phone, a one-line address, and any company identifiers that are filled in;
+- **last used** time and **times used**;
+- a warning mark when a value fails validation;
+- search across all values;
+- sort by label, last used or times used (default: last used).
+
+**Editing an entry:**
+- a form with all fields, grouped as Contact, Address and Company (IČO, DIČ, VAT ID, IBAN, BIC);
+- validation hints next to each field;
+- an "Origin" line that says where the entry was first saved and when (e.g. "saved from eshop.example.cz, 2026-10-23"), or "added by hand".
+
+**Custom fields list:** name, value, label words, last used. They are edited in place.
+
+**Actions:**
+- add, edit, duplicate (as a starting point for a similar entry), delete — single or several selected, with undo;
+- **Find duplicates** (see above);
+- **export** all autofill data to a JSON file, and **import** it, for backup and for moving to another Mac. Autofill is not in profile exports.
+  - An import goes through the same duplicate checks as saving, and lists what was added, merged and skipped.
+
+**Switches** at the top of the page:
+- autofill on or off, entirely or separately for entries and custom fields;
+- offer to save;
+- the default country for phone numbers.
 
 ### Storage
 
@@ -96,13 +123,18 @@ After a form is submitted with at least three recognised fields, including a nam
 **Validation, settings and storage**
 - [ ] An invalid IČO, DIČ, VAT ID or IBAN is marked, both in the editor and in the save prompt.
 - [ ] Autofill can be turned off entirely, per kind (entries, custom fields), and offering to save can be turned off.
+- [ ] Settings → Autofill can be opened from settings, from any autofill drop-down, from the right-click menu and from the save prompt.
+- [ ] It lists all entries, with last used, times used and warnings, and all custom fields; it can be searched and sorted.
+- [ ] Every value can be edited there; several entries can be deleted at once, with undo.
+- [ ] Each entry shows where and when it was saved.
+- [ ] Autofill data can be exported to a JSON file and imported again; the import skips or merges duplicates and shows a summary.
 - [ ] The autofill database file alone, without the Keychain, does not reveal the stored values.
 
 ## Out of scope
 
 - Payment cards and payment processing.
 - Bitwarden identities as an autofill source.
-- Import from other browsers (in line with 005).
+- Import from other browsers (in line with 005); only Brouk's own JSON export can be imported.
 - Looking up company details in registers (e.g. ARES by IČO) — possible later.
 - Languages other than English and Czech for field detection — added when needed.
 
@@ -130,3 +162,4 @@ None.
   - Bitwarden is not an autofill source.
   - The normalising, comparison and validation rules are pure core functions; cover them with unit tests, including Czech examples.
   - Spec set to `ready`.
+- 2026-10-23 (with the user): a place in settings to review and edit saved autofill data. Specified as Settings → Autofill, with usage stats, origin of each entry, search and sort, bulk delete and JSON export/import.
