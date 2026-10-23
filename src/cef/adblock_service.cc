@@ -23,13 +23,13 @@ namespace brouk {
 namespace {
 
 constexpr std::string_view kResourcesId = "resources";
-constexpr char kResourcesUrl[] =
+constexpr std::string_view kResourcesUrl =
     "https://raw.githubusercontent.com/brave/adblock-resources/master/dist/"
     "resources.json";
 // The first check waits a little after start (startup stays quick), then
 // lists are checked hourly; each is downloaded when due (007).
-constexpr int64_t kFirstCheckMs = 15 * 1000;
-constexpr int64_t kCheckEveryMs = 60 * 60 * 1000;
+constexpr int64_t kFirstCheckMs = int64_t{15} * 1000;
+constexpr int64_t kCheckEveryMs = int64_t{60} * 60 * 1000;
 
 class FunctionTask : public CefTask {
  public:
@@ -81,7 +81,7 @@ struct AdblockService::State {
         built[key] = std::move(active);
       }
     }
-    std::lock_guard<std::mutex> lock(engines->mutex);
+    std::scoped_lock lock(engines->mutex);
     engines->by_key = std::move(built);
   }
 };
@@ -236,7 +236,7 @@ void AdblockService::Configure(
 std::shared_ptr<const ActiveAdblockEngine> AdblockService::EngineFor(
     const std::set<FilterCategory>& categories) const {
   std::string key = FormatFilterCategories(categories);
-  std::lock_guard<std::mutex> lock(engines_->mutex);
+  std::scoped_lock lock(engines_->mutex);
   auto it = engines_->by_key.find(key);
   return it == engines_->by_key.end() ? nullptr : it->second;
 }
@@ -270,7 +270,7 @@ void AdblockService::CheckForUpdates(bool everything) {
   candidates.push_back({.id = std::string(kResourcesId),
                         .name = "Resources",
                         .category = FilterCategory::kCustom,
-                        .url = kResourcesUrl,
+                        .url = std::string(kResourcesUrl),
                         .hosts_format = false,
                         .trusted = false,
                         .default_on = true,
