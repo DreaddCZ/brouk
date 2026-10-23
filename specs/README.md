@@ -53,10 +53,12 @@ Build order. Each milestone ends with a build the user tests on their Macs.
 | **M3 – Profiles** | Isolated profiles, profile groups in one window, profile manager, export/import (parts available so far). | 005 |
 | **M4 – Full browser UI** | Tab overflow, pinned tabs, command palette, remappable shortcuts, themes, address bar suggestions from history. | 003, history storage needed by 003 (013) |
 | **M5 – Developer tools** | Dock, per-tab toggle, own tools, request rules, API export, remote debugging. | 006 |
-| **Later** | In an order to be agreed: | 010, 007, 008, 009, 011, 013, 014 |
+| **Later** | In an order to be agreed: | 010, 007, 008, 009, 011, 013, 014, then 016 last |
 
 2026-10-22 (user's decision): the rest of 012 (folder upload and file drop, pinch zoom, Picture-in-Picture, permissions in settings) is postponed; profiles (005) come next, on top of the configuration foundation from 004 that they need (settings files, typed settings, live reload). The settings page of 004 follows later.
 
 2026-10-23 (user's decision): next come 003 (M4), then 013, then 011. Full acceptance testing of 004 and 005 is done later, together with the UI of these specs.
+
+2026-10-23 (user's decision): help (016) is built last, after all other specs; until then, rule 7 in `CLAUDE.md` keeps the help text for each change in its pull request.
 
 Rules: a milestone uses only `ready` specs; later milestones may be re-ordered by the user. Unspecified standard browser behaviour follows Chrome (see `CLAUDE.md`).
