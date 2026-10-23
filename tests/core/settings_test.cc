@@ -119,6 +119,8 @@ TEST(SettingsTest, FileFormat) {
   EXPECT_EQ(EmitYaml(Settings(SettingScope::kGlobal).ToYaml()),
             "appearance:\n"
             "  theme: system\n"
+            "startup:\n"
+            "  restore: last_session\n"
             "search:\n"
             "  engine: google\n"
             "  custom_template: \"\"\n"

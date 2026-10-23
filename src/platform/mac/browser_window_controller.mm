@@ -99,6 +99,26 @@ NSButton* ToolbarButton(NSString* symbol,
 }
 @end
 
+// Runs a block as a button's action.
+@interface BRBlockTarget : NSObject
+- (instancetype)initWithBlock:(void (^)(void))block;
+- (void)run:(id)sender;
+@end
+
+@implementation BRBlockTarget {
+  void (^_block)(void);
+}
+- (instancetype)initWithBlock:(void (^)(void))block {
+  if ((self = [super init])) {
+    _block = [block copy];
+  }
+  return self;
+}
+- (void)run:(id)sender {
+  _block();
+}
+@end
+
 @interface BRBrowserWindowController () <BRTabDelegate,
                                          BRTabStripDelegate,
                                          BRAddressFieldDelegate,
@@ -149,6 +169,7 @@ NSButton* ToolbarButton(NSString* symbol,
   // Reopen Closed Tab (013): the tabs when the whole window started closing,
   // and the profiles being deleted, whose tabs are not kept.
   std::vector<brouk::ClosedTab> _windowSnapshot;
+  NSArray* _restoreBarTargets;  // Of the "Restore pages?" bar (015).
   std::set<brouk::ProfileId, std::less<>> _discardedProfiles;
   // Address bar suggestions (003) for the text in `_suggestText`. Answers
   // carry `_suggestGeneration`, so late answers for older text are dropped.
@@ -417,6 +438,139 @@ NSButton* ToolbarButton(NSString* symbol,
   }
 }
 
+#pragma mark - Session restore (015)
+
+- (std::optional<brouk::SessionWindow>)sessionWindow {
+  if (_isPopup || _closingWindow || _model->empty()) {
+    return std::nullopt;
+  }
+  brouk::SessionWindow window;
+  for (std::size_t i = 0; i < _model->count(); ++i) {
+    BRTab* tab = _tabs[@(_model->id_at(i))];
+    if (!tab) {
+      continue;
+    }
+    if (_model->active_id() == tab.tabId) {
+      window.active = window.tabs.size();
+    }
+    window.tabs.push_back({.url = tab.url.UTF8String ?: "",
+                           .title = tab.title.UTF8String ?: "",
+                           .profile = tab.profileId,
+                           .pinned = _model->IsPinned(tab.tabId)});
+  }
+  for (const brouk::TabStripModel::Group& group : _model->groups()) {
+    if (group.collapsed) {
+      window.collapsed.push_back(group.profile);
+    }
+  }
+  NSRect frame = self.window.frame;
+  window.x = static_cast<int>(frame.origin.x);
+  window.y = static_cast<int>(frame.origin.y);
+  window.width = static_cast<int>(frame.size.width);
+  window.height = static_cast<int>(frame.size.height);
+  return window;
+}
+
+- (void)restoreSessionWindow:(const brouk::SessionWindow&)window {
+  if (window.width > 0) {
+    NSRect frame = NSMakeRect(window.x, window.y, window.width, window.height);
+    // Only if it is still on a screen (displays may have changed).
+    for (NSScreen* screen in NSScreen.screens) {
+      if (NSIntersectsRect(screen.visibleFrame, frame)) {
+        [self.window setFrame:frame display:NO];
+        break;
+      }
+    }
+  }
+  std::optional<brouk::TabId> active;
+  for (std::size_t i = 0; i < window.tabs.size(); ++i) {
+    const brouk::SessionTab& saved = window.tabs[i];
+    brouk::ProfileId profile = saved.profile;
+    if (![_owner profileExists:profile]) {
+      profile = [_owner defaultProfileId];
+    }
+    BRTab* tab = [self makeTabInProfile:profile];
+    _model->AppendTab(tab.tabId, profile, false);
+    if (saved.pinned) {
+      _model->SetPinned(tab.tabId, true);
+    }
+    NSString* url = @(saved.url.c_str()) ?: @"about:blank";
+    CefRefPtr<CefRequestContext> context =
+        [_owner requestContextForProfile:profile];
+    if (i == window.active) {
+      active = tab.tabId;
+      [tab createBrowserWithURL:url requestContext:context];
+    } else {
+      [tab deferBrowserWithURL:url
+                         title:@(saved.title.c_str()) ?: @""
+                requestContext:context];
+    }
+  }
+  if (active) {
+    _model->ActivateTab(*active);
+  }
+  for (const brouk::ProfileId& profile : window.collapsed) {
+    _model->SetGroupCollapsed(profile, true);
+  }
+  [self modelDidChange];
+}
+
+- (BOOL)hasOnlyNewTab {
+  if (_model->count() != 1) {
+    return NO;
+  }
+  NSString* url = [self activeTab].url;
+  return url.length == 0 || [url isEqualToString:@"about:blank"];
+}
+
+- (void)showRestorePagesBar:(void (^)(void))restore {
+  NSView* content = self.window.contentView;
+  NSRect contentBounds = content.bounds;
+  CGFloat top = NSMaxY(contentBounds) - _stripHeight - kToolbarHeight;
+  NSVisualEffectView* bar = [[NSVisualEffectView alloc]
+      initWithFrame:NSMakeRect(0, top - 40, contentBounds.size.width, 40)];
+  bar.material = NSVisualEffectMaterialHeaderView;
+  bar.autoresizingMask = NSViewWidthSizable | NSViewMinYMargin;
+  bar.accessibilityRole = NSAccessibilityGroupRole;
+  bar.accessibilityLabel = @"Restore pages";
+  NSTextField* text = [NSTextField
+      labelWithString:@"Restore pages?  Brouk didn't shut down correctly."];
+  text.frame = NSMakeRect(16, 11, 400, 18);
+  NSButton* restoreButton = [NSButton buttonWithTitle:@"Restore"
+                                               target:nil
+                                               action:nil];
+  restoreButton.frame = NSMakeRect(contentBounds.size.width - 150, 6, 90, 28);
+  restoreButton.autoresizingMask = NSViewMinXMargin;
+  restoreButton.keyEquivalent = @"";
+  NSButton* close =
+      [NSButton buttonWithImage:[NSImage imageWithSystemSymbolName:@"xmark"
+                                          accessibilityDescription:@"Close"]
+                         target:nil
+                         action:nil];
+  close.bordered = NO;
+  close.frame = NSMakeRect(contentBounds.size.width - 48, 8, 24, 24);
+  close.autoresizingMask = NSViewMinXMargin;
+  for (NSView* view in @[ text, restoreButton, close ]) {
+    [bar addSubview:view];
+  }
+  [content addSubview:bar positioned:NSWindowAbove relativeTo:nil];
+  __weak NSView* weakBar = bar;
+  void (^dismiss)(void) = ^{
+    [weakBar removeFromSuperview];
+  };
+  // Buttons hold their targets weakly: the controller keeps them.
+  BRBlockTarget* restoreTarget = [[BRBlockTarget alloc] initWithBlock:^{
+    dismiss();
+    restore();
+  }];
+  BRBlockTarget* closeTarget = [[BRBlockTarget alloc] initWithBlock:dismiss];
+  _restoreBarTargets = @[ restoreTarget, closeTarget ];
+  restoreButton.target = restoreTarget;
+  restoreButton.action = @selector(run:);
+  close.target = closeTarget;
+  close.action = @selector(run:);
+}
+
 // History → Home: the new tab page in the current tab, as in Chrome.
 - (IBAction)goHome:(id)sender {
   BRTab* tab = [self activeTab];
@@ -490,6 +644,11 @@ NSButton* ToolbarButton(NSString* symbol,
 // Shows the active tab, hides the others, refreshes strip and toolbar.
 - (void)modelDidChange {
   BRTab* active = [self activeTab];
+  // A restored tab gets its browser when first shown (015).
+  if (active.hasDeferredBrowser) {
+    [active createDeferredBrowser];
+  }
+  [_owner browserWindowSessionChanged];
   NSMutableArray<BRTabGroupInfo*>* groups = [NSMutableArray array];
   for (const brouk::TabStripModel::Group& group : _model->groups()) {
     brouk::ProfileInfo info = [_owner profileInfo:group.profile];
@@ -729,6 +888,7 @@ NSButton* ToolbarButton(NSString* symbol,
 
 - (void)tabDidChangeState:(BRTab*)tab {
   [_tabStrip updateTab:tab];
+  [_owner browserWindowSessionChanged];
   if (tab == [self activeTab]) {
     [self updateToolbar];
   }
@@ -899,7 +1059,10 @@ NSButton* ToolbarButton(NSString* symbol,
   for (NSString* key in [_pendingPopups allKeysForObject:tab]) {
     [_pendingPopups removeObjectForKey:key];
   }
-  [_owner browserWindowDidCloseBrowser];
+  // A restored tab never shown had no browser to count.
+  if (tab.hasCreatedBrowser) {
+    [_owner browserWindowDidCloseBrowser];
+  }
   // Closing the last tab closes the window, as in Chrome.
   if (self.liveTabCount == 0) {
     [self.window close];
@@ -1891,6 +2054,14 @@ NSButton* ToolbarButton(NSString* symbol,
   // the last tab is gone (see tabDidClose:).
   [self closeAllTabs];
   return NO;
+}
+
+- (void)windowDidMove:(NSNotification*)notification {
+  [_owner browserWindowSessionChanged];
+}
+
+- (void)windowDidResize:(NSNotification*)notification {
+  [_owner browserWindowSessionChanged];
 }
 
 - (void)windowWillClose:(NSNotification*)notification {

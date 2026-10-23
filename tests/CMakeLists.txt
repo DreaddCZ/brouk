@@ -41,6 +41,7 @@ add_executable(brouk_core_tests
   core/profile_registry_test.cc
   core/security_state_test.cc
   core/service_workers_test.cc
+  core/session_test.cc
   core/settings_export_test.cc
   core/settings_file_test.cc
   core/settings_test.cc

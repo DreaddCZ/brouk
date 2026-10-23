@@ -144,6 +144,15 @@ NS_ASSUME_NONNULL_BEGIN
 // Creates the browser in the container view and loads `url`.
 - (void)createBrowserWithURL:(NSString*)url
               requestContext:(CefRefPtr<CefRequestContext>)requestContext;
+// Session restore (015): shows `url` and `title` without a browser yet; the
+// browser is created by createDeferredBrowser (when the tab is first shown).
+- (void)deferBrowserWithURL:(NSString*)url
+                      title:(NSString*)title
+             requestContext:(CefRefPtr<CefRequestContext>)requestContext;
+- (void)createDeferredBrowser;
+@property(nonatomic, readonly) BOOL hasDeferredBrowser;
+// Whether a browser was ever created (the app counts open browsers).
+@property(nonatomic, readonly) BOOL hasCreatedBrowser;
 
 // The client to hand to CEF for a popup that this tab will host.
 - (CefRefPtr<CefClient>)client;

@@ -42,7 +42,12 @@ constexpr std::array<std::string_view, 4> kHistoryKeep = {"30", "90", "365",
 constexpr std::array<std::string_view, 4> kHistoryKeepLabels = {
     "30 days", "90 days", "1 year", "Forever"};
 
-constexpr std::array<SettingDef, 21> kSettings = {{
+constexpr std::array<std::string_view, 2> kStartup = {"last_session",
+                                                      "new_tab"};
+constexpr std::array<std::string_view, 2> kStartupLabels = {
+    "Continue where you left off", "Open a new tab"};
+
+constexpr std::array<SettingDef, 22> kSettings = {{
     // Global.
     {.key = "appearance.theme",
      .scope = SettingScope::kGlobal,
@@ -53,6 +58,16 @@ constexpr std::array<SettingDef, 21> kSettings = {{
      .section = "Appearance",
      .label = "Theme",
      .description = "Light or dark windows; by default as set in macOS."},
+    {.key = "startup.restore",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kChoice,
+     .default_value = "last_session",
+     .choices = kStartup,
+     .choice_labels = kStartupLabels,
+     .section = "Startup",
+     .label = "On startup",
+     .description = "Continue brings back the windows and tabs open when "
+                    "Brouk last quit."},
     {.key = "search.engine",
      .scope = SettingScope::kGlobal,
      .type = SettingDef::Type::kChoice,

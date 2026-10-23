@@ -15,6 +15,7 @@
 #include "cef/tab_client.h"
 #include "core/closed_tabs.h"
 #include "core/profile_registry.h"
+#include "core/session.h"
 #include "include/cef_request_context.h"
 
 NS_ASSUME_NONNULL_BEGIN
@@ -28,6 +29,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (CefRefPtr<CefRequestContext>)requestContextForProfile:
     (const brouk::ProfileId&)profile;
 - (brouk::ProfileId)defaultProfileId;
+- (BOOL)profileExists:(const brouk::ProfileId&)profile;
 // Name and colour; a placeholder for a profile that no longer exists.
 - (brouk::ProfileInfo)profileInfo:(const brouk::ProfileId&)profile;
 - (void)browserWindowDidCreateBrowser;
@@ -72,6 +74,9 @@ NS_ASSUME_NONNULL_BEGIN
             closedTab:(brouk::ClosedTab)tab;
 - (void)browserWindow:(BRBrowserWindowController*)controller
     closedWindowWithTabs:(std::vector<brouk::ClosedTab>)tabs;
+// Tabs, pages, order or the window frame changed: the saved session (015)
+// is updated soon.
+- (void)browserWindowSessionChanged;
 // Address bar suggestions (003): the sources the settings allow.
 - (BOOL)historySuggestionsEnabled;
 // "" when search suggestions are off or the engine has none.
@@ -133,6 +138,14 @@ NS_ASSUME_NONNULL_BEGIN
 - (brouk::ProfileId)activeProfileId;
 // Opens a closed tab again, in its profile at its old place (013).
 - (void)restoreClosedTab:(const brouk::ClosedTab&)tab activate:(BOOL)activate;
+// Session restore (015): the window as it is now (nullopt for popups and
+// windows without tabs), and filling a new, empty window from a saved one.
+- (std::optional<brouk::SessionWindow>)sessionWindow;
+- (void)restoreSessionWindow:(const brouk::SessionWindow&)window;
+// "Restore pages?" after a crash (015); `restore` runs on "Restore".
+- (void)showRestorePagesBar:(void (^)(void))restore;
+// Only one tab, never used (a new tab page): replaced by a restored session.
+- (BOOL)hasOnlyNewTab;
 
 @end
 
