@@ -276,3 +276,27 @@ export function cleanupSince(range: string, nowSeconds: number): number {
     default: return 0;
   }
 }
+
+/** Clear browsing data's time ranges (start in seconds; 0: all time). */
+export function clearSince(range: string, nowSeconds: number): number {
+  switch (range) {
+    case '1h': return nowSeconds - 3600;
+    case '24h': return nowSeconds - 86_400;
+    case '7d': return nowSeconds - 7 * 86_400;
+    case '4w': return nowSeconds - 28 * 86_400;
+    default: return 0;
+  }
+}
+
+/** "12.3 MB", "640 KB", "0 bytes". */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} ${bytes === 1 ? 'byte' : 'bytes'}`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let value = bytes / 1024;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return `${value >= 10 ? Math.round(value) : value.toFixed(1)} ${units[unit]}`;
+}

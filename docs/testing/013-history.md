@@ -75,3 +75,14 @@ Address bar suggestions and recording are in `003-browser-ui.md` (steps 37–48)
 53. Type in the filter box. Expected: the list narrows to matching sites; checked sites that are hidden by the filter keep their state.
 54. Escape or Cancel closes the dialog without deleting.
 
+## Clear browsing data
+
+55. History → Clear Browsing Data… (⇧⌘⌫). Expected: the history tab opens with the dialog; Profile is this tab's profile, Time "Last 24 hours", Browsing history and Cached images checked, Cookies unchecked. Counts appear: visits and sites, number of cookies, cache size.
+56. Settings → History → "Clear browsing data…" opens the same dialog; so does the button on the history page.
+57. Clear history for "Last hour". Expected: it asks again, then only the last hour's visits are gone; older history stays.
+58. Sign in to a site in a test profile, then clear "Cookies and site data" for "All time" in that profile. Expected: you are signed out there; other profiles stay signed in. A site's local storage is empty afterwards (check with developer tools → Application).
+59. Clear cookies for "Last hour" after signing in to a new site an hour after an older sign-in. Expected: only the new sign-in is gone.
+60. Clear only "Cached images and files". Expected: the cache size drops to near zero (the whole cache, whatever the time range).
+61. Profile "All profiles": each profile's numbers are listed; clearing affects every profile.
+62. Use a profile with no open tab. Expected: the counts and clearing still work (a hidden helper is used). If the cookie count says "number unknown", report it.
+

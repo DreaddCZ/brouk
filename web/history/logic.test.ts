@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addFilter, cleanupKey, cleanupSince, isOpenableUrl, planCleanup, preselectCleanup, toCsv, dayLabel, filterText, groupByDay, hostLabel, lastVisitLabel, pathOf, querySegments, sortSites, updateSelection, type Site, type Visit } from './logic.js';
+import { addFilter, clearSince, formatBytes, cleanupKey, cleanupSince, isOpenableUrl, planCleanup, preselectCleanup, toCsv, dayLabel, filterText, groupByDay, hostLabel, lastVisitLabel, pathOf, querySegments, sortSites, updateSelection, type Site, type Visit } from './logic.js';
 
 function site(host: string, visits: number, lastVisit: number): Site {
   return { profile: 'default', host, visits, pages: 1, lastVisit };
@@ -125,4 +125,13 @@ test('time ranges', () => {
   assert.equal(cleanupSince('24h', 1_000_000), 1_000_000 - 86_400);
   assert.equal(cleanupSince('4w', 10_000_000), 10_000_000 - 28 * 86_400);
   assert.equal(cleanupSince('all', 5), 0);
+});
+
+test('clear browsing data ranges and sizes', () => {
+  assert.equal(clearSince('1h', 10_000), 6400);
+  assert.equal(clearSince('all', 10_000), 0);
+  assert.equal(formatBytes(1), '1 byte');
+  assert.equal(formatBytes(640 * 1024), '640 KB');
+  assert.equal(formatBytes(12.34 * 1024 * 1024), '12 MB');
+  assert.equal(formatBytes(1.5 * 1024 * 1024), '1.5 MB');
 });

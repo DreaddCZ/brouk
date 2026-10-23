@@ -37,7 +37,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 010 | [Link routing and window picker](010-link-routing.md) | ready | P1 |
 | 011 | [Bookmark manager](011-bookmarks.md) | ready | P1 |
 | 012 | [Web platform basics](012-web-platform-basics.md) | in-progress | P1 |
-| 013 | [History](013-history.md) | in-progress — storage, recording, retention, address bar suggestions (merged) and History menu with closed tabs, history limits (merged) the history page as a tab (PR #23) its search with filters and chips (PR #24) the SQL editor (PR #25) and Clean up (PR #26) built; clear browsing data and export next | P1 |
+| 013 | [History](013-history.md) | in-progress — storage, recording, retention, address bar suggestions (merged) and History menu with closed tabs, history limits (merged) the history page as a tab (PR #23) its search with filters and chips (PR #24) the SQL editor (PR #25), Clean up (PR #26) and Clear browsing data (PR #27) built; history in profile export next | P1 |
 | 014 | [Downloads](014-downloads.md) | ready | P2 |
 | 015 | [Session restore](015-session-restore.md) | done | P1 |
 | 016 | [Help](016-help.md) | ready | P2 |

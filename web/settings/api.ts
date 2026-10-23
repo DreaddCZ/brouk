@@ -160,6 +160,11 @@ export class SettingsApi {
     return answer['restart'];
   }
 
+  /** Opens Clear browsing data on the history page (013). */
+  async clearBrowsingData(): Promise<void> {
+    await send('settings.clearBrowsingData', {}, this.#transport);
+  }
+
   async openFolder(): Promise<void> {
     await send('settings.openFolder', {}, this.#transport);
   }

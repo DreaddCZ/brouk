@@ -351,6 +351,135 @@ std::string SqlJson(const SqlResult& result) {
   return ToJson(answer);
 }
 
+// Clear browsing data (013): per profile, the visits and sites in the time
+// range from the history, and cookies and cache size from the delegate.
+void PreviewClear(HistoryService& history,
+                  HistoryPageDelegate& delegate,
+                  const std::vector<ProfileId>& profiles,
+                  std::int64_t since,
+                  const CefRefPtr<Callback>& callback) {
+  struct Row {
+    std::int64_t visits = 0;
+    std::int64_t sites = 0;
+    int cookies = 0;
+    std::int64_t cache_bytes = 0;
+  };
+  struct Shared {
+    std::vector<Row> rows;
+    std::size_t pending = 0;
+  };
+  auto shared = std::make_shared<Shared>();
+  shared->rows.resize(profiles.size());
+  shared->pending = profiles.size() * 2;
+  auto finish = [shared, profiles, callback] {
+    if (--shared->pending != 0) {
+      return;
+    }
+    CefRefPtr<CefListValue> list = CefListValue::Create();
+    for (std::size_t i = 0; i < profiles.size(); ++i) {
+      const Row& row = shared->rows[i];
+      CefRefPtr<CefDictionaryValue> item = CefDictionaryValue::Create();
+      item->SetString("profile", profiles[i]);
+      item->SetDouble("visits", static_cast<double>(row.visits));
+      item->SetDouble("sites", static_cast<double>(row.sites));
+      item->SetInt("cookies", row.cookies);
+      item->SetDouble("cacheBytes", static_cast<double>(row.cache_bytes));
+      list->SetDictionary(list->GetSize(), item);
+    }
+    CefRefPtr<CefDictionaryValue> answer = CefDictionaryValue::Create();
+    answer->SetList("profiles", list);
+    callback->Success(ToJson(answer));
+  };
+  if (profiles.empty()) {
+    shared->pending = 1;
+    finish();
+    return;
+  }
+  for (std::size_t i = 0; i < profiles.size(); ++i) {
+    history.Run(
+        profiles[i],
+        [shared, i, since](HistoryStore& store) {
+          shared->rows[i].visits = store.CountVisitsSince(since);
+          shared->rows[i].sites =
+              static_cast<std::int64_t>(store.HostsSince(since).size());
+        },
+        finish);
+    delegate.PreviewProfileData(
+        profiles[i], since,
+        [shared, i, finish](int cookies, std::int64_t cache_bytes) {
+          shared->rows[i].cookies = cookies;
+          shared->rows[i].cache_bytes = cache_bytes;
+          finish();
+        });
+  }
+}
+
+struct ClearRequest {
+  std::vector<ProfileId> profiles;
+  std::int64_t since = 0;
+  bool history = false;
+  bool cookies = false;
+  bool cache = false;
+};
+
+// One profile after the other: the sites of the time range are read from
+// the history first (their site data goes with the cookies), then cookies,
+// site data and cache, then the history itself.
+void RunClear(HistoryService& history,
+              const std::shared_ptr<HistoryPageDelegate>& delegate,
+              ClearRequest request,
+              const CefRefPtr<Callback>& callback) {
+  struct State {
+    ClearRequest request;
+    std::size_t next = 0;
+    std::set<std::string> sites;
+    bool cookies_failed = false;
+  };
+  auto state = std::make_shared<State>();
+  state->request = std::move(request);
+  auto step = std::make_shared<std::function<void()>>();
+  HistoryService* service = &history;
+  const std::shared_ptr<HistoryPageDelegate>& page = delegate;
+  *step = [state, step, service, page, callback]() {
+    if (state->next >= state->request.profiles.size()) {
+      CefRefPtr<CefDictionaryValue> answer = CefDictionaryValue::Create();
+      answer->SetBool("cookiesFailed", state->cookies_failed);
+      callback->Success(ToJson(answer));
+      *step = nullptr;  // Breaks the cycle of the step and its lambda.
+      return;
+    }
+    ProfileId profile = state->request.profiles[state->next++];
+    std::int64_t since = state->request.since;
+    service->Run(
+        profile,
+        [state, since](HistoryStore& store) {
+          state->sites.clear();
+          for (const HistorySite& site : store.HostsSince(since)) {
+            state->sites.insert(site.host);
+          }
+        },
+        [state, step, service, page, profile, since] {
+          page->ClearProfileData(
+              profile, since, state->request.cookies, state->request.cache,
+              state->sites,
+              [state, step, service, profile, since](bool cookies_ok) {
+                state->cookies_failed |= !cookies_ok;
+                if (!state->request.history) {
+                  (*step)();
+                  return;
+                }
+                service->Run(
+                    profile,
+                    [since](HistoryStore& store) {
+                      store.DeleteVisitsSince(since);
+                    },
+                    [step] { (*step)(); });
+              });
+        });
+  };
+  (*step)();
+}
+
 // What Clean up does in one profile: the sites whose visits go, and (in
 // "keep" mode) the sites kept, which become the keep list.
 struct CleanupPlan {
@@ -750,6 +879,33 @@ bool HistoryPageHandler::OnQuery(CefRefPtr<CefBrowser> /*browser*/,
           answer->SetDouble("visits", removed);
           callback->Success(ToJson(answer));
         });
+  } else if (*type == "history.clear.preview") {
+    std::optional<std::vector<ProfileId>> profiles =
+        ProfilesOf(message, delegate);
+    std::optional<std::int64_t> since = TimeField(message, "since");
+    if (!profiles || !since) {
+      callback->Failure(kBadRequest, "Invalid request.");
+      return true;
+    }
+    PreviewClear(*history, delegate, *profiles, *since, callback);
+  } else if (*type == "history.clear.run") {
+    std::optional<std::vector<ProfileId>> profiles =
+        ProfilesOf(message, delegate);
+    std::optional<std::int64_t> since = TimeField(message, "since");
+    auto flag = [&](const char* key) {
+      return message->GetType(key) == VTYPE_BOOL && message->GetBool(key);
+    };
+    if (!profiles || !since) {
+      callback->Failure(kBadRequest, "Invalid request.");
+      return true;
+    }
+    RunClear(*history, delegate_,
+             {.profiles = *profiles,
+              .since = *since,
+              .history = flag("history"),
+              .cookies = flag("cookies"),
+              .cache = flag("cache")},
+             callback);
   } else if (*type == "history.delete") {
     std::optional<std::vector<DeleteItem>> items =
         DeleteItems(message, delegate.Profiles());

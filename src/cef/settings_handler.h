@@ -35,6 +35,8 @@ class SettingsPageDelegate {
                                                  SettingValue value) = 0;
   // Shows the settings files in Finder (for advanced settings).
   virtual void RevealSettingsFolder() = 0;
+  // Clear browsing data (013), on the history page.
+  virtual void OpenClearBrowsingData() = 0;
   virtual void ExportSettings(FileDone done) = 0;
   virtual void ImportSettings(FileDone done) = 0;
 };

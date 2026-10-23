@@ -6,11 +6,13 @@
  */
 import { cefTransport } from '../shared/bridge.js';
 import { button, byId, element, errorText } from '../shared/dom.js';
-import { HistoryApi, type CleanupRow, type DeleteItem, type Page, type Profile, type QueryProblem, type SqlResult, type View } from './api.js';
+import { HistoryApi, type ClearPreview, type CleanupRow, type DeleteItem, type Page, type Profile, type QueryProblem, type SqlResult, type View } from './api.js';
 import {
   addFilter,
   cleanupKey,
   cleanupSince,
+  clearSince,
+  formatBytes,
   planCleanup,
   preselectCleanup,
   type CleanupMode,
@@ -649,6 +651,117 @@ function closeCleanup(): void {
   byId('cleanup-open').focus();
 }
 
+// Clear browsing data (013): history, cookies and site data, cache, for one
+// profile or all, within a time range.
+
+let clearPreviews: ClearPreview[] = [];
+let clearConfirming = false;
+
+function clearProfile(): string | null {
+  const value = byId<HTMLSelectElement>('clear-profile').value;
+  return value === '' ? null : value;
+}
+
+function clearSinceNow(): number {
+  return clearSince(byId<HTMLSelectElement>('clear-range').value, Math.floor(Date.now() / 1000));
+}
+
+function plural(n: number, one: string, many: string): string {
+  return `${n} ${n === 1 ? one : many}`;
+}
+
+async function loadClear(): Promise<void> {
+  clearConfirming = false;
+  byId('clear-summary').textContent = 'Counting…';
+  try {
+    clearPreviews = await api.clearPreview(clearProfile(), clearSinceNow());
+    showError(null);
+  } catch (error) {
+    clearPreviews = [];
+    showError(errorText(error));
+  }
+  renderClear();
+}
+
+function renderClear(): void {
+  const visits = clearPreviews.reduce((n, p) => n + p.visits, 0);
+  const sites = clearPreviews.reduce((n, p) => n + p.sites, 0);
+  const cookies = clearPreviews.reduce((n, p) => n + p.cookies, 0);
+  const cache = clearPreviews.reduce((n, p) => n + p.cacheBytes, 0);
+  byId('clear-history-count').textContent = `(${plural(visits, 'visit', 'visits')} on ${plural(sites, 'site', 'sites')})`;
+  const unknown = clearPreviews.some((p) => p.cookies < 0);
+  byId('clear-cookies-count').textContent = unknown ? '(number unknown)' : `(${plural(cookies, 'cookie', 'cookies')})`;
+  byId('clear-cache-size').textContent = `(${formatBytes(cache)})`;
+  // With all profiles, each profile's share.
+  const list = byId('clear-profiles');
+  list.replaceChildren(...(clearProfile() === null ? clearPreviews : []).map((p) => {
+    const row = element('div');
+    row.append(dot(p.profile), element('span', {
+      text: `${profileOf(p.profile)?.name ?? p.profile}: ${plural(p.visits, 'visit', 'visits')}, ${plural(p.cookies, 'cookie', 'cookies')}, cache ${formatBytes(p.cacheBytes)}`,
+    }));
+    return row;
+  }));
+  const any = ['clear-history', 'clear-cookies', 'clear-cache'].some((id) => byId<HTMLInputElement>(id).checked);
+  const summary = byId('clear-summary');
+  summary.classList.toggle('confirm-text', clearConfirming);
+  summary.textContent = clearConfirming ? 'Clear the chosen data? This cannot be undone.' : '';
+  const run = byId<HTMLButtonElement>('clear-run');
+  run.textContent = clearConfirming ? 'Clear now' : 'Clear data';
+  run.disabled = !any;
+}
+
+async function runClear(): Promise<void> {
+  if (!clearConfirming) {
+    clearConfirming = true;
+    renderClear();
+    return;
+  }
+  const run = byId<HTMLButtonElement>('clear-run');
+  run.disabled = true;
+  byId('clear-summary').textContent = 'Clearing…';
+  try {
+    const cookiesCleared = await api.clear(clearProfile(), clearSinceNow(), {
+      history: byId<HTMLInputElement>('clear-history').checked,
+      cookies: byId<HTMLInputElement>('clear-cookies').checked,
+      cache: byId<HTMLInputElement>('clear-cache').checked,
+    });
+    closeClear();
+    showError(cookiesCleared ? null : 'The cookies could not be cleared (the cookie store did not answer). The rest was cleared; please try again.');
+  } catch (error) {
+    showError(errorText(error));
+    clearConfirming = false;
+    renderClear();
+  }
+  await load();
+}
+
+function openClear(): void {
+  const picker = byId<HTMLSelectElement>('clear-profile');
+  const all = element('option', { text: 'All profiles' });
+  all.value = '';
+  picker.replaceChildren(...profiles.map((p) => {
+    const option = element('option', { text: p.name });
+    option.value = p.id;
+    option.selected = p.id === currentProfile;
+    return option;
+  }), all);
+  byId('clear').hidden = false;
+  picker.focus();
+  void loadClear();
+}
+
+function closeClear(): void {
+  byId('clear').hidden = true;
+}
+
+/** brouk://history/#clear (History menu, settings) opens the dialog. */
+function openFromFragment(): void {
+  if (window.location.hash === '#clear') {
+    history.replaceState(null, '', window.location.pathname);
+    openClear();
+  }
+}
+
 function setView(next: View): void {
   if (next === view) return;
   view = next;
@@ -690,6 +803,21 @@ async function start(): Promise<void> {
   byId('view-day').addEventListener('click', () => setView('day'));
   byId('delete').addEventListener('click', confirmDelete);
   byId('more').addEventListener('click', () => void loadMore());
+  byId('clear-open').addEventListener('click', openClear);
+  byId('clear-cancel').addEventListener('click', closeClear);
+  byId('clear-run').addEventListener('click', () => void runClear());
+  byId('clear-profile').addEventListener('change', () => void loadClear());
+  byId('clear-range').addEventListener('change', () => void loadClear());
+  for (const id of ['clear-history', 'clear-cookies', 'clear-cache']) {
+    byId(id).addEventListener('change', () => {
+      clearConfirming = false;
+      renderClear();
+    });
+  }
+  byId('clear').addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeClear();
+  });
+  window.addEventListener('hashchange', openFromFragment);
   byId('cleanup-open').addEventListener('click', openCleanup);
   byId('cleanup-cancel').addEventListener('click', closeCleanup);
   byId('cleanup-run').addEventListener('click', () => void runCleanup());
@@ -753,6 +881,7 @@ async function start(): Promise<void> {
     if (document.visibilityState === 'visible') void load();
   });
   await load();
+  openFromFragment();
 }
 
 void start();

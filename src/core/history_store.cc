@@ -761,6 +761,44 @@ int HistoryStore::DeleteHostVisitsSince(std::span<const std::string> hosts,
   return removed;
 }
 
+std::int64_t HistoryStore::CountVisitsSince(std::int64_t since) {
+  Error error;
+  std::optional<SqliteStatement> query =
+      db_->Prepare("SELECT count(*) FROM visits WHERE visit_time >= ?1", error);
+  if (!query) {
+    return 0;
+  }
+  query->Bind(1, since);
+  return query->Step() ? query->ColumnInt(0) : 0;
+}
+
+int HistoryStore::DeleteVisitsSince(std::int64_t since) {
+  Error error;
+  std::optional<SqliteStatement> remove =
+      db_->Prepare("DELETE FROM visits WHERE visit_time >= ?1", error);
+  if (!remove) {
+    return 0;
+  }
+  remove->Bind(1, since);
+  if (!remove->Run()) {
+    return 0;
+  }
+  int removed = db_->changes();
+  if (removed > 0) {
+    db_->Execute(
+        "BEGIN;"
+        "DELETE FROM urls WHERE id NOT IN (SELECT url_id FROM visits);"
+        "UPDATE urls SET"
+        "  visit_count = (SELECT count(*) FROM visits WHERE url_id = urls.id),"
+        "  typed_count = (SELECT count(*) FROM visits"
+        "    WHERE url_id = urls.id AND transition = 1),"
+        "  last_visit = (SELECT max(visit_time) FROM visits"
+        "    WHERE url_id = urls.id);"
+        "COMMIT;");
+  }
+  return removed;
+}
+
 int HistoryStore::DeleteHost(std::string_view host) {
   Error error;
   std::optional<SqliteStatement> remove =

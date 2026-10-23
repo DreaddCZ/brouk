@@ -141,6 +141,11 @@ class HistoryStore {
   int DeleteHostVisitsSince(std::span<const std::string> hosts,
                             std::int64_t since);
 
+  // Clear browsing data (013): visits at or after `since` (0: all), counted
+  // or removed (pages left without visits go too).
+  std::int64_t CountVisitsSince(std::int64_t since);
+  int DeleteVisitsSince(std::int64_t since);
+
   // Removes all pages of a host. Returns the number removed.
   int DeleteHost(std::string_view host);
   // Removes single visits, and pages left without visits.

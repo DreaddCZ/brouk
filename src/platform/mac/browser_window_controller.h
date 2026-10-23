@@ -157,6 +157,11 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)showRestorePagesBar:(void (^)(void))restore;
 // History page (013): opens one of its entries in `profile`, in the history
 // tab itself when it is in that profile's group (unless `newTab`).
+// A web browser of one of this window's tabs in `profile`, or null.
+- (CefRefPtr<CefBrowser>)anyBrowserInProfile:(const brouk::ProfileId&)profile;
+// The history page with `fragment` (e.g. "clear" opens Clear browsing data):
+// the history tab is reused if active, else opened as ⌘Y does.
+- (void)showHistoryWithFragment:(NSString*)fragment;
 // The profile of a tab (the default profile if the tab is gone).
 - (brouk::ProfileId)profileOfTab:(brouk::TabId)tabId;
 - (void)openPage:(NSString*)url
