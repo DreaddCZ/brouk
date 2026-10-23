@@ -48,7 +48,8 @@ std::string SearchSuggestTemplate(const Settings& global) {
     return {};
   }
   const std::string& engine = global.GetString("search.engine");
-  if (engine == "custom" && !global.GetString("search.custom_template").empty()) {
+  if (engine == "custom" &&
+      !global.GetString("search.custom_template").empty()) {
     return {};
   }
   for (const auto& [name, url] : kSuggestions) {

@@ -14,6 +14,7 @@
 #include "core/external_protocol.h"
 #include "core/page_events.h"
 #include "include/cef_image.h"
+#include "include/cef_navigation_entry.h"
 #include "include/cef_parser.h"
 #include "include/cef_process_message.h"
 #include "include/cef_request_context.h"
@@ -289,6 +290,27 @@ void TabClient::OnAddressChange(CefRefPtr<CefBrowser> /*browser*/,
   if (delegate_) {
     delegate_->OnAddressChanged(url.ToString());
   }
+  // A new address without loading: a same-document navigation
+  // (history.pushState, #fragment), which Chrome records as a visit.
+  // Documents are recorded when they finish loading (OnLoadEnd).
+  if (!loading_) {
+    ReportVisit(frame->GetBrowser());
+  }
+}
+
+void TabClient::ReportVisit(const CefRefPtr<CefBrowser>& browser) {
+  CEF_REQUIRE_UI_THREAD();
+  if (!delegate_ || !browser) {
+    return;
+  }
+  CefRefPtr<CefNavigationEntry> entry =
+      browser->GetHost()->GetVisibleNavigationEntry();
+  if (!entry || !entry->IsValid()) {
+    return;
+  }
+  delegate_->OnPageVisited(entry->GetURL().ToString(),
+                           entry->GetTitle().ToString(),
+                           entry->GetTransitionType());
 }
 
 void TabClient::OnTitleChange(CefRefPtr<CefBrowser> /*browser*/,
@@ -603,6 +625,9 @@ void TabClient::OnLoadStart(CefRefPtr<CefBrowser> /*browser*/,
                             CefRefPtr<CefFrame> frame,
                             TransitionType /*transition_type*/) {
   CEF_REQUIRE_UI_THREAD();
+  if (frame->IsMain()) {
+    main_load_failed_ = false;
+  }
   // A new document in the main frame starts silent: the old page and its
   // frames are gone. (Not called for same-document navigations.)
   if (frame->IsMain() && !audible_frames_.empty()) {
@@ -618,8 +643,32 @@ void TabClient::OnLoadingStateChange(CefRefPtr<CefBrowser> /*browser*/,
                                      bool can_go_back,
                                      bool can_go_forward) {
   CEF_REQUIRE_UI_THREAD();
+  loading_ = is_loading;
   if (delegate_) {
     delegate_->OnLoadingStateChanged(is_loading, can_go_back, can_go_forward);
+  }
+}
+
+void TabClient::OnLoadEnd(CefRefPtr<CefBrowser> browser,
+                          CefRefPtr<CefFrame> frame,
+                          int /*http_status_code*/) {
+  CEF_REQUIRE_UI_THREAD();
+  // Error pages are not recorded (013).
+  if (frame->IsMain() && !main_load_failed_) {
+    ReportVisit(browser);
+  }
+}
+
+void TabClient::OnLoadError(CefRefPtr<CefBrowser> /*browser*/,
+                            CefRefPtr<CefFrame> frame,
+                            ErrorCode error_code,
+                            const CefString& /*error_text*/,
+                            const CefString& /*failed_url*/) {
+  CEF_REQUIRE_UI_THREAD();
+  // ERR_ABORTED: stopped by the user or turned into a download; nothing was
+  // shown instead of the page.
+  if (frame->IsMain() && error_code != ERR_ABORTED) {
+    main_load_failed_ = true;
   }
 }
 

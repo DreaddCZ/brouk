@@ -137,8 +137,7 @@ TEST_F(HistoryStoreTest, RecentAndFrequentPagesRankHigher) {
 }
 
 TEST_F(HistoryStoreTest, OnlyTypedUrlsAreCompletedInline) {
-  Visit("https://www.github.com/brouk", "Brouk", kNow,
-        VisitTransition::kTyped);
+  Visit("https://www.github.com/brouk", "Brouk", kNow, VisitTransition::kTyped);
   Visit("https://gitlab.com/", "GitLab");  // Only via links.
   std::vector<HistoryMatch> matches = store_->Suggest("git", kNow, 10);
   ASSERT_EQ(matches.size(), 2U);
@@ -148,9 +147,9 @@ TEST_F(HistoryStoreTest, OnlyTypedUrlsAreCompletedInline) {
   // With "www." or the scheme typed, the rest follows what was typed.
   EXPECT_EQ(store_->Suggest("www.git", kNow, 1)[0].inline_completion,
             "hub.com/brouk");
-  EXPECT_EQ(store_->Suggest("https://www.github.com/b", kNow, 1)[0]
-                .inline_completion,
-            "rouk");
+  EXPECT_EQ(
+      store_->Suggest("https://www.github.com/b", kNow, 1)[0].inline_completion,
+      "rouk");
   // Not after a space, and not for a word inside the address.
   EXPECT_EQ(store_->Suggest("git ", kNow, 1)[0].inline_completion, "");
   EXPECT_EQ(store_->Suggest("brouk", kNow, 1)[0].inline_completion, "");

@@ -5,8 +5,8 @@
 
 #include <gtest/gtest.h>
 
-#include "core/settings.h"
 #include "core/search_engines.h"
+#include "core/settings.h"
 
 namespace brouk {
 namespace {
@@ -14,7 +14,8 @@ namespace {
 using Kind = AddressSuggestion::Kind;
 constexpr std::string_view kGoogle = "https://www.google.com/search?q=%s";
 
-HistoryMatch Page(std::string url, std::string title,
+HistoryMatch Page(std::string url,
+                  std::string title,
                   std::string completion = "") {
   return {.url = std::move(url),
           .title = std::move(title),
@@ -51,15 +52,15 @@ TEST(AddressSuggestionsTest, TypedRowThenHistoryThenSearch) {
   // The typed text and the duplicate (other case) are left out.
   EXPECT_EQ(rows[2].kind, Kind::kSearch);
   EXPECT_EQ(rows[2].text, "brouk v hlavě");
-  EXPECT_EQ(rows[2].url,
-            "https://www.google.com/search?q=brouk+v+hlav%C4%9B");
+  EXPECT_EQ(rows[2].url, "https://www.google.com/search?q=brouk+v+hlav%C4%9B");
   EXPECT_EQ(rows[3].text, "brouk pytlík");
 }
 
 TEST(AddressSuggestionsTest, InlineCompletedPageComesFirst) {
   std::vector<AddressSuggestion> rows =
-      Build("git", {Page("https://github.com/", "GitHub", "hub.com/"),
-                    Page("https://gitlab.com/", "GitLab")},
+      Build("git",
+            {Page("https://github.com/", "GitHub", "hub.com/"),
+             Page("https://gitlab.com/", "GitLab")},
             {});
   ASSERT_EQ(rows.size(), 3U);
   EXPECT_EQ(rows[0].kind, Kind::kHistory);
@@ -70,8 +71,9 @@ TEST(AddressSuggestionsTest, InlineCompletedPageComesFirst) {
 
 TEST(AddressSuggestionsTest, TypedAddressAndItsHistoryPageAreOneRow) {
   std::vector<AddressSuggestion> rows =
-      Build("example.com", {Page("https://example.com/", "Example"),
-                            Page("https://example.com/a", "A")},
+      Build("example.com",
+            {Page("https://example.com/", "Example"),
+             Page("https://example.com/a", "A")},
             {});
   ASSERT_EQ(rows.size(), 2U);
   EXPECT_EQ(rows[0].kind, Kind::kTypedUrl);

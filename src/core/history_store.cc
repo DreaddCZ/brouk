@@ -22,7 +22,7 @@ namespace {
 // as new versions.
 constexpr std::int64_t kSchemaVersion = 1;
 
-constexpr std::int64_t kSecondsPerDay = 24 * 60 * 60;
+constexpr std::int64_t kSecondsPerDay = std::int64_t{24} * 60 * 60;
 
 // Candidates read for each query; more than a 90-day history usually has.
 constexpr int kMaxCandidates = 20000;
@@ -53,7 +53,8 @@ std::string HostOf(std::string_view url) {
     authority.remove_prefix(at + 1);
   }
   std::size_t colon = authority.rfind(':');
-  if (colon != std::string_view::npos && authority.find(']') == authority.npos) {
+  if (colon != std::string_view::npos &&
+      authority.find(']') == authority.npos) {
     authority = authority.substr(0, colon);
   }
   return Lower(authority);
@@ -88,8 +89,8 @@ Found FindWord(std::string_view text, std::string_view word) {
     if (pos == 0) {
       return Found::kStart;
     }
-    best = std::max(best, IsSeparator(text[pos - 1]) ? Found::kWordStart
-                                                     : Found::kInside);
+    best = std::max(
+        best, IsSeparator(text[pos - 1]) ? Found::kWordStart : Found::kInside);
   }
   return best;
 }
@@ -104,9 +105,8 @@ int WordScore(std::string_view word,
     case Found::kWordStart:
       return 700;
     case Found::kInside:
-      return std::max(400, FindWord(folded_title, word) >= Found::kWordStart
-                               ? 600
-                               : 0);
+      return std::max(
+          400, FindWord(folded_title, word) >= Found::kWordStart ? 600 : 0);
     case Found::kNo:
       break;
   }
@@ -146,19 +146,16 @@ std::string InlineCompletion(std::string_view url, std::string_view typed) {
     return {};
   }
   std::string lowered = Lower(typed);
-  std::string candidates[] = {
-      UrlForMatching(url),  // "github.com/a"
-      std::string(url),     // "https://www.github.com/a"
-  };
+  std::string matching = UrlForMatching(url);  // "github.com/a"
   // "www.github.com/a"
   std::string_view without_scheme = url;
   std::size_t scheme = without_scheme.find("://");
   if (scheme != std::string_view::npos) {
     without_scheme.remove_prefix(scheme + 3);
   }
+  // The address as stored ("https://www.github.com/a") last.
   for (std::string_view candidate :
-       {std::string_view(candidates[0]), std::string_view(candidates[1]),
-        without_scheme}) {
+       {std::string_view(matching), without_scheme, url}) {
     if (candidate.size() > typed.size() &&
         StartsWithNoCase(candidate, lowered)) {
       return std::string(candidate.substr(typed.size()));
@@ -170,8 +167,8 @@ std::string InlineCompletion(std::string_view url, std::string_view typed) {
 }  // namespace
 
 bool ShouldRecordInHistory(std::string_view url) {
-  return StartsWithNoCase(url, "http://") || StartsWithNoCase(url, "https://") ||
-         StartsWithNoCase(url, "file://");
+  return StartsWithNoCase(url, "http://") ||
+         StartsWithNoCase(url, "https://") || StartsWithNoCase(url, "file://");
 }
 
 std::string UrlForMatching(std::string_view url) {
@@ -210,8 +207,8 @@ Result<std::unique_ptr<HistoryStore>> HistoryStore::Open(
 
 std::optional<Error> HistoryStore::CreateSchema() {
   // WAL: a crash loses at most the last visits, never the database (013).
-  if (std::optional<Error> error = db_->Execute(
-          "PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")) {
+  if (std::optional<Error> error =
+          db_->Execute("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")) {
     return error;
   }
   Error error;
@@ -347,7 +344,8 @@ std::vector<HistoryMatch> HistoryStore::Suggest(std::string_view input,
                        .title = query->ColumnText(1),
                        .visit_count = query->ColumnInt(2),
                        .typed_count = query->ColumnInt(3),
-                       .last_visit = query->ColumnInt(4)};
+                       .last_visit = query->ColumnInt(4),
+                       .inline_completion = {}};
     std::string folded_url = FoldForSearch(UrlForMatching(match.url));
     std::string folded_title = FoldForSearch(match.title);
     int score = 0;
@@ -362,8 +360,8 @@ std::vector<HistoryMatch> HistoryStore::Suggest(std::string_view input,
     if (score == 0) {
       continue;
     }
-    score += UsageScore(match.typed_count, match.visit_count, match.last_visit,
-                        now);
+    score +=
+        UsageScore(match.typed_count, match.visit_count, match.last_visit, now);
     if (match.typed_count > 0) {
       match.inline_completion = InlineCompletion(match.url, typed);
       if (!match.inline_completion.empty()) {
@@ -373,13 +371,13 @@ std::vector<HistoryMatch> HistoryStore::Suggest(std::string_view input,
     match.score = score;
     matches.push_back(std::move(match));
   }
-  std::ranges::stable_sort(matches, [](const HistoryMatch& a,
-                                       const HistoryMatch& b) {
-    if (a.score != b.score) {
-      return a.score > b.score;
-    }
-    return a.url.size() < b.url.size();
-  });
+  std::ranges::stable_sort(matches,
+                           [](const HistoryMatch& a, const HistoryMatch& b) {
+                             if (a.score != b.score) {
+                               return a.score > b.score;
+                             }
+                             return a.url.size() < b.url.size();
+                           });
   if (matches.size() > limit) {
     matches.resize(limit);
   }
@@ -441,7 +439,8 @@ std::optional<HistoryMatch> HistoryStore::FindPage(std::string_view url) {
                       .title = query->ColumnText(1),
                       .visit_count = query->ColumnInt(2),
                       .typed_count = query->ColumnInt(3),
-                      .last_visit = query->ColumnInt(4)};
+                      .last_visit = query->ColumnInt(4),
+                      .inline_completion = {}};
 }
 
 }  // namespace brouk

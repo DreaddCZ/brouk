@@ -38,7 +38,7 @@ constexpr std::array<std::string_view, 4> kDockPositionLabels = {
     "Bottom", "Right", "Left", "Separate window"};
 
 constexpr std::array<std::string_view, 4> kHistoryKeep = {"30", "90", "365",
-                                                         "forever"};
+                                                          "forever"};
 constexpr std::array<std::string_view, 4> kHistoryKeepLabels = {
     "30 days", "90 days", "1 year", "Forever"};
 

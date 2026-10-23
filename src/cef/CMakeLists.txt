@@ -12,6 +12,8 @@ add_library(brouk_cef STATIC
   devtools_preferences.h
   devtools_tools_handler.cc
   devtools_tools_handler.h
+  history_service.cc
+  history_service.h
   internal_page_client.cc
   internal_page_client.h
   internal_scheme.cc
@@ -25,6 +27,8 @@ add_library(brouk_cef STATIC
   profile_manager_handler.cc
   profile_manager_handler.h
   profile_prefs.h
+  search_suggest_request.cc
+  search_suggest_request.h
   settings_handler.cc
   settings_handler.h
   site_info.cc

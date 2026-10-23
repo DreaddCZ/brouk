@@ -20,10 +20,12 @@ namespace {
 constexpr std::size_t kMaxSuggestQueryLength = 256;
 
 std::string_view Trim(std::string_view text) {
-  while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front()))) {
+  while (!text.empty() &&
+         std::isspace(static_cast<unsigned char>(text.front()))) {
     text.remove_prefix(1);
   }
-  while (!text.empty() && std::isspace(static_cast<unsigned char>(text.back()))) {
+  while (!text.empty() &&
+         std::isspace(static_cast<unsigned char>(text.back()))) {
     text.remove_suffix(1);
   }
   return text;
@@ -107,9 +109,8 @@ std::vector<AddressSuggestion> BuildAddressSuggestions(
     rows.front().inline_completion = history[0].inline_completion;
     rows.push_back(typed);
   }
-  for (const std::string& suggestion :
-       CleanSearchSuggestions(input.text, input.search_suggestions,
-                              kMaxSearchSuggestions)) {
+  for (const std::string& suggestion : CleanSearchSuggestions(
+           input.text, input.search_suggestions, kMaxSearchSuggestions)) {
     AddressSuggestion row;
     row.kind = AddressSuggestion::Kind::kSearch;
     row.text = suggestion;
