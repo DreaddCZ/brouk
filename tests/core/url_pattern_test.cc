@@ -51,5 +51,18 @@ TEST(UrlPatternTest, MoreSpecificWins) {
             UrlPattern::Parse("example.com/a")->Specificity());
 }
 
+TEST(UrlPatternListTest, ParsesCommaSeparatedPatterns) {
+  std::optional<std::vector<UrlPattern>> list =
+      ParseUrlPatternList(" login.microsoftonline.com, *.okta.com ,,");
+  ASSERT_TRUE(list);
+  ASSERT_EQ(list->size(), 2U);
+  EXPECT_TRUE(MatchesAnyPattern(*list, "https://acme.okta.com/app"));
+  EXPECT_TRUE(
+      MatchesAnyPattern(*list, "https://login.microsoftonline.com/x?y=1"));
+  EXPECT_FALSE(MatchesAnyPattern(*list, "https://example.com/"));
+  EXPECT_TRUE(ParseUrlPatternList("")->empty());
+  EXPECT_FALSE(ParseUrlPatternList("example.com, not a pattern"));
+}
+
 }  // namespace
 }  // namespace brouk

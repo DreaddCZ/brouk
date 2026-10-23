@@ -1129,6 +1129,13 @@ NSButton* ToolbarButton(NSString* symbol,
   }
 }
 
+- (void)tab:(BRTab*)tab visitRedirectedFrom:(const std::string&)url {
+  if (brouk::HistoryService* history = [_owner historyService]) {
+    history->RemoveRedirectSource(tab.profileId, url);
+    [_owner historyChangedForProfile:tab.profileId];
+  }
+}
+
 - (void)tab:(BRTab*)tab titleChanged:(NSString*)title forURL:(NSString*)url {
   if (brouk::HistoryService* history = [_owner historyService]) {
     history->SetTitle(tab.profileId, url.UTF8String ?: "",

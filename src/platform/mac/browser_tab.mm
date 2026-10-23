@@ -278,6 +278,10 @@ class TabDelegateBridge : public TabClientDelegate {
 
 @implementation BRTab {
   brouk::ProfileId _profileId;
+  // History (013): the page recorded last, to drop it if it turns out to
+  // have forwarded to the next one.
+  std::string _lastVisitURL;
+  brouk::VisitTransition _lastVisitKind;
   // Developer tools (006).
   BRDevToolsDock* _dock;
   BRDockDivider* _divider;
@@ -541,6 +545,16 @@ class TabDelegateBridge : public TabClientDelegate {
     kind = brouk::VisitTransition::kLink;
   }
   _nextVisitTyped = NO;
+  // A page that forwarded here by itself (meta refresh, script) is not kept:
+  // only the end of a redirect chain is (013). The chain keeps how it
+  // started (typed, link…).
+  if ((transition & TT_CLIENT_REDIRECT_FLAG) && !_lastVisitURL.empty() &&
+      _lastVisitURL != url) {
+    [_delegate tab:self visitRedirectedFrom:_lastVisitURL];
+    kind = _lastVisitKind;
+  }
+  _lastVisitURL = url;
+  _lastVisitKind = kind;
   [_delegate tab:self visitedURL:url title:title transition:kind];
 }
 

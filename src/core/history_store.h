@@ -6,12 +6,14 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include "core/result.h"
 #include "core/sqlite_db.h"
+#include "core/url_pattern.h"
 
 namespace brouk {
 
@@ -77,6 +79,12 @@ class HistoryStore {
   // Removes a page and its visits (⇧⌫ on a suggestion). Returns whether it
   // existed.
   bool DeletePage(std::string_view url);
+  // Removes the latest visit of a page that forwarded to another page by
+  // itself (a client redirect), and the page if it has no other visits.
+  void RemoveLastVisit(std::string_view url);
+  // Removes every page matching one of `patterns` (never record these
+  // sites). Returns the number of pages removed.
+  int DeleteMatching(std::span<const UrlPattern> patterns);
 
   // Removes visits before `cutoff` and pages left without visits (the
   // retention limit). Returns the number of visits removed.

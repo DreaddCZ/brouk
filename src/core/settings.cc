@@ -2,6 +2,7 @@
 
 #include "core/profile_id.h"
 #include "core/shortcuts.h"
+#include "core/url_pattern.h"
 
 #include <cassert>
 #include <charconv>
@@ -103,6 +104,13 @@ std::optional<std::string> CheckFormat(SettingDef::Format format,
     case SettingDef::Format::kProfileId:
       if (!IsValidProfileId(text)) {
         return std::string("must be a profile id (see the profiles folder)");
+      }
+      return std::nullopt;
+    case SettingDef::Format::kUrlPatterns:
+      if (!ParseUrlPatternList(text)) {
+        return std::string(
+            "must be sites separated by commas, such as example.com, "
+            "*.example.com or example.com/path/");
       }
       return std::nullopt;
     case SettingDef::Format::kShortcut:

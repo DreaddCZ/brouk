@@ -2,8 +2,10 @@
 #define BROUK_CORE_URL_PATTERN_H_
 
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace brouk {
 
@@ -28,6 +30,13 @@ struct UrlPattern {
   // Higher is more specific.
   int Specificity() const;
 };
+
+// A comma-separated list of patterns, as a setting holds it (013: never
+// record these sites); "" is an empty list. nullopt if any is not valid.
+std::optional<std::vector<UrlPattern>> ParseUrlPatternList(
+    std::string_view text);
+bool MatchesAnyPattern(std::span<const UrlPattern> patterns,
+                       std::string_view url);
 
 }  // namespace brouk
 

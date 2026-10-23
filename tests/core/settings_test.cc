@@ -127,6 +127,7 @@ TEST(SettingsTest, FileFormat) {
             "  search: true\n"
             "history:\n"
             "  keep: 90\n"
+            "  never_record: \"\"\n"
             "downloads:\n"
             "  folder: \"\"\n"
             "  ask_where_to_save: false\n"

@@ -195,5 +195,31 @@ TEST_F(HistoryStoreTest, RecentPagesNewestFirst) {
   EXPECT_EQ(pages[1].url, "https://c.com/");
 }
 
+TEST_F(HistoryStoreTest, RemoveLastVisitOfAForwardingPage) {
+  Visit("https://app.example.com/", "App", kNow - kDay);
+  Visit("https://app.example.com/", "App", kNow);
+  Visit("https://sso.example.com/start", "", kNow);
+  store_->RemoveLastVisit("https://sso.example.com/start");
+  EXPECT_FALSE(store_->FindPage("https://sso.example.com/start"));
+  store_->RemoveLastVisit("https://app.example.com/");
+  std::optional<HistoryMatch> app =
+      store_->FindPage("https://app.example.com/");
+  ASSERT_TRUE(app);
+  EXPECT_EQ(app->visit_count, 1);
+  EXPECT_EQ(app->last_visit, kNow - kDay);
+  store_->RemoveLastVisit("https://unknown.example.com/");  // No effect.
+}
+
+TEST_F(HistoryStoreTest, DeleteMatchingRemovesNeverRecordedSites) {
+  Visit("https://login.microsoftonline.com/common", "Sign in");
+  Visit("https://acme.okta.com/app", "Okta");
+  Visit("https://example.com/", "Example");
+  std::vector<UrlPattern> patterns =
+      *ParseUrlPatternList("login.microsoftonline.com, *.okta.com");
+  EXPECT_EQ(store_->DeleteMatching(patterns), 2);
+  EXPECT_TRUE(store_->FindPage("https://example.com/"));
+  EXPECT_EQ(store_->DeleteMatching({}), 0);
+}
+
 }  // namespace
 }  // namespace brouk

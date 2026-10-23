@@ -50,6 +50,8 @@ std::string_view FormatName(SettingDef::Format format) {
       return "profileId";
     case SettingDef::Format::kShortcut:
       return "shortcut";
+    case SettingDef::Format::kUrlPatterns:
+      return "urlPatterns";
   }
   return "text";
 }
