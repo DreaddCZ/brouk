@@ -32,6 +32,8 @@ set(BROUK_CORE_SOURCES
   profile_registry.h
   request_log.cc
   request_log.h
+  request_rules.cc
+  request_rules.h
   result.h
   screen_share.cc
   search_engines.cc
@@ -51,6 +53,8 @@ set(BROUK_CORE_SOURCES
   tab_strip_model.h
   url_display.cc
   url_display.h
+  url_pattern.cc
+  url_pattern.h
   yaml_io.cc
   yaml_io.h
   yaml_value.cc
