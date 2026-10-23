@@ -54,6 +54,20 @@ std::size_t TabStripModel::InsertAfter(TabId id, TabId after, bool activate) {
   return InsertAt(index, {id, profile, std::nullopt}, activate);
 }
 
+std::size_t TabStripModel::InsertInGroup(TabId id,
+                                         const ProfileId& profile,
+                                         std::size_t position,
+                                         bool activate) {
+  if (profile != default_profile_ &&
+      std::ranges::find(group_order_, profile) == group_order_.end()) {
+    group_order_.push_back(profile);
+  }
+  std::size_t start = GroupStart(profile);
+  std::size_t index =
+      std::clamp(start + position, PinnedEnd(profile), GroupEnd(profile));
+  return InsertAt(index, {id, profile, std::nullopt}, activate);
+}
+
 std::size_t TabStripModel::InsertAt(std::size_t index,
                                     Entry entry,
                                     bool activate) {

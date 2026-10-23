@@ -7,6 +7,8 @@ set(BROUK_CORE_SOURCES
   address_input.h
   address_suggestions.cc
   address_suggestions.h
+  closed_tabs.cc
+  closed_tabs.h
   command_palette.cc
   command_palette.h
   context_menu.cc

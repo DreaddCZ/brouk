@@ -82,6 +82,10 @@ class HistoryStore {
   // retention limit). Returns the number of visits removed.
   int DeleteVisitsBefore(std::int64_t cutoff);
 
+  // The most recently visited pages, newest first (History → Recently
+  // Visited).
+  std::vector<HistoryMatch> RecentPages(std::size_t limit);
+
   // For tests and the history page later.
   std::optional<HistoryMatch> FindPage(std::string_view url);
 

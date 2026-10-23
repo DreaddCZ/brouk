@@ -13,6 +13,7 @@
 #include "cef/devtools_tools_handler.h"
 #include "cef/history_service.h"
 #include "cef/tab_client.h"
+#include "core/closed_tabs.h"
 #include "core/profile_registry.h"
 #include "include/cef_request_context.h"
 
@@ -63,6 +64,14 @@ NS_ASSUME_NONNULL_BEGIN
 - (NSArray<BRBrowserWindowController*>*)browserWindowControllers;
 // History (013, 003): null before CEF is ready.
 - (nullable brouk::HistoryService*)historyService;
+// A page was recorded or removed: Recently Visited may have changed.
+- (void)historyChangedForProfile:(const brouk::ProfileId&)profile;
+// Reopen Closed Tab (013): a tab closed on its own, or a window closed with
+// its tabs (left to right).
+- (void)browserWindow:(BRBrowserWindowController*)controller
+            closedTab:(brouk::ClosedTab)tab;
+- (void)browserWindow:(BRBrowserWindowController*)controller
+    closedWindowWithTabs:(std::vector<brouk::ClosedTab>)tabs;
 // Address bar suggestions (003): the sources the settings allow.
 - (BOOL)historySuggestionsEnabled;
 // "" when search suggestions are off or the engine has none.
@@ -118,6 +127,12 @@ NS_ASSUME_NONNULL_BEGIN
 
 // A popup window (window.open with features): has no tab strip.
 @property(nonatomic, readonly) BOOL isPopup;
+// Unique in this run; closed tabs remember it to come back here (013).
+@property(nonatomic, readonly) std::int64_t windowId;
+// The active tab's profile, or the default profile without tabs.
+- (brouk::ProfileId)activeProfileId;
+// Opens a closed tab again, in its profile at its old place (013).
+- (void)restoreClosedTab:(const brouk::ClosedTab&)tab activate:(BOOL)activate;
 
 @end
 
