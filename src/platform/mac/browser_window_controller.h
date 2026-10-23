@@ -6,6 +6,10 @@
 
 #include <string>
 
+#import "platform/mac/devtools_dock.h"
+
+#include "cef/devtools_preferences.h"
+#include "cef/tab_client.h"
 #include "core/profile_registry.h"
 #include "include/cef_request_context.h"
 
@@ -15,7 +19,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 // Implemented by the app delegate: app-wide bookkeeping of windows and
 // browsers (needed to quit CEF only after every browser has closed).
-@protocol BRBrowserWindowOwner <NSObject>
+@protocol BRBrowserWindowOwner <BRBrowserCounter>
 // Profiles (005): each has its own request context (isolated web data).
 - (CefRefPtr<CefRequestContext>)requestContextForProfile:
     (const brouk::ProfileId&)profile;
@@ -32,6 +36,16 @@ NS_ASSUME_NONNULL_BEGIN
 // the page asked for.
 - (BRBrowserWindowController*)openPopupWindowWithContentSize:(NSSize)size;
 - (void)openNewWindow;
+// Settings (004) tabs and the address bar follow.
+- (brouk::TabClientDelegate::SearchEngine)searchEngine;
+- (BOOL)askWhereToSaveDownloads;
+// The developer tools dock's shared position and size (006).
+- (NSString*)dockPosition;
+- (CGFloat)dockSize;
+- (void)setDockPosition:(NSString*)position;
+- (void)setDockSize:(CGFloat)size;
+- (CefRefPtr<CefRequestContext>)devToolsContext;
+- (brouk::DevToolsPreferences*)devToolsPreferences;
 // Downloads (app-wide, so concurrent downloads never share a file name).
 - (std::string)reserveDownloadPath:(const std::string&)suggested;
 - (void)releaseDownloadPath:(const std::string&)path;
@@ -53,6 +67,15 @@ NS_ASSUME_NONNULL_BEGIN
 
 // Profile names, colours or the default profile changed: redraw.
 - (void)profilesDidChange;
+
+// Problems found in the settings files; a toolbar warning leads to them.
+@property(nonatomic) NSUInteger settingsProblemCount;
+
+// Developer tools (006): toggle side (setting), the remote debugging port
+// (0: off; shows the indicator), and the shared dock position and size.
+- (void)setDevToolsToggleOnLeft:(BOOL)left;
+@property(nonatomic) int remoteDebuggingPort;
+- (void)setDockPosition:(NSString*)position size:(CGFloat)size;
 
 // Tabs of a profile in this window (including tabs still closing), and
 // closing them (a profile is deleted, 005).

@@ -2,6 +2,9 @@
 
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
+#include <cmath>
+#include <cstdint>
+#include <cstdlib>
 #include <map>
 #include <memory>
 #include <optional>
@@ -11,18 +14,22 @@
 
 #import "platform/mac/browser_window_controller.h"
 #import "platform/mac/data_paths.h"
+#import "platform/mac/internal_page_window.h"
 #import "platform/mac/profile_colors.h"
-#import "platform/mac/profile_manager_window.h"
 #import "platform/mac/settings_watcher.h"
 
 #include "brouk/app_info.h"
 #include "cef/browser_app.h"
+#include "cef/devtools_preferences.h"
 #include "cef/internal_scheme.h"
 #include "cef/profile_manager_handler.h"
+#include "cef/settings_handler.h"
 #include "core/address_input.h"
 #include "core/download_paths.h"
 #include "core/profile_export.h"
 #include "core/profile_registry.h"
+#include "core/search_engines.h"
+#include "core/settings_export.h"
 #include "include/cef_app.h"
 #include "include/cef_command_line.h"
 #include "include/cef_request_context.h"
@@ -71,7 +78,7 @@ NSImage* ProfileDot(const std::string& color) {
 @end
 
 @interface BRAppDelegate () <BRBrowserWindowOwner,
-                             BRProfileManagerOwner,
+                             BRInternalPageOwner,
                              NSMenuDelegate>
 - (std::vector<brouk::ProfileManagerDelegate::Summary>)profileSummaries;
 - (brouk::Result<brouk::ProfileId>)createProfileNamed:(const std::string&)name
@@ -89,6 +96,14 @@ NSImage* ProfileDot(const std::string& color) {
 - (void)exportProfile:(const brouk::ProfileId&)profile
                  done:(brouk::ProfileManagerDelegate::ExportDone)done;
 - (void)importProfileWithDone:(brouk::ProfileManagerDelegate::ImportDone)done;
+- (std::optional<brouk::Error>)setGlobalSetting:(std::string_view)key
+                                          value:(brouk::SettingValue)value;
+- (std::optional<brouk::Error>)setProfileSetting:(std::string_view)key
+                                         profile:(std::string_view)profile
+                                           value:(brouk::SettingValue)value;
+- (void)revealSettingsFolder;
+- (void)exportSettingsWithDone:(brouk::SettingsPageDelegate::FileDone)done;
+- (void)importSettingsWithDone:(brouk::SettingsPageDelegate::FileDone)done;
 @end
 
 namespace brouk {
@@ -168,6 +183,54 @@ class AppProfileManager : public ProfileManagerDelegate {
   __weak BRAppDelegate* app_;
 };
 
+// Answers the settings page. The registry outlives the page; actions go to
+// the (weak) app delegate.
+class AppSettingsPage : public SettingsPageDelegate {
+ public:
+  AppSettingsPage(BRAppDelegate* app, ProfileRegistry& registry)
+      : app_(app), registry_(registry) {}
+
+  const ProfileRegistry& Registry() override { return registry_; }
+  std::optional<Settings> ProfileSettings(std::string_view id) override {
+    return registry_.ProfileSettings(id);
+  }
+  std::optional<Error> SetGlobalSetting(std::string_view key,
+                                        SettingValue value) override {
+    BRAppDelegate* app = app_;
+    return app ? [app setGlobalSetting:key value:std::move(value)]
+               : std::optional<Error>(Error{kClosing});
+  }
+  std::optional<Error> SetProfileSetting(std::string_view id,
+                                         std::string_view key,
+                                         SettingValue value) override {
+    BRAppDelegate* app = app_;
+    return app ? [app setProfileSetting:key profile:id value:std::move(value)]
+               : std::optional<Error>(Error{kClosing});
+  }
+  void RevealSettingsFolder() override { [app_ revealSettingsFolder]; }
+  void ExportSettings(FileDone done) override {
+    BRAppDelegate* app = app_;
+    if (!app) {
+      done(false, {}, Error{kClosing});
+      return;
+    }
+    [app exportSettingsWithDone:std::move(done)];
+  }
+  void ImportSettings(FileDone done) override {
+    BRAppDelegate* app = app_;
+    if (!app) {
+      done(false, {}, Error{kClosing});
+      return;
+    }
+    [app importSettingsWithDone:std::move(done)];
+  }
+
+ private:
+  static constexpr char kClosing[] = "Brouk is closing.";
+  __weak BRAppDelegate* app_;
+  ProfileRegistry& registry_;
+};
+
 }  // namespace brouk
 
 @implementation BRAppDelegate {
@@ -179,11 +242,15 @@ class AppProfileManager : public ProfileManagerDelegate {
   std::map<brouk::ProfileId, CefRefPtr<CefRequestContext>> _requestContexts;
   BOOL _profilesLoaded;
   BRSettingsWatcher* _settingsWatcher;
+  int _remoteDebuggingPort;  // 0: off.
+  std::unique_ptr<brouk::DevToolsPreferences> _devToolsPreferences;
   // Internal pages (brouk://) load in their own in-memory request context,
   // never in a profile's.
   CefRefPtr<CefRequestContext> _internalContext;
   std::unique_ptr<brouk::AppProfileManager> _profileManagerDelegate;
-  BRProfileManagerWindowController* _profileManager;
+  BRInternalPageWindowController* _profileManager;
+  BRInternalPageWindowController* _settingsWindow;
+  std::unique_ptr<brouk::AppSettingsPage> _settingsPageDelegate;
   // Shown instead of a window at startup: opening a profile closes it.
   BOOL _profileManagerAtStartup;
   int _browserCount;
@@ -201,6 +268,8 @@ class AppProfileManager : public ProfileManagerDelegate {
     _profiles->RemoveWebDataOfDeletedProfiles(
         brouk::mac::WebDataRootDirectory().fileSystemRepresentation);
     _profileManagerDelegate = std::make_unique<brouk::AppProfileManager>(self);
+    _settingsPageDelegate =
+        std::make_unique<brouk::AppSettingsPage>(self, *_profiles);
     _downloadPaths =
         std::make_unique<brouk::DownloadPathReserver>([](const std::string& p) {
           return [NSFileManager.defaultManager
@@ -219,7 +288,20 @@ class AppProfileManager : public ProfileManagerDelegate {
 - (void)cefContextInitialized {
   CEF_REQUIRE_UI_THREAD();
   _profilesLoaded = YES;
+  // Remote debugging (006) is fixed for this run: from the setting (passed
+  // to CefInitialize) or the --remote-debugging-port switch.
+  CefRefPtr<CefCommandLine> commandLine =
+      CefCommandLine::GetGlobalCommandLine();
+  if (commandLine->HasSwitch("remote-debugging-port")) {
+    _remoteDebuggingPort =
+        std::atoi(commandLine->GetSwitchValue("remote-debugging-port")
+                      .ToString()
+                      .c_str());
+  } else {
+    _remoteDebuggingPort = [self remoteDebuggingPortSetting];
+  }
   [self reportProfileProblems];
+  [self applySettings];
   __weak BRAppDelegate* weakSelf = self;
   _settingsWatcher = [[BRSettingsWatcher alloc]
       initWithDirectory:brouk::mac::AppDataDirectory()
@@ -300,6 +382,7 @@ class AppProfileManager : public ProfileManagerDelegate {
 - (void)settingsFilesChanged {
   _profiles->Load();
   [self reportProfileProblems];
+  [self applySettings];
   for (BRBrowserWindowController* controller in _windows) {
     [controller profilesDidChange];
   }
@@ -333,6 +416,7 @@ class AppProfileManager : public ProfileManagerDelegate {
   CefRefPtr<CefRequestContext> context =
       CefRequestContext::CreateContext(settings, nullptr);
   _requestContexts[profile] = context;
+  [self applySpellcheckTo:context];
   return context;
 }
 
@@ -369,6 +453,8 @@ class AppProfileManager : public ProfileManagerDelegate {
 - (BRBrowserWindowController*)openWindow {
   BRBrowserWindowController* controller =
       [[BRBrowserWindowController alloc] initWithOwner:self];
+  controller.settingsProblemCount = _profiles->problems().size();
+  [self applyDevToolsSettingsTo:controller];
   [_windows addObject:controller];
   [controller showWindow:nil];
   return controller;
@@ -383,7 +469,20 @@ class AppProfileManager : public ProfileManagerDelegate {
 }
 
 - (std::string)reserveDownloadPath:(const std::string&)suggested {
-  // Chrome's default: ~/Downloads (configurable later, see 012/004).
+  // The folder from the settings (004) if it exists; otherwise Chrome's
+  // default, ~/Downloads.
+  const std::string& configured =
+      _profiles->global_settings().GetString("downloads.folder");
+  if (!configured.empty()) {
+    NSString* folder = @(configured.c_str()).stringByExpandingTildeInPath;
+    BOOL isDirectory = NO;
+    if ([NSFileManager.defaultManager fileExistsAtPath:folder
+                                           isDirectory:&isDirectory] &&
+        isDirectory) {
+      return _downloadPaths->Reserve(folder.UTF8String, suggested);
+    }
+    NSLog(@"Download folder %@ does not exist; using Downloads.", folder);
+  }
   NSURL* downloads =
       [NSFileManager.defaultManager URLForDirectory:NSDownloadsDirectory
                                            inDomain:NSUserDomainMask
@@ -430,7 +529,8 @@ class AppProfileManager : public ProfileManagerDelegate {
     return;
   }
   _quitting = YES;
-  [_profileManager closeManager];
+  [_profileManager closePage];
+  [_settingsWindow closePage];
   for (BRBrowserWindowController* controller in [_windows copy]) {
     [controller closeAllTabs];
   }
@@ -440,14 +540,16 @@ class AppProfileManager : public ProfileManagerDelegate {
 - (void)releaseBrowserObjects {
   _settingsWatcher = nil;
   _profileManager = nil;
+  _settingsWindow = nil;
   [_windows removeAllObjects];
   _requestContexts.clear();
   _internalContext = nullptr;
+  _devToolsPreferences.reset();  // Holds CEF values.
 }
 
 - (void)quitIfDone {
   if (_quitting && _browserCount <= 0 && _windows.count == 0 &&
-      !_profileManager) {
+      !_profileManager && !_settingsWindow) {
     CefQuitMessageLoop();
   }
 }
@@ -500,7 +602,248 @@ class AppProfileManager : public ProfileManagerDelegate {
            keyEquivalent:@""];
 }
 
-#pragma mark - Profile manager (brouk://profiles)
+#pragma mark - Settings (004)
+
+- (brouk::TabClientDelegate::SearchEngine)searchEngine {
+  const brouk::Settings& global = _profiles->global_settings();
+  return {brouk::SearchEngineName(global), brouk::SearchTemplate(global)};
+}
+
+- (BOOL)askWhereToSaveDownloads {
+  return _profiles->global_settings().GetBool("downloads.ask_where_to_save");
+}
+
+#pragma mark - Developer tools (006)
+
+- (NSString*)dockPosition {
+  return @(
+      _profiles->global_settings().GetString("devtools.dock_position").c_str());
+}
+
+- (CGFloat)dockSize {
+  return static_cast<CGFloat>(
+      _profiles->global_settings().GetInt("devtools.dock_size"));
+}
+
+// The dock's position and size are shared by all tabs and remembered
+// (006): stored as settings, which apply them to every window.
+- (void)setDockPosition:(NSString*)position {
+  [self setGlobalSetting:"devtools.dock_position"
+                   value:std::string(position.UTF8String)];
+}
+
+- (void)setDockSize:(CGFloat)size {
+  [self setGlobalSetting:"devtools.dock_size"
+                   value:static_cast<std::int64_t>(std::lround(size))];
+}
+
+// The DevTools frontend runs with the internal pages (in memory).
+- (CefRefPtr<CefRequestContext>)devToolsContext {
+  return [self internalContext];
+}
+
+- (brouk::DevToolsPreferences*)devToolsPreferences {
+  if (!_devToolsPreferences) {
+    NSString* path = [brouk::mac::AppDataDirectory()
+        stringByAppendingPathComponent:@"devtools-preferences.json"];
+    _devToolsPreferences =
+        std::make_unique<brouk::DevToolsPreferences>(path.UTF8String);
+  }
+  return _devToolsPreferences.get();
+}
+
+- (int)remoteDebuggingPortSetting {
+  const brouk::Settings& global = _profiles->global_settings();
+  return global.GetBool("devtools.remote_debugging")
+             ? static_cast<int>(global.GetInt("devtools.remote_debugging_port"))
+             : 0;
+}
+
+// Main thread. Applies the developer tools settings to a window.
+- (void)applyDevToolsSettingsTo:(BRBrowserWindowController*)controller {
+  const brouk::Settings& global = _profiles->global_settings();
+  [controller
+      setDevToolsToggleOnLeft:global.GetString("devtools.toggle_position") ==
+                              "left"];
+  [controller setDockPosition:[self dockPosition] size:[self dockSize]];
+  controller.remoteDebuggingPort = _remoteDebuggingPort;
+}
+
+// Main thread. Applies the global settings that act right away: theme and
+// spell checking (search and downloads are read when used).
+- (void)applySettings {
+  const brouk::Settings& global = _profiles->global_settings();
+  const std::string& theme = global.GetString("appearance.theme");
+  NSApp.appearance =
+      theme == "light" ? [NSAppearance appearanceNamed:NSAppearanceNameAqua]
+      : theme == "dark"
+          ? [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua]
+          : nil;
+  for (const auto& [id, context] : _requestContexts) {
+    [self applySpellcheckTo:context];
+  }
+  NSUInteger problems = _profiles->problems().size();
+  for (BRBrowserWindowController* controller in _windows) {
+    controller.settingsProblemCount = problems;
+    [self applyDevToolsSettingsTo:controller];
+  }
+}
+
+// UI thread. Chromium's own preference (spellcheck::prefs::kSpellCheckEnable).
+- (void)applySpellcheckTo:(const CefRefPtr<CefRequestContext>&)context {
+  CEF_REQUIRE_UI_THREAD();
+  constexpr char kPref[] = "browser.enable_spellchecking";
+  if (!context->CanSetPreference(kPref)) {
+    return;
+  }
+  CefRefPtr<CefValue> value = CefValue::Create();
+  value->SetBool(_profiles->global_settings().GetBool("content.spellcheck"));
+  CefString error;
+  context->SetPreference(kPref, value, error);
+}
+
+- (std::optional<brouk::Error>)setGlobalSetting:(std::string_view)key
+                                          value:(brouk::SettingValue)value {
+  std::optional<brouk::Error> error =
+      _profiles->SetGlobalSetting(key, std::move(value));
+  [self applySettings];
+  [self profilesChangedInApp];
+  return error;
+}
+
+- (std::optional<brouk::Error>)setProfileSetting:(std::string_view)key
+                                         profile:(std::string_view)profile
+                                           value:(brouk::SettingValue)value {
+  std::optional<brouk::Error> error =
+      _profiles->SetProfileSetting(profile, key, std::move(value));
+  [self profilesChangedInApp];
+  return error;
+}
+
+- (void)revealSettingsFolder {
+  NSString* file = [brouk::mac::AppDataDirectory()
+      stringByAppendingPathComponent:@"settings.yaml"];
+  if (![NSFileManager.defaultManager fileExistsAtPath:file]) {
+    // Write the defaults, so there is a file to edit.
+    _profiles->ReplaceGlobalSettings(_profiles->global_settings());
+  }
+  [NSWorkspace.sharedWorkspace
+      activateFileViewerSelectingURLs:@[ [NSURL fileURLWithPath:file] ]];
+}
+
+// Presents `panel` as a sheet of the settings window if it is open.
+- (void)runPanel:(NSSavePanel*)panel
+      completion:(void (^)(NSModalResponse))completion {
+  NSWindow* parent = _settingsWindow.window;
+  if (parent.visible) {
+    [panel beginSheetModalForWindow:parent completionHandler:completion];
+  } else {
+    completion([panel runModal]);
+  }
+}
+
+- (void)exportSettingsWithDone:(brouk::SettingsPageDelegate::FileDone)done {
+  NSString* extension = @(std::string(brouk::kSettingsExportExtension).c_str());
+  NSSavePanel* panel = [NSSavePanel savePanel];
+  panel.title = @"Export Settings";
+  panel.message = @"Settings for all profiles. Profiles are exported in the "
+                  @"profile manager.";
+  panel.nameFieldStringValue =
+      [@"Brouk settings" stringByAppendingPathExtension:extension];
+  if (UTType* type = [UTType typeWithFilenameExtension:extension]) {
+    panel.allowedContentTypes = @[ type ];
+  }
+  std::string exportedAt =
+      [NSISO8601DateFormatter
+          stringFromDate:[NSDate date]
+                timeZone:NSTimeZone.localTimeZone
+           formatOptions:NSISO8601DateFormatWithInternetDateTime]
+          .UTF8String;
+  std::string text =
+      brouk::ExportSettings(_profiles->global_settings(), exportedAt);
+  __block brouk::SettingsPageDelegate::FileDone answer = std::move(done);
+  [self runPanel:panel
+      completion:^(NSModalResponse response) {
+        if (response != NSModalResponseOK || !panel.URL) {
+          answer(false, {}, std::nullopt);
+          return;
+        }
+        NSData* data = [NSData dataWithBytes:text.data() length:text.size()];
+        NSError* error = nil;
+        if (![data writeToURL:panel.URL
+                      options:NSDataWritingAtomic
+                        error:&error]) {
+          answer(false, {},
+                 brouk::Error{std::string("The file could not be saved: ") +
+                              error.localizedDescription.UTF8String});
+          return;
+        }
+        answer(true, {}, std::nullopt);
+      }];
+}
+
+- (void)importSettingsWithDone:(brouk::SettingsPageDelegate::FileDone)done {
+  NSString* extension = @(std::string(brouk::kSettingsExportExtension).c_str());
+  NSOpenPanel* panel = [NSOpenPanel openPanel];
+  panel.title = @"Import Settings";
+  panel.message = @"Choose settings exported from Brouk. They replace your "
+                  @"current settings for all profiles.";
+  panel.canChooseDirectories = NO;
+  panel.allowsMultipleSelection = NO;
+  if (UTType* type = [UTType typeWithFilenameExtension:extension]) {
+    panel.allowedContentTypes = @[ type ];
+  }
+  __block brouk::SettingsPageDelegate::FileDone answer = std::move(done);
+  __weak BRAppDelegate* weakSelf = self;
+  [self runPanel:panel
+      completion:^(NSModalResponse response) {
+        BRAppDelegate* strongSelf = weakSelf;
+        if (!strongSelf || response != NSModalResponseOK || !panel.URL) {
+          answer(false, {}, std::nullopt);
+          return;
+        }
+        NSNumber* size = nil;
+        [panel.URL getResourceValue:&size forKey:NSURLFileSizeKey error:nil];
+        NSData* data = size.unsignedLongLongValue <= 1024 * 1024
+                           ? [NSData dataWithContentsOfURL:panel.URL]
+                           : nil;
+        if (!data) {
+          answer(false, {},
+                 brouk::Error{"This file is not a Brouk settings export."});
+          return;
+        }
+        brouk::Result<brouk::ImportedSettings> parsed =
+            brouk::ParseSettingsExport(std::string_view(
+                static_cast<const char*>(data.bytes), data.length));
+        if (!parsed) {
+          answer(false, {}, parsed.error());
+          return;
+        }
+        if (std::optional<brouk::Error> error =
+                strongSelf->_profiles->ReplaceGlobalSettings(
+                    parsed.value().settings)) {
+          answer(false, {}, error);
+          return;
+        }
+        [strongSelf applySettings];
+        [strongSelf profilesChangedInApp];
+        answer(true, parsed.value().problems, std::nullopt);
+      }];
+}
+
+#pragma mark - Internal pages (profile manager, settings)
+
+// UI thread. The request context of internal pages (in memory only).
+- (CefRefPtr<CefRequestContext>)internalContext {
+  if (!_internalContext) {
+    CefRequestContextSettings settings;  // No cache path: in memory only.
+    _internalContext = CefRequestContext::CreateContext(settings, nullptr);
+    NSString* web = [NSBundle.mainBundle.resourcePath
+        stringByAppendingPathComponent:@"web"];
+    brouk::InstallInternalPages(_internalContext, web.UTF8String);
+  }
+  return _internalContext;
+}
 
 - (IBAction)manageProfiles:(nullable id)sender {
   CEF_REQUIRE_UI_THREAD();
@@ -511,34 +854,55 @@ class AppProfileManager : public ProfileManagerDelegate {
     [_profileManager showWindow:nil];
     return;
   }
-  if (!_internalContext) {
-    CefRequestContextSettings settings;  // No cache path: in memory only.
-    _internalContext = CefRequestContext::CreateContext(settings, nullptr);
-    NSString* web = [NSBundle.mainBundle.resourcePath
-        stringByAppendingPathComponent:@"web"];
-    brouk::InstallInternalPages(_internalContext, web.UTF8String);
-  }
-  _profileManager = [[BRProfileManagerWindowController alloc]
+  _profileManager = [[BRInternalPageWindowController alloc]
       initWithOwner:self
-           delegate:_profileManagerDelegate.get()
-            context:_internalContext];
+                url:@"brouk://profiles/"
+              title:@"Profiles"
+               size:NSMakeSize(640, 600)
+            handler:std::make_unique<brouk::ProfileManagerHandler>(
+                        _profileManagerDelegate.get())
+            context:[self internalContext]];
   [_profileManager showWindow:nil];
 }
 
-- (void)profileManagerDidCreateBrowser {
+// Settings (004): Cmd+, as in every Mac app.
+- (IBAction)openSettings:(nullable id)sender {
+  CEF_REQUIRE_UI_THREAD();
+  if (_quitting || !_profilesLoaded) {
+    return;
+  }
+  if (_settingsWindow) {
+    [_settingsWindow showWindow:nil];
+    return;
+  }
+  _settingsWindow = [[BRInternalPageWindowController alloc]
+      initWithOwner:self
+                url:@"brouk://settings/"
+              title:@"Settings"
+               size:NSMakeSize(720, 680)
+            handler:std::make_unique<brouk::SettingsHandler>(
+                        _settingsPageDelegate.get())
+            context:[self internalContext]];
+  [_settingsWindow showWindow:nil];
+}
+
+- (void)internalPageDidCreateBrowser {
   ++_browserCount;
 }
 
-- (void)profileManagerDidClose:(BRProfileManagerWindowController*)controller {
+- (void)internalPageDidClose:(BRInternalPageWindowController*)controller {
   --_browserCount;
   if (_profileManager == controller) {
     _profileManager = nil;
+    _profileManagerAtStartup = NO;
   }
-  _profileManagerAtStartup = NO;
+  if (_settingsWindow == controller) {
+    _settingsWindow = nil;
+  }
   [self quitIfDone];
 }
 
-- (BOOL)profileManagerHandleKeyEvent:(NSEvent*)event {
+- (BOOL)internalPageHandleKeyEvent:(NSEvent*)event {
   return [NSApp.mainMenu performKeyEquivalent:event];
 }
 
@@ -606,7 +970,7 @@ class AppProfileManager : public ProfileManagerDelegate {
   [[self openWindow] openTabWithURL:nil profile:profile activate:YES];
   // Chrome's profile picker closes once a profile is chosen at startup.
   if (_profileManagerAtStartup) {
-    [_profileManager closeManager];
+    [_profileManager closePage];
   }
   return std::nullopt;
 }
@@ -916,6 +1280,12 @@ class AppProfileManager : public ProfileManagerDelegate {
             key:@""
       modifiers:0];
   [app addItem:NSMenuItem.separatorItem];
+  [self addItem:app
+          title:@"Settings…"
+         action:@selector(openSettings:)
+            key:@","
+      modifiers:cmd];
+  [app addItem:NSMenuItem.separatorItem];
   NSMenu* services = [[NSMenu alloc] initWithTitle:@"Services"];
   [app addItemWithTitle:@"Services" action:nil keyEquivalent:@""].submenu =
       services;
@@ -1084,6 +1454,27 @@ class AppProfileManager : public ProfileManagerDelegate {
          action:@selector(toggleFullScreen:)
             key:@"f"
       modifiers:cmd | ctrl];
+
+  // View > Developer, as in Chrome (006).
+  [view addItem:NSMenuItem.separatorItem];
+  NSMenu* developer = [[NSMenu alloc] initWithTitle:@"Developer"];
+  [view addItemWithTitle:@"Developer" action:nil keyEquivalent:@""].submenu =
+      developer;
+  [self addItem:developer
+          title:@"Developer Tools"
+         action:@selector(toggleDevTools:)
+            key:@"i"
+      modifiers:cmd | opt];
+  [self addItem:developer
+          title:@"JavaScript Console"
+         action:@selector(showDevToolsConsole:)
+            key:@"j"
+      modifiers:cmd | opt];
+  [self addItem:developer
+          title:@"Inspect Elements"
+         action:@selector(pickElementToInspect:)
+            key:@"c"
+      modifiers:cmd | opt];
 
   NSMenu* history = [self submenu:@"History" in:bar];
   [self addItem:history

@@ -5,10 +5,13 @@
 #include <string>
 
 #include "cef/internal_scheme.h"
+#include "core/devtools_frontend.h"
 #include "core/internal_pages.h"
 #include "core/page_events.h"
 #include "core/screen_share.h"
+#include "include/cef_pack_resources.h"
 #include "include/cef_process_message.h"
+#include "include/cef_resource_bundle.h"
 #include "include/cef_v8.h"
 #include "include/wrapper/cef_helpers.h"
 
@@ -21,6 +24,38 @@ namespace {
 constexpr char kReportFunction[] = "__broukReport";
 constexpr char kSetDisplayMediaHandlerFunction[] =
     "__broukSetDisplayMediaHandler";
+constexpr char kDevToolsSendFunction[] = "__broukDevToolsSend";
+
+// The embedder object the DevTools frontend expects (006). Chrome's is
+// native (blink's DevToolsHost); only sendMessageToEmbedder needs the
+// browser, the rest are fixed answers for an embedded, non-hosted frontend.
+constexpr char kDevToolsHostScript[] = R"js(
+(function () {
+  'use strict';
+  const send = window.__broukDevToolsSend;
+  try { delete window.__broukDevToolsSend; } catch (e) {}
+  if (typeof send !== 'function') return;
+  const host = Object.freeze({
+    sendMessageToEmbedder: (message) => send('embedder', String(message)),
+    copyText: (text) => send('copy', String(text ?? '')),
+    platform: () => 'mac',
+    isHostedMode: () => false,
+    zoomFactor: () => 1,
+    showContextMenuAtPoint: () => {},
+    isolatedFileSystem: () => null,
+    upgradeDraggedFileSystemPermissions: () => {},
+  });
+  // Chromium also attaches its own DevTools bindings to devtools:// pages
+  // and installs its native DevToolsHost later; those bindings are not
+  // connected to the tab. Keep ours: a later assignment is ignored.
+  Object.defineProperty(window, 'DevToolsHost', {
+    get: () => host,
+    set: () => {},
+    configurable: false,
+    enumerable: false,
+  });
+})();
+)js";
 
 // Reports blocked popups (window.open returns null when Chromium's popup
 // blocker stopped it) and whether the page plays audio: a media element
@@ -224,6 +259,71 @@ class SetDisplayMediaHandlerFunction : public CefV8Handler {
   IMPLEMENT_REFCOUNTING(SetDisplayMediaHandlerFunction);
 };
 
+// The native function behind DevToolsHost: forwards (kind, payload) to the
+// browser, which accepts it only from its own DevTools frontend.
+class DevToolsSendHandler : public CefV8Handler {
+ public:
+  DevToolsSendHandler() = default;
+  DevToolsSendHandler(const DevToolsSendHandler&) = delete;
+  DevToolsSendHandler& operator=(const DevToolsSendHandler&) = delete;
+
+  bool Execute(const CefString& /*name*/,
+               CefRefPtr<CefV8Value> /*object*/,
+               const CefV8ValueList& arguments,
+               CefRefPtr<CefV8Value>& /*retval*/,
+               CefString& exception) override {
+    if (arguments.size() != 2 || !arguments[0]->IsString() ||
+        !arguments[1]->IsString()) {
+      exception = "invalid arguments";
+      return true;
+    }
+    CefRefPtr<CefV8Context> context = CefV8Context::GetCurrentContext();
+    CefRefPtr<CefFrame> frame = context ? context->GetFrame() : nullptr;
+    if (!frame) {
+      return true;
+    }
+    CefRefPtr<CefProcessMessage> message =
+        CefProcessMessage::Create(std::string(kDevToolsHostMessage));
+    CefRefPtr<CefListValue> args = message->GetArgumentList();
+    args->SetString(0, arguments[0]->GetStringValue());
+    args->SetString(1, arguments[1]->GetStringValue());
+    frame->SendProcessMessage(PID_BROWSER, message);
+    return true;
+  }
+
+ private:
+  IMPLEMENT_REFCOUNTING(DevToolsSendHandler);
+};
+
+// Sets up the DevTools frontend's embedder API in its main frame (006).
+void SetUpDevToolsFrontend(const CefRefPtr<CefFrame>& frame,
+                           const CefRefPtr<CefV8Context>& context) {
+  if (!frame->IsMain()) {
+    return;
+  }
+  context->GetGlobal()->SetValue(
+      kDevToolsSendFunction,
+      CefV8Value::CreateFunction(kDevToolsSendFunction,
+                                 new DevToolsSendHandler()),
+      V8_PROPERTY_ATTRIBUTE_DONTENUM);
+  CefRefPtr<CefV8Value> result;
+  CefRefPtr<CefV8Exception> exception;
+  context->Eval(kDevToolsHostScript, frame->GetURL(), 0, result, exception);
+  // The script ships with the frontend in CEF's resources.
+  CefRefPtr<CefBinaryValue> script =
+      CefResourceBundle::GetGlobal()->GetDataResource(
+          DEVTOOLS_COMPATIBILITY_JS);
+  if (!script || script->GetSize() == 0) {
+    return;
+  }
+  std::string text(script->GetSize(), '\0');
+  script->GetData(text.data(), text.size(), 0);
+  // Like Chrome: run it before the frontend's own scripts.
+  context->Eval(
+      text + "\n//# sourceURL=" + std::string(kDevToolsCompatibilityScriptUrl),
+      frame->GetURL(), 0, result, exception);
+}
+
 }  // namespace
 
 RendererApp::RendererApp()
@@ -242,6 +342,10 @@ void RendererApp::OnContextCreated(CefRefPtr<CefBrowser> browser,
     // Internal pages get the bridge, web pages never; the browser checks
     // the sender of every message again.
     router_->OnContextCreated(browser, frame, context);
+    return;
+  }
+  if (IsDevToolsFrontendUrl(frame->GetURL().ToString())) {
+    SetUpDevToolsFrontend(frame, context);
     return;
   }
   CefRefPtr<CefV8Value> global = context->GetGlobal();

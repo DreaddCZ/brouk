@@ -1,6 +1,6 @@
 # 006 – Developer tools
 
-- **Status:** ready
+- **Status:** in-progress
 - **Priority:** P1
 - **Depends on:** 001, 003, 004, 005, 010
 
@@ -142,3 +142,6 @@ None.
 - The stock DevTools frontend cannot get our own context-menu items (e.g. "export" in its Network panel); that is why the Requests tool exists. Request capture uses the CDP Network domain and starts when the tab's dev tools are switched on (requests before that are not listed, as in Chrome).
 - Request rules: header changes and redirects/blocking can likely be done in CEF's resource request handling (`CefResourceRequestHandler`), without the CDP Fetch domain; check the headers before choosing.
 - Verify during implementation: which extra panels (Lighthouse, Recorder) work in CEF's bundled frontend; whether Bruno imports a Postman environment file alongside the collection (if not, document how to set the variables in Bruno).
+- 2026-10-23 (decided with the user, implementation): CEF 154 cannot show the stock DevTools inside our native window on macOS (`ShowDevTools` with a parent view crashes: "Alloy style is not supported for this browser"; DevTools is always a Chrome-style window). Brouk therefore embeds the DevTools frontend shipped in CEF (`devtools://devtools/bundled/devtools_app.html`) in a normal browser view in the dock and acts as its embedder itself, like Chrome's DevToolsUIBindings and Content Shell: a `DevToolsHost` object in the frontend page, embedder messages answered in `src/cef/devtools_frontend_client.cc`, and Chrome DevTools Protocol messages passed to the tab with `SendDevToolsMessage` and a message observer. The frontend's own settings are kept in `devtools-preferences.json`. Because CEF's protocol session stays attached for the tab's lifetime, closing the dock undoes what DevTools changed (debugger pauses, emulation, throttling, highlights). Not yet supported in the embedded frontend: loading source maps from the network, saving files from Sources, workspaces (file system folders), and Google's online DevTools features (AI assistance). Risk: the embedder interface can change with Chromium updates; if DevTools stops working after a CEF update, this is the place to look.
+- 2026-10-23 (implementation): the toggle is a hammer button (filled and in the accent colour when on). The dock header has buttons for bottom, left, right and a separate window, and a close button; the position and size are shared by all tabs and remembered as settings (`devtools.dock_position`, `devtools.dock_size`). Remote debugging setting and port are on the settings page (restart required); `--remote-debugging-address` is forced to 127.0.0.1. Shortcut remapping waits for 003's shortcut settings.
+

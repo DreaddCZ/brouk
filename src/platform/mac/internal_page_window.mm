@@ -1,13 +1,14 @@
-#import "platform/mac/profile_manager_window.h"
+#import "platform/mac/internal_page_window.h"
 
 #include <memory>
 #include <string>
+#include <utility>
 
 #include "cef/internal_page_client.h"
 #include "include/cef_browser.h"
 #include "include/wrapper/cef_helpers.h"
 
-@interface BRProfileManagerWindowController () <NSWindowDelegate>
+@interface BRInternalPageWindowController () <NSWindowDelegate>
 - (void)handleBrowserCreated:(CefRefPtr<CefBrowser>)browser;
 - (void)handleCloseReady;
 - (void)handleBrowserClosed;
@@ -18,9 +19,9 @@
 namespace brouk {
 
 // Forwards the page client's events to the window controller.
-class ProfileManagerBridge : public InternalPageDelegate {
+class InternalPageBridge : public InternalPageDelegate {
  public:
-  explicit ProfileManagerBridge(BRProfileManagerWindowController* controller)
+  explicit InternalPageBridge(BRInternalPageWindowController* controller)
       : controller_(controller) {}
 
   void OnBrowserCreated(CefRefPtr<CefBrowser> browser) override {
@@ -40,32 +41,38 @@ class ProfileManagerBridge : public InternalPageDelegate {
   }
 
  private:
-  __weak BRProfileManagerWindowController* controller_;
+  __weak BRInternalPageWindowController* controller_;
 };
 
 }  // namespace brouk
 
-@implementation BRProfileManagerWindowController {
-  __weak id<BRProfileManagerOwner> _owner;
-  std::unique_ptr<brouk::ProfileManagerBridge> _bridge;
+@implementation BRInternalPageWindowController {
+  __weak id<BRInternalPageOwner> _owner;
+  std::unique_ptr<brouk::InternalPageBridge> _bridge;
   CefRefPtr<brouk::InternalPageClient> _client;
   CefRefPtr<CefBrowser> _browser;
   BOOL _closing;
   BOOL _closeWhenCreated;
+  NSString* _defaultTitle;
 }
 
-- (instancetype)initWithOwner:(id<BRProfileManagerOwner>)owner
-                     delegate:(brouk::ProfileManagerDelegate*)delegate
-                      context:(CefRefPtr<CefRequestContext>)context {
+- (instancetype)
+    initWithOwner:(id<BRInternalPageOwner>)owner
+              url:(NSString*)url
+            title:(NSString*)title
+             size:(NSSize)size
+          handler:(std::unique_ptr<CefMessageRouterBrowserSide::Handler>)handler
+          context:(CefRefPtr<CefRequestContext>)context {
   CEF_REQUIRE_UI_THREAD();
   NSWindow* window = [[NSWindow alloc]
-      initWithContentRect:NSMakeRect(0, 0, 640, 600)
+      initWithContentRect:NSMakeRect(0, 0, size.width, size.height)
                 styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
                           NSWindowStyleMaskMiniaturizable |
                           NSWindowStyleMaskResizable
                   backing:NSBackingStoreBuffered
                     defer:NO];
-  window.title = @"Profiles";
+  window.title = title;
+  _defaultTitle = [title copy];
   window.minSize = NSMakeSize(420, 360);
   window.releasedWhenClosed = NO;
   window.restorable = NO;
@@ -76,10 +83,8 @@ class ProfileManagerBridge : public InternalPageDelegate {
     window.delegate = self;
     NSView* content = window.contentView;
     content.wantsLayer = YES;
-    _bridge = std::make_unique<brouk::ProfileManagerBridge>(self);
-    _client = new brouk::InternalPageClient(
-        _bridge.get(),
-        std::make_unique<brouk::ProfileManagerHandler>(delegate));
+    _bridge = std::make_unique<brouk::InternalPageBridge>(self);
+    _client = new brouk::InternalPageClient(_bridge.get(), std::move(handler));
     NSRect bounds = content.bounds;
     CefWindowInfo info;
     info.SetAsChild((__bridge void*)content,
@@ -87,13 +92,13 @@ class ProfileManagerBridge : public InternalPageDelegate {
                             static_cast<int>(bounds.size.height)));
     info.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
     CefBrowserSettings settings;
-    CefBrowserHost::CreateBrowser(info, _client, "brouk://profiles/", settings,
+    CefBrowserHost::CreateBrowser(info, _client, url.UTF8String, settings,
                                   nullptr, context);
   }
   return self;
 }
 
-- (void)closeManager {
+- (void)closePage {
   if (_closing) {
     return;
   }
@@ -112,7 +117,7 @@ class ProfileManagerBridge : public InternalPageDelegate {
   // The browser view follows the window's size.
   NSView* view = (__bridge NSView*)browser->GetHost()->GetWindowHandle();
   view.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
-  [_owner profileManagerDidCreateBrowser];
+  [_owner internalPageDidCreateBrowser];
   if (_closeWhenCreated) {
     browser->GetHost()->CloseBrowser(false);
   }
@@ -133,20 +138,20 @@ class ProfileManagerBridge : public InternalPageDelegate {
   // Release CEF objects while CEF is running (see app shutdown).
   _client = nullptr;
   [self.window close];
-  [_owner profileManagerDidClose:self];
+  [_owner internalPageDidClose:self];
 }
 
 - (void)handleTitle:(NSString*)title {
-  self.window.title = title.length ? title : @"Profiles";
+  self.window.title = title.length ? title : _defaultTitle;
 }
 
 - (BOOL)handleKeyEvent:(NSEvent*)event {
-  return [_owner profileManagerHandleKeyEvent:event];
+  return [_owner internalPageHandleKeyEvent:event];
 }
 
 // File > Close Tab (Cmd+W) closes this window.
 - (IBAction)closeCurrentTab:(id)sender {
-  [self closeManager];
+  [self closePage];
 }
 
 #pragma mark - NSWindowDelegate
@@ -154,7 +159,7 @@ class ProfileManagerBridge : public InternalPageDelegate {
 - (BOOL)windowShouldClose:(NSWindow*)sender {
   // Close the page first; the window goes when the browser has closed.
   if (_browser || !_closing) {
-    [self closeManager];
+    [self closePage];
     return NO;
   }
   return YES;

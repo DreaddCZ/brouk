@@ -50,6 +50,9 @@ int main(int argc, char* argv[]) {
 #if defined(NDEBUG)
     settings.log_severity = LOGSEVERITY_WARNING;
 #endif
+    // Remote debugging (006): off unless enabled in the settings (or by the
+    // --remote-debugging-port switch). Chromium listens on localhost only.
+    settings.remote_debugging_port = [delegate remoteDebuggingPortSetting];
 
     __weak BRAppDelegate* weak_delegate = delegate;
     brouk::BrowserApp::Callbacks callbacks;

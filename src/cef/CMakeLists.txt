@@ -4,6 +4,10 @@ add_library(brouk_cef STATIC
   browser_app.h
   context_menu_model.cc
   context_menu_model.h
+  devtools_frontend_client.cc
+  devtools_frontend_client.h
+  devtools_preferences.cc
+  devtools_preferences.h
   internal_page_client.cc
   internal_page_client.h
   internal_scheme.cc
@@ -14,6 +18,8 @@ add_library(brouk_cef STATIC
   profile_manager_handler.cc
   profile_manager_handler.h
   profile_prefs.h
+  settings_handler.cc
+  settings_handler.h
   site_info.cc
   site_info.h
   tab_client.cc

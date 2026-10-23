@@ -1,9 +1,14 @@
 #include "core/settings.h"
 
+#include "core/profile_id.h"
+
 #include <cassert>
+#include <charconv>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -11,9 +16,23 @@ namespace brouk {
 
 namespace {
 
+std::optional<std::int64_t> ParseInteger(std::string_view text) {
+  std::int64_t value = 0;
+  auto [end, error] =
+      std::from_chars(text.data(), text.data() + text.size(), value);
+  if (text.empty() || error != std::errc() ||
+      end != text.data() + text.size()) {
+    return std::nullopt;
+  }
+  return value;
+}
+
 SettingValue DefaultValue(const SettingDef& def) {
   if (def.type == SettingDef::Type::kBool) {
     return def.default_value == "true";
+  }
+  if (def.type == SettingDef::Type::kInteger) {
+    return ParseInteger(def.default_value).value_or(def.min_value);
   }
   return std::string(def.default_value);
 }
@@ -45,7 +64,48 @@ std::variant<SettingValue, std::string> ValueFromYaml(const SettingDef& def,
     }
     return std::string("must be true or false (without quotes)");
   }
+  if (def.type == SettingDef::Type::kInteger) {
+    std::optional<std::int64_t> number =
+        node.plain ? ParseInteger(node.scalar) : std::nullopt;
+    if (!number) {
+      return std::string("must be a whole number (without quotes)");
+    }
+    return SettingValue(*number);
+  }
   return SettingValue(node.scalar);
+}
+
+std::optional<std::string> CheckFormat(SettingDef::Format format,
+                                       const std::string& text) {
+  switch (format) {
+    case SettingDef::Format::kText:
+      return std::nullopt;
+    case SettingDef::Format::kUrlTemplate:
+      if (text.empty()) {
+        return std::nullopt;
+      }
+      if ((!text.starts_with("https://") && !text.starts_with("http://")) ||
+          text.find("%s") == std::string::npos ||
+          text.find(' ') != std::string::npos) {
+        return std::string(
+            "must be an http or https address containing %s, e.g. "
+            "https://example.com/search?q=%s");
+      }
+      return std::nullopt;
+    case SettingDef::Format::kFolder:
+      if (!text.empty() && !text.starts_with("/") && !text.starts_with("~/")) {
+        return std::string(
+            "must be empty (your Downloads folder), a full path such as "
+            "/Users/me/Downloads, or a path starting with ~/");
+      }
+      return std::nullopt;
+    case SettingDef::Format::kProfileId:
+      if (!IsValidProfileId(text)) {
+        return std::string("must be a profile id (see the profiles folder)");
+      }
+      return std::nullopt;
+  }
+  return std::nullopt;
 }
 
 void Flatten(const YamlNode& map,
@@ -97,6 +157,14 @@ std::optional<std::string> ValidateSetting(const SettingDef& def,
               "must not contain line breaks or control "
               "characters");
         }
+      }
+      return CheckFormat(def.format, *text);
+    }
+    case SettingDef::Type::kInteger: {
+      const std::int64_t* number = std::get_if<std::int64_t>(&value);
+      if (!number || *number < def.min_value || *number > def.max_value) {
+        return "must be a whole number from " + std::to_string(def.min_value) +
+               " to " + std::to_string(def.max_value);
       }
       return std::nullopt;
     }
@@ -176,6 +244,8 @@ YamlNode Settings::ToYaml() const {
     const SettingValue& value = values_.find(def.key)->second;
     if (const bool* flag = std::get_if<bool>(&value)) {
       node->GetOrAdd(key) = YamlNode::Scalar(*flag ? "true" : "false", true);
+    } else if (const std::int64_t* number = std::get_if<std::int64_t>(&value)) {
+      node->GetOrAdd(key) = YamlNode::Scalar(std::to_string(*number), true);
     } else {
       // Choices are plain words; free text is quoted so it reads back as
       // text whatever it contains.
@@ -192,6 +262,15 @@ bool Settings::GetBool(std::string_view key) const {
   const bool* value =
       it == values_.end() ? nullptr : std::get_if<bool>(&it->second);
   return value && *value;
+}
+
+std::int64_t Settings::GetInt(std::string_view key) const {
+  auto it = values_.find(key);
+  assert(it != values_.end() &&
+         std::holds_alternative<std::int64_t>(it->second));
+  const std::int64_t* value =
+      it == values_.end() ? nullptr : std::get_if<std::int64_t>(&it->second);
+  return value ? *value : 0;
 }
 
 const std::string& Settings::GetString(std::string_view key) const {

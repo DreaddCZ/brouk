@@ -16,6 +16,13 @@ namespace brouk {
 void BrowserApp::OnBeforeCommandLineProcessing(
     const CefString& process_type,
     CefRefPtr<CefCommandLine> command_line) {
+  // Remote debugging accepts connections from this Mac only (006): a
+  // --remote-debugging-address switch cannot open it to the network.
+  if (process_type.empty() &&
+      command_line->HasSwitch("remote-debugging-address")) {
+    command_line->AppendSwitchWithValue("remote-debugging-address",
+                                        "127.0.0.1");
+  }
   // Developer test runs only: every local rebuild gets a new ad-hoc signature,
   // so macOS asks for the keychain password on each launch. With this
   // variable set, Chromium uses a throwaway key instead of the keychain.

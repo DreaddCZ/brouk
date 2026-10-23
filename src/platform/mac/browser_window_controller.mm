@@ -130,6 +130,13 @@ NSButton* ToolbarButton(NSString* symbol,
   // one tab, no tab strip, read-only address, as in Chrome).
   CGFloat _stripHeight;
   NSButton* _popupBlockedButton;
+  NSButton* _settingsProblemButton;
+  // Developer tools (006): the per-tab toggle, and the remote debugging
+  // indicator.
+  NSButton* _devToolsToggle;
+  NSButton* _remoteDebuggingButton;
+  BOOL _toggleOnLeft;
+  CGFloat _addressLeft;  // Where the address area starts (after site info).
 }
 
 - (instancetype)initWithOwner:(id<BRBrowserWindowOwner>)owner {
@@ -256,6 +263,7 @@ NSButton* ToolbarButton(NSString* symbol,
                           weight:NSFontWeightMedium];
   [_toolbar addSubview:_siteInfoButton];
   x += 30;
+  _addressLeft = x;
 
   _addressField = [[BRAddressField alloc]
       initWithFrame:NSMakeRect(x + 6, 8, b.size.width - x - 18, 24)];
@@ -288,6 +296,41 @@ NSButton* ToolbarButton(NSString* symbol,
       NSMakeRect(NSMinX(_zoomButton.frame) - 30, 8, 26, 24);
   [_toolbar addSubview:_popupBlockedButton];
 
+  // Problems in the settings files (004: reported, not ignored); opens
+  // Settings, which lists them.
+  _settingsProblemButton = ToolbarButton(
+      @"exclamationmark.triangle.fill", @"Problems in settings",
+      @"Some settings in the settings files are invalid. Click to see them.",
+      nil, @selector(openSettings:));
+  _settingsProblemButton.contentTintColor = NSColor.systemYellowColor;
+  _settingsProblemButton.hidden = YES;
+  _settingsProblemButton.autoresizingMask = NSViewMinXMargin;
+  _settingsProblemButton.frame =
+      NSMakeRect(NSMinX(_popupBlockedButton.frame) - 30, 8, 26, 24);
+  [_toolbar addSubview:_settingsProblemButton];
+
+  // Dev tools toggle (006): always shown, next to the address bar.
+  _devToolsToggle = ToolbarButton(@"hammer", @"Developer tools",
+                                  @"Developer tools for this tab (⌥⌘I)", self,
+                                  @selector(toggleDevTools:));
+  [_devToolsToggle setButtonType:NSButtonTypePushOnPushOff];
+  _devToolsToggle.bordered = YES;
+  _devToolsToggle.bezelStyle = NSBezelStyleToolbar;
+  [_toolbar addSubview:_devToolsToggle];
+
+  // Remote debugging indicator (006): port and the all-profiles warning.
+  _remoteDebuggingButton =
+      [NSButton buttonWithTitle:@""
+                         target:self
+                         action:@selector(explainRemoteDebugging:)];
+  _remoteDebuggingButton.bezelStyle = NSBezelStyleInline;
+  _remoteDebuggingButton.font = [NSFont systemFontOfSize:11
+                                                  weight:NSFontWeightSemibold];
+  _remoteDebuggingButton.contentTintColor = NSColor.systemOrangeColor;
+  _remoteDebuggingButton.hidden = YES;
+  [_toolbar addSubview:_remoteDebuggingButton];
+  [self layoutAddressArea];
+
   _findBar = [[BRFindBar alloc]
       initWithFrame:NSMakeRect(_contentArea.frame.size.width - 380,
                                NSMaxY(_contentArea.frame) - 44, 368, 36)];
@@ -318,9 +361,10 @@ NSButton* ToolbarButton(NSString* symbol,
                                  profile:profile
                                 delegate:self];
   _tabs[@(tab.tabId)] = tab;
-  tab.containerView.frame = _contentArea.bounds;
-  tab.containerView.hidden = YES;
-  [_contentArea addSubview:tab.containerView];
+  tab.tabView.frame = _contentArea.bounds;
+  tab.tabView.hidden = YES;
+  [_contentArea addSubview:tab.tabView];
+  [tab setDockPosition:[_owner dockPosition] size:[_owner dockSize]];
   return tab;
 }
 
@@ -375,8 +419,8 @@ NSButton* ToolbarButton(NSString* symbol,
       BRTab* tab = _tabs[@(_model->id_at(i))];
       [tabs addObject:tab];
       BOOL hidden = tab != active;
-      if (tab.containerView.hidden != hidden) {
-        tab.containerView.hidden = hidden;
+      if (tab.tabView.hidden != hidden) {
+        tab.tabView.hidden = hidden;
       }
     }
     item.tabs = tabs;
@@ -384,6 +428,83 @@ NSButton* ToolbarButton(NSString* symbol,
   }
   [_tabStrip setGroups:groups activeTabId:active ? active.tabId : 0];
   [self updateToolbar];
+}
+
+// The address field, the indicators at its right end and the dev tools
+// toggle on its left or right (a setting).
+- (void)layoutAddressArea {
+  NSRect b = _toolbar.bounds;
+  CGFloat left = _addressLeft + 6;
+  CGFloat right = b.size.width - 12;
+  if (_toggleOnLeft) {
+    _devToolsToggle.frame = NSMakeRect(left, 7, 30, 26);
+    _devToolsToggle.autoresizingMask = NSViewMaxXMargin;
+    left += 34;
+  } else {
+    _devToolsToggle.frame = NSMakeRect(right - 30, 7, 30, 26);
+    _devToolsToggle.autoresizingMask = NSViewMinXMargin;
+    right -= 36;
+  }
+  _addressField.frame = NSMakeRect(left, 8, right - left, 24);
+  CGFloat end = NSMaxX(_addressField.frame);
+  _zoomButton.frame = NSMakeRect(end - 58, 10, 54, 20);
+  _popupBlockedButton.frame = NSMakeRect(end - 88, 8, 26, 24);
+  _settingsProblemButton.frame = NSMakeRect(end - 118, 8, 26, 24);
+  [_remoteDebuggingButton sizeToFit];
+  NSSize size = _remoteDebuggingButton.frame.size;
+  _remoteDebuggingButton.frame =
+      NSMakeRect(end - 122 - size.width, 10, size.width, 20);
+  for (NSView* view in @[
+         _zoomButton, _popupBlockedButton, _settingsProblemButton,
+         _remoteDebuggingButton
+       ]) {
+    view.autoresizingMask = NSViewMinXMargin;
+  }
+}
+
+- (void)setDevToolsToggleOnLeft:(BOOL)left {
+  if (left != _toggleOnLeft) {
+    _toggleOnLeft = left;
+    [self layoutAddressArea];
+  }
+}
+
+- (void)setRemoteDebuggingPort:(int)port {
+  _remoteDebuggingPort = port;
+  _remoteDebuggingButton.hidden = port <= 0;
+  if (port > 0) {
+    _remoteDebuggingButton.title =
+        [NSString stringWithFormat:@"⚠ Remote debugging :%d", port];
+    _remoteDebuggingButton.toolTip =
+        @"Remote debugging is on: programs on this Mac can control tabs of "
+        @"all profiles, including their sign-ins.";
+    _remoteDebuggingButton.accessibilityLabel = _remoteDebuggingButton.toolTip;
+    [self layoutAddressArea];
+  }
+}
+
+- (void)explainRemoteDebugging:(id)sender {
+  NSAlert* alert = [[NSAlert alloc] init];
+  alert.messageText =
+      [NSString stringWithFormat:@"Remote debugging is on (port %d)",
+                                 _remoteDebuggingPort];
+  alert.informativeText =
+      @"Programs on this Mac (such as Playwright or Puppeteer) can connect to "
+      @"Brouk and control tabs of all profiles, including their signed-in "
+      @"sessions. Only connections from this Mac are accepted. Turn it off in "
+      @"Settings > Developer tools (needs a restart).";
+  [alert beginSheetModalForWindow:self.window completionHandler:nil];
+}
+
+- (void)setDockPosition:(NSString*)position size:(CGFloat)size {
+  for (BRTab* tab in _tabs.allValues) {
+    [tab setDockPosition:position size:size];
+  }
+}
+
+- (void)setSettingsProblemCount:(NSUInteger)count {
+  _settingsProblemCount = count;
+  _settingsProblemButton.hidden = count == 0;
 }
 
 - (NSUInteger)tabCountInProfile:(const brouk::ProfileId&)profile {
@@ -411,6 +532,15 @@ NSButton* ToolbarButton(NSString* symbol,
 
 - (void)updateToolbar {
   BRTab* tab = [self activeTab];
+  _devToolsToggle.state =
+      tab.devToolsOn ? NSControlStateValueOn : NSControlStateValueOff;
+  _devToolsToggle.accessibilityValue = tab.devToolsOn ? @"on" : @"off";
+  // On: filled and in the accent colour, so the state is visible at once.
+  _devToolsToggle.image = [NSImage
+      imageWithSystemSymbolName:tab.devToolsOn ? @"hammer.fill" : @"hammer"
+       accessibilityDescription:@"Developer tools"];
+  _devToolsToggle.contentTintColor =
+      tab.devToolsOn ? NSColor.controlAccentColor : NSColor.secondaryLabelColor;
   if (tab) {
     brouk::ProfileInfo info = [_owner profileInfo:tab.profileId];
     _toolbar.profileColorName = @(info.color.c_str());
@@ -539,13 +669,17 @@ NSButton* ToolbarButton(NSString* symbol,
   } else {
     _model->AppendTab(tab.tabId, profile, foreground);
   }
+  // A tab opened from another tab inherits its dev tools state (006).
+  if (opener.devToolsOn) {
+    [tab setDevToolsOn:YES];
+  }
   [self modelDidChange];
   return tab;
 }
 
 // Removes a tab whose browser was never created (popup creation failed).
 - (void)removeUncreatedTab:(BRTab*)tab {
-  [tab.containerView removeFromSuperview];
+  [tab.tabView removeFromSuperview];
   _model->RemoveTab(tab.tabId);
   [_tabs removeObjectForKey:@(tab.tabId)];
   [self modelDidChange];
@@ -677,6 +811,72 @@ NSButton* ToolbarButton(NSString* symbol,
   BRTab* tab = [self insertTabFromOpener:opener foreground:foreground];
   [tab createBrowserWithURL:url
              requestContext:[_owner requestContextForProfile:tab.profileId]];
+}
+
+#pragma mark - Developer tools (006)
+
+- (void)tabDevToolsChanged:(BRTab*)tab {
+  if (tab == [self activeTab]) {
+    [self updateToolbar];
+  }
+}
+
+- (void)tab:(BRTab*)tab wantsDockPosition:(NSString*)position {
+  [_owner setDockPosition:position];
+}
+
+- (void)tab:(BRTab*)tab resizedDockTo:(CGFloat)size {
+  [_owner setDockSize:size];
+}
+
+- (NSString*)dockPosition {
+  return [_owner dockPosition];
+}
+
+- (CefRefPtr<CefRequestContext>)devToolsContext {
+  return [_owner devToolsContext];
+}
+
+- (brouk::DevToolsPreferences*)devToolsPreferences {
+  return [_owner devToolsPreferences];
+}
+
+- (id<BRBrowserCounter>)browserCounter {
+  return _owner;
+}
+
+- (CGFloat)dockSize {
+  return [_owner dockSize];
+}
+
+// The toolbar toggle and Cmd+Opt+I: dev tools on or off for this tab only.
+- (IBAction)toggleDevTools:(id)sender {
+  BRTab* tab = [self activeTab];
+  [tab setDevToolsOn:!tab.devToolsOn];
+  [self updateToolbar];
+}
+
+// Cmd+Opt+J.
+- (IBAction)showDevToolsConsole:(id)sender {
+  [[self activeTab] showDevToolsConsole];
+  [self updateToolbar];
+}
+
+// Cmd+Opt+C.
+- (IBAction)pickElementToInspect:(id)sender {
+  [[self activeTab] startDevToolsElementPicker];
+  [self updateToolbar];
+}
+
+- (brouk::TabClientDelegate::SearchEngine)searchEngine {
+  id<BRBrowserWindowOwner> owner = _owner;
+  return owner ? [owner searchEngine]
+               : brouk::TabClientDelegate::SearchEngine{
+                     "Google", std::string(brouk::kDefaultSearchTemplate)};
+}
+
+- (BOOL)askWhereToSaveDownloads {
+  return [_owner askWhereToSaveDownloads];
 }
 
 - (std::string)tab:(BRTab*)tab
@@ -871,8 +1071,8 @@ NSButton* ToolbarButton(NSString* symbol,
   if (!tab) {
     return;
   }
-  brouk::AddressInputResult result =
-      brouk::ClassifyAddressInput(text.UTF8String);
+  brouk::AddressInputResult result = brouk::ClassifyAddressInput(
+      text.UTF8String, [self searchEngine].url_template);
   tab.pendingAddressText = nil;
   if (result.kind == brouk::AddressInputResult::Kind::kEmpty) {
     [self updateToolbar];
@@ -1050,6 +1250,11 @@ NSButton* ToolbarButton(NSString* symbol,
   if (action == @selector(selectNextTab:) ||
       action == @selector(selectPreviousTab:)) {
     return _model->count() > 1;
+  }
+  if (action == @selector(toggleDevTools:)) {
+    item.state =
+        tab.devToolsOn ? NSControlStateValueOn : NSControlStateValueOff;
+    return tab != nil;
   }
   return YES;
 }

@@ -201,5 +201,41 @@ TEST_F(ProfileRegistryTest, ImportProfileGetsAUniqueName) {
   EXPECT_EQ(registry.Find(again.value())->name, std::string(62, 'x') + " 2");
 }
 
+TEST_F(ProfileRegistryTest, SettingSingleValues) {
+  ProfileRegistry registry(dir_);
+  registry.Load();
+  Result<ProfileId> work = registry.CreateProfile("Work", "green");
+  ASSERT_TRUE(work);
+  EXPECT_FALSE(registry.SetGlobalSetting("search.engine", std::string("bing")));
+  EXPECT_TRUE(registry.SetGlobalSetting("search.engine", std::string("aol")));
+  EXPECT_TRUE(registry.SetGlobalSetting("nothing", true));
+  EXPECT_EQ(registry.global_settings().GetString("search.engine"), "bing");
+
+  EXPECT_FALSE(registry.SetProfileSetting(work.value(), "profile.color",
+                                          std::string("red")));
+  EXPECT_EQ(registry.Find(work.value())->color, "red");
+  EXPECT_TRUE(registry.SetProfileSetting(work.value(), "profile.name",
+                                         std::string("main")));
+  EXPECT_TRUE(registry.SetProfileSetting("p-missing", "profile.color",
+                                         std::string("red")));
+
+  ProfileRegistry again(dir_);
+  again.Load();
+  EXPECT_EQ(again.global_settings().GetString("search.engine"), "bing");
+  EXPECT_EQ(again.Find(work.value())->color, "red");
+}
+
+TEST_F(ProfileRegistryTest, ReplaceGlobalSettings) {
+  ProfileRegistry registry(dir_);
+  registry.Load();
+  Settings imported(SettingScope::kGlobal);
+  ASSERT_FALSE(imported.Set("appearance.theme", std::string("dark")));
+  EXPECT_FALSE(registry.ReplaceGlobalSettings(imported));
+  EXPECT_TRUE(registry.ReplaceGlobalSettings(Settings(SettingScope::kProfile)));
+  ProfileRegistry again(dir_);
+  again.Load();
+  EXPECT_EQ(again.global_settings().GetString("appearance.theme"), "dark");
+}
+
 }  // namespace
 }  // namespace brouk

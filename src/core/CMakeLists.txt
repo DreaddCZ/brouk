@@ -8,6 +8,7 @@ set(BROUK_CORE_SOURCES
   context_menu.h
   crash_error_code.cc
   crash_error_code.h
+  devtools_frontend.h
   dialog_spam_guard.cc
   dialog_spam_guard.h
   download_paths.cc
@@ -29,11 +30,15 @@ set(BROUK_CORE_SOURCES
   profile_registry.h
   result.h
   screen_share.cc
+  search_engines.cc
+  search_engines.h
   screen_share.h
   security_state.cc
   security_state.h
   settings.cc
   settings.h
+  settings_export.cc
+  settings_export.h
   settings_file.cc
   settings_file.h
   settings_schema.cc

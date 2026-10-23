@@ -1,5 +1,6 @@
 #include "core/settings.h"
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -87,6 +88,27 @@ TEST(SettingsTest, NotAMap) {
   EXPECT_TRUE(problems[0].key.empty());
 }
 
+TEST(SettingsTest, Integers) {
+  std::vector<SettingProblem> problems;
+  Settings settings = Load(SettingScope::kGlobal,
+                           "devtools:\n"
+                           "  dock_size: 500\n"
+                           "  remote_debugging_port: 80\n",
+                           problems);
+  EXPECT_EQ(settings.GetInt("devtools.dock_size"), 500);
+  ASSERT_EQ(problems.size(), 1u);
+  EXPECT_EQ(problems[0].message, "must be a whole number from 1024 to 65535");
+  EXPECT_EQ(settings.GetInt("devtools.remote_debugging_port"), 9222);
+
+  problems.clear();
+  Load(SettingScope::kGlobal, "devtools:\n  dock_size: '500'\n", problems);
+  Load(SettingScope::kGlobal, "devtools:\n  dock_size: 5.5\n", problems);
+  EXPECT_EQ(problems.size(), 2u);
+  EXPECT_TRUE(settings.Set("devtools.dock_size", std::int64_t{1}));
+  EXPECT_FALSE(settings.Set("devtools.dock_size", std::int64_t{1000}));
+  EXPECT_TRUE(settings.Set("devtools.dock_size", std::string("1000")));
+}
+
 TEST(SettingsTest, FileFormat) {
   Settings settings(SettingScope::kProfile);
   ASSERT_FALSE(settings.Set("profile.name", std::string("Work")));
@@ -95,6 +117,22 @@ TEST(SettingsTest, FileFormat) {
             "  name: \"Work\"\n"
             "  color: blue\n");
   EXPECT_EQ(EmitYaml(Settings(SettingScope::kGlobal).ToYaml()),
+            "appearance:\n"
+            "  theme: system\n"
+            "search:\n"
+            "  engine: google\n"
+            "  custom_template: \"\"\n"
+            "downloads:\n"
+            "  folder: \"\"\n"
+            "  ask_where_to_save: false\n"
+            "content:\n"
+            "  spellcheck: true\n"
+            "devtools:\n"
+            "  toggle_position: right\n"
+            "  dock_position: bottom\n"
+            "  dock_size: 320\n"
+            "  remote_debugging: false\n"
+            "  remote_debugging_port: 9222\n"
             "profiles:\n"
             "  default: \"default\"\n"
             "  show_manager_at_startup: false\n");

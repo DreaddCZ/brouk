@@ -1,0 +1,28 @@
+/* Settings (004). Colours, layout and controls: shared/base.css. */
+main { max-width: 680px; }
+h2.scope { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--muted); margin: 28px 0 8px; }
+section.group { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  margin-bottom: 12px; padding: 4px 14px; }
+section.group h3 { font-size: 14px; margin: 10px 0 2px; }
+.setting { display: grid; grid-template-columns: 1fr minmax(180px, 280px); gap: 4px 16px;
+  align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
+.setting:first-of-type { border-top: 0; }
+.setting.toggle { grid-template-columns: 1fr auto; }
+.setting label.title { font-weight: 500; }
+.setting .description { grid-column: 1; color: var(--muted); font-size: 12px; margin: 0; }
+.setting .problem { grid-column: 1 / -1; color: var(--danger); font-size: 12px; margin: 0; }
+.setting .restart { color: var(--accent); font-size: 11px; font-weight: 600; margin-left: 6px; }
+.setting input[type=text], .setting input[type=number], .setting select { font: inherit; padding: 5px 8px; border-radius: 7px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--text); width: 100%;
+  box-sizing: border-box; }
+.setting input[type=checkbox] { width: 18px; height: 18px; }
+.profile-pick { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+.profile-pick select { font: inherit; padding: 4px 8px; border-radius: 7px;
+  border: 1px solid var(--line); background: var(--card); color: var(--text); }
+.files { display: flex; gap: 8px; flex-wrap: wrap; }
+.hint { color: var(--muted); font-size: 12px; }
+#problems ul, .notice ul { margin: 6px 0 0; padding-left: 20px; }
+.notice { background: var(--card); border: 1px solid var(--accent); border-radius: 8px;
+  padding: 8px 12px; margin-bottom: 12px; }
+select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

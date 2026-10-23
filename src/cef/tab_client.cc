@@ -179,6 +179,9 @@ void TabClient::OnBeforeContextMenu(CefRefPtr<CefBrowser> browser,
   CEF_REQUIRE_UI_THREAD();
   ContextMenuContext context =
       ContextFromParams(params, browser->CanGoBack(), browser->CanGoForward());
+  if (delegate_) {
+    context.search_engine_name = delegate_->CurrentSearchEngine().name;
+  }
   FillMenuModel(model, BuildContextMenu(context));
 }
 
@@ -224,15 +227,15 @@ bool TabClient::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
       browser->GetHost()->StartDownload(source);
       break;
     case MenuCommand::kSearchForSelection:
-      delegate_->OpenUrl(BuildSearchUrl(params->GetSelectionText().ToString()),
-                         OpenDisposition::kNewForegroundTab);
+      delegate_->OpenUrl(
+          BuildSearchUrl(params->GetSelectionText().ToString(),
+                         delegate_->CurrentSearchEngine().url_template),
+          OpenDisposition::kNewForegroundTab);
       break;
     case MenuCommand::kInspect:
-      // Until the dev tools dock (006) exists, DevTools opens in its own
-      // window, with the clicked element selected.
-      browser->GetHost()->ShowDevTools(
-          CefWindowInfo(), nullptr, CefBrowserSettings(),
-          CefPoint(params->GetXCoord(), params->GetYCoord()));
+      // Turns the tab's dev tools on, with the clicked element selected in
+      // Elements (006).
+      delegate_->InspectElement(params->GetXCoord(), params->GetYCoord());
       break;
     default:
       return false;
@@ -323,10 +326,11 @@ bool TabClient::OnBeforeDownload(
   std::string path = delegate_->ReserveDownloadPath(suggested_name.ToString());
   download_paths_[download_item->GetId()] = path;
   // Like Chrome: save to the downloads folder without asking, except for
-  // "Save Link/Image As…", which shows the save dialog.
+  // "Save Link/Image As…" or when the user chose to be asked (settings).
   bool ask =
       save_as_urls_.erase(download_item->GetOriginalUrl().ToString()) > 0 ||
-      save_as_urls_.erase(download_item->GetURL().ToString()) > 0;
+      save_as_urls_.erase(download_item->GetURL().ToString()) > 0 ||
+      delegate_->AskWhereToSaveDownloads();
   callback->Continue(path, ask);
   return true;
 }
