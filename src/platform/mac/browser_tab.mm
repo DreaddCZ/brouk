@@ -844,6 +844,12 @@ class TabDelegateBridge : public TabClientDelegate {
   [_tabView removeFromSuperview];
 }
 
+- (void)sendRendererConfigWithJsonViewer:(BOOL)jsonViewer {
+  if (_browser) {
+    brouk::TabClient::SendRendererConfig(_browser, jsonViewer);
+  }
+}
+
 #pragma mark - Developer tools (006)
 
 - (void)setDevToolsOn:(BOOL)on {

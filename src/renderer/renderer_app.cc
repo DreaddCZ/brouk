@@ -4,11 +4,13 @@
 #include <cstdint>
 #include <string>
 
+#include "brouk/json_viewer_script.h"
 #include "cef/internal_scheme.h"
 #include "core/devtools_frontend.h"
 #include "core/internal_pages.h"
 #include "core/page_events.h"
 #include "core/screen_share.h"
+#include "include/cef_command_line.h"
 #include "include/cef_pack_resources.h"
 #include "include/cef_process_message.h"
 #include "include/cef_resource_bundle.h"
@@ -361,6 +363,31 @@ void RendererApp::OnContextCreated(CefRefPtr<CefBrowser> browser,
   CefRefPtr<CefV8Value> result;
   CefRefPtr<CefV8Exception> exception;
   context->Eval(kPageScript, frame->GetURL(), 0, result, exception);
+  // The JSON viewer checks the document itself once it has loaded. Wrapped
+  // in a function, so none of its names reach the page's global scope.
+  if (json_viewer_ && frame->IsMain()) {
+    context->Eval(
+        std::string("(function () {\n") + kJsonViewerScript + "\n})();",
+        "brouk://json-viewer.js", 0, result, exception);
+  }
+}
+
+void RendererApp::OnWebKitInitialized() {
+  CEF_REQUIRE_RENDERER_THREAD();
+  // The settings at the time this process started (see BrowserApp).
+  CefRefPtr<CefCommandLine> command_line =
+      CefCommandLine::GetGlobalCommandLine();
+  const std::string json_switch(kRendererJsonViewerSwitch);
+  if (command_line && command_line->HasSwitch(json_switch)) {
+    json_viewer_ = command_line->GetSwitchValue(json_switch) != "0";
+  }
+}
+
+void RendererApp::ApplyConfig(const CefRefPtr<CefDictionaryValue>& config) {
+  const std::string key(kRendererConfigJsonViewer);
+  if (config && config->GetType(key) == VTYPE_BOOL) {
+    json_viewer_ = config->GetBool(key);
+  }
 }
 
 void RendererApp::OnContextReleased(CefRefPtr<CefBrowser> browser,
@@ -396,6 +423,14 @@ bool RendererApp::OnProcessMessageReceived(
   CEF_REQUIRE_RENDERER_THREAD();
   if (router_->OnProcessMessageReceived(browser, frame, source_process,
                                         message)) {
+    return true;
+  }
+  if (source_process == PID_BROWSER &&
+      message->GetName().ToString() == kRendererConfigMessage) {
+    CefRefPtr<CefListValue> args = message->GetArgumentList();
+    if (args && args->GetSize() == 1 && args->GetType(0) == VTYPE_DICTIONARY) {
+      ApplyConfig(args->GetDictionary(0));
+    }
     return true;
   }
   if (source_process != PID_BROWSER ||

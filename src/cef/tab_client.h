@@ -221,6 +221,12 @@ class TabClient : public CefClient,
   // UI thread. Stops all further callbacks to the delegate.
   void DetachDelegate();
 
+  // The settings a tab's renderer follows (kRendererConfigMessage), sent
+  // when they change.
+  static CefRefPtr<CefDictionaryValue> RendererConfig(bool json_viewer);
+  static void SendRendererConfig(const CefRefPtr<CefBrowser>& browser,
+                                 bool json_viewer);
+
   // CefClient:
   CefRefPtr<CefContextMenuHandler> GetContextMenuHandler() override {
     return this;

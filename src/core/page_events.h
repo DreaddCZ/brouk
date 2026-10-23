@@ -26,6 +26,15 @@ inline constexpr std::string_view kPageEventInaudible = "inaudible";
 // the page also asked for audio.
 inline constexpr std::string_view kPageEventDisplayMedia = "display-media";
 
+// Process message (browser -> renderer) with settings the renderer follows
+// (a dictionary), sent when they change. New renderer processes get the
+// current values as command line switches (kRendererJsonViewerSwitch).
+inline constexpr std::string_view kRendererConfigMessage = "brouk.config";
+inline constexpr std::string_view kRendererJsonViewerSwitch =
+    "brouk-json-viewer";
+// Bool: add the JSON viewer to JSON documents (006).
+inline constexpr std::string_view kRendererConfigJsonViewer = "json_viewer";
+
 struct PageEvent {
   enum class Type { kPopupBlocked, kAudible, kInaudible, kDisplayMedia };
   Type type;

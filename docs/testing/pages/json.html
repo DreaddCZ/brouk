@@ -1,0 +1,19 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>JSON viewer test</title>
+<style>body { font: 15px -apple-system, sans-serif; margin: 2em; } button { font-size: 15px; margin: .3em; }</style>
+<h1>JSON viewer (spec 006)</h1>
+<p><a href="sample.json">sample.json</a> opens as a tree: collapse and expand nodes, search ("item"),
+switch Tree / Raw / Pretty, hover a line → "Copy value" / "Copy path" ($.items[0].label).</p>
+<p>The button opens a generated 10 MB JSON document: it must show within a few seconds, and the
+window must stay responsive (expand the array, search "item 99999").</p>
+<button id="big">Open 10 MB JSON</button>
+<p>Settings → Pages → "Show JSON documents as a tree" off: sample.json shows as plain text again (reload).</p>
+<script>
+  document.getElementById('big').onclick = () => {
+    const items = [];
+    for (let i = 0; i < 100000; i++) items.push({ id: i, value: `item ${i}`, tags: ['a', 'b'], score: i / 7 });
+    const blob = new Blob([JSON.stringify({ count: items.length, items })], { type: 'application/json' });
+    location.href = URL.createObjectURL(blob);
+  };
+</script>

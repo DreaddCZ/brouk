@@ -17,6 +17,8 @@ NS_ASSUME_NONNULL_BEGIN
 // The remote debugging port the settings ask for (0: off); main() passes it
 // to CefInitialize (006).
 - (int)remoteDebuggingPortSetting;
+// Whether JSON documents show as a tree (006), for new renderer processes.
+- (BOOL)jsonViewerEnabled;
 // Called once CEF is initialized (CefBrowserProcessHandler).
 - (void)cefContextInitialized;
 // The app was launched again while running, with these arguments.

@@ -22,6 +22,8 @@ class BrowserApp : public CefApp, public CefBrowserProcessHandler {
     // into the address bar: Chrome opens them as tabs, or a new window when
     // there are none.
     std::function<void(LaunchRequest request)> on_relaunch;
+    // UI thread. Current settings passed to new renderer processes.
+    std::function<bool()> json_viewer_enabled;
   };
 
   // What a command line asks for: URLs and --profile (005).
@@ -41,6 +43,8 @@ class BrowserApp : public CefApp, public CefBrowserProcessHandler {
       CefRefPtr<CefCommandLine> command_line) override;
   void OnRegisterCustomSchemes(
       CefRawPtr<CefSchemeRegistrar> registrar) override;
+  void OnBeforeChildProcessLaunch(
+      CefRefPtr<CefCommandLine> command_line) override;
 
   // CefBrowserProcessHandler:
   void OnRegisterCustomPreferences(

@@ -1,0 +1,13 @@
+{
+  // The JSON viewer is injected into JSON documents as a plain script (no
+  // imports or exports), so it is compiled on its own (see viewer.ts).
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "moduleDetection": "legacy",
+    "isolatedModules": false,
+    "verbatimModuleSyntax": false,
+    "rootDir": "..",
+    "outDir": "../../build/web"
+  },
+  "include": ["viewer.ts"]
+}

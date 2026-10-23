@@ -613,6 +613,10 @@ class AppSettingsPage : public SettingsPageDelegate {
   return _profiles->global_settings().GetBool("downloads.ask_where_to_save");
 }
 
+- (BOOL)jsonViewerEnabled {
+  return _profiles->global_settings().GetBool("content.json_viewer");
+}
+
 #pragma mark - Developer tools (006)
 
 - (NSString*)dockPosition {
@@ -681,6 +685,10 @@ class AppSettingsPage : public SettingsPageDelegate {
           : nil;
   for (const auto& [id, context] : _requestContexts) {
     [self applySpellcheckTo:context];
+  }
+  BOOL jsonViewer = [self jsonViewerEnabled];
+  for (BRBrowserWindowController* controller in _windows) {
+    [controller sendRendererConfigWithJsonViewer:jsonViewer];
   }
   NSUInteger problems = _profiles->problems().size();
   for (BRBrowserWindowController* controller in _windows) {
