@@ -34,6 +34,7 @@ Address bar suggestions and recording are in `003-browser-ui.md` (steps 37–48)
 22. "By day": visits under Today, Yesterday and dates; "Show more" loads older ones. Reopen the page later: it remembers the view.
 23. Click a page title in the same profile as the history tab. Expected: the history tab becomes that page. In another profile's entry: a new tab in that profile's group. ⌘-click: a background tab.
 24. Check two rows' checkboxes, ⇧-click a third to select the range, press Delete and confirm. Expected: they disappear (site rows remove all their pages). ✕ on a single row deletes it at once.
+    Expand a site and check its checkbox. Expected: its pages show checked and greyed out (they are deleted with the site) and the count does not include them; unchecking the site frees them again.
 25. In the history tab, type a web address in the address bar. Expected: the tab is replaced by a normal tab with that page (no Back to the history page). Type `brouk://history` in a normal tab: it becomes the history page. `brouk://settings` opens the Settings window.
 26. Close the history tab and press ⇧⌘T; quit and start again with "Continue where you left off". Expected: the history tab comes back as the history page.
 

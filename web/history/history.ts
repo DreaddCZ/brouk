@@ -80,6 +80,17 @@ function checkbox(key: string, label: string, item: DeleteItem): HTMLInputElemen
   return box;
 }
 
+/** A page of a selected site: deleted with the site, so checked and fixed. */
+function includedCheckbox(label: string): HTMLInputElement {
+  const box = element('input');
+  box.type = 'checkbox';
+  box.checked = true;
+  box.disabled = true;
+  box.title = 'Deleted with its site';
+  box.setAttribute('aria-label', `${label}, deleted with its site`);
+  return box;
+}
+
 function removeButton(label: string, items: readonly DeleteItem[]): HTMLButtonElement {
   const node = button('✕', () => void remove(items), 'remove');
   node.title = `Delete ${label}`;
@@ -138,6 +149,9 @@ function siteRows(site: Site, now: Date): HTMLElement[] {
     ]),
   ];
   const pages = expanded.get(key);
+  // Deleting a site deletes all its pages: they show as selected, and are
+  // not counted or deleted on their own.
+  const siteSelected = selected.has(key);
   if (pages === 'loading') {
     rows.push(element('div', { className: 'row page', text: 'Loading…' }));
   } else if (pages !== undefined) {
@@ -147,8 +161,10 @@ function siteRows(site: Site, now: Date): HTMLElement[] {
       const pageMain = element('div', { className: 'main' });
       pageMain.append(link(page.title, page.url, site.profile), element('span', { className: 'host', text: pathOf(page.url) }));
       rows.push(
-        row('row page', pageKey, [
-          checkbox(pageKey, page.title || page.url, pageItem),
+        row(siteSelected ? 'row page selected' : 'row page', pageKey, [
+          siteSelected
+            ? includedCheckbox(page.title || page.url)
+            : checkbox(pageKey, page.title || page.url, pageItem),
           element('span'),
           element('span'),
           pageMain,
