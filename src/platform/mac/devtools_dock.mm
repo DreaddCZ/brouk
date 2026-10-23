@@ -27,6 +27,8 @@
 - (void)saveFile:(brouk::ToolsHost::File)main
            extra:(std::optional<brouk::ToolsHost::File>)extra
             done:(brouk::ToolsHost::Done)done;
+- (brouk::ToolsHost::Rules)requestRulesFromDelegate;
+- (std::optional<brouk::Error>)storeRequestRules:(brouk::RequestRuleSet)rules;
 @end
 
 namespace brouk {
@@ -94,6 +96,17 @@ class DockToolsHost : public ToolsHost {
     }
     [dock saveFile:std::move(main) extra:std::move(extra) done:std::move(done)];
   }
+  Rules RequestRules() override {
+    BRDevToolsDock* dock = dock_;
+    return dock ? [dock requestRulesFromDelegate] : Rules{};
+  }
+  std::optional<Error> SetRequestRules(RequestRuleSet rules) override {
+    BRDevToolsDock* dock = dock_;
+    if (!dock) {
+      return Error{"The developer tools have closed."};
+    }
+    return [dock storeRequestRules:std::move(rules)];
+  }
   std::string SecretHeaderNames() override {
     BRDevToolsDock* dock = dock_;
     return dock ? std::string(dock.secretHeaderNames.UTF8String)
@@ -114,10 +127,9 @@ struct DockTool {
   NSString* title;
 };
 const DockTool kDockTools[] = {
-    {@"devtools", @"DevTools"},
-    {@"site-data", @"Site data"},
-    {@"requests", @"Requests"},
-    {@"tokens", @"Tokens"},
+    {@"devtools", @"DevTools"}, {@"site-data", @"Site data"},
+    {@"requests", @"Requests"}, {@"tokens", @"Tokens"},
+    {@"rules", @"Rules"},
 };
 
 constexpr CGFloat kHeaderHeight = 28;
@@ -363,6 +375,35 @@ NSButton* HeaderButton(NSString* symbol,
   _delegate = nil;
   [delegate devToolsDockDidClose:self];
   ClosingDocks().erase(self);
+}
+
+#pragma mark - Request rules
+
+- (void)setRequestRules:(const brouk::RequestRuleSet&)rules {
+  if (!_channel) {
+    return;
+  }
+  __weak BRDevToolsDock* weakSelf = self;
+  _channel->SetRules(rules, [weakSelf] {
+    BRDevToolsDock* strongSelf = weakSelf;
+    if (strongSelf) {
+      [strongSelf->_delegate devToolsDockRulesAffectedPage:strongSelf];
+    }
+  });
+}
+
+- (brouk::ToolsHost::Rules)requestRulesFromDelegate {
+  id<BRDevToolsDockDelegate> delegate = _delegate;
+  return delegate ? [delegate devToolsDockRequestRules:self]
+                  : brouk::ToolsHost::Rules{};
+}
+
+- (std::optional<brouk::Error>)storeRequestRules:(brouk::RequestRuleSet)rules {
+  id<BRDevToolsDockDelegate> delegate = _delegate;
+  if (!delegate) {
+    return brouk::Error{"The developer tools have closed."};
+  }
+  return [delegate devToolsDock:self setRequestRules:std::move(rules)];
 }
 
 #pragma mark - Our own tools

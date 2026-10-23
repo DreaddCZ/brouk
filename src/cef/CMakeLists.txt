@@ -17,6 +17,8 @@ add_library(brouk_cef STATIC
   internal_scheme.cc
   internal_scheme.h
   json_util.h
+  own_request_loader.cc
+  own_request_loader.h
   permission_mapping.cc
   permission_mapping.h
   profile_prefs.cc

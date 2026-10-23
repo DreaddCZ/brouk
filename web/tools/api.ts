@@ -4,6 +4,7 @@
  */
 import { BridgeError, isRecord, send, type Transport } from '../shared/bridge.js';
 import { parseDetails, parseSummary, type RequestDetails, type RequestSummary } from './requests_logic.js';
+import { parseRule, type Rule } from './rules_logic.js';
 
 export interface SaveFile {
   readonly name: string;
@@ -72,6 +73,24 @@ export class ToolsApi {
     return list.flatMap((t) =>
       isRecord(t) && typeof t['token'] === 'string' && typeof t['where'] === 'string'
         ? [{ token: t['token'], where: t['where'] }] : []);
+  }
+
+  /** The request rules of the tab's profile. */
+  async rules(): Promise<{ paused: boolean; rules: Rule[]; problems: string[]; profile: string }> {
+    const answer = await send('tools.rules', {}, this.#transport);
+    if (!isRecord(answer) || !Array.isArray(answer['rules']) || !Array.isArray(answer['problems'])) throw invalid();
+    const rules: unknown[] = answer['rules'];
+    const problems: unknown[] = answer['problems'];
+    return {
+      paused: answer['paused'] === true,
+      rules: rules.map(parseRule).filter((r): r is Rule => r !== null),
+      problems: problems.filter((p): p is string => typeof p === 'string'),
+      profile: typeof answer['profile'] === 'string' ? answer['profile'] : '',
+    };
+  }
+
+  async setRules(paused: boolean, rules: readonly Rule[]): Promise<void> {
+    await send('tools.setRules', { paused, rules }, this.#transport);
   }
 
   /** Asks where to save and saves; resolves with false if cancelled. */

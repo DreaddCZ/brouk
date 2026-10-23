@@ -431,7 +431,9 @@ bool DevToolsFrontendClient::OnDevToolsMessage(
     }
     return true;  // Ours: never shown to the frontend.
   }
-  if (frontend_) {
+  // Paused requests belong to the request rules (DevToolsChannel); the
+  // frontend must not continue them a second time.
+  if (frontend_ && !text.starts_with(R"({"method":"Fetch.requestPaused")")) {
     ForwardToFrontend(text);
   }
   return true;

@@ -1,0 +1,40 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Request rules test</title>
+<style>body { font: 15px -apple-system, sans-serif; margin: 2em; } button { font-size: 15px; margin: .3em; }</style>
+<h1>Request rules (spec 006)</h1>
+<p>Turn the developer tools on (⌥⌘I), open "Rules", and add for example:</p>
+<ul>
+  <li><code>localhost/blocked/</code> → Block</li>
+  <li><code>localhost/old.json</code> → Redirect to <code>http://localhost:8765/sample.json</code></li>
+  <li><code>localhost</code> → Set response header <code>X-Brouk-Rule: works</code></li>
+  <li><code>localhost</code> → Set request header <code>X-Env: staging</code> (see it in the Requests tab)</li>
+</ul>
+<p>Then press the button. Turn the developer tools off and press it again: nothing is changed.</p>
+<button id="run">Run requests</button>
+<pre id="out"></pre>
+<script>
+  const out = document.getElementById('out');
+  document.getElementById('run').onclick = async () => {
+    const lines = [];
+    for (const path of ['blocked/x.json', 'old.json', 'sample.json']) {
+      try {
+        const response = await fetch(path, { cache: 'no-store' });
+        const text = await response.text();
+        lines.push(`${path}: ${response.status}${response.redirected ? ` (redirected to ${response.url})` : ''}` +
+                   `, X-Brouk-Rule: ${response.headers.get('X-Brouk-Rule') ?? '(none)'}, body starts ${JSON.stringify(text.slice(0, 20))}`);
+      } catch (error) {
+        lines.push(`${path}: failed (${error.message})`);
+      }
+    }
+    // A POST with a body (this test server answers 501): the rule's header must
+    // still arrive, and the server must get the body.
+    try {
+      const response = await fetch('sample.json', { method: 'POST', body: '{"x":1}', cache: 'no-store' });
+      lines.push(`POST sample.json: ${response.status}, X-Brouk-Rule: ${response.headers.get('X-Brouk-Rule') ?? '(none)'}`);
+    } catch (error) {
+      lines.push(`POST sample.json: failed (${error.message})`);
+    }
+    out.textContent = lines.join('\n');
+  };
+</script>

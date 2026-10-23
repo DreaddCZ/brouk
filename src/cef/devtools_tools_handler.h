@@ -5,8 +5,11 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "cef/devtools_channel.h"
+#include "core/request_rules.h"
+#include "core/result.h"
 #include "include/wrapper/cef_message_router.h"
 
 namespace brouk {
@@ -27,6 +30,15 @@ class ToolsHost {
   virtual void SaveFiles(File main, std::optional<File> extra, Done done) = 0;
   // Header names whose values are secrets in exports (a setting).
   virtual std::string SecretHeaderNames() = 0;
+  // The request rules of the tab's profile, the problems found in its rules
+  // file, and the profile's name.
+  struct Rules {
+    RequestRuleSet set;
+    std::vector<std::string> problems;
+    std::string profile_name;
+  };
+  virtual Rules RequestRules() = 0;
+  virtual std::optional<Error> SetRequestRules(RequestRuleSet rules) = 0;
 };
 
 // Answers the tools page (brouk://tools, 006) shown in one tab's dock:
@@ -37,6 +49,9 @@ class ToolsHost {
 //   {"type":"tools.clearRequests"}
 //   {"type":"tools.tokens"}                    -> JWTs in recorded headers
 //   {"type":"tools.save","name":..,"content":..,"extra":{name,content}?}
+//   {"type":"tools.rules"}  -> {"paused", "rules":[...], "problems", "profile"}
+//   {"type":"tools.setRules","paused":b,"rules":[{pattern, action, header,
+//                                                 value, enabled}]}
 // Only that page may ask, and only protocol methods allowed by
 // IsAllowedToolsProtocolMethod; everything goes to the dock's own tab.
 // UI thread.

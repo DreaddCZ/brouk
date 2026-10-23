@@ -46,3 +46,10 @@ section.token { border: 1px solid var(--line); border-radius: 8px; padding: 8px 
 .token-text { font: 11px ui-monospace, Menlo, monospace; color: var(--muted); word-break: break-all; max-height: 3.2em; overflow: hidden; }
 table.claims th { width: 110px; font-weight: 600; color: var(--muted); }
 table.claims td { white-space: normal; overflow-wrap: anywhere; }
+
+form.rule-form { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+form.rule-form input[type=text], form.rule-form select { font: inherit; padding: 2px 6px; border: 1px solid var(--line);
+  border-radius: 5px; background: var(--bg); color: var(--text); }
+form.rule-form input[type=text] { flex: 1 1 160px; }
+.error-text { color: var(--danger); }
+th.check, td.check { width: 30px; }

@@ -69,7 +69,8 @@ void StreamCallback(ConstFSEventStreamRef /*stream*/,
   for (NSString* path in paths) {
     NSString* resolved = path.stringByResolvingSymlinksInPath;
     if (![resolved hasPrefix:_ignored] &&
-        [resolved.lastPathComponent hasPrefix:@"settings.yaml"]) {
+        ([resolved.lastPathComponent hasPrefix:@"settings.yaml"] ||
+         [resolved.lastPathComponent hasPrefix:@"request-rules.yaml"])) {
       relevant = YES;
       break;
     }

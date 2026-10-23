@@ -1,4 +1,5 @@
-// Watches the data folder for changes to settings files (004: changes made
+// Watches the data folder for changes to settings files (and request rules
+// files, 006) (004: changes made
 // in the files apply while the browser runs). Chromium's own data under
 // web/ changes all the time and is ignored. Main thread only.
 

@@ -29,6 +29,7 @@ add_executable(brouk_core_tests
   core/launch_args_test.cc
   core/page_events_test.cc
   core/request_log_test.cc
+  core/request_rules_test.cc
   core/screen_share_test.cc
   core/search_engines_test.cc
   core/permissions_test.cc
@@ -40,6 +41,7 @@ add_executable(brouk_core_tests
   core/settings_test.cc
   core/tab_strip_model_test.cc
   core/url_display_test.cc
+  core/url_pattern_test.cc
   core/yaml_io_test.cc
   core/zoom_test.cc
 )

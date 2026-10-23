@@ -6,6 +6,8 @@
 #import <Cocoa/Cocoa.h>
 
 #include "cef/devtools_preferences.h"
+#include "cef/devtools_tools_handler.h"
+#include "core/request_rules.h"
 #include "include/cef_browser.h"
 #include "include/cef_request_context.h"
 
@@ -28,6 +30,12 @@ NS_ASSUME_NONNULL_BEGIN
 - (BOOL)devToolsDockHandleKeyEvent:(NSEvent*)event;
 // "Open in new tab" and copying from DevTools.
 - (void)devToolsDock:(BRDevToolsDock*)dock openURL:(NSString*)url;
+// Request rules of the tab's profile (006).
+- (brouk::ToolsHost::Rules)devToolsDockRequestRules:(BRDevToolsDock*)dock;
+- (std::optional<brouk::Error>)devToolsDock:(BRDevToolsDock*)dock
+                            setRequestRules:(brouk::RequestRuleSet)rules;
+// A rule changed one of the tab's requests.
+- (void)devToolsDockRulesAffectedPage:(BRDevToolsDock*)dock;
 @end
 
 @interface BRDevToolsDock : NSObject
@@ -56,6 +64,8 @@ NS_ASSUME_NONNULL_BEGIN
 // Shows a DevTools panel ("console") or starts picking an element.
 - (void)showPanel:(NSString*)panel;
 - (void)enterInspectElementMode;
+// The profile's request rules, applied to the tab while the dock is open.
+- (void)setRequestRules:(const brouk::RequestRuleSet&)rules;
 // Closes DevTools; the delegate hears devToolsDockDidClose: when done.
 - (void)close;
 // The inspected tab is going away: no more delegate calls; the DevTools
