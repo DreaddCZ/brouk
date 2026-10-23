@@ -11,6 +11,7 @@
 #include "core/internal_pages.h"
 #include "core/request_log.h"
 #include "core/request_rules.h"
+#include "core/service_workers.h"
 #include "include/cef_parser.h"
 #include "include/wrapper/cef_helpers.h"
 
@@ -108,6 +109,23 @@ bool DevToolsToolsHandler::OnQuery(CefRefPtr<CefBrowser> /*browser*/,
                        callback->Failure(kFailed, error);
                      }
                    });
+    return true;
+  }
+  if (type == "tools.serviceWorkers") {
+    CefRefPtr<CefListValue> list = CefListValue::Create();
+    std::size_t index = 0;
+    for (const ServiceWorkerEntry& worker :
+         channel_->service_workers().Entries()) {
+      CefRefPtr<CefDictionaryValue> item = CefDictionaryValue::Create();
+      item->SetString("scope", worker.scope_url);
+      item->SetString("script", worker.script_url);
+      item->SetString("status", worker.status);
+      item->SetString("running", worker.running_status);
+      list->SetDictionary(index++, item);
+    }
+    CefRefPtr<CefDictionaryValue> answer = CefDictionaryValue::Create();
+    answer->SetList("workers", list);
+    callback->Success(ToJson(answer));
     return true;
   }
   if (type == "tools.requests") {

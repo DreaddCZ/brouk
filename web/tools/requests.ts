@@ -21,6 +21,8 @@ export class RequestsTool {
   #selected = new Set<number>();
   #open: RequestDetails | null = null;
   #body: string | null = null;
+  /** The response body when it is JSON, for the JSON viewer's tree. */
+  #bodyJson: { data: unknown; raw: string } | null = null;
   #error: string | null = null;
   #notice: string | null = null;
   #withEnvironment = true;
@@ -182,6 +184,7 @@ export class RequestsTool {
     try {
       this.#open = await this.#api.request(seq);
       this.#body = null;
+      this.#bodyJson = null;
       this.#error = null;
     } catch (error) {
       this.#error = errorText(error);
@@ -197,6 +200,12 @@ export class RequestsTool {
       const body = typeof result['body'] === 'string' ? result['body'] : '';
       const text = result['base64Encoded'] === true ? `(binary, ${formatBytes(Math.floor(body.length * 3 / 4))})` : body;
       this.#body = prettyJson(text);
+      this.#bodyJson = null;
+      if (result['base64Encoded'] !== true) {
+        try {
+          this.#bodyJson = { data: JSON.parse(body) as unknown, raw: body };
+        } catch { /* not JSON: shown as text */ }
+      }
     } catch (error) {
       this.#body = `The body is not available: ${errorText(error)}`;
     }
@@ -223,7 +232,13 @@ export class RequestsTool {
       const bodyHeading = element('h2', { text: 'Response body' });
       if (this.#body === null) bodyHeading.append(button('Load', () => void this.#loadBody(), 'small'));
       parts.push(bodyHeading);
-      if (this.#body !== null) parts.push(element('pre', { className: 'body', text: this.#body }));
+      if (this.#bodyJson !== null && typeof jsonViewRender === 'function') {
+        const tree = element('div', { className: 'json-body' });
+        jsonViewRender(tree, this.#bodyJson.data, this.#bodyJson.raw);
+        parts.push(tree);
+      } else if (this.#body !== null) {
+        parts.push(element('pre', { className: 'body', text: this.#body }));
+      }
     }
     this.#details.replaceChildren(...parts);
   }

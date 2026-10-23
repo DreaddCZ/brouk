@@ -165,4 +165,25 @@ std::vector<MenuItem> BuildContextMenu(const ContextMenuContext& context) {
   return menu.Take();
 }
 
+std::vector<MenuItem> BuildInternalPageContextMenu(
+    const ContextMenuContext& context) {
+  MenuBuilder menu;
+  if (context.is_editable) {
+    menu.Add(MenuCommand::kUndo, "Undo", context.can_undo);
+    menu.Add(MenuCommand::kRedo, "Redo", context.can_redo);
+    menu.Separator();
+    menu.Add(MenuCommand::kCut, "Cut", context.can_cut);
+    menu.Add(MenuCommand::kCopy, "Copy", context.can_copy);
+    menu.Add(MenuCommand::kPaste, "Paste", context.can_paste);
+    menu.Add(MenuCommand::kSelectAll, "Select All", context.can_select_all);
+  } else if (!context.selection_text.empty()) {
+    menu.Add(MenuCommand::kCopy, "Copy");
+  } else {
+    menu.Add(MenuCommand::kReload, "Reload");
+  }
+  menu.Separator();
+  menu.Add(MenuCommand::kInspect, "Inspect");
+  return menu.Take();
+}
+
 }  // namespace brouk

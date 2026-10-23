@@ -908,6 +908,7 @@ class TabDelegateBridge : public TabClientDelegate {
                        inspect:point
                        context:[_delegate devToolsContext]
                    preferences:[_delegate devToolsPreferences]
+                      ownTools:YES
                        counter:[_delegate browserCounter]
                       delegate:self];
   _dock.position = _dockPosition;

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <charconv>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -340,6 +341,17 @@ void DevToolsChannel::StartRecording() {
        [](const CefRefPtr<CefDictionaryValue>&, const std::string&) {});
 }
 
+void DevToolsChannel::WatchServiceWorkers() {
+  CEF_REQUIRE_UI_THREAD();
+  if (watching_workers_) {
+    return;
+  }
+  watching_workers_ = true;
+  // Reports all current registrations and versions, then their changes.
+  Send("ServiceWorker.enable", nullptr,
+       [](const CefRefPtr<CefDictionaryValue>&, const std::string&) {});
+}
+
 namespace {
 
 Headers HeadersFrom(const CefRefPtr<CefDictionaryValue>& dict,
@@ -429,6 +441,41 @@ void DevToolsChannel::HandleNetworkEvent(std::string_view message) {
   }
 }
 
+void DevToolsChannel::HandleServiceWorkerEvent(std::string_view message) {
+  CefRefPtr<CefValue> parsed = ParseJson(message);
+  CefRefPtr<CefDictionaryValue> event =
+      parsed && parsed->GetType() == VTYPE_DICTIONARY ? parsed->GetDictionary()
+                                                      : nullptr;
+  std::string method = StringOf(event, "method");
+  CefRefPtr<CefDictionaryValue> params = DictOf(event, "params");
+  auto each = [&params](const char* key, auto handle) {
+    if (!params || params->GetType(key) != VTYPE_LIST) {
+      return;
+    }
+    CefRefPtr<CefListValue> list = params->GetList(key);
+    for (std::size_t i = 0; i < list->GetSize(); ++i) {
+      if (list->GetType(i) == VTYPE_DICTIONARY) {
+        handle(list->GetDictionary(i));
+      }
+    }
+  };
+  if (method == "ServiceWorker.workerRegistrationUpdated") {
+    each("registrations", [this](const CefRefPtr<CefDictionaryValue>& item) {
+      service_workers_.OnRegistrationUpdated(
+          {StringOf(item, "registrationId"), StringOf(item, "scopeURL"),
+           item->GetType("isDeleted") == VTYPE_BOOL &&
+               item->GetBool("isDeleted")});
+    });
+  } else if (method == "ServiceWorker.workerVersionUpdated") {
+    each("versions", [this](const CefRefPtr<CefDictionaryValue>& item) {
+      service_workers_.OnVersionUpdated(
+          {StringOf(item, "versionId"), StringOf(item, "registrationId"),
+           StringOf(item, "scriptURL"), StringOf(item, "runningStatus"),
+           StringOf(item, "status")});
+    });
+  }
+}
+
 bool DevToolsChannel::OnDevToolsMessage(CefRefPtr<CefBrowser> /*browser*/,
                                         const void* message,
                                         size_t message_size) {
@@ -450,6 +497,12 @@ bool DevToolsChannel::Dispatch(std::string_view text) {
   constexpr std::string_view kNetworkEvent = R"({"method":"Network.)";
   if (recording_ && text.starts_with(kNetworkEvent)) {
     HandleNetworkEvent(text);
+    return false;  // The DevTools frontend wants it too.
+  }
+  constexpr std::string_view kServiceWorkerEvent =
+      R"({"method":"ServiceWorker.)";
+  if (watching_workers_ && text.starts_with(kServiceWorkerEvent)) {
+    HandleServiceWorkerEvent(text);
     return false;  // The DevTools frontend wants it too.
   }
   // Answers to our commands: {"id":<ours>,...}. Everything else is for the

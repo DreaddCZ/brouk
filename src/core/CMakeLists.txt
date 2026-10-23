@@ -41,6 +41,8 @@ set(BROUK_CORE_SOURCES
   screen_share.h
   security_state.cc
   security_state.h
+  service_workers.cc
+  service_workers.h
   settings.cc
   settings.h
   settings_export.cc

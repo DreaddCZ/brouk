@@ -13,8 +13,9 @@
 #include "cef/internal_page_client.h"
 #include "core/devtools_frontend.h"
 #include "include/wrapper/cef_helpers.h"
+#import "platform/mac/devtools_window.h"
 
-@interface BRDevToolsDock ()
+@interface BRDevToolsDock () <BRDevToolsWindowOwner>
 - (void)handleCreated:(CefRefPtr<CefBrowser>)frontend;
 - (void)handleCloseReady;
 - (void)handleClosed;
@@ -24,6 +25,7 @@
 - (void)handleToolsCreated:(CefRefPtr<CefBrowser>)tools;
 - (void)handleToolsCloseReady;
 - (void)handleToolsClosed;
+- (void)inspectToolsAt:(NSPoint)point;
 - (void)saveFile:(brouk::ToolsHost::File)main
            extra:(std::optional<brouk::ToolsHost::File>)extra
             done:(brouk::ToolsHost::Done)done;
@@ -79,6 +81,9 @@ class DockToolsBridge : public InternalPageDelegate {
     return ns_event && event.type == KEYEVENT_RAWKEYDOWN &&
            ns_event.type == NSEventTypeKeyDown &&
            [dock_ handleKeyEvent:ns_event];
+  }
+  void OnInspectElement(int x, int y) override {
+    [dock_ inspectToolsAt:NSMakePoint(x, y)];
   }
 
  private:
@@ -203,6 +208,10 @@ NSButton* HeaderButton(NSString* symbol,
   NSString* _pendingTool;
   BOOL _closing;
   BOOL _frontendCreating;
+  BOOL _ownTools;
+  brouk::DevToolsPreferences* _preferences;  // Not owned; the app's.
+  // DevTools for the tools page itself, to develop the tools.
+  BRDevToolsWindowController* _toolsInspector;
 }
 
 - (instancetype)initWithInspectedBrowser:(CefRefPtr<CefBrowser>)inspected
@@ -210,6 +219,7 @@ NSButton* HeaderButton(NSString* symbol,
                                  context:(CefRefPtr<CefRequestContext>)context
                              preferences:
                                  (brouk::DevToolsPreferences*)preferences
+                                ownTools:(BOOL)ownTools
                                  counter:(id<BRBrowserCounter>)counter
                                 delegate:(id<BRDevToolsDockDelegate>)delegate {
   CEF_REQUIRE_UI_THREAD();
@@ -218,9 +228,14 @@ NSButton* HeaderButton(NSString* symbol,
     _counter = counter;
     _position = @"bottom";
     _context = context;
+    _preferences = preferences;
+    _ownTools = ownTools;
     _channel = new brouk::DevToolsChannel(inspected);
-    // Dev tools on: record the tab's requests (006).
-    _channel->StartRecording();
+    if (ownTools) {
+      // Dev tools on: record the tab's requests (006).
+      _channel->StartRecording();
+      _channel->WatchServiceWorkers();
+    }
     _toolsHost = std::make_unique<brouk::DockToolsHost>(self);
     _frontendCreating = YES;
     [self buildViews];
@@ -246,6 +261,13 @@ NSButton* HeaderButton(NSString* symbol,
 - (void)buildViews {
   _view = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 600, 300)];
   _view.wantsLayer = YES;
+  if (!_ownTools) {
+    // DevTools only: it fills the view.
+    _content = [[NSView alloc] initWithFrame:_view.bounds];
+    _content.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    [_view addSubview:_content];
+    return;
+  }
   BRDevToolsHeaderView* header = [[BRDevToolsHeaderView alloc]
       initWithFrame:NSMakeRect(0, 0, 600, kHeaderHeight)];
   header.autoresizingMask = NSViewWidthSizable | NSViewMinYMargin;
@@ -342,6 +364,8 @@ NSButton* HeaderButton(NSString* symbol,
   }
   _closing = YES;
   _channel->Close();
+  [_toolsInspector detach];
+  _toolsInspector = nil;
   if (_tools) {
     _tools->GetHost()->CloseBrowser(true);
   }
@@ -380,7 +404,7 @@ NSButton* HeaderButton(NSString* symbol,
 #pragma mark - Request rules
 
 - (void)setRequestRules:(const brouk::RequestRuleSet&)rules {
-  if (!_channel) {
+  if (!_channel || !_ownTools) {
     return;
   }
   __weak BRDevToolsDock* weakSelf = self;
@@ -503,6 +527,32 @@ NSButton* HeaderButton(NSString* symbol,
   [_counter browserWindowDidCreateBrowser];
   if (_closing) {
     tools->GetHost()->CloseBrowser(true);
+  }
+}
+
+// "Inspect" in the tools page: DevTools for the page itself (006).
+- (void)inspectToolsAt:(NSPoint)point {
+  if (_toolsInspector) {
+    [_toolsInspector inspectAt:point];
+    return;
+  }
+  if (!_tools || _closing) {
+    return;
+  }
+  _toolsInspector = [[BRDevToolsWindowController alloc]
+      initWithInspectedBrowser:_tools
+                         title:@"Brouk tools"
+                       inspect:point
+                       context:_context
+                   preferences:_preferences
+                       counter:_counter
+                         owner:self];
+  [_toolsInspector showWindow:nil];
+}
+
+- (void)devToolsWindowDidClose:(BRDevToolsWindowController*)controller {
+  if (controller == _toolsInspector) {
+    _toolsInspector = nil;
   }
 }
 

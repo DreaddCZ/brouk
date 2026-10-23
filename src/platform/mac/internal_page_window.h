@@ -6,19 +6,25 @@
 
 #include <memory>
 
+#include "cef/devtools_preferences.h"
 #include "include/cef_request_context.h"
 #include "include/wrapper/cef_message_router.h"
+#import "platform/mac/devtools_dock.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
 @class BRInternalPageWindowController;
 
-@protocol BRInternalPageOwner <NSObject>
+// Also counts DevTools browsers opened for the page (006).
+@protocol BRInternalPageOwner <BRBrowserCounter>
 - (void)internalPageDidCreateBrowser;
 // The browser has closed; the owner drops the controller.
 - (void)internalPageDidClose:(BRInternalPageWindowController*)controller;
 // Keys the page did not use go to the menu bar.
 - (BOOL)internalPageHandleKeyEvent:(NSEvent*)event;
+// For inspecting the page with DevTools, as for tabs (006).
+- (CefRefPtr<CefRequestContext>)devToolsContext;
+- (brouk::DevToolsPreferences*)devToolsPreferences;
 @end
 
 @interface BRInternalPageWindowController : NSWindowController
