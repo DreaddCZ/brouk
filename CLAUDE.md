@@ -34,6 +34,7 @@ All features and requirements live in [`specs/`](specs/README.md).
 4. **Unspecified standard browser behaviour: do what Chrome does** (or Firefox, where Chrome has nothing comparable). If Chrome and Firefox differ and it matters, or you are unsure, ask the user. Record the choice under "Notes" in the relevant spec.
 5. When starting a spec, set its status to `in-progress`; when finished, set it to `done` — in both the spec file and the index.
 6. Do not change a spec's goal, description or acceptance criteria without the user's approval. Add findings under "Notes" instead.
+7. **Every user-visible change updates help** (`specs/016-help.md`): add or update the feature's help section and its "?" links in the same pull request. Until 016 is built, list the help text the change needs in the pull request instead.
 
 ## Decisions
 
@@ -47,6 +48,7 @@ All features and requirements live in [`specs/`](specs/README.md).
 - **Configuration:** YAML files, global and per profile (on macOS in `~/Library/Application Support/Brouk/`), live reload, machine-written (comments not preserved). Details: `specs/004-configuration.md`.
 - **Build:** CMake + Ninja, pinned CEF version downloaded by script, `tsc` for TypeScript, GoogleTest and Node's test runner for tests.
 - **Phases:** phase 1 (now) — personal use, builds made locally on the user's Macs, CI runs only Linux core build and tests. Phase 2 — colleagues: signing, notarization, macOS CI, public update feed. Details: `specs/001-technology-stack.md`. "Phase 1/2" always means these release phases; platforms are rolled out separately (002).
+- **Help:** `brouk://help` in its own window, written in Markdown (`web/help/content/`) and converted at build time with markdown-it; pages link to sections with a "?" icon button. Details: `specs/016-help.md`.
 - From phase 2, the app **updates itself automatically**; CI picks up new CEF releases, builds, signs and publishes them.
 
 ## Open decisions

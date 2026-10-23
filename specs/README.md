@@ -40,7 +40,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 013 | [History](013-history.md) | in-progress — storage, recording, retention, address bar suggestions (merged) and History menu with closed tabs and history limits (forwarding pages, "never record" list) built; history page, search, SQL, clean up, clearing and export next | P1 |
 | 014 | [Downloads](014-downloads.md) | ready | P2 |
 | 015 | [Session restore](015-session-restore.md) | done | P1 |
-| 016 | [Help](016-help.md) | draft | P2 |
+| 016 | [Help](016-help.md) | ready | P2 |
 
 ## Roadmap
 

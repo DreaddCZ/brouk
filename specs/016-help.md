@@ -1,6 +1,6 @@
 # 016 – Help
 
-- **Status:** draft
+- **Status:** ready
 - **Priority:** P2
 - **Depends on:** 001, 003, 004
 
@@ -41,7 +41,7 @@ Rules:
 
 - **Help menu** in the menu bar (standard on macOS): "Brouk Help" (⇧⌘? — remappable as `shortcuts.help`), "Keyboard Shortcuts" (opens the shortcuts section).
 - **Command palette** (⌘K): finds help sections by title, e.g. "help request rules" or just "request rules" lists the help section next to the setting and action.
-- **Context links from other pages:** a small, consistent "?" button next to features that need explaining opens help at that feature's section. At least:
+- **Context links from other pages:** a small, consistent **icon button with a question mark** next to features that need explaining opens help at that feature's section. At least:
 
 | Where | Opens |
 |---|---|
@@ -59,6 +59,7 @@ Rules:
 
 ### Content
 
+- Written as **Markdown** files in the repo (`web/help/content/`, one file per section), converted to the HTML page at build time with **markdown-it** (MIT, pinned version, build-time only — nothing of it ships in the app). Anchors are set explicitly in the Markdown, not derived from headings, so rewording a heading does not break links.
 - Written in **English**, short, task-oriented ("how do I…"), with examples the user can copy (search filters, SQL queries, URL patterns, rules).
 - **Help is part of each feature's definition of done:** a spec that adds or changes user-visible behaviour also adds or updates its help section and its "?" links. Specs that are already done get their sections as part of this spec.
 
@@ -69,7 +70,7 @@ Rules:
 - [ ] The page works with no network connection.
 - [ ] The table of contents lists all sections and highlights the one in view; clicking an entry scrolls to it.
 - [ ] The search box filters sections by their text, ignoring case and accents, and highlights the matches.
-- [ ] Every "?" link listed above opens the help window scrolled to its section, with the section briefly highlighted.
+- [ ] Every "?" icon button listed above opens the help window scrolled to its section, with the section briefly highlighted.
 - [ ] A build-time test checks that every help link in the code and pages points to an anchor that exists in the help page; a missing anchor fails the build.
 - [ ] The Keyboard shortcuts section shows the user's current shortcuts, including remapped ones; changing a shortcut updates it (live reload, 004).
 - [ ] The Settings reference lists every non-advanced setting from the schema with key, default and scope.
@@ -94,11 +95,9 @@ Rules:
 
 ## Open questions
 
-1. **Own window (recommended) or a tab?** The description assumes its own window for the reasons above. Alternative: a tab in the active tab's profile group, like Chrome's help.
-2. **Format of the help content:** written as Markdown files in the repo and converted to HTML at build time (needs one pinned build-time library, e.g. `markdown-it`, which needs approval under `CLAUDE.md`), or written directly as HTML (no new dependency, harder to edit)?
-3. **"?" link style:** a "?" icon button next to the feature (proposed), or a text link "Help", or both?
-4. Should **CLAUDE.md** get a rule that every user-visible change updates help (as in Description → Content), so Claude Code does it without being reminded?
+None.
 
 ## Notes
 
 - 2026-10-23: created as a high-level requirement; details to be agreed in a separate review.
+- 2026-10-23 (help review with the user): help opens in its own window (not a tab); content is written in Markdown and converted at build time with markdown-it (approved as a pinned, build-time-only dependency); context links are an icon button with a question mark; CLAUDE.md gets a rule that every user-visible change updates help. Spec set to `ready`.
