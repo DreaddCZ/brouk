@@ -777,6 +777,9 @@ class AppSettingsPage : public SettingsPageDelegate {
   brouk::mac::SetShortcuts(brouk::ResolveShortcuts(global, ignored));
   if (_history) {
     const std::string& keep = global.GetString("history.keep");
+    _history->SetNeverRecord(
+        brouk::ParseUrlPatternList(global.GetString("history.never_record"))
+            .value_or(std::vector<brouk::UrlPattern>{}));
     _history->SetRetentionDays(
         keep == "forever" ? std::nullopt
                           : std::optional<int>(std::atoi(keep.c_str())));

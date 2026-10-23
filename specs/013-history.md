@@ -15,11 +15,12 @@ Record visited pages per profile, so the user can find them again, the address b
 - History is stored **per profile** (005). Each profile's history is separate data. It is deleted with the profile and can be included in its export.
 - **Recorded:**
   - Every top-level navigation to an `http`, `https` or `file` URL, with URL, page title, visit time and how the visit started (typed, link, bookmark, reload…).
-  - Through a redirect chain, only the final URL is shown.
+  - Through a redirect chain, only the final URL is shown. This covers redirects by the server and pages that forward to another page by themselves right after loading (meta refresh, script); the page that forwarded is not kept.
   - Each page's favicon, cached per profile. Bookmarks (011) use these icons too.
 - **Not recorded:**
   - `brouk://` pages, `data:` and `blob:` URLs, error pages, and downloads.
   - Navigations inside frames other than the main frame.
+  - Pages of sites on the user's **"never record" list** (a setting, e.g. sign-in pages such as `login.microsoftonline.com` or `*.okta.com`). The list uses the URL patterns of 006 (`example.com`, `*.example.com`, `example.com/path/`). Adding a site also removes its pages already in the history.
 - **Retention:** entries older than **90 days** are deleted automatically, as in Chrome. The limit is a setting.
 
 ### History page
@@ -153,7 +154,8 @@ As specified in 005, history can be included in a profile export, limited to the
 
 **Recording**
 - [ ] Visiting a page in profile A records it in A's history only; it is not suggested and not listed under profile B.
-- [ ] Redirects show only the final URL; brouk://, data:, blob: and error pages are not recorded.
+- [ ] Redirects show only the final URL, also when a page forwards to another one by itself; brouk://, data:, blob: and error pages are not recorded.
+- [ ] Pages matching the "never record" list are not recorded, in any profile; adding a site removes its existing pages from the history.
 - [ ] Entries older than the retention limit (90 days by default) are removed automatically.
 
 **History page**
@@ -197,6 +199,7 @@ As specified in 005, history can be included in a profile export, limited to the
 | Setting | Default | Scope |
 |---|---|---|
 | Keep history for | 90 days (alternatives: 30 days, 1 year, forever) | global |
+| Never record these sites | empty; URL patterns as in 006 | global |
 | History in address bar suggestions | on (already in 003) | global |
 | History page view | by site (alternative: by day; the page remembers the last choice) | global |
 | Clean up keep list | empty; updated by Clean up | per profile |
@@ -212,4 +215,6 @@ None.
 - 2026-10-22 (history review, part 2, with the user): to reduce clutter, the history page groups entries by exact host (default view; Chrome's by-day list is a toggle). A manual "Clean up" dialog deletes selected hosts or everything except kept hosts; the keep list is remembered per profile and topped up with the 10 most visited hosts. No automatic clean up. Search uses field filters with chips, plus a read-only SQL editor over `pages` and `visits` views.
 - 2026-10-23 (implementation, with 003): storage, recording, retention and the address bar part are done; the history page, menu, closed tabs, clearing and export follow. SQLite 3.54.1 amalgamation (`cmake/BroukSqlite.cmake`), one `profiles/<id>/history.db` per profile in WAL mode, tables `urls` and `visits` (schema version 1; favicons and downloads come as later versions). All database work runs on one dedicated thread (`src/cef/history_service`). A visit is recorded when the main frame finishes loading without an error, at the final URL of server redirects; same-document navigations (history.pushState) count too, as in Chrome. Not recorded: anything other than http, https and file, error pages, downloads, subframes. Client-side redirects (meta refresh, JavaScript) still record both pages for now; to be revisited with the history page. Transitions: typed = entered in the address bar or a history suggestion chosen there (searches are not "typed", as in Chrome), then reload, bookmark, link (links and forms), other (back/forward and the rest). Ranking: how the text matches (start of the address first), then typed visits, visit count and recency; inline completion only for pages typed before. Retention (`history.keep`: 30, 90 (default), 365 days or forever) runs when a profile's history opens and then hourly.
 - 2026-10-23 (implementation, History menu): History → Back, Forward, Home (⇧⌘H: the new tab page in the current tab, as in Chrome), Reopen Closed Tab (⇧⌘T), Recently Closed and Recently Visited (submenus). Show Full History (⌘Y) comes with the history page. Closed tabs: a tab closed on its own is one entry; a window closed as a whole (its close button, ⇧⌘W) is one entry with its tabs; closing the last tab of a window keeps that tab. New tab pages are not kept; tabs of a deleted profile are removed from the list; quitting does not add entries. A reopened tab goes back into its window (if still open) at its old place in its profile group, pinned if it was; otherwise into the front window. A reopened window opens as a new window. Only the page comes back, not its back/forward list (CEF cannot restore it). Recently Visited lists the 10 latest pages of the front window's active profile; it is read from the history in the background, so the first opening after start may show "Loading…". Its items open in a new tab of that profile. Both shortcuts are remappable (`shortcuts.home`, `shortcuts.reopen_closed_tab`).
+- 2026-10-23 (user's decision, testing feedback): pages that forward to another page by themselves (client redirects) are removed from the history, as Chrome hides them; the user asked for a "never record" site list in addition. Description and acceptance criteria updated with the user's approval.
+- 2026-10-23 (implementation, history limits): a forwarding page is recognised by CEF's client-redirect qualifier on the next page's navigation entry (meta refresh, script navigation without a user gesture while or right after loading); its latest visit is removed and the next page keeps how the chain started (typed, link…). Server redirects were already recorded only at their end. "Never record these sites" (`history.never_record`, Settings → History) takes the URL patterns of 006 separated by commas; matching pages are not recorded or retitled, and pages already in a profile's history are removed when the list changes and when that profile's history is opened.
 

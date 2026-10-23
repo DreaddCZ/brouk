@@ -96,6 +96,7 @@ function control(scopeProfile: string | null, item: SettingItem, inputId: string
   input.autocomplete = 'off';
   if (item.format === 'folder') input.placeholder = 'Downloads';
   if (item.format === 'urlTemplate') input.placeholder = 'https://example.com/search?q=%s';
+  if (item.format === 'urlPatterns') input.placeholder = 'login.example.com, *.example.org';
   if (item.format === 'shortcut') {
     // Pressing a shortcut records it (003); plain keys edit the text, e.g.
     // to add a second shortcut after a comma or to type "none".

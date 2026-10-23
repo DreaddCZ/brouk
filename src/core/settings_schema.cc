@@ -42,7 +42,7 @@ constexpr std::array<std::string_view, 4> kHistoryKeep = {"30", "90", "365",
 constexpr std::array<std::string_view, 4> kHistoryKeepLabels = {
     "30 days", "90 days", "1 year", "Forever"};
 
-constexpr std::array<SettingDef, 20> kSettings = {{
+constexpr std::array<SettingDef, 21> kSettings = {{
     // Global.
     {.key = "appearance.theme",
      .scope = SettingScope::kGlobal,
@@ -101,6 +101,17 @@ constexpr std::array<SettingDef, 20> kSettings = {{
      .section = "History",
      .label = "Keep history for",
      .description = "Older visits are deleted automatically."},
+    {.key = "history.never_record",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kString,
+     .default_value = "",
+     .format = SettingDef::Format::kUrlPatterns,
+     .max_length = 4096,
+     .section = "History",
+     .label = "Never record these sites",
+     .description = "Comma-separated, e.g. login.microsoftonline.com, "
+                    "*.okta.com. Their pages already in the history are "
+                    "removed too."},
     {.key = "downloads.folder",
      .scope = SettingScope::kGlobal,
      .type = SettingDef::Type::kString,

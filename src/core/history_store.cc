@@ -395,6 +395,67 @@ bool HistoryStore::DeletePage(std::string_view url) {
   return remove->Run() && db_->changes() > 0;
 }
 
+void HistoryStore::RemoveLastVisit(std::string_view url) {
+  Error error;
+  std::optional<SqliteStatement> remove = db_->Prepare(
+      "DELETE FROM visits WHERE id = (SELECT visits.id FROM visits "
+      "JOIN urls ON urls.id = visits.url_id WHERE urls.url = ?1 "
+      "ORDER BY visits.visit_time DESC, visits.id DESC LIMIT 1)",
+      error);
+  if (!remove) {
+    return;
+  }
+  remove->Bind(1, url);
+  if (!remove->Run()) {
+    return;
+  }
+  std::optional<SqliteStatement> update = db_->Prepare(
+      "UPDATE urls SET"
+      "  visit_count = (SELECT count(*) FROM visits WHERE url_id = urls.id),"
+      "  typed_count = (SELECT count(*) FROM visits"
+      "    WHERE url_id = urls.id AND transition = 1),"
+      "  last_visit = coalesce((SELECT max(visit_time) FROM visits"
+      "    WHERE url_id = urls.id), last_visit) "
+      "WHERE url = ?1",
+      error);
+  if (update) {
+    update->Bind(1, url);
+    update->Run();
+  }
+  std::optional<SqliteStatement> drop = db_->Prepare(
+      "DELETE FROM urls WHERE url = ?1 AND visit_count = 0", error);
+  if (drop) {
+    drop->Bind(1, url);
+    drop->Run();
+  }
+}
+
+int HistoryStore::DeleteMatching(std::span<const UrlPattern> patterns) {
+  if (patterns.empty()) {
+    return 0;
+  }
+  Error error;
+  std::optional<SqliteStatement> query =
+      db_->Prepare("SELECT id, url FROM urls", error);
+  std::optional<SqliteStatement> remove =
+      db_->Prepare("DELETE FROM urls WHERE id = ?1", error);
+  if (!query || !remove) {
+    return 0;
+  }
+  std::vector<std::int64_t> ids;
+  while (query->Step()) {
+    if (MatchesAnyPattern(patterns, query->ColumnText(1))) {
+      ids.push_back(query->ColumnInt(0));
+    }
+  }
+  for (std::int64_t id : ids) {
+    remove->Reset();
+    remove->Bind(1, id);
+    remove->Run();
+  }
+  return static_cast<int>(ids.size());
+}
+
 int HistoryStore::DeleteVisitsBefore(std::int64_t cutoff) {
   Error error;
   std::optional<SqliteStatement> remove =

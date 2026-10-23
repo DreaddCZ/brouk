@@ -152,4 +152,39 @@ int UrlPattern::Specificity() const {
          static_cast<int>(std::min<std::size_t>(path_prefix.size(), 9999));
 }
 
+std::optional<std::vector<UrlPattern>> ParseUrlPatternList(
+    std::string_view text) {
+  std::vector<UrlPattern> patterns;
+  std::size_t start = 0;
+  while (start <= text.size()) {
+    std::size_t end = text.find(',', start);
+    if (end == std::string_view::npos) {
+      end = text.size();
+    }
+    std::string_view item = text.substr(start, end - start);
+    while (!item.empty() && item.front() == ' ') {
+      item.remove_prefix(1);
+    }
+    while (!item.empty() && item.back() == ' ') {
+      item.remove_suffix(1);
+    }
+    if (!item.empty()) {
+      std::optional<UrlPattern> pattern = UrlPattern::Parse(item);
+      if (!pattern) {
+        return std::nullopt;
+      }
+      patterns.push_back(std::move(*pattern));
+    }
+    start = end + 1;
+  }
+  return patterns;
+}
+
+bool MatchesAnyPattern(std::span<const UrlPattern> patterns,
+                       std::string_view url) {
+  return std::ranges::any_of(patterns, [url](const UrlPattern& pattern) {
+    return pattern.Matches(url);
+  });
+}
+
 }  // namespace brouk

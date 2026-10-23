@@ -46,6 +46,7 @@ class FunctionTask : public CefTask {
 struct HistoryService::State {
   std::function<std::filesystem::path(const ProfileId&)> database_path;
   std::optional<int> retention_days = 90;
+  std::vector<UrlPattern> never_record;
   struct Open {
     std::unique_ptr<HistoryStore> store;
     std::int64_t last_cleanup = 0;
@@ -65,6 +66,7 @@ struct HistoryService::State {
         return nullptr;
       }
       it = open.emplace(profile, Open{std::move(store).value(), 0}).first;
+      it->second.store->DeleteMatching(never_record);
     }
     ApplyRetention(it->second, false);
     return it->second.store.get();
@@ -115,6 +117,26 @@ void HistoryService::SetRetentionDays(std::optional<int> days) {
   });
 }
 
+void HistoryService::SetNeverRecord(std::vector<UrlPattern> patterns) {
+  CEF_REQUIRE_UI_THREAD();
+  Post([patterns = std::move(patterns)](State& state) {
+    state.never_record = patterns;
+    for (auto& [profile, entry] : state.open) {
+      entry.store->DeleteMatching(state.never_record);
+    }
+  });
+}
+
+void HistoryService::RemoveRedirectSource(const ProfileId& profile,
+                                          std::string url) {
+  CEF_REQUIRE_UI_THREAD();
+  Post([profile, url = std::move(url)](State& state) {
+    if (HistoryStore* store = state.Store(profile)) {
+      store->RemoveLastVisit(url);
+    }
+  });
+}
+
 void HistoryService::RecordVisit(const ProfileId& profile,
                                  std::string url,
                                  std::string title,
@@ -126,6 +148,9 @@ void HistoryService::RecordVisit(const ProfileId& profile,
   std::int64_t time = Now();
   Post([profile, url = std::move(url), title = std::move(title), time,
         transition](State& state) {
+    if (MatchesAnyPattern(state.never_record, url)) {
+      return;
+    }
     if (HistoryStore* store = state.Store(profile)) {
       if (std::optional<Error> error =
               store->RecordVisit(url, title, time, transition)) {
@@ -143,6 +168,9 @@ void HistoryService::SetTitle(const ProfileId& profile,
     return;
   }
   Post([profile, url = std::move(url), title = std::move(title)](State& state) {
+    if (MatchesAnyPattern(state.never_record, url)) {
+      return;
+    }
     if (HistoryStore* store = state.Store(profile)) {
       store->SetTitle(url, title);
     }
