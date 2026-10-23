@@ -162,7 +162,7 @@ void DevToolsFrontendClient::ResetPage() {
   }
   // Chrome detaches the frontend's session, which resets all of this; the
   // CEF session stays attached for the tab's lifetime, so undo it here.
-  constexpr std::array<std::pair<const char*, const char*>, 27> kResets = {{
+  constexpr auto kResets = std::to_array<std::pair<const char*, const char*>>({
       {"Debugger.disable", "{}"},
       {"Overlay.setInspectMode", R"({"mode":"none","highlightConfig":{}})"},
       {"Overlay.hideHighlight", "{}"},
@@ -183,7 +183,7 @@ void DevToolsFrontendClient::ResetPage() {
       {"Overlay.disable", "{}"},
       {"Log.disable", "{}"},
       {"Runtime.disable", "{}"},
-  }};
+  });
   for (const auto& [method, params] : kResets) {
     CefRefPtr<CefValue> parsed = ParseJson(params);
     SendToPage(method, parsed ? parsed->GetDictionary() : nullptr, nullptr);
