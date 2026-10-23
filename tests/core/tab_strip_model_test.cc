@@ -298,5 +298,83 @@ TEST(TabStripModelGroupsTest, ChangingTheDefaultProfileMovesGroups) {
   EXPECT_EQ(*model.ProfileOf(4), kWork);
 }
 
+TEST(TabStripModelPinnedTest, PinnedTabsGoToTheStartOfTheirGroup) {
+  TabStripModel model(kMain);
+  model.AppendTab(1, kWork, true);
+  model.AppendTab(2, kWork, true);
+  model.AppendTab(3, kWork, true);
+  model.AppendTab(4, true);
+  model.AppendTab(5, true);
+  EXPECT_TRUE(model.SetPinned(3, true));
+  EXPECT_TRUE(model.SetPinned(5, true));
+  EXPECT_FALSE(model.SetPinned(5, true));  // Already pinned.
+  EXPECT_EQ(Order(model), (std::vector<TabId>{3, 1, 2, 5, 4}));
+  EXPECT_TRUE(model.IsPinned(3));
+  EXPECT_FALSE(model.IsPinned(1));
+  std::vector<TabStripModel::Group> groups = model.groups();
+  EXPECT_EQ(groups[0].pinned_count, 1U);
+  EXPECT_EQ(groups[1].pinned_count, 1U);
+  EXPECT_EQ(groups[1].start, 3U);
+  // A second pinned tab goes after the first one.
+  model.SetPinned(2, true);
+  EXPECT_EQ(Order(model), (std::vector<TabId>{3, 2, 1, 5, 4}));
+  EXPECT_EQ(model.active_id(), 5);  // Still the same tab.
+}
+
+TEST(TabStripModelPinnedTest, UnpinnedTabGoesRightAfterThePinnedOnes) {
+  TabStripModel model(kMain);
+  model.AppendTab(1, true);
+  model.AppendTab(2, true);
+  model.AppendTab(3, true);
+  model.SetPinned(2, true);
+  model.SetPinned(3, true);
+  EXPECT_EQ(Order(model), (std::vector<TabId>{2, 3, 1}));
+  EXPECT_TRUE(model.SetPinned(2, false));
+  EXPECT_EQ(Order(model), (std::vector<TabId>{3, 2, 1}));
+  EXPECT_EQ(model.groups()[0].pinned_count, 1U);
+  EXPECT_EQ(model.active_id(), 3);
+}
+
+TEST(TabStripModelPinnedTest, MovesKeepPinnedAndOtherTabsApart) {
+  TabStripModel model(kMain);
+  for (TabId id = 1; id <= 4; ++id) {
+    model.AppendTab(id, true);
+  }
+  model.SetPinned(1, true);
+  model.SetPinned(2, true);
+  model.MoveTab(4, 0);  // Not before the pinned tabs.
+  EXPECT_EQ(Order(model), (std::vector<TabId>{1, 2, 4, 3}));
+  model.MoveTab(1, 99);  // Not after them either.
+  EXPECT_EQ(Order(model), (std::vector<TabId>{2, 1, 4, 3}));
+}
+
+TEST(TabStripModelPinnedTest, LinksFromAPinnedTabOpenAfterThePinnedTabs) {
+  TabStripModel model(kMain);
+  model.AppendTab(1, true);
+  model.AppendTab(2, true);
+  model.AppendTab(3, true);
+  model.SetPinned(1, true);
+  model.SetPinned(2, true);
+  model.ActivateTab(1);
+  model.InsertFromOpener(10, 1, false);
+  model.InsertFromOpener(11, 1, false);
+  EXPECT_EQ(Order(model), (std::vector<TabId>{1, 2, 10, 11, 3}));
+  EXPECT_FALSE(model.IsPinned(10));
+}
+
+TEST(TabStripModelPinnedTest, LastActiveTabOfAGroup) {
+  TabStripModel model(kMain);
+  EXPECT_FALSE(model.LastActiveTabOf(kWork));
+  model.AppendTab(1, kWork, false);
+  model.AppendTab(2, kWork, false);
+  EXPECT_EQ(model.LastActiveTabOf(kWork), 1);  // The first tab was active.
+  model.AppendTab(3, true);
+  model.ActivateTab(2);
+  model.ActivateTab(3);
+  EXPECT_EQ(model.LastActiveTabOf(kWork), 2);
+  model.RemoveTab(2);
+  EXPECT_EQ(model.LastActiveTabOf(kWork), 1);
+}
+
 }  // namespace
 }  // namespace brouk
