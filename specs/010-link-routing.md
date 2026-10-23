@@ -1,6 +1,6 @@
 # 010 – Link routing and window picker
 
-- **Status:** draft
+- **Status:** ready
 - **Priority:** P1
 - **Depends on:** 001, 003, 005
 
@@ -40,7 +40,28 @@ The browser keeps a live model of all its windows and tabs, including which disp
 - It exists in several windows → the user chooses the window.
 - It exists in no window → open as a new group in the frontmost window.
 
-**Picker:** one dialog for choosing the profile and, when needed, the window. Fully keyboard-driven (number keys or arrows plus Enter).
+**Picker:** one native dialog for choosing the profile and, when needed, the window.
+
+- **Where it appears:**
+  - centred on the current screen, in front of all windows;
+  - for a link from another app, Brouk comes to the front first.
+- **Top of the dialog:** the URL being opened (host in bold) and where it came from (the app's name, or "from <profile>" for a link inside the browser).
+- **Step 1 – profile** (only when a rule lists several profiles):
+  - the rule's profiles in the order of the rule, each with its colour, name and number key (1–9);
+  - below the list, a checkbox **"Always open links matching `<pattern>` in this profile"**. If it is checked, the matched rule is changed to the chosen profile only, and the user can change it back in settings.
+- **Step 2 – window** (only when the chosen profile's group is in several windows):
+  - one entry per window, most recently used first;
+  - each entry shows:
+    - a **thumbnail** of the window's active tab;
+    - the active tab's favicon and title;
+    - the window's **profile groups** as coloured chips with tab counts (e.g. "Work 5 · Main 2"), with the chosen profile's group marked;
+  - the last entry is always **"New window"**;
+  - when step 1 was shown, Esc or ← goes back to it.
+- **Keyboard:** number keys choose an entry at once; ↑/↓ plus Enter also work; Esc in the first step cancels, and the link is not opened. The mouse works too.
+- **Thumbnails** come from the browser's own rendering, so they need no screen recording permission. A tab with nothing rendered yet (e.g. never shown since start) shows its favicon instead.
+- **Chosen window on another Space:** depends on a setting.
+  - **Switch to that Space** (default): macOS switches to the window's Space, as it does when the window is activated.
+  - **Move the window here:** the window moves to the current Space.
 
 ## Acceptance criteria
 
@@ -55,20 +76,29 @@ The browser keeps a live model of all its windows and tabs, including which disp
 - [ ] A link from inside the browser that matches no rule stays in the current profile.
 - [ ] The destination window follows the rules above (default profile → most recent window on the current screen; other profiles: one window → there; several → user chooses; none → new group in the frontmost window).
 - [ ] Routing rules can be added, edited and deleted in settings.
+- [ ] The picker shows the URL and where the link came from. In the window step, each window shows a thumbnail of its active tab, the active tab's favicon and title, and its profile groups with tab counts. "New window" is always the last entry.
+- [ ] Choosing "New window" opens the link in a new window, in the chosen profile.
+- [ ] Every picker step works with the keyboard alone (number keys, arrows plus Enter); Esc in the first step cancels without opening the link.
+- [ ] Checking "Always open links matching … in this profile" changes the matched rule to that profile only; the next matching link opens without the picker.
+- [ ] With the default setting, choosing a window on another Space switches to that Space; with "Move the window here", the window comes to the current Space.
 
 ## Out of scope
 
-To be defined.
+- Showing which Space a window is on, or listing Spaces by name (needs private macOS APIs).
+- Choosing a tab position or a specific tab in the picker.
+- Thumbnails of all tabs of a window (only the active tab).
+- Rules based on anything other than the URL (e.g. the app the link came from).
 
 ## Configuration
 
-- Routing rules (pattern → one or more profiles).
+| Setting | Default | Scope |
+|---|---|---|
+| Routing rules (pattern → one or more profiles) | none | global |
+| When the chosen window is on another Space | switch to that Space (alternative: move the window here) | global |
 
 ## Open questions
 
-- What does the picker show: window titles, tab lists, page thumbnails, profile colour, display and Space?
-- Can the user also choose "new window" from the picker?
-- After choosing a window on another Space: switch to that Space, or move the window to the current one?
+None.
 
 ## Notes
 
@@ -77,3 +107,9 @@ To be defined.
 - macOS Spaces: public APIs only tell whether a window is on the *active* Space and notify when the active Space changes. Listing all Spaces, knowing which Space a window is on, or moving a window to another Space needs private APIs (fragile, may break with macOS updates, not allowed in the Mac App Store).
 - Windows virtual desktops: a public API reports a window's desktop and can move our own windows between desktops; listing desktops and their names is undocumented.
 - Page thumbnails do not need screen recording permission: the browser renders its own content.
+- 2026-10-23 (picker review with the user):
+  - Window entries show a thumbnail of the active tab, its favicon and title, and the window's profile groups with tab counts.
+  - "New window" is always the last entry.
+  - A window on another Space: by default macOS switches to it; a setting moves the window to the current Space instead. That uses the public `NSWindowCollectionBehaviorMoveToActiveSpace`; verify it in the SDK headers.
+  - The picker can save the choice by narrowing the matched rule to one profile.
+  - Spec set to `ready`.
