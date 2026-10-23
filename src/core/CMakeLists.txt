@@ -13,6 +13,8 @@ set(BROUK_CORE_SOURCES
   bookmark_html.h
   bookmark_model.cc
   bookmark_model.h
+  bookmark_profile.cc
+  bookmark_profile.h
   closed_tabs.cc
   closed_tabs.h
   command_palette.cc

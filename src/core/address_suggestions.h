@@ -17,6 +17,7 @@ struct AddressSuggestion {
     kTypedUrl,     // Go to the address as typed.
     kTypedSearch,  // Search for the text as typed.
     kHistory,      // A page from the profile's history.
+    kBookmark,     // A bookmark visible in the tab's profile (011).
     kSearch,       // A search engine suggestion.
   };
   Kind kind = Kind::kTypedSearch;
@@ -28,6 +29,12 @@ struct AddressSuggestion {
   std::string inline_completion;
 };
 
+// A bookmark matching the typed text (011).
+struct BookmarkMatch {
+  std::string name;
+  std::string url;
+};
+
 // What the list is built from.
 struct AddressSuggestionInput {
   std::string_view text;  // As typed.
@@ -35,16 +42,18 @@ struct AddressSuggestionInput {
   std::string_view search_engine_name;  // "Google"
   std::span<const HistoryMatch> history;
   std::span<const std::string> search_suggestions;
+  std::span<const BookmarkMatch> bookmarks = {};
 };
 
 inline constexpr std::size_t kMaxHistorySuggestions = 5;
 inline constexpr std::size_t kMaxSearchSuggestions = 4;
+inline constexpr std::size_t kMaxBookmarkSuggestions = 3;
 
-// The list in the order of 003: history first, then (with 011) bookmarks,
-// then search suggestions. As in Chrome, the first row is what Return does:
-// the history page completed inline, or else the typed text as an address
-// or a search; the typed text keeps a row in the list either way. Empty for
-// empty text.
+// The list in the order of 003: history first, then bookmarks (pages not
+// already listed), then search suggestions. As in Chrome, the first row is what
+// Return does: the history page completed inline, or else the typed text as an
+// address or a search; the typed text keeps a row in the list either way. Empty
+// for empty text.
 std::vector<AddressSuggestion> BuildAddressSuggestions(
     const AddressSuggestionInput& input);
 

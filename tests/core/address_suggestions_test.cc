@@ -91,6 +91,34 @@ TEST(AddressSuggestionsTest, LimitsEachSource) {
   EXPECT_EQ(rows.size(), 1 + kMaxHistorySuggestions + kMaxSearchSuggestions);
 }
 
+TEST(AddressSuggestionsTest, BookmarksComeAfterHistory) {
+  std::vector<HistoryMatch> history = {Page("https://jira.example/", "Jira")};
+  std::vector<BookmarkMatch> bookmarks = {
+      {.name = "Jira", .url = "https://jira.example"},  // Same page.
+      {.name = "Board", .url = "https://jira.example/board"},
+      {.name = "", .url = "https://jira.example/a"},
+      {.name = "B", .url = "https://jira.example/b"},
+      {.name = "C", .url = "https://jira.example/c"},
+  };
+  std::vector<std::string> search = {"jira login"};
+  std::vector<AddressSuggestion> rows =
+      BuildAddressSuggestions({.text = "jira",
+                               .search_template = kGoogle,
+                               .search_engine_name = "Google",
+                               .history = history,
+                               .search_suggestions = search,
+                               .bookmarks = bookmarks});
+  ASSERT_EQ(rows.size(), 6U);
+  EXPECT_EQ(rows[0].kind, Kind::kTypedSearch);
+  EXPECT_EQ(rows[1].kind, Kind::kHistory);
+  EXPECT_EQ(rows[2].kind, Kind::kBookmark);
+  EXPECT_EQ(rows[2].text, "Board");
+  EXPECT_EQ(rows[2].url, "https://jira.example/board");
+  EXPECT_EQ(rows[3].text, "jira.example/a") << "no name: the address";
+  EXPECT_EQ(rows[4].text, "B");
+  EXPECT_EQ(rows[5].kind, Kind::kSearch);
+}
+
 TEST(AddressSuggestionsTest, WhatIsSentToTheSearchEngine) {
   EXPECT_TRUE(ShouldFetchSearchSuggestions("brouk"));
   EXPECT_TRUE(ShouldFetchSearchSuggestions("github.com/brouk"));

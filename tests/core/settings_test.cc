@@ -128,6 +128,7 @@ TEST(SettingsTest, FileFormat) {
             "  custom_template: \"\"\n"
             "suggestions:\n"
             "  history: true\n"
+            "  bookmarks: true\n"
             "  search: true\n"
             "history:\n"
             "  keep: 90\n"
