@@ -1,6 +1,8 @@
 #include "cef/devtools_channel.h"
 
 #include <charconv>
+#include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -65,13 +67,117 @@ void DevToolsChannel::Send(const std::string& method,
   }
 }
 
+void DevToolsChannel::StartRecording() {
+  CEF_REQUIRE_UI_THREAD();
+  if (recording_) {
+    return;
+  }
+  recording_ = true;
+  Send("Network.enable", nullptr,
+       [](const CefRefPtr<CefDictionaryValue>&, const std::string&) {});
+}
+
+namespace {
+
+Headers HeadersFrom(const CefRefPtr<CefDictionaryValue>& dict,
+                    const char* key) {
+  Headers headers;
+  if (!dict || dict->GetType(key) != VTYPE_DICTIONARY) {
+    return headers;
+  }
+  CefRefPtr<CefDictionaryValue> object = dict->GetDictionary(key);
+  CefDictionaryValue::KeyList names;
+  object->GetKeys(names);
+  for (const CefString& name : names) {
+    if (object->GetType(name) == VTYPE_STRING) {
+      headers.emplace_back(name.ToString(), object->GetString(name).ToString());
+    }
+  }
+  return headers;
+}
+
+std::string StringOf(const CefRefPtr<CefDictionaryValue>& dict,
+                     const char* key) {
+  return dict && dict->GetType(key) == VTYPE_STRING
+             ? dict->GetString(key).ToString()
+             : std::string();
+}
+
+double NumberOf(const CefRefPtr<CefDictionaryValue>& dict, const char* key) {
+  if (!dict) {
+    return 0;
+  }
+  if (dict->GetType(key) == VTYPE_DOUBLE) {
+    return dict->GetDouble(key);
+  }
+  if (dict->GetType(key) == VTYPE_INT) {
+    return dict->GetInt(key);
+  }
+  return 0;
+}
+
+CefRefPtr<CefDictionaryValue> DictOf(const CefRefPtr<CefDictionaryValue>& dict,
+                                     const char* key) {
+  return dict && dict->GetType(key) == VTYPE_DICTIONARY
+             ? dict->GetDictionary(key)
+             : nullptr;
+}
+
+}  // namespace
+
+void DevToolsChannel::HandleNetworkEvent(std::string_view message) {
+  CefRefPtr<CefValue> parsed = ParseJson(message);
+  CefRefPtr<CefDictionaryValue> event =
+      parsed && parsed->GetType() == VTYPE_DICTIONARY ? parsed->GetDictionary()
+                                                      : nullptr;
+  std::string method = StringOf(event, "method");
+  CefRefPtr<CefDictionaryValue> params = DictOf(event, "params");
+  std::string id = StringOf(params, "requestId");
+  if (id.empty()) {
+    return;
+  }
+  if (method == "Network.requestWillBeSent") {
+    CefRefPtr<CefDictionaryValue> request = DictOf(params, "request");
+    std::optional<std::string> post_data;
+    if (request && request->GetType("postData") == VTYPE_STRING) {
+      post_data = request->GetString("postData").ToString();
+    }
+    requests_.OnRequest(id, StringOf(request, "url"),
+                        StringOf(request, "method"), StringOf(params, "type"),
+                        HeadersFrom(request, "headers"), std::move(post_data),
+                        NumberOf(params, "wallTime"),
+                        NumberOf(params, "timestamp"));
+  } else if (method == "Network.requestWillBeSentExtraInfo") {
+    requests_.OnRequestExtraHeaders(id, HeadersFrom(params, "headers"));
+  } else if (method == "Network.responseReceived") {
+    CefRefPtr<CefDictionaryValue> response = DictOf(params, "response");
+    requests_.OnResponse(id, static_cast<int>(NumberOf(response, "status")),
+                         StringOf(response, "mimeType"),
+                         HeadersFrom(response, "headers"));
+  } else if (method == "Network.responseReceivedExtraInfo") {
+    requests_.OnResponseExtraHeaders(id, HeadersFrom(params, "headers"));
+  } else if (method == "Network.loadingFinished") {
+    requests_.OnFinished(
+        id, NumberOf(params, "timestamp"),
+        static_cast<std::int64_t>(NumberOf(params, "encodedDataLength")));
+  } else if (method == "Network.loadingFailed") {
+    requests_.OnFailed(id, NumberOf(params, "timestamp"),
+                       StringOf(params, "errorText"));
+  }
+}
+
 bool DevToolsChannel::OnDevToolsMessage(CefRefPtr<CefBrowser> /*browser*/,
                                         const void* message,
                                         size_t message_size) {
   CEF_REQUIRE_UI_THREAD();
   std::string_view text(static_cast<const char*>(message), message_size);
-  // Only answers to our commands: {"id":<ours>,...}. Everything else is for
-  // the DevTools frontend.
+  constexpr std::string_view kNetworkEvent = R"({"method":"Network.)";
+  if (recording_ && text.starts_with(kNetworkEvent)) {
+    HandleNetworkEvent(text);
+    return false;  // The DevTools frontend wants it too.
+  }
+  // Answers to our commands: {"id":<ours>,...}. Everything else is for the
+  // DevTools frontend.
   constexpr std::string_view kPrefix = R"({"id":)";
   if (!text.starts_with(kPrefix)) {
     return false;

@@ -646,6 +646,12 @@ class AppSettingsPage : public SettingsPageDelegate {
   return [self internalContext];
 }
 
+- (NSString*)secretHeaderNames {
+  return @(_profiles->global_settings()
+               .GetString("devtools.secret_headers")
+               .c_str());
+}
+
 - (brouk::DevToolsPreferences*)devToolsPreferences {
   if (!_devToolsPreferences) {
     NSString* path = [brouk::mac::AppDataDirectory()

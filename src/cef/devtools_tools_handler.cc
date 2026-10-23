@@ -1,11 +1,15 @@
 #include "cef/devtools_tools_handler.h"
 
 #include <cstddef>
+#include <cstdint>
+#include <optional>
 #include <string>
+#include <utility>
 
 #include "cef/json_util.h"
 #include "core/devtools_tools.h"
 #include "core/internal_pages.h"
+#include "core/request_log.h"
 #include "include/cef_parser.h"
 #include "include/wrapper/cef_helpers.h"
 
@@ -21,6 +25,35 @@ std::string ToJson(const CefRefPtr<CefDictionaryValue>& dictionary) {
   CefRefPtr<CefValue> value = CefValue::Create();
   value->SetDictionary(dictionary);
   return CefWriteJSON(value, JSON_WRITER_DEFAULT).ToString();
+}
+
+CefRefPtr<CefListValue> HeaderList(const Headers& headers) {
+  CefRefPtr<CefListValue> list = CefListValue::Create();
+  std::size_t index = 0;
+  for (const auto& [name, value] : headers) {
+    CefRefPtr<CefListValue> pair = CefListValue::Create();
+    pair->SetString(0, name);
+    pair->SetString(1, value);
+    list->SetList(index++, pair);
+  }
+  return list;
+}
+
+CefRefPtr<CefDictionaryValue> Summary(const RecordedRequest& entry) {
+  CefRefPtr<CefDictionaryValue> item = CefDictionaryValue::Create();
+  item->SetDouble("seq", static_cast<double>(entry.seq));
+  item->SetString("id", entry.id);
+  item->SetString("url", entry.url);
+  item->SetString("method", entry.method);
+  item->SetString("type", entry.type);
+  item->SetInt("status", entry.status);
+  item->SetString("mimeType", entry.mime_type);
+  item->SetBool("finished", entry.finished);
+  item->SetString("error", entry.error);
+  item->SetDouble("started", entry.started);
+  item->SetDouble("duration", entry.duration);
+  item->SetDouble("size", static_cast<double>(entry.encoded_bytes));
+  return item;
 }
 
 }  // namespace
@@ -48,6 +81,8 @@ bool DevToolsToolsHandler::OnQuery(CefRefPtr<CefBrowser> /*browser*/,
   if (type == "tools.page") {
     CefRefPtr<CefDictionaryValue> answer = CefDictionaryValue::Create();
     answer->SetString("url", channel_->PageUrl());
+    answer->SetString("secretHeaders",
+                      host_ ? host_->SecretHeaderNames() : std::string());
     callback->Success(ToJson(answer));
     return true;
   }
@@ -72,6 +107,99 @@ bool DevToolsToolsHandler::OnQuery(CefRefPtr<CefBrowser> /*browser*/,
                        callback->Failure(kFailed, error);
                      }
                    });
+    return true;
+  }
+  if (type == "tools.requests") {
+    const RequestLog& log = channel_->requests();
+    double known = message->GetType("version") == VTYPE_DOUBLE
+                       ? message->GetDouble("version")
+                   : message->GetType("version") == VTYPE_INT
+                       ? message->GetInt("version")
+                       : -1;
+    CefRefPtr<CefDictionaryValue> answer = CefDictionaryValue::Create();
+    answer->SetDouble("version", static_cast<double>(log.version()));
+    if (known != static_cast<double>(log.version())) {
+      CefRefPtr<CefListValue> list = CefListValue::Create();
+      std::size_t index = 0;
+      for (const RecordedRequest& entry : log.entries()) {
+        list->SetDictionary(index++, Summary(entry));
+      }
+      answer->SetList("requests", list);
+    }
+    callback->Success(ToJson(answer));
+    return true;
+  }
+  if (type == "tools.request") {
+    double seq = message->GetType("seq") == VTYPE_INT ? message->GetInt("seq")
+                 : message->GetType("seq") == VTYPE_DOUBLE
+                     ? message->GetDouble("seq")
+                     : 0;
+    const RecordedRequest* entry =
+        seq > 0 ? channel_->requests().Find(static_cast<std::uint64_t>(seq))
+                : nullptr;
+    if (!entry) {
+      callback->Failure(kFailed, "This request is no longer recorded.");
+      return true;
+    }
+    CefRefPtr<CefDictionaryValue> answer = Summary(*entry);
+    answer->SetList("requestHeaders", HeaderList(entry->request_headers));
+    answer->SetList("responseHeaders", HeaderList(entry->response_headers));
+    if (entry->post_data) {
+      answer->SetString("postData", *entry->post_data);
+      answer->SetBool("postDataTruncated", entry->post_data_truncated);
+    }
+    callback->Success(ToJson(answer));
+    return true;
+  }
+  if (type == "tools.clearRequests") {
+    channel_->ClearRequests();
+    callback->Success("");
+    return true;
+  }
+  if (type == "tools.tokens") {
+    CefRefPtr<CefListValue> list = CefListValue::Create();
+    std::size_t index = 0;
+    for (const FoundToken& token : FindTokens(channel_->requests(), 200)) {
+      CefRefPtr<CefDictionaryValue> item = CefDictionaryValue::Create();
+      item->SetString("token", token.token);
+      item->SetString("where", token.where);
+      list->SetDictionary(index++, item);
+    }
+    CefRefPtr<CefDictionaryValue> answer = CefDictionaryValue::Create();
+    answer->SetList("tokens", list);
+    callback->Success(ToJson(answer));
+    return true;
+  }
+  if (type == "tools.save") {
+    auto file_from = [](const CefRefPtr<CefDictionaryValue>& dict)
+        -> std::optional<ToolsHost::File> {
+      if (!dict || dict->GetType("name") != VTYPE_STRING ||
+          dict->GetType("content") != VTYPE_STRING) {
+        return std::nullopt;
+      }
+      return ToolsHost::File{dict->GetString("name").ToString(),
+                             dict->GetString("content").ToString()};
+    };
+    std::optional<ToolsHost::File> main = file_from(message);
+    std::optional<ToolsHost::File> extra;
+    if (message->GetType("extra") == VTYPE_DICTIONARY) {
+      extra = file_from(message->GetDictionary("extra"));
+    }
+    if (!main || !host_) {
+      callback->Failure(kBadRequest, "Invalid request.");
+      return true;
+    }
+    host_->SaveFiles(std::move(*main), std::move(extra),
+                     [callback](bool saved, const std::string& error) {
+                       if (!error.empty()) {
+                         callback->Failure(kFailed, error);
+                         return;
+                       }
+                       CefRefPtr<CefDictionaryValue> answer =
+                           CefDictionaryValue::Create();
+                       answer->SetBool("saved", saved);
+                       callback->Success(ToJson(answer));
+                     });
     return true;
   }
   callback->Failure(kBadRequest, "Invalid request.");

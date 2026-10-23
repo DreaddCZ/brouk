@@ -47,6 +47,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)setDockSize:(CGFloat)size;
 - (CefRefPtr<CefRequestContext>)devToolsContext;
 - (brouk::DevToolsPreferences*)devToolsPreferences;
+- (NSString*)secretHeaderNames;
 // Downloads (app-wide, so concurrent downloads never share a file name).
 - (std::string)reserveDownloadPath:(const std::string&)suggested;
 - (void)releaseDownloadPath:(const std::string&)path;

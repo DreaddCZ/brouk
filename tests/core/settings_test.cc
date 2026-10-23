@@ -132,6 +132,8 @@ TEST(SettingsTest, FileFormat) {
             "  toggle_position: right\n"
             "  dock_position: bottom\n"
             "  dock_size: 320\n"
+            "  secret_headers: \"Authorization, Cookie, x-api-key, api-key, "
+            "x-auth-token\"\n"
             "  remote_debugging: false\n"
             "  remote_debugging_port: 9222\n"
             "profiles:\n"

@@ -28,6 +28,7 @@ add_executable(brouk_core_tests
   core/internal_pages_test.cc
   core/launch_args_test.cc
   core/page_events_test.cc
+  core/request_log_test.cc
   core/screen_share_test.cc
   core/search_engines_test.cc
   core/permissions_test.cc

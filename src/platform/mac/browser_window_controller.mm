@@ -841,6 +841,10 @@ NSButton* ToolbarButton(NSString* symbol,
   return [_owner devToolsPreferences];
 }
 
+- (NSString*)secretHeaderNames {
+  return [_owner secretHeaderNames];
+}
+
 - (id<BRBrowserCounter>)browserCounter {
   return _owner;
 }
