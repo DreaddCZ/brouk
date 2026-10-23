@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { BridgeError } from '../shared/bridge.js';
-import { HistoryApi, parsePages, parseProblems, parseSites, parseSql, parseState, parseVisits } from './api.js';
+import { HistoryApi, parseCleanupPreview, parsePages, parseProblems, parseSites, parseSql, parseState, parseVisits } from './api.js';
 
 test('state, sites, pages and visits are checked', () => {
   const state = parseState({ profiles: [{ id: 'default', name: 'Main', color: 'blue' }], view: 'day' });
@@ -55,4 +55,14 @@ test('SQL results are checked', () => {
   assert.throws(() => parseSql({ columns: ['a'], rows: [[1, 2]], truncated: false }), BridgeError);
   assert.throws(() => parseSql({ columns: ['a'], rows: [[{}]], truncated: false }), BridgeError);
   assert.throws(() => parseSql({ columns: ['a'], rows: [] }), BridgeError);
+});
+
+test('clean up preview is checked', () => {
+  const preview = parseCleanupPreview({
+    rows: [{ profile: 'default', host: 'a.com', visits: 3, lastVisit: 9 }],
+    keepLists: { default: ['a.com'] },
+  });
+  assert.deepEqual(preview.keepLists.get('default'), ['a.com']);
+  assert.throws(() => parseCleanupPreview({ rows: [], keepLists: { default: [1] } }), BridgeError);
+  assert.throws(() => parseCleanupPreview({ rows: [{ host: 'a.com' }], keepLists: {} }), BridgeError);
 });

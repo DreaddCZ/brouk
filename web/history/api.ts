@@ -16,6 +16,30 @@ export type View = 'site' | 'day';
 export interface HistoryState {
   readonly profiles: readonly Profile[];
   readonly view: View;
+  /** The history tab's profile. */
+  readonly currentProfile: string;
+}
+
+/** One site in Clean up's list. */
+export interface CleanupRow {
+  readonly profile: string;
+  readonly host: string;
+  readonly visits: number;
+  readonly lastVisit: number;
+}
+
+export interface CleanupPreview {
+  readonly rows: readonly CleanupRow[];
+  /** Each profile's keep list. */
+  readonly keepLists: ReadonlyMap<string, readonly string[]>;
+}
+
+/** What Clean up does in one profile. */
+export interface CleanupPlan {
+  readonly profile: string;
+  readonly remove: readonly string[];
+  /** The new keep list ("keep" mode only). */
+  readonly keep?: readonly string[];
 }
 
 export interface Page {
@@ -81,7 +105,27 @@ export function parseState(value: unknown): HistoryState {
       return { id: text(item, 'id'), name: text(item, 'name'), color: text(item, 'color') };
     }),
     view: view === 'day' ? 'day' : 'site',
+    currentProfile: typeof answer['currentProfile'] === 'string' ? answer['currentProfile'] : '',
   };
+}
+
+export function parseCleanupPreview(value: unknown): CleanupPreview {
+  const answer = record(value);
+  const rows = list(answer, 'rows').map((r) => {
+    const item = record(r);
+    return { profile: text(item, 'profile'), host: text(item, 'host'), visits: count(item, 'visits'), lastVisit: count(item, 'lastVisit') };
+  });
+  const lists = record(answer['keepLists']);
+  const keepLists = new Map<string, readonly string[]>();
+  for (const [profile, hosts] of Object.entries(lists)) {
+    if (!Array.isArray(hosts)) throw invalid();
+    const items: unknown[] = hosts;
+    keepLists.set(profile, items.map((h) => {
+      if (typeof h !== 'string') throw invalid();
+      return h;
+    }));
+  }
+  return { rows, keepLists };
 }
 
 export function parseProblems(value: unknown): QueryProblem[] {
@@ -211,6 +255,17 @@ export class HistoryApi {
   /** Runs a read-only SELECT over the views pages and visits. */
   async sql(query: string): Promise<SqlResult> {
     return parseSql(await send('history.sql', { query }, this.#transport));
+  }
+
+  /** Sites of one profile or all (null) with visits since `since` (seconds; 0 all time). */
+  async cleanupPreview(profile: string | null, since: number): Promise<CleanupPreview> {
+    return parseCleanupPreview(await send('history.cleanup.preview', { ...profileArgs(profile), since }, this.#transport));
+  }
+
+  /** Deletes the planned visits since `since`; resolves with how many went. */
+  async cleanupRun(since: number, profiles: readonly CleanupPlan[]): Promise<number> {
+    const answer = await send('history.cleanup.run', { since, profiles }, this.#transport);
+    return count(record(answer), 'visits');
   }
 
   async copy(text: string): Promise<void> {

@@ -540,6 +540,11 @@ NSButton* ToolbarButton(NSString* symbol,
   [self modelDidChange];
 }
 
+- (brouk::ProfileId)profileOfTab:(brouk::TabId)tabId {
+  BRTab* tab = _tabs[@(tabId)];
+  return tab ? tab.profileId : _model->default_profile();
+}
+
 - (void)openPage:(NSString*)url
          profile:(const brouk::ProfileId&)profile
           newTab:(BOOL)newTab

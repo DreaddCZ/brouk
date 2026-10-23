@@ -63,6 +63,7 @@
       <option value="host">Site</option>
     </select></label>
     <span class="spacer"></span>
+    <button type="button" id="cleanup-open">Clean up…</button>
     <span id="selection" class="selection" hidden></span>
     <button type="button" id="delete" class="danger" hidden>Delete</button>
   </div>
@@ -73,5 +74,31 @@
   <p id="no-match" class="empty" hidden>Nothing matches the search.</p>
   <button type="button" id="more" hidden>Show more</button>
 </main>
+<div id="cleanup" class="modal" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="cleanup-title">
+    <h2 id="cleanup-title">Clean up history</h2>
+    <div class="cleanup-scope">
+      <label>Profile <select id="cleanup-profile"></select></label>
+      <label>Time <select id="cleanup-range">
+        <option value="24h">Last 24 hours</option>
+        <option value="7d">Last 7 days</option>
+        <option value="4w">Last 4 weeks</option>
+        <option value="all" selected>All time</option>
+      </select></label>
+    </div>
+    <fieldset class="cleanup-mode">
+      <legend>What to do</legend>
+      <label><input type="radio" name="cleanup-mode" value="keep" checked> Keep selected sites, delete everything else</label>
+      <label><input type="radio" name="cleanup-mode" value="delete"> Delete selected sites</label>
+    </fieldset>
+    <input type="search" id="cleanup-filter" placeholder="Filter sites" aria-label="Filter sites" spellcheck="false">
+    <div id="cleanup-list" class="cleanup-list" role="list"></div>
+    <p id="cleanup-summary" class="cleanup-summary" role="status"></p>
+    <div class="dialog-buttons">
+      <button type="button" id="cleanup-cancel">Cancel</button>
+      <button type="button" id="cleanup-run" class="danger">Clean up</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>

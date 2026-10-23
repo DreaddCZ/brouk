@@ -181,3 +181,98 @@ export const kSqlExamples: readonly { readonly label: string; readonly sql: stri
   { label: 'Visits per day', sql: 'SELECT date(visit_time) AS day, count(*) AS visits\nFROM visits\nGROUP BY day\nORDER BY day DESC' },
   { label: 'Typed addresses', sql: "SELECT profile, url, visit_time\nFROM visits\nWHERE transition = 'typed'\nORDER BY visit_time DESC" },
 ];
+
+// Clean up (013).
+
+export interface CleanupSite {
+  readonly profile: string;
+  readonly host: string;
+  readonly visits: number;
+}
+
+export type CleanupMode = 'keep' | 'delete';
+
+export function cleanupKey(profile: string, host: string): string {
+  return `${profile}\u0000${host}`;
+}
+
+/**
+ * What "keep" mode starts with, per profile: its keep list and its 10 most
+ * visited sites (the suggestions). Rows come most visited first.
+ */
+export function preselectCleanup(
+  rows: readonly CleanupSite[],
+  keepLists: ReadonlyMap<string, readonly string[]>,
+  suggestions = 10,
+): { selected: Set<string>; suggested: Set<string> } {
+  const selected = new Set<string>();
+  const suggested = new Set<string>();
+  const counts = new Map<string, number>();
+  for (const row of rows) {
+    const key = cleanupKey(row.profile, row.host);
+    if (keepLists.get(row.profile)?.includes(row.host) === true) selected.add(key);
+    const seen = counts.get(row.profile) ?? 0;
+    if (seen < suggestions) {
+      counts.set(row.profile, seen + 1);
+      suggested.add(key);
+      selected.add(key);
+    }
+  }
+  return { selected, suggested };
+}
+
+export interface CleanupOutcome {
+  readonly plans: { profile: string; remove: string[]; keep?: string[] }[];
+  readonly visits: number;
+  readonly sites: number;
+}
+
+/**
+ * What Clean up will do: "keep" removes every listed site except the checked
+ * ones and makes the checked ones the keep list (entries of the old list
+ * that are not in this time range stay on it); "delete" removes the checked
+ * sites and leaves the keep list alone.
+ */
+export function planCleanup(
+  rows: readonly CleanupSite[],
+  selected: ReadonlySet<string>,
+  mode: CleanupMode,
+  keepLists: ReadonlyMap<string, readonly string[]>,
+): CleanupOutcome {
+  const byProfile = new Map<string, { remove: string[]; keep: string[]; listed: Set<string> }>();
+  let visits = 0;
+  let sites = 0;
+  for (const row of rows) {
+    let plan = byProfile.get(row.profile);
+    if (plan === undefined) {
+      plan = { remove: [], keep: [], listed: new Set() };
+      byProfile.set(row.profile, plan);
+    }
+    plan.listed.add(row.host);
+    const checked = selected.has(cleanupKey(row.profile, row.host));
+    const remove = mode === 'keep' ? !checked : checked;
+    if (remove) {
+      plan.remove.push(row.host);
+      visits += row.visits;
+      sites += 1;
+    } else if (mode === 'keep') {
+      plan.keep.push(row.host);
+    }
+  }
+  const plans = [...byProfile.entries()].map(([profile, plan]) => {
+    if (mode === 'delete') return { profile, remove: plan.remove };
+    const older = (keepLists.get(profile) ?? []).filter((host) => !plan.listed.has(host));
+    return { profile, remove: plan.remove, keep: [...older, ...plan.keep] };
+  });
+  return { plans, visits, sites };
+}
+
+/** Clean up's time ranges, as the start time in seconds (0: all time). */
+export function cleanupSince(range: string, nowSeconds: number): number {
+  switch (range) {
+    case '24h': return nowSeconds - 86_400;
+    case '7d': return nowSeconds - 7 * 86_400;
+    case '4w': return nowSeconds - 28 * 86_400;
+    default: return 0;
+  }
+}

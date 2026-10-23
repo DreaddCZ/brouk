@@ -51,7 +51,7 @@ constexpr std::array<std::string_view, 2> kHistoryViews = {"site", "day"};
 constexpr std::array<std::string_view, 2> kHistoryViewLabels = {"By site",
                                                                 "By day"};
 
-constexpr std::array<SettingDef, 23> kSettings = {{
+constexpr std::array<SettingDef, 24> kSettings = {{
     // Global.
     {.key = "appearance.theme",
      .scope = SettingScope::kGlobal,
@@ -265,6 +265,17 @@ constexpr std::array<SettingDef, 23> kSettings = {{
      .section = "Profile",
      .label = "Colour",
      .description = "Colour of the profile's tab groups and toolbar."},
+    {.key = "history.keep_list",
+     .scope = SettingScope::kProfile,
+     .type = SettingDef::Type::kString,
+     .default_value = "",
+     .format = SettingDef::Format::kUrlPatterns,
+     .max_length = 16384,
+     .advanced = true,
+     .section = "History",
+     .label = "Clean up keep list",
+     .description = "The sites kept the last time the history was cleaned "
+                    "up; updated by Clean up."},
 }};
 
 // The settings above, then one per shortcut action (003).

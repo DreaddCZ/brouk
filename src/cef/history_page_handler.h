@@ -31,6 +31,12 @@ class HistoryPageDelegate {
   virtual void SetView(const std::string& view) = 0;
   // "Copy as CSV" of the SQL editor's results.
   virtual void CopyText(const std::string& text) = 0;
+  // The history tab's profile (preselected in Clean up).
+  virtual ProfileId CurrentProfile() = 0;
+  // Clean up's keep list of a profile (the setting history.keep_list).
+  virtual std::vector<std::string> KeepList(const ProfileId& profile) = 0;
+  virtual void SetKeepList(const ProfileId& profile,
+                           const std::vector<std::string>& hosts) = 0;
 };
 
 // Answers the history page's bridge messages (web/history/api.ts). Every

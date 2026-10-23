@@ -6,9 +6,14 @@
  */
 import { cefTransport } from '../shared/bridge.js';
 import { button, byId, element, errorText } from '../shared/dom.js';
-import { HistoryApi, type DeleteItem, type Page, type Profile, type QueryProblem, type SqlResult, type View } from './api.js';
+import { HistoryApi, type CleanupRow, type DeleteItem, type Page, type Profile, type QueryProblem, type SqlResult, type View } from './api.js';
 import {
   addFilter,
+  cleanupKey,
+  cleanupSince,
+  planCleanup,
+  preselectCleanup,
+  type CleanupMode,
   filterText,
   groupByDay,
   isOpenableUrl,
@@ -29,6 +34,8 @@ const api = new HistoryApi(cefTransport());
 const kVisitsPerPage = 200;
 
 let profiles: readonly Profile[] = [];
+/** The history tab's profile. */
+let currentProfile = '';
 let view: View = 'site';
 let profileFilter: string | null = null;
 let sort: SiteSort = 'lastVisit';
@@ -507,6 +514,141 @@ async function runSql(): Promise<void> {
   renderSql();
 }
 
+// Clean up (013): keep the sites that matter, delete the rest (or delete
+// chosen sites), in one profile or all, within a time range.
+
+const cleanup = {
+  rows: [] as CleanupRow[],
+  keepLists: new Map<string, readonly string[]>() as ReadonlyMap<string, readonly string[]>,
+  selected: new Set<string>(),
+  suggested: new Set<string>(),
+  confirming: false,
+};
+
+function cleanupMode(): CleanupMode {
+  const checked = document.querySelector<HTMLInputElement>('input[name=cleanup-mode]:checked');
+  return checked?.value === 'delete' ? 'delete' : 'keep';
+}
+
+function cleanupProfile(): string | null {
+  const value = byId<HTMLSelectElement>('cleanup-profile').value;
+  return value === '' ? null : value;
+}
+
+function cleanupSinceNow(): number {
+  return cleanupSince(byId<HTMLSelectElement>('cleanup-range').value, Math.floor(Date.now() / 1000));
+}
+
+async function loadCleanup(): Promise<void> {
+  cleanup.confirming = false;
+  try {
+    const preview = await api.cleanupPreview(cleanupProfile(), cleanupSinceNow());
+    cleanup.rows = [...preview.rows];
+    cleanup.keepLists = preview.keepLists;
+    resetCleanupSelection();
+    showError(null);
+  } catch (error) {
+    showError(errorText(error));
+  }
+  renderCleanup();
+}
+
+/** "Keep" starts with the keep lists and suggestions; "delete" with nothing. */
+function resetCleanupSelection(): void {
+  const { selected, suggested } = preselectCleanup(cleanup.rows, cleanup.keepLists);
+  cleanup.suggested = suggested;
+  cleanup.selected = cleanupMode() === 'keep' ? selected : new Set();
+}
+
+function renderCleanup(): void {
+  const filter = byId<HTMLInputElement>('cleanup-filter').value.trim().toLowerCase();
+  const all = cleanupProfile() === null;
+  const now = new Date();
+  const rows = cleanup.rows.filter((row) => filter === '' || hostLabel(row.host).toLowerCase().includes(filter));
+  byId('cleanup-list').replaceChildren(...rows.map((row) => {
+    const key = cleanupKey(row.profile, row.host);
+    const node = element('div', { className: 'cleanup-row' });
+    node.setAttribute('role', 'listitem');
+    const box = element('input');
+    box.type = 'checkbox';
+    box.checked = cleanup.selected.has(key);
+    box.setAttribute('aria-label', hostLabel(row.host));
+    box.addEventListener('change', () => {
+      if (box.checked) cleanup.selected.add(key);
+      else cleanup.selected.delete(key);
+      cleanup.confirming = false;
+      renderCleanupSummary();
+    });
+    node.append(
+      box,
+      all ? dot(row.profile) : element('span'),
+      element('span', { className: 'host', text: hostLabel(row.host) }),
+      element('span', { className: 'badge', text: cleanup.suggested.has(key) && cleanupMode() === 'keep' ? 'suggested' : '' }),
+      element('span', { className: 'meta', text: `${row.visits} ${row.visits === 1 ? 'visit' : 'visits'}` }),
+      element('span', { className: 'meta', text: lastVisitLabel(row.lastVisit, now) }),
+    );
+    return node;
+  }));
+  if (rows.length === 0) {
+    byId('cleanup-list').append(element('p', { className: 'empty', text: cleanup.rows.length === 0 ? 'No history in this time.' : 'No site matches.' }));
+  }
+  renderCleanupSummary();
+}
+
+function renderCleanupSummary(): void {
+  const outcome = planCleanup(cleanup.rows, cleanup.selected, cleanupMode(), cleanup.keepLists);
+  const summary = byId('cleanup-summary');
+  const visits = `${outcome.visits} ${outcome.visits === 1 ? 'visit' : 'visits'}`;
+  const sites = `${outcome.sites} ${outcome.sites === 1 ? 'site' : 'sites'}`;
+  summary.classList.toggle('confirm-text', cleanup.confirming);
+  summary.textContent = cleanup.confirming
+    ? `Delete ${visits} from ${sites}? This cannot be undone.`
+    : outcome.sites === 0 ? 'Nothing will be deleted.' : `Deletes ${visits} from ${sites}.`;
+  const run = byId<HTMLButtonElement>('cleanup-run');
+  run.textContent = cleanup.confirming ? 'Delete' : 'Clean up';
+  run.disabled = outcome.sites === 0;
+}
+
+async function runCleanup(): Promise<void> {
+  if (!cleanup.confirming) {
+    cleanup.confirming = true;
+    renderCleanupSummary();
+    return;
+  }
+  const outcome = planCleanup(cleanup.rows, cleanup.selected, cleanupMode(), cleanup.keepLists);
+  try {
+    await api.cleanupRun(cleanupSinceNow(), outcome.plans);
+    closeCleanup();
+    showError(null);
+  } catch (error) {
+    showError(errorText(error));
+    cleanup.confirming = false;
+    renderCleanupSummary();
+  }
+  await load();
+}
+
+function openCleanup(): void {
+  const picker = byId<HTMLSelectElement>('cleanup-profile');
+  const all = element('option', { text: 'All profiles' });
+  all.value = '';
+  picker.replaceChildren(...profiles.map((p) => {
+    const option = element('option', { text: p.name });
+    option.value = p.id;
+    option.selected = p.id === currentProfile;
+    return option;
+  }), all);
+  byId<HTMLInputElement>('cleanup-filter').value = '';
+  byId('cleanup').hidden = false;
+  byId<HTMLSelectElement>('cleanup-profile').focus();
+  void loadCleanup();
+}
+
+function closeCleanup(): void {
+  byId('cleanup').hidden = true;
+  byId('cleanup-open').focus();
+}
+
 function setView(next: View): void {
   if (next === view) return;
   view = next;
@@ -520,6 +662,7 @@ async function start(): Promise<void> {
     const state = await api.state();
     profiles = state.profiles;
     view = state.view;
+    currentProfile = state.currentProfile;
   } catch (error) {
     showError(errorText(error));
   }
@@ -547,6 +690,22 @@ async function start(): Promise<void> {
   byId('view-day').addEventListener('click', () => setView('day'));
   byId('delete').addEventListener('click', confirmDelete);
   byId('more').addEventListener('click', () => void loadMore());
+  byId('cleanup-open').addEventListener('click', openCleanup);
+  byId('cleanup-cancel').addEventListener('click', closeCleanup);
+  byId('cleanup-run').addEventListener('click', () => void runCleanup());
+  byId('cleanup-profile').addEventListener('change', () => void loadCleanup());
+  byId('cleanup-range').addEventListener('change', () => void loadCleanup());
+  byId('cleanup-filter').addEventListener('input', renderCleanup);
+  for (const radio of document.querySelectorAll<HTMLInputElement>('input[name=cleanup-mode]')) {
+    radio.addEventListener('change', () => {
+      cleanup.confirming = false;
+      resetCleanupSelection();
+      renderCleanup();
+    });
+  }
+  byId('cleanup').addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeCleanup();
+  });
   byId('sql-toggle').addEventListener('click', () => setSqlMode(!document.body.classList.contains('sql')));
   byId('sql-run').addEventListener('click', () => void runSql());
   byId<HTMLTextAreaElement>('sql').addEventListener('keydown', (event) => {
