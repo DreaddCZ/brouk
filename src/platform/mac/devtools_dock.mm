@@ -234,6 +234,7 @@ NSButton* HeaderButton(NSString* symbol,
     if (ownTools) {
       // Dev tools on: record the tab's requests (006).
       _channel->StartRecording();
+      _channel->WatchServiceWorkers();
     }
     _toolsHost = std::make_unique<brouk::DockToolsHost>(self);
     _frontendCreating = YES;

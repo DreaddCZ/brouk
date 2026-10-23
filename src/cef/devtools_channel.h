@@ -10,6 +10,7 @@
 #include "cef/own_request_loader.h"
 #include "core/request_log.h"
 #include "core/request_rules.h"
+#include "core/service_workers.h"
 #include "include/cef_browser.h"
 #include "include/cef_devtools_message_observer.h"
 #include "include/cef_registration.h"
@@ -43,6 +44,10 @@ class DevToolsChannel : public CefDevToolsMessageObserver {
   void StartRecording();
   const RequestLog& requests() const { return requests_; }
   void ClearRequests() { requests_.Clear(); }
+
+  // Follows the tab's service workers (006, Site data) from now on.
+  void WatchServiceWorkers();
+  const ServiceWorkerList& service_workers() const { return service_workers_; }
 
   // The profile's request rules (006), applied to this tab's requests
   // through the protocol's Fetch domain while any rule is active.
@@ -85,6 +90,10 @@ class DevToolsChannel : public CefDevToolsMessageObserver {
   void HandleRequestPaused(std::string_view message);
 
   void HandleNetworkEvent(std::string_view message);
+  void HandleServiceWorkerEvent(std::string_view message);
+
+  ServiceWorkerList service_workers_;
+  bool watching_workers_ = false;
 
   IMPLEMENT_REFCOUNTING(DevToolsChannel);
 };

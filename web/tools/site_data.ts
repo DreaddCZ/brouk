@@ -7,8 +7,8 @@
 import { button, element, errorText } from '../shared/dom.js';
 import type { ToolsApi } from './api.js';
 import {
-  formatBytes, formatExpiry, parseCookies, parseStorageItems, setCookieParams, siteOrigin,
-  type Cookie,
+  describeServiceWorker, formatBytes, formatExpiry, parseCookies, parseServiceWorkers, parseStorageItems,
+  setCookieParams, siteOrigin, type Cookie, type ServiceWorker,
 } from './site_data_logic.js';
 
 interface State {
@@ -20,6 +20,7 @@ interface State {
   databases: string[];
   caches: { id: string; name: string }[];
   serviceWorkerBytes: number;
+  serviceWorkers: ServiceWorker[];
 }
 
 export class SiteDataTool {
@@ -47,6 +48,7 @@ export class SiteDataTool {
       const origin = siteOrigin(url);
       const state: State = {
         url, origin, cookies: [], local: [], session: [], databases: [], caches: [], serviceWorkerBytes: 0,
+        serviceWorkers: [],
       };
       if (origin !== null) {
         state.cookies = parseCookies(await this.#api.protocol('Network.getCookies', { urls: [url] }));
@@ -77,6 +79,7 @@ export class SiteDataTool {
                 ? sum + item['usage'] : sum;
             }, 0)
           : 0;
+        state.serviceWorkers = parseServiceWorkers(await this.#api.serviceWorkers().catch(() => null), origin);
       }
       this.#state = state;
       this.#error = null;
@@ -272,10 +275,18 @@ export class SiteDataTool {
       if (items.length === 0) table.append(element('tr', { className: 'empty', text: empty }));
       return table;
     };
-    const workers: [string, () => Promise<unknown>][] = state.serviceWorkerBytes > 0
-      ? [[`Registered (${formatBytes(state.serviceWorkerBytes)})`, () =>
-          this.#api.protocol('Storage.clearDataForOrigin', { origin, storageTypes: 'service_workers' })]]
-      : [];
+    // Each registration by its scope; if none is known but the site
+    // stores service worker data, that data can still be deleted.
+    const workers: [string, () => Promise<unknown>][] = state.serviceWorkers.length > 0
+      ? state.serviceWorkers.map((worker) => {
+          const about = describeServiceWorker(worker);
+          return [about === '' ? worker.scope : `${worker.scope} (${about})`, () =>
+            this.#api.protocol('ServiceWorker.unregister', { scopeURL: worker.scope })];
+        })
+      : state.serviceWorkerBytes > 0
+        ? [[`Registered (${formatBytes(state.serviceWorkerBytes)})`, () =>
+            this.#api.protocol('Storage.clearDataForOrigin', { origin, storageTypes: 'service_workers' })]]
+        : [];
     return [
       this.#heading('IndexedDB databases', state.databases.length),
       list(state.databases.map((name) => [name, () =>

@@ -102,3 +102,39 @@ export function setCookieParams(cookie: Cookie, origin: string): Record<string, 
   if (cookie.expires >= 0) params['expires'] = cookie.expires;
   return params;
 }
+
+/** A service worker registration of the site (006). */
+export interface ServiceWorker {
+  scope: string;
+  script: string;
+  status: string;
+  running: string;
+}
+
+/**
+ * The service workers from a tools.serviceWorkers answer whose scope is on
+ * `origin`; malformed entries are skipped.
+ */
+export function parseServiceWorkers(answer: unknown, origin: string): ServiceWorker[] {
+  if (!isRecord(answer) || !Array.isArray(answer['workers'])) return [];
+  const list: unknown[] = answer['workers'];
+  return list.flatMap((item): ServiceWorker[] => {
+    if (!isRecord(item)) return [];
+    const { scope, script, status, running } = item;
+    if (typeof scope !== 'string' || typeof script !== 'string' || typeof status !== 'string' ||
+        typeof running !== 'string' || siteOrigin(scope) !== origin) {
+      return [];
+    }
+    return [{ scope, script, status, running }];
+  });
+}
+
+/** "sw.js · activated, running" for a service worker's row. */
+export function describeServiceWorker(worker: ServiceWorker): string {
+  let script = worker.script;
+  try {
+    script = new URL(worker.script).pathname;
+  } catch { /* keep it as it is */ }
+  const state = [worker.status, worker.running].filter((part) => part !== '').join(', ');
+  return [script, state].filter((part) => part !== '').join(' · ');
+}

@@ -44,6 +44,8 @@ class ToolsHost {
 // Answers the tools page (brouk://tools, 006) shown in one tab's dock:
 //   {"type":"tools.page"}       -> {"url": "<tab URL>", "secretHeaders": ".."}
 //   {"type":"tools.protocol","method":"...","params":{...}} -> result
+//   {"type":"tools.serviceWorkers"}  -> {"workers":[{scope, script, status,
+//                                                running}]}
 //   {"type":"tools.requests","version":n}      -> recorded requests (list)
 //   {"type":"tools.request","seq":n}           -> one request, with headers
 //   {"type":"tools.clearRequests"}

@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  formatBytes, formatExpiry, parseCookies, parseStorageItems, setCookieParams, siteOrigin,
+  describeServiceWorker, formatBytes, formatExpiry, parseCookies, parseServiceWorkers, parseStorageItems,
+  setCookieParams, siteOrigin,
 } from './site_data_logic.js';
 
 test('site origins', () => {
@@ -50,4 +51,20 @@ test('setCookie parameters', () => {
     name: 'n', value: 'v', path: '/x', secure: true, httpOnly: false, domain: '.example.com',
     sameSite: 'Strict', expires: 1900000000,
   });
+});
+
+test('service workers of the site', () => {
+  const workers = parseServiceWorkers({
+    workers: [
+      { scope: 'https://app.test/', script: 'https://app.test/sw.js', status: 'activated', running: 'running' },
+      { scope: 'https://other.test/', script: 'https://other.test/sw.js', status: 'activated', running: 'stopped' },
+      { scope: 'https://app.test/admin/', script: 7, status: 'activated', running: 'running' },
+    ],
+  }, 'https://app.test');
+  assert.deepEqual(workers, [
+    { scope: 'https://app.test/', script: 'https://app.test/sw.js', status: 'activated', running: 'running' },
+  ]);
+  assert.deepEqual(parseServiceWorkers(null, 'https://app.test'), []);
+  assert.equal(describeServiceWorker(workers[0]!), '/sw.js · activated, running');
+  assert.equal(describeServiceWorker({ scope: 'https://a.test/', script: '', status: '', running: '' }), '');
 });

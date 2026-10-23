@@ -61,6 +61,11 @@ export class ToolsApi {
     return details;
   }
 
+  /** The tab's service workers (all sites; the caller filters). */
+  async serviceWorkers(): Promise<unknown> {
+    return send('tools.serviceWorkers', {}, this.#transport);
+  }
+
   async clearRequests(): Promise<void> {
     await send('tools.clearRequests', {}, this.#transport);
   }
