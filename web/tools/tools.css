@@ -34,6 +34,7 @@ table.headers th { width: 30%; color: var(--text); font-family: ui-monospace, Me
 table.headers td { white-space: pre-wrap; word-break: break-all; }
 pre.body { white-space: pre-wrap; word-break: break-all; background: var(--card); border: 1px solid var(--line);
   border-radius: 6px; padding: 6px 8px; max-height: 40vh; overflow: auto; margin: 0; }
+div.json-body { border: 1px solid var(--line); border-radius: 6px; max-height: 50vh; overflow: auto; }
 
 textarea.paste { width: 100%; box-sizing: border-box; min-height: 48px; font: 12px ui-monospace, Menlo, monospace;
   padding: 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); }
