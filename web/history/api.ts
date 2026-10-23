@@ -25,6 +25,13 @@ export interface Page {
   readonly lastVisit: number;
 }
 
+/** A part of the search the browser did not understand (string indices). */
+export interface QueryProblem {
+  readonly start: number;
+  readonly end: number;
+  readonly message: string;
+}
+
 /** Something to delete: a page or a site of a profile, or one visit. */
 export type DeleteItem =
   | { readonly profile: string; readonly kind: 'page' | 'site'; readonly value: string }
@@ -66,6 +73,14 @@ export function parseState(value: unknown): HistoryState {
     }),
     view: view === 'day' ? 'day' : 'site',
   };
+}
+
+export function parseProblems(value: unknown): QueryProblem[] {
+  if (!isRecord(value) || value['problems'] === undefined) return [];
+  return list(value, 'problems').map((p) => {
+    const item = record(p);
+    return { start: count(item, 'start'), end: count(item, 'end'), message: text(item, 'message') };
+  });
 }
 
 export function parseSites(value: unknown): Site[] {
@@ -112,6 +127,10 @@ function profileArgs(profile: string | null): Record<string, unknown> {
   return profile === null ? {} : { profile };
 }
 
+function queryArgs(query: string): Record<string, unknown> {
+  return query.trim() === '' ? {} : { query };
+}
+
 export class HistoryApi {
   readonly #transport: Transport | null;
 
@@ -127,20 +146,29 @@ export class HistoryApi {
     await send('history.setView', { view }, this.#transport);
   }
 
-  /** Sites of one profile, or of all profiles (null). */
-  async sites(profile: string | null): Promise<Site[]> {
-    return parseSites(await send('history.sites', profileArgs(profile), this.#transport));
+  /** Sites of one profile, or of all profiles (null), matching `query`. */
+  async sites(profile: string | null, query = ''): Promise<{ sites: Site[]; problems: QueryProblem[] }> {
+    const answer = await send('history.sites', { ...profileArgs(profile), ...queryArgs(query) }, this.#transport);
+    return { sites: parseSites(answer), problems: parseProblems(answer) };
   }
 
-  async pages(profile: string, host: string): Promise<Page[]> {
-    return parsePages(await send('history.pages', { profile, host }, this.#transport));
+  async pages(profile: string, host: string, query = ''): Promise<Page[]> {
+    return parsePages(await send('history.pages', { profile, host, ...queryArgs(query) }, this.#transport));
   }
 
   /** Visits before `before` (seconds; 0 for now), newest first. */
-  async visits(profile: string | null, before: number, limit: number): Promise<Visit[]> {
-    return parseVisits(
-      await send('history.visits', { ...profileArgs(profile), before, limit }, this.#transport),
+  async visits(
+    profile: string | null,
+    before: number,
+    limit: number,
+    query = '',
+  ): Promise<{ visits: Visit[]; problems: QueryProblem[] }> {
+    const answer = await send(
+      'history.visits',
+      { ...profileArgs(profile), before, limit, ...queryArgs(query) },
+      this.#transport,
     );
+    return { visits: parseVisits(answer), problems: parseProblems(answer) };
   }
 
   async remove(items: readonly DeleteItem[]): Promise<void> {

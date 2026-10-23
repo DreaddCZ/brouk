@@ -1,5 +1,7 @@
 #include "core/history_store.h"
 
+#include "core/history_query.h"
+
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -276,6 +278,38 @@ TEST_F(HistoryStoreTest, DeleteHostAndVisits) {
   EXPECT_EQ(store_->DeleteHost("a.com"), 1);
   EXPECT_FALSE(store_->FindPage("https://a.com/1"));
   EXPECT_TRUE(store_->FindPage("https://b.com/"));
+}
+
+TEST_F(HistoryStoreTest, SearchCountsOnlyMatchingVisits) {
+  Visit("https://companya.atlassian.net/browse/A-1", "Sprint board",
+        kNow - 10 * kDay);
+  Visit("https://companya.atlassian.net/browse/A-1", "Sprint board", kNow,
+        VisitTransition::kTyped);
+  Visit("https://companya.atlassian.net/wiki", "Wiki", kNow);
+  Visit("https://example.com/", "Example", kNow);
+  HistoryQuery recent =
+      HistoryQuery::Parse("site:atlassian.net after:3d", kNow);
+  std::vector<HistorySite> sites = store_->SearchSites(recent, "Main");
+  ASSERT_EQ(sites.size(), 1U);
+  EXPECT_EQ(sites[0].host, "companya.atlassian.net");
+  EXPECT_EQ(sites[0].visit_count, 2);  // The old visit does not match.
+  EXPECT_EQ(sites[0].page_count, 2);
+  std::vector<HistoryMatch> pages = store_->SearchPagesOfHost(
+      "companya.atlassian.net", HistoryQuery::Parse("sprint", kNow), "Main");
+  ASSERT_EQ(pages.size(), 1U);
+  EXPECT_EQ(pages[0].visit_count, 2);
+  std::vector<HistoryVisit> typed = store_->SearchVisits(
+      HistoryQuery::Parse("type:typed", kNow), "Main", 0, 10);
+  ASSERT_EQ(typed.size(), 1U);
+  EXPECT_EQ(typed[0].url, "https://companya.atlassian.net/browse/A-1");
+  EXPECT_EQ(store_
+                ->SearchVisits(HistoryQuery::Parse("profile:main", kNow),
+                               "Main", 0, 2)
+                .size(),
+            2U);
+  EXPECT_TRUE(
+      store_->SearchSites(HistoryQuery::Parse("profile:work", kNow), "Main")
+          .empty());
 }
 
 }  // namespace

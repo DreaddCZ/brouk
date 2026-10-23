@@ -6,9 +6,12 @@
  */
 import { cefTransport } from '../shared/bridge.js';
 import { button, byId, element, errorText } from '../shared/dom.js';
-import { HistoryApi, type DeleteItem, type Page, type Profile, type View } from './api.js';
+import { HistoryApi, type DeleteItem, type Page, type Profile, type QueryProblem, type View } from './api.js';
 import {
+  addFilter,
+  filterText,
   groupByDay,
+  querySegments,
   hostLabel,
   lastVisitLabel,
   pathOf,
@@ -32,6 +35,9 @@ let visits: Visit[] = [];
 let visitsDone = false;
 let selected = new Set<string>();
 let anchor: string | null = null;
+/** The search, and what of it was not understood. */
+let query = '';
+let problems: QueryProblem[] = [];
 /** What each selection key deletes. */
 const deletions = new Map<string, DeleteItem>();
 /** Selection keys in the order shown (for Shift-click ranges). */
@@ -213,7 +219,10 @@ function render(): void {
     }
   }
   list.replaceChildren(...nodes);
-  byId('empty').hidden = nodes.length > 0;
+  const searching = query.trim() !== '';
+  byId('empty').hidden = nodes.length > 0 || searching;
+  byId('no-match').hidden = nodes.length > 0 || !searching;
+  renderHint();
   byId('more').hidden = view !== 'day' || visitsDone;
   byId('view-site').setAttribute('aria-pressed', String(view === 'site'));
   byId('view-day').setAttribute('aria-pressed', String(view === 'day'));
@@ -230,18 +239,22 @@ function render(): void {
 async function load(): Promise<void> {
   try {
     if (view === 'site') {
-      sites = await api.sites(profileFilter);
+      const answer = await api.sites(profileFilter, query);
+      sites = answer.sites;
+      problems = answer.problems;
       // Expanded sites show their pages again.
       for (const [key, pages] of expanded) {
         const site = sites.find((s) => siteKey(s) === key);
         if (site === undefined) {
           expanded.delete(key);
         } else if (pages !== 'loading') {
-          expanded.set(key, await api.pages(site.profile, site.host));
+          expanded.set(key, await api.pages(site.profile, site.host, query));
         }
       }
     } else {
-      visits = await api.visits(profileFilter, 0, kVisitsPerPage);
+      const answer = await api.visits(profileFilter, 0, kVisitsPerPage, query);
+      visits = answer.visits;
+      problems = answer.problems;
       visitsDone = visits.length < kVisitsPerPage;
     }
     showError(null);
@@ -255,7 +268,7 @@ async function loadMore(): Promise<void> {
   const last = visits[visits.length - 1];
   if (last === undefined || visitsDone) return;
   try {
-    const next = await api.visits(profileFilter, last.time, kVisitsPerPage);
+    const { visits: next } = await api.visits(profileFilter, last.time, kVisitsPerPage, query);
     visits = [...visits, ...next];
     visitsDone = next.length < kVisitsPerPage;
   } catch (error) {
@@ -274,7 +287,7 @@ async function toggleSite(site: Site): Promise<void> {
   expanded.set(key, 'loading');
   render();
   try {
-    expanded.set(key, await api.pages(site.profile, site.host));
+    expanded.set(key, await api.pages(site.profile, site.host, query));
   } catch (error) {
     expanded.delete(key);
     showError(errorText(error));
@@ -311,6 +324,109 @@ function confirmDelete(): void {
     }),
   );
   box.hidden = false;
+}
+
+/** Under the search box: what was not understood, underlined, and why. */
+function renderHint(): void {
+  const hint = byId<HTMLParagraphElement>('query-hint');
+  const box = byId<HTMLInputElement>('query');
+  const shown = problems.length > 0 && box.value === query;
+  hint.hidden = !shown;
+  box.setAttribute('aria-invalid', String(shown));
+  if (!shown) {
+    hint.replaceChildren();
+    return;
+  }
+  const parts: Node[] = [];
+  const reasons: string[] = [];
+  for (const segment of querySegments(query, problems)) {
+    if (segment.problem === undefined) {
+      parts.push(document.createTextNode(segment.text));
+    } else {
+      parts.push(element('span', { className: 'bad', text: segment.text }));
+      reasons.push(segment.problem);
+    }
+  }
+  parts.push(element('span', { className: 'why', text: `\n${reasons.join('\n')} — the rest of the search still applies.` }));
+  hint.replaceChildren(...parts);
+}
+
+let searchTimer: ReturnType<typeof setTimeout> | undefined;
+
+function search(text: string, now = false): void {
+  clearTimeout(searchTimer);
+  const run = (): void => {
+    query = text;
+    selected = new Set();
+    void load();
+  };
+  if (now) run();
+  else searchTimer = setTimeout(run, 250);
+}
+
+/** A chip adds its filter to the search, as if typed. */
+function applyFilter(filter: string): void {
+  const box = byId<HTMLInputElement>('query');
+  box.value = addFilter(box.value, filter);
+  closeChipMenu();
+  search(box.value, true);
+  box.focus();
+}
+
+function closeChipMenu(): void {
+  const menu = byId('chip-menu');
+  menu.hidden = true;
+  menu.replaceChildren();
+}
+
+function option(label: string, filter: string): HTMLButtonElement {
+  return button(label, () => applyFilter(filter));
+}
+
+/** A small form: a text or date field and "Add". */
+function inputForm(type: string, placeholder: string, toFilter: (value: string) => string): HTMLFormElement {
+  const form = element('form');
+  const input = element('input');
+  input.type = type;
+  input.placeholder = placeholder;
+  input.setAttribute('aria-label', placeholder);
+  const add = element('button', { text: 'Add' });
+  add.type = 'submit';
+  form.append(input, add);
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    if (input.value.trim() !== '') applyFilter(toFilter(input.value.trim()));
+  });
+  queueMicrotask(() => input.focus());
+  return form;
+}
+
+function openChipMenu(chip: HTMLElement): void {
+  const menu = byId<HTMLDivElement>('chip-menu');
+  const kind = chip.dataset['chip'];
+  const items: Node[] = [];
+  if (kind === 'site') {
+    items.push(inputForm('text', 'example.com', (v) => filterText('site', v)));
+  } else if (kind === 'date') {
+    items.push(
+      option('Today', 'on:today'),
+      option('Yesterday', 'on:yesterday'),
+      option('Last 7 days', 'after:7d'),
+      option('Last 30 days', 'after:30d'),
+      option('Older than 30 days', 'before:30d'),
+      inputForm('date', 'On a day', (v) => filterText('on', v)),
+    );
+  } else if (kind === 'profile') {
+    items.push(...profiles.map((p) => option(p.name, filterText('profile', p.name))));
+  } else if (kind === 'visits') {
+    items.push(option('More than 1 visit', 'visits:>1'), option('More than 3 visits', 'visits:>3'), option('More than 10 visits', 'visits:>10'), option('Visited once', 'visits:1'));
+  } else if (kind === 'type') {
+    items.push(option('Typed in the address bar', 'type:typed'), option('Opened from a link', 'type:link'), option('Opened from a bookmark', 'type:bookmark'), option('Reloaded', 'type:reload'));
+  }
+  menu.replaceChildren(...items);
+  menu.setAttribute('aria-label', `Add a ${kind ?? ''} filter`);
+  menu.style.left = `${chip.offsetLeft}px`;
+  menu.hidden = false;
 }
 
 function setView(next: View): void {
@@ -353,6 +469,28 @@ async function start(): Promise<void> {
   byId('view-day').addEventListener('click', () => setView('day'));
   byId('delete').addEventListener('click', confirmDelete);
   byId('more').addEventListener('click', () => void loadMore());
+  const box = byId<HTMLInputElement>('query');
+  box.addEventListener('input', () => search(box.value));
+  box.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') search(box.value, true);
+  });
+  for (const chip of document.querySelectorAll<HTMLElement>('.chip')) {
+    chip.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const menu = byId('chip-menu');
+      if (!menu.hidden && menu.dataset['chip'] === chip.dataset['chip']) {
+        closeChipMenu();
+        return;
+      }
+      menu.dataset['chip'] = chip.dataset['chip'] ?? '';
+      openChipMenu(chip);
+    });
+  }
+  byId('chip-menu').addEventListener('click', (event) => event.stopPropagation());
+  document.addEventListener('click', closeChipMenu);
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeChipMenu();
+  });
   // The history changes while the page is open: reload when it is shown.
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') void load();
