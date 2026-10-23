@@ -14,6 +14,7 @@
 #include "core/devtools_frontend.h"
 #include "include/wrapper/cef_helpers.h"
 #import "platform/mac/devtools_window.h"
+#import "platform/mac/menu_shortcuts.h"
 
 @interface BRDevToolsDock () <BRDevToolsWindowOwner>
 - (void)handleCreated:(CefRefPtr<CefBrowser>)frontend;
@@ -299,8 +300,9 @@ NSButton* HeaderButton(NSString* symbol,
     @[ @"window", @"macwindow.on.rectangle", @"Open in a separate window" ],
   ];
   CGFloat x = 600 - 28;
-  NSButton* close = HeaderButton(@"xmark", @"Close developer tools (⌥⌘I)", self,
-                                 @selector(closeClicked:));
+  NSButton* close = HeaderButton(
+      @"xmark", brouk::mac::ToolTip(@"Close developer tools", "devtools"), self,
+      @selector(closeClicked:));
   close.frame = NSMakeRect(x, 3, 24, 22);
   close.autoresizingMask = NSViewMinXMargin;
   [header addSubview:close];

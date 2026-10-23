@@ -1,5 +1,7 @@
 #import "platform/mac/find_bar.h"
 
+#import "platform/mac/menu_shortcuts.h"
+
 namespace {
 
 NSButton* IconButton(NSString* symbol,
@@ -56,10 +58,16 @@ NSButton* IconButton(NSString* symbol,
     _count.alignment = NSTextAlignmentRight;
     [self addSubview:_count];
 
-    _previous = IconButton(@"chevron.up", @"Previous match", @"Previous (⇧⌘G)",
-                           self, @selector(previousClicked:));
-    _next = IconButton(@"chevron.down", @"Next match", @"Next (⌘G)", self,
+    _previous = IconButton(@"chevron.up", @"Previous match", @"", self,
+                           @selector(previousClicked:));
+    _next = IconButton(@"chevron.down", @"Next match", @"", self,
                        @selector(nextClicked:));
+    [self updateToolTips];
+    [NSNotificationCenter.defaultCenter
+        addObserver:self
+           selector:@selector(updateToolTips)
+               name:brouk::mac::kShortcutsChangedNotification
+             object:nil];
     _close = IconButton(@"xmark", @"Close find bar", @"Close (Esc)", self,
                         @selector(closeClicked:));
     for (NSButton* b in @[ _previous, _next, _close ]) {
@@ -115,6 +123,11 @@ NSButton* IconButton(NSString* symbol,
 
 - (void)fieldChanged:(id)sender {
   [_delegate findBar:self findText:_field.stringValue forward:YES findNext:NO];
+}
+
+- (void)updateToolTips {
+  _previous.toolTip = brouk::mac::ToolTip(@"Previous", "find_previous");
+  _next.toolTip = brouk::mac::ToolTip(@"Next", "find_next");
 }
 
 - (void)previousClicked:(id)sender {

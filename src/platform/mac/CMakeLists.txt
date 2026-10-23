@@ -32,6 +32,8 @@ add_executable(brouk_app
   internal_page_window.h
   internal_page_window.mm
   main.mm
+  menu_shortcuts.h
+  menu_shortcuts.mm
   permission_prompt_view.h
   permission_prompt_view.mm
   profile_colors.h

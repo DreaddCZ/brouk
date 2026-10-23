@@ -11,6 +11,7 @@
 
 #include "core/settings_file.h"
 #include "core/settings_schema.h"
+#include "core/shortcuts.h"
 
 namespace brouk {
 
@@ -70,6 +71,11 @@ void ProfileRegistry::Load() {
   global_ = global.settings;
   for (const SettingProblem& problem : global.problems) {
     problems_.push_back(std::string(kSettingsFile) + ": " + problem.ToString());
+  }
+  std::vector<std::string> shortcut_problems;
+  ResolveShortcuts(global_, shortcut_problems);
+  for (const std::string& problem : shortcut_problems) {
+    problems_.push_back(std::string(kSettingsFile) + ": " + problem);
   }
 
   std::error_code error;

@@ -10,7 +10,7 @@ export interface Choice {
 }
 
 export type SettingType = 'bool' | 'string' | 'choice' | 'integer';
-export type SettingFormat = 'text' | 'urlTemplate' | 'folder' | 'profileId';
+export type SettingFormat = 'text' | 'urlTemplate' | 'folder' | 'profileId' | 'shortcut';
 
 export interface SettingItem {
   readonly key: string;
@@ -51,7 +51,7 @@ export interface FileResult {
 }
 
 const kTypes: readonly string[] = ['bool', 'string', 'choice', 'integer'];
-const kFormats: readonly string[] = ['text', 'urlTemplate', 'folder', 'profileId'];
+const kFormats: readonly string[] = ['text', 'urlTemplate', 'folder', 'profileId', 'shortcut'];
 
 function invalid(): BridgeError {
   return new BridgeError('The browser sent an answer that could not be read.');
