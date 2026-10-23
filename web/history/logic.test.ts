@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addFilter, dayLabel, filterText, groupByDay, hostLabel, lastVisitLabel, pathOf, querySegments, sortSites, updateSelection, type Site, type Visit } from './logic.js';
+import { addFilter, isOpenableUrl, toCsv, dayLabel, filterText, groupByDay, hostLabel, lastVisitLabel, pathOf, querySegments, sortSites, updateSelection, type Site, type Visit } from './logic.js';
 
 function site(host: string, visits: number, lastVisit: number): Site {
   return { profile: 'default', host, visits, pages: 1, lastVisit };
@@ -73,4 +73,18 @@ test('parts not understood are marked', () => {
     { text: ' visits' },
   ]);
   assert.deepEqual(querySegments('ok', []), [{ text: 'ok' }]);
+});
+
+test('results as CSV', () => {
+  assert.equal(toCsv(['a', 'b'], [['x,y', 1], [null, 'say "hi"'], ['line\nbreak', 2.5]]),
+    'a,b\r\n"x,y",1\r\n,"say ""hi"""\r\n"line\nbreak",2.5\r\n');
+});
+
+test('openable addresses in results', () => {
+  assert.equal(isOpenableUrl('https://a.com/x'), true);
+  assert.equal(isOpenableUrl('file:///Users/me/a.html'), true);
+  assert.equal(isOpenableUrl('javascript:alert(1)'), false);
+  assert.equal(isOpenableUrl('brouk://history'), false);
+  assert.equal(isOpenableUrl(3), false);
+  assert.equal(isOpenableUrl(null), false);
 });

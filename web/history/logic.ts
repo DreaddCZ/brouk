@@ -159,3 +159,25 @@ export function querySegments(query: string, problems: readonly { start: number;
   if (at < query.length) segments.push({ text: query.slice(at) });
   return segments;
 }
+
+/** Results as CSV (RFC 4180): fields with commas, quotes or line breaks quoted. */
+export function toCsv(columns: readonly string[], rows: readonly (readonly (string | number | null)[])[]): string {
+  const field = (value: string | number | null): string => {
+    const text = value === null ? '' : String(value);
+    return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+  };
+  return [columns, ...rows].map((row) => row.map(field).join(',')).join('\r\n') + '\r\n';
+}
+
+/** Whether a result cell is an address that can be opened (web or file). */
+export function isOpenableUrl(value: string | number | null): value is string {
+  return typeof value === 'string' && /^(https?:\/\/|file:\/\/)\S+$/i.test(value);
+}
+
+/** Example queries next to the SQL editor. */
+export const kSqlExamples: readonly { readonly label: string; readonly sql: string }[] = [
+  { label: 'Most visited pages', sql: 'SELECT profile, title, url, visit_count\nFROM pages\nORDER BY visit_count DESC\nLIMIT 50' },
+  { label: 'Sites by visits this week', sql: "SELECT profile, host, count(*) AS visits\nFROM visits\nWHERE visit_time >= datetime('now', 'localtime', '-7 days')\nGROUP BY profile, host\nORDER BY visits DESC" },
+  { label: 'Visits per day', sql: 'SELECT date(visit_time) AS day, count(*) AS visits\nFROM visits\nGROUP BY day\nORDER BY day DESC' },
+  { label: 'Typed addresses', sql: "SELECT profile, url, visit_time\nFROM visits\nWHERE transition = 'typed'\nORDER BY visit_time DESC" },
+];

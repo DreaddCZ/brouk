@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "core/history_sql.h"
 #include "core/history_store.h"
 #include "core/profile_id.h"
 #include "core/url_pattern.h"
@@ -58,6 +59,13 @@ class HistoryService {
   void Run(const ProfileId& profile,
            std::function<void(HistoryStore&)> work,
            std::function<void()> done);
+
+  // The history page's SQL editor (013): runs `sql` over the histories of
+  // `profiles` (id and name) on the history thread; `done` on the UI thread.
+  using SqlDone = std::function<void(Result<SqlResult>)>;
+  void RunSql(std::vector<std::pair<ProfileId, std::string>> profiles,
+              std::string sql,
+              SqlDone done);
 
   using SuggestDone = std::function<void(std::vector<HistoryMatch>)>;
   // The most recently visited pages of `profile` (History → Recently

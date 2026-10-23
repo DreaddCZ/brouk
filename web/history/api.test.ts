@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { BridgeError } from '../shared/bridge.js';
-import { HistoryApi, parsePages, parseProblems, parseSites, parseState, parseVisits } from './api.js';
+import { HistoryApi, parsePages, parseProblems, parseSites, parseSql, parseState, parseVisits } from './api.js';
 
 test('state, sites, pages and visits are checked', () => {
   const state = parseState({ profiles: [{ id: 'default', name: 'Main', color: 'blue' }], view: 'day' });
@@ -46,4 +46,13 @@ test('problems of a search are read when present', () => {
   assert.deepEqual(parseProblems({ sites: [] }), []);
   assert.deepEqual(parseProblems({ problems: [{ start: 1, end: 4, message: 'x' }] }), [{ start: 1, end: 4, message: 'x' }]);
   assert.throws(() => parseProblems({ problems: [{ start: 1 }] }), BridgeError);
+});
+
+test('SQL results are checked', () => {
+  const result = parseSql({ columns: ['url', 'n'], rows: [['https://a.com/', 3], [null, 1.5]], truncated: true });
+  assert.equal(result.rows[1]?.[0], null);
+  assert.equal(result.truncated, true);
+  assert.throws(() => parseSql({ columns: ['a'], rows: [[1, 2]], truncated: false }), BridgeError);
+  assert.throws(() => parseSql({ columns: ['a'], rows: [[{}]], truncated: false }), BridgeError);
+  assert.throws(() => parseSql({ columns: ['a'], rows: [] }), BridgeError);
 });

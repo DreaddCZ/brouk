@@ -6,11 +6,14 @@
  */
 import { cefTransport } from '../shared/bridge.js';
 import { button, byId, element, errorText } from '../shared/dom.js';
-import { HistoryApi, type DeleteItem, type Page, type Profile, type QueryProblem, type View } from './api.js';
+import { HistoryApi, type DeleteItem, type Page, type Profile, type QueryProblem, type SqlResult, type View } from './api.js';
 import {
   addFilter,
   filterText,
   groupByDay,
+  isOpenableUrl,
+  kSqlExamples,
+  toCsv,
   querySegments,
   hostLabel,
   lastVisitLabel,
@@ -104,7 +107,7 @@ function removeButton(label: string, items: readonly DeleteItem[]): HTMLButtonEl
   return node;
 }
 
-function link(text: string, url: string, profile: string): HTMLAnchorElement {
+function link(text: string, url: string, profile: string | null): HTMLAnchorElement {
   const node = element('a', { className: 'title', text: text === '' ? url : text });
   node.href = url;
   node.title = url;
@@ -429,6 +432,81 @@ function openChipMenu(chip: HTMLElement): void {
   menu.hidden = false;
 }
 
+// SQL editor (013): read-only SELECTs over the views pages and visits.
+
+let sqlResult: SqlResult | null = null;
+
+function setSqlMode(on: boolean): void {
+  document.body.classList.toggle('sql', on);
+  byId('sql-panel').hidden = !on;
+  byId('sql-toggle').setAttribute('aria-pressed', String(on));
+  if (on) byId<HTMLTextAreaElement>('sql').focus();
+  else byId<HTMLInputElement>('query').focus();
+}
+
+function profileIdByName(name: string | number | null): string | null {
+  return typeof name === 'string' ? (profiles.find((p) => p.name === name)?.id ?? null) : null;
+}
+
+function renderSql(): void {
+  const container = byId<HTMLDivElement>('sql-results');
+  byId<HTMLButtonElement>('sql-copy').disabled = sqlResult === null || sqlResult.rows.length === 0;
+  if (sqlResult === null) {
+    container.replaceChildren();
+    return;
+  }
+  const profileColumn = sqlResult.columns.indexOf('profile');
+  const table = element('table');
+  const head = element('tr');
+  head.append(...sqlResult.columns.map((c) => element('th', { text: c })));
+  const thead = element('thead');
+  thead.append(head);
+  const tbody = element('tbody');
+  for (const row of sqlResult.rows) {
+    const tr = element('tr');
+    const profile = profileColumn >= 0 ? profileIdByName(row[profileColumn] ?? null) : null;
+    for (const cell of row) {
+      const td = element('td');
+      if (cell === null) {
+        td.className = 'null';
+        td.textContent = 'NULL';
+      } else if (typeof cell === 'number') {
+        td.className = 'number';
+        td.textContent = String(cell);
+      } else if (isOpenableUrl(cell)) {
+        td.append(link(cell, cell, profile));
+      } else {
+        td.textContent = cell;
+      }
+      td.title = cell === null ? 'NULL' : String(cell);
+      tr.append(td);
+    }
+    tbody.append(tr);
+  }
+  table.append(thead, tbody);
+  container.replaceChildren(table);
+}
+
+async function runSql(): Promise<void> {
+  const text = byId<HTMLTextAreaElement>('sql').value;
+  const status = byId('sql-status');
+  if (text.trim() === '') return;
+  status.textContent = 'Running…';
+  const started = performance.now();
+  try {
+    sqlResult = await api.sql(text);
+    const rows = sqlResult.rows.length;
+    const ms = Math.round(performance.now() - started);
+    status.textContent = `${rows} ${rows === 1 ? 'row' : 'rows'}${sqlResult.truncated ? ' (stopped at 1,000)' : ''} · ${ms} ms`;
+    showError(null);
+  } catch (error) {
+    sqlResult = null;
+    status.textContent = '';
+    showError(errorText(error));
+  }
+  renderSql();
+}
+
 function setView(next: View): void {
   if (next === view) return;
   view = next;
@@ -469,6 +547,26 @@ async function start(): Promise<void> {
   byId('view-day').addEventListener('click', () => setView('day'));
   byId('delete').addEventListener('click', confirmDelete);
   byId('more').addEventListener('click', () => void loadMore());
+  byId('sql-toggle').addEventListener('click', () => setSqlMode(!document.body.classList.contains('sql')));
+  byId('sql-run').addEventListener('click', () => void runSql());
+  byId<HTMLTextAreaElement>('sql').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      void runSql();
+    }
+  });
+  byId('sql-copy').addEventListener('click', () => {
+    if (sqlResult === null) return;
+    api.copy(toCsv(sqlResult.columns, sqlResult.rows)).then(
+      () => { byId('sql-status').textContent += ' · copied'; },
+      (error: unknown) => showError(errorText(error)),
+    );
+  });
+  byId('sql-examples').replaceChildren(...kSqlExamples.map((example) =>
+    button(example.label, () => {
+      byId<HTMLTextAreaElement>('sql').value = example.sql;
+      void runSql();
+    })));
   const box = byId<HTMLInputElement>('query');
   box.addEventListener('input', () => search(box.value));
   box.addEventListener('keydown', (event) => {

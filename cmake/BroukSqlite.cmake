@@ -23,6 +23,7 @@ function(brouk_sqlite_library target)
   target_compile_definitions(${target} PRIVATE
     SQLITE_DQS=0
     SQLITE_THREADSAFE=1
+    SQLITE_MAX_ATTACHED=64
     SQLITE_DEFAULT_MEMSTATUS=0
     SQLITE_DEFAULT_WAL_SYNCHRONOUS=1
     SQLITE_LIKE_DOESNT_MATCH_BLOBS

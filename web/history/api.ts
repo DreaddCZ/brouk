@@ -32,6 +32,15 @@ export interface QueryProblem {
   readonly message: string;
 }
 
+export type SqlCell = string | number | null;
+
+export interface SqlResult {
+  readonly columns: readonly string[];
+  readonly rows: readonly (readonly SqlCell[])[];
+  /** Stopped at the row limit. */
+  readonly truncated: boolean;
+}
+
 /** Something to delete: a page or a site of a profile, or one visit. */
 export type DeleteItem =
   | { readonly profile: string; readonly kind: 'page' | 'site'; readonly value: string }
@@ -81,6 +90,25 @@ export function parseProblems(value: unknown): QueryProblem[] {
     const item = record(p);
     return { start: count(item, 'start'), end: count(item, 'end'), message: text(item, 'message') };
   });
+}
+
+export function parseSql(value: unknown): SqlResult {
+  const answer = record(value);
+  const columns = list(answer, 'columns').map((c) => {
+    if (typeof c !== 'string') throw invalid();
+    return c;
+  });
+  const rows = list(answer, 'rows').map((r) => {
+    if (!Array.isArray(r) || r.length !== columns.length) throw invalid();
+    const cells: unknown[] = r;
+    return cells.map((cell): SqlCell => {
+      if (cell === null || typeof cell === 'string' || typeof cell === 'number') return cell;
+      throw invalid();
+    });
+  });
+  const truncated = answer['truncated'];
+  if (typeof truncated !== 'boolean') throw invalid();
+  return { columns, rows, truncated };
 }
 
 export function parseSites(value: unknown): Site[] {
@@ -175,7 +203,17 @@ export class HistoryApi {
     await send('history.delete', { items }, this.#transport);
   }
 
-  async open(profile: string, url: string, newTab: boolean): Promise<void> {
-    await send('history.open', { profile, url, newTab }, this.#transport);
+  /** `profile` null: the history tab's own profile. */
+  async open(profile: string | null, url: string, newTab: boolean): Promise<void> {
+    await send('history.open', { ...profileArgs(profile), url, newTab }, this.#transport);
+  }
+
+  /** Runs a read-only SELECT over the views pages and visits. */
+  async sql(query: string): Promise<SqlResult> {
+    return parseSql(await send('history.sql', { query }, this.#transport));
+  }
+
+  async copy(text: string): Promise<void> {
+    await send('history.copy', { text }, this.#transport);
   }
 }
