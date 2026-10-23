@@ -35,9 +35,9 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 008 | [Password manager](008-password-manager.md) | ready | P1 |
 | 009 | [Form autofill](009-autofill.md) | ready | P1 |
 | 010 | [Link routing and window picker](010-link-routing.md) | ready | P1 |
-| 011 | [Bookmark manager](011-bookmarks.md) | ready | P1 |
+| 011 | [Bookmark manager](011-bookmarks.md) | in-progress | P1 |
 | 012 | [Web platform basics](012-web-platform-basics.md) | in-progress | P1 |
-| 013 | [History](013-history.md) | in-progress — storage, recording, retention, address bar suggestions, History menu with closed tabs, history limits, the history page as a tab with search, SQL editor, Clean up and Clear browsing data (merged); history in profile export next | P1 |
+| 013 | [History](013-history.md) | in-progress — storage, recording, retention, address bar suggestions, History menu with closed tabs, history limits, the history page as a tab with search, SQL editor, Clean up and Clear browsing data (merged); history in profile export postponed | P1 |
 | 014 | [Downloads](014-downloads.md) | ready | P2 |
 | 015 | [Session restore](015-session-restore.md) | done | P1 |
 | 016 | [Help](016-help.md) | ready | P2 |
@@ -58,6 +58,8 @@ Build order. Each milestone ends with a build the user tests on their Macs.
 2026-10-22 (user's decision): the rest of 012 (folder upload and file drop, pinch zoom, Picture-in-Picture, permissions in settings) is postponed; profiles (005) come next, on top of the configuration foundation from 004 that they need (settings files, typed settings, live reload). The settings page of 004 follows later.
 
 2026-10-23 (user's decision): next come 003 (M4), then 013, then 011. Full acceptance testing of 004 and 005 is done later, together with the UI of these specs.
+
+2026-10-23 (user's decision): next come bookmarks (011), then ad blocking (007), so the browser can be used day to day; history in profile export (013) is postponed.
 
 2026-10-23 (user's decision): help (016) is built last, after all other specs; until then, rule 7 in `CLAUDE.md` keeps the help text for each change in its pull request.
 

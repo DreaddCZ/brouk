@@ -1,6 +1,6 @@
 # 011 – Bookmark manager
 
-- **Status:** ready
+- **Status:** in-progress
 - **Priority:** P1
 - **Depends on:** 001, 003, 005, 010
 
