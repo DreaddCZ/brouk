@@ -37,7 +37,12 @@ constexpr std::array<std::string_view, 4> kDockPositions = {"bottom", "right",
 constexpr std::array<std::string_view, 4> kDockPositionLabels = {
     "Bottom", "Right", "Left", "Separate window"};
 
-constexpr std::array<SettingDef, 17> kSettings = {{
+constexpr std::array<std::string_view, 4> kHistoryKeep = {"30", "90", "365",
+                                                          "forever"};
+constexpr std::array<std::string_view, 4> kHistoryKeepLabels = {
+    "30 days", "90 days", "1 year", "Forever"};
+
+constexpr std::array<SettingDef, 20> kSettings = {{
     // Global.
     {.key = "appearance.theme",
      .scope = SettingScope::kGlobal,
@@ -69,6 +74,33 @@ constexpr std::array<SettingDef, 17> kSettings = {{
      .description = "For \"Custom\": the search page's address with %s "
                     "where the search text goes, e.g. "
                     "https://example.com/search?q=%s"},
+    // Address bar suggestions (003); bookmarks join with 011.
+    {.key = "suggestions.history",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kBool,
+     .default_value = "true",
+     .section = "Search",
+     .label = "Suggest pages from your history",
+     .description = "In the address bar, from the history of the tab's "
+                    "profile."},
+    {.key = "suggestions.search",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kBool,
+     .default_value = "true",
+     .section = "Search",
+     .label = "Show search suggestions",
+     .description = "What you type in the address bar is sent to the search "
+                    "engine for suggestions."},
+    // History (013).
+    {.key = "history.keep",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kChoice,
+     .default_value = "90",
+     .choices = kHistoryKeep,
+     .choice_labels = kHistoryKeepLabels,
+     .section = "History",
+     .label = "Keep history for",
+     .description = "Older visits are deleted automatically."},
     {.key = "downloads.folder",
      .scope = SettingScope::kGlobal,
      .type = SettingDef::Type::kString,

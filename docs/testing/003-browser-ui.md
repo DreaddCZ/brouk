@@ -60,3 +60,20 @@ build/debug-x86_64/Brouk.app/Contents/MacOS/brouk $(for i in $(seq 1 30); do ech
 35. Tab menu: New Tab to the Right, Duplicate Tab, Close Other Tabs / to the Left / to the Right act on the active tab like the tab's right-click menu; the close items are greyed out when there is nothing to close.
 36. Remap the palette (Settings → Shortcuts → Command palette). Expected: the new shortcut opens it.
 
+## History and address bar suggestions (with 013)
+
+Settings are in Settings → Search ("Suggest pages from your history", "Show search suggestions") and Settings → History ("Keep history for").
+
+37. Visit a few sites by typing their address (e.g. `github.com`, `example.com`) and by clicking links. Then type `git` in a new tab. Expected: a list opens under the address bar; the field shows `git` with `hub.com` completed and selected, and the first row is the GitHub page. Return opens it.
+38. Type `gi`, then press ⌫. Expected: no inline completion after deleting (as in Chrome); typing a letter again brings it back.
+39. Type words from a page title (e.g. part of a Jira issue title), in any case and without accents. Expected: the page is listed with its title and address.
+40. Type a search term (`brouk`). Expected: first row "brouk – Search Google", then history pages if any, then search suggestions from Google. Up/Down move through the rows and the field shows each one; Return opens the selected row.
+41. Escape once: the list closes and the completion disappears; Escape again: the field shows the page address.
+42. Select a history row with Up/Down and press ⇧⌫. Expected: the row disappears and does not come back for the same text (removed from the profile's history).
+43. Use two profiles: visit a site in profile A only, then type its name in a tab of profile B. Expected: not suggested in B.
+44. Change the search engine to DuckDuckGo: suggestions come from DuckDuckGo; with a custom engine there are no search suggestions. Turn off "Show search suggestions": only history rows; turn off "Suggest pages from your history": only search rows.
+45. Type `https://intranet.example/x`. Expected: no search suggestions are requested for an address with a scheme.
+46. Visit a page that redirects (e.g. `http://github.com` → `https://github.com/`). Expected: only the final address is suggested. A site that changes the address without loading (most single-page apps, e.g. Jira) records each page.
+47. Error pages (e.g. `http://localhost:1/`), `brouk://settings` and `data:` pages are never suggested.
+48. Quit and restart Brouk. Expected: suggestions still come from the history; the profile folder contains `history.db`.
+

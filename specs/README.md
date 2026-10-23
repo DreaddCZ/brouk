@@ -27,7 +27,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 |---|---|---|---|
 | 001 | [Technology stack](001-technology-stack.md) | in-progress | P1 |
 | 002 | [Platform support](002-platform-support.md) | ready (macOS) | P1 |
-| 003 | [Browser UI](003-browser-ui.md) | in-progress | P1 |
+| 003 | [Browser UI](003-browser-ui.md) | done — bookmark suggestions follow with 011 | P1 |
 | 004 | [Configuration system](004-configuration.md) | in-progress | P1 |
 | 005 | [Profiles](005-profiles.md) | in-progress | P1 |
 | 006 | [Developer tools](006-developer-tools.md) | in-progress | P1 |
@@ -37,7 +37,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 010 | [Link routing and window picker](010-link-routing.md) | ready | P1 |
 | 011 | [Bookmark manager](011-bookmarks.md) | ready | P1 |
 | 012 | [Web platform basics](012-web-platform-basics.md) | in-progress | P1 |
-| 013 | [History](013-history.md) | ready | P1 |
+| 013 | [History](013-history.md) | in-progress — storage, recording, retention and address bar suggestions built (PR #19); history page, menu, closed tabs, clearing and export next | P1 |
 | 014 | [Downloads](014-downloads.md) | ready | P2 |
 
 ## Roadmap

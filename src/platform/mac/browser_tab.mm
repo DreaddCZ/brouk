@@ -39,6 +39,9 @@ NSString* StripFragment(NSString* url) {
 - (void)handleBrowserCreated:(CefRefPtr<CefBrowser>)browser;
 - (void)handleTitle:(NSString*)title;
 - (void)handleAddress:(NSString*)url;
+- (void)handleVisit:(const std::string&)url
+              title:(const std::string&)title
+         transition:(cef_transition_type_t)transition;
 - (void)handleLoading:(BOOL)loading back:(BOOL)back forward:(BOOL)forward;
 - (void)handleFavicon:(NSImage*)image;
 - (void)handleCloseReady;
@@ -77,6 +80,11 @@ class TabDelegateBridge : public TabClientDelegate {
   }
   void OnAddressChanged(const std::string& url) override {
     [tab_ handleAddress:ToNSString(url)];
+  }
+  void OnPageVisited(const std::string& url,
+                     const std::string& title,
+                     cef_transition_type_t transition) override {
+    [tab_ handleVisit:url title:title transition:transition];
   }
   void OnLoadingStateChanged(bool is_loading,
                              bool can_go_back,
@@ -511,6 +519,29 @@ class TabDelegateBridge : public TabClientDelegate {
 - (void)handleTitle:(NSString*)title {
   _title = [title copy];
   [_delegate tabDidChangeState:self];
+  if (_url.length) {
+    [_delegate tab:self titleChanged:_title forURL:_url];
+  }
+}
+
+// For history (013): how the visit started. The address bar marks its
+// navigations (CEF has no "typed" transition of its own).
+- (void)handleVisit:(const std::string&)url
+              title:(const std::string&)title
+         transition:(cef_transition_type_t)transition {
+  brouk::VisitTransition kind = brouk::VisitTransition::kOther;
+  int source = transition & TT_SOURCE_MASK;
+  if (_nextVisitTyped) {
+    kind = brouk::VisitTransition::kTyped;
+  } else if (source == TT_RELOAD) {
+    kind = brouk::VisitTransition::kReload;
+  } else if (source == TT_AUTO_BOOKMARK) {
+    kind = brouk::VisitTransition::kBookmark;
+  } else if (source == TT_LINK || source == TT_FORM_SUBMIT) {
+    kind = brouk::VisitTransition::kLink;
+  }
+  _nextVisitTyped = NO;
+  [_delegate tab:self visitedURL:url title:title transition:kind];
 }
 
 - (void)handleAddress:(NSString*)url {

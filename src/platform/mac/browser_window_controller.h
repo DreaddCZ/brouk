@@ -11,6 +11,7 @@
 
 #include "cef/devtools_preferences.h"
 #include "cef/devtools_tools_handler.h"
+#include "cef/history_service.h"
 #include "cef/tab_client.h"
 #include "core/profile_registry.h"
 #include "include/cef_request_context.h"
@@ -60,6 +61,12 @@ NS_ASSUME_NONNULL_BEGIN
 // The command palette (003) lists the tabs of all browser windows, front
 // window first, and opens settings at one setting.
 - (NSArray<BRBrowserWindowController*>*)browserWindowControllers;
+// History (013, 003): null before CEF is ready.
+- (nullable brouk::HistoryService*)historyService;
+// Address bar suggestions (003): the sources the settings allow.
+- (BOOL)historySuggestionsEnabled;
+// "" when search suggestions are off or the engine has none.
+- (std::string)searchSuggestTemplate;
 - (void)openSettingsAtKey:(NSString*)key profile:(nullable NSString*)profileId;
 @end
 

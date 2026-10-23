@@ -1,6 +1,6 @@
 # 013 – History
 
-- **Status:** ready
+- **Status:** in-progress
 - **Priority:** P1
 - **Depends on:** 001, 003, 005, 010
 
@@ -210,3 +210,5 @@ None.
 - 2026-10-21: placeholder created from the readiness review. Until this spec is ready, Claude Code may store visited URLs and titles per profile only as far as address bar suggestions (003) need it, in a storage module this spec will later extend.
 - 2026-10-22 (history review with the user): agreed on Chrome-like history, 90-day retention, and the history page showing all profiles with a profile filter, like the bookmark manager. Clear browsing data, the History menu and ⇧⌘T reopening closed tabs (current run only) were taken from Chrome. Storage is SQLite per profile. Spec set to `ready`.
 - 2026-10-22 (history review, part 2, with the user): to reduce clutter, the history page groups entries by exact host (default view; Chrome's by-day list is a toggle). A manual "Clean up" dialog deletes selected hosts or everything except kept hosts; the keep list is remembered per profile and topped up with the 10 most visited hosts. No automatic clean up. Search uses field filters with chips, plus a read-only SQL editor over `pages` and `visits` views.
+- 2026-10-23 (implementation, with 003): storage, recording, retention and the address bar part are done; the history page, menu, closed tabs, clearing and export follow. SQLite 3.54.1 amalgamation (`cmake/BroukSqlite.cmake`), one `profiles/<id>/history.db` per profile in WAL mode, tables `urls` and `visits` (schema version 1; favicons and downloads come as later versions). All database work runs on one dedicated thread (`src/cef/history_service`). A visit is recorded when the main frame finishes loading without an error, at the final URL of server redirects; same-document navigations (history.pushState) count too, as in Chrome. Not recorded: anything other than http, https and file, error pages, downloads, subframes. Client-side redirects (meta refresh, JavaScript) still record both pages for now; to be revisited with the history page. Transitions: typed = entered in the address bar or a history suggestion chosen there (searches are not "typed", as in Chrome), then reload, bookmark, link (links and forms), other (back/forward and the rest). Ranking: how the text matches (start of the address first), then typed visits, visit count and recency; inline completion only for pages typed before. Retention (`history.keep`: 30, 90 (default), 365 days or forever) runs when a profile's history opens and then hourly.
+

@@ -8,6 +8,7 @@
 #include <string>
 
 #import "platform/mac/address_field.h"
+#import "platform/mac/address_suggestions_popup.h"
 #import "platform/mac/browser_tab.h"
 #import "platform/mac/browser_window.h"
 #import "platform/mac/download_notice.h"
@@ -19,7 +20,9 @@
 #include "cef/site_info.h"
 #import "platform/mac/tab_strip_view.h"
 
+#include "cef/search_suggest_request.h"
 #include "core/address_input.h"
+#include "core/address_suggestions.h"
 #include "core/settings_schema.h"
 #include "core/shortcuts.h"
 #include "core/tab_strip_model.h"
@@ -98,7 +101,8 @@ NSButton* ToolbarButton(NSString* symbol,
 @interface BRBrowserWindowController () <BRTabDelegate,
                                          BRTabStripDelegate,
                                          BRAddressFieldDelegate,
-                                         BRFindBarDelegate>
+                                         BRFindBarDelegate,
+                                         BRSuggestionsPopupDelegate>
 @end
 
 @implementation BRBrowserWindowController {
@@ -141,6 +145,15 @@ NSButton* ToolbarButton(NSString* symbol,
   BOOL _toggleOnLeft;
   CGFloat _addressLeft;  // Where the address area starts (after site info).
   BRCommandPalette* _palette;
+  // Address bar suggestions (003) for the text in `_suggestText`. Answers
+  // carry `_suggestGeneration`, so late answers for older text are dropped.
+  BRSuggestionsPopup* _suggestions;
+  NSString* _suggestText;
+  std::uint64_t _suggestGeneration;
+  std::vector<brouk::HistoryMatch> _historyMatches;
+  std::vector<std::string> _searchSuggestions;
+  std::vector<brouk::AddressSuggestion> _suggestionRows;
+  CefRefPtr<brouk::SearchSuggestRequest> _suggestRequest;
 }
 
 - (instancetype)initWithOwner:(id<BRBrowserWindowOwner>)owner {
@@ -1035,6 +1048,22 @@ NSButton* ToolbarButton(NSString* symbol,
                  });
 }
 
+- (void)tab:(BRTab*)tab
+    visitedURL:(const std::string&)url
+         title:(const std::string&)title
+    transition:(brouk::VisitTransition)transition {
+  if (brouk::HistoryService* history = [_owner historyService]) {
+    history->RecordVisit(tab.profileId, url, title, transition);
+  }
+}
+
+- (void)tab:(BRTab*)tab titleChanged:(NSString*)title forURL:(NSString*)url {
+  if (brouk::HistoryService* history = [_owner historyService]) {
+    history->SetTitle(tab.profileId, url.UTF8String ?: "",
+                      title.UTF8String ?: "");
+  }
+}
+
 - (void)tabDidCreateBrowser:(BRTab*)tab {
   [_owner browserWindowDidCreateBrowser];
   for (NSString* key in [_pendingPopups allKeysForObject:tab]) {
@@ -1186,6 +1215,11 @@ NSButton* ToolbarButton(NSString* symbol,
   if (!tab) {
     return;
   }
+  if (_suggestions.visible && _suggestions.selectedRow >= 0) {
+    [self openSuggestionRow:_suggestions.selectedRow];
+    return;
+  }
+  [self closeSuggestions];
   brouk::AddressInputResult result = brouk::ClassifyAddressInput(
       text.UTF8String, [self searchEngine].url_template);
   tab.pendingAddressText = nil;
@@ -1194,6 +1228,8 @@ NSButton* ToolbarButton(NSString* symbol,
     return;
   }
   NSString* url = [NSString stringWithUTF8String:result.url.c_str()];
+  // Typed addresses count for history ranking; searches do not (Chrome).
+  tab.nextVisitTyped = result.kind == brouk::AddressInputResult::Kind::kUrl;
   [tab loadURL:url];
   [self updateToolbar];
   [tab focusContent];
@@ -1201,10 +1237,201 @@ NSButton* ToolbarButton(NSString* symbol,
 
 - (void)addressFieldDidCancel:(BRAddressField*)field {
   [self activeTab].pendingAddressText = nil;
+  [self closeSuggestions];
 }
 
 - (void)addressFieldDidEdit:(BRAddressField*)field {
   [self activeTab].pendingAddressText = field.stringValue;
+  [self updateSuggestions];
+}
+
+- (void)addressFieldDidEndEditing:(BRAddressField*)field {
+  [self closeSuggestions];
+}
+
+#pragma mark - Address bar suggestions (003)
+
+- (void)closeSuggestions {
+  ++_suggestGeneration;
+  if (_suggestRequest) {
+    _suggestRequest->Cancel();
+    _suggestRequest = nullptr;
+  }
+  _historyMatches.clear();
+  _searchSuggestions.clear();
+  _suggestionRows.clear();
+  _suggestText = nil;
+  [_suggestions close];
+}
+
+// Asks the sources again for the typed text: the profile's history, then
+// the search engine.
+- (void)updateSuggestions {
+  BRTab* tab = [self activeTab];
+  NSString* typed = _addressField.typedText;
+  NSString* trimmed = [typed
+      stringByTrimmingCharactersInSet:NSCharacterSet.whitespaceCharacterSet];
+  if (!tab || trimmed.length == 0 || _isPopup) {
+    [self closeSuggestions];
+    return;
+  }
+  std::uint64_t generation = ++_suggestGeneration;
+  _suggestText = [typed copy];
+  _historyMatches.clear();
+  [self showSuggestions];
+
+  __weak BRBrowserWindowController* weakSelf = self;
+  brouk::HistoryService* history = [_owner historyService];
+  if (history && [_owner historySuggestionsEnabled]) {
+    history->Suggest(
+        tab.profileId, typed.UTF8String ?: "", brouk::kMaxHistorySuggestions,
+        [weakSelf, generation](std::vector<brouk::HistoryMatch> m) {
+          [weakSelf historySuggestions:std::move(m) generation:generation];
+        });
+  }
+  if (_suggestRequest) {
+    _suggestRequest->Cancel();
+    _suggestRequest = nullptr;
+  }
+  std::string suggestTemplate = [_owner searchSuggestTemplate];
+  std::string text = typed.UTF8String ?: "";
+  if (suggestTemplate.empty() || !brouk::ShouldFetchSearchSuggestions(text)) {
+    _searchSuggestions.clear();
+    return;
+  }
+  _suggestRequest = brouk::SearchSuggestRequest::Start(
+      [_owner requestContextForProfile:tab.profileId],
+      brouk::BuildSearchUrl(text, suggestTemplate),
+      [weakSelf, generation](std::vector<std::string> suggestions) {
+        [weakSelf searchSuggestions:std::move(suggestions)
+                         generation:generation];
+      });
+}
+
+- (void)historySuggestions:(std::vector<brouk::HistoryMatch>)matches
+                generation:(std::uint64_t)generation {
+  if (generation != _suggestGeneration) {
+    return;
+  }
+  _historyMatches = std::move(matches);
+  [self showSuggestions];
+}
+
+- (void)searchSuggestions:(std::vector<std::string>)suggestions
+               generation:(std::uint64_t)generation {
+  if (generation != _suggestGeneration) {
+    return;
+  }
+  _suggestRequest = nullptr;
+  _searchSuggestions = std::move(suggestions);
+  [self showSuggestions];
+}
+
+- (void)showSuggestions {
+  if (!_suggestText || !_addressField.isEditing) {
+    return;
+  }
+  brouk::TabClientDelegate::SearchEngine engine = [self searchEngine];
+  std::string typed = _suggestText.UTF8String ?: "";
+  _suggestionRows = brouk::BuildAddressSuggestions(
+      {.text = typed,
+       .search_template = engine.url_template,
+       .search_engine_name = engine.name,
+       .history = _historyMatches,
+       .search_suggestions = _searchSuggestions});
+  if (!_suggestions) {
+    _suggestions = [[BRSuggestionsPopup alloc] init];
+    _suggestions.delegate = self;
+  }
+  [_suggestions showRows:_suggestionRows belowView:_addressField];
+  if (!_suggestionRows.empty() &&
+      !_suggestionRows.front().inline_completion.empty()) {
+    [_addressField
+        setInlineCompletion:@(_suggestionRows.front().inline_completion.c_str())
+               forTypedText:_suggestText];
+  }
+}
+
+// What the address field shows while a row is selected with Up/Down.
+- (nullable NSString*)fieldTextForRow:(NSInteger)row {
+  const brouk::AddressSuggestion& suggestion =
+      _suggestionRows[static_cast<std::size_t>(row)];
+  switch (suggestion.kind) {
+    case brouk::AddressSuggestion::Kind::kHistory:
+      return @(suggestion.url.c_str());
+    case brouk::AddressSuggestion::Kind::kSearch:
+      return @(suggestion.text.c_str());
+    case brouk::AddressSuggestion::Kind::kTypedUrl:
+    case brouk::AddressSuggestion::Kind::kTypedSearch:
+      return nil;  // The typed text.
+  }
+  return nil;
+}
+
+- (BOOL)addressField:(BRAddressField*)field doCommand:(SEL)command {
+  if (!_suggestions.visible || _suggestionRows.empty()) {
+    return NO;
+  }
+  NSInteger count = static_cast<NSInteger>(_suggestionRows.size());
+  if (command == @selector(moveDown:) || command == @selector(moveUp:)) {
+    NSInteger row =
+        _suggestions.selectedRow + (command == @selector(moveDown:) ? 1 : -1);
+    row = std::clamp<NSInteger>(row, 0, count - 1);
+    _suggestions.selectedRow = row;
+    [_addressField showSuggestionText:[self fieldTextForRow:row]];
+    return YES;
+  }
+  if (command == @selector(cancelOperation:)) {
+    // First Escape closes the list and drops the inline completion; the
+    // next one restores the page address (the field's own Escape).
+    [_addressField showSuggestionText:nil];
+    [self closeSuggestions];
+    return YES;
+  }
+  // ⇧⌫ removes a history suggestion from the profile's history (013).
+  NSInteger row = _suggestions.selectedRow;
+  if (row >= 0 && row < count &&
+      _suggestionRows[static_cast<std::size_t>(row)].kind ==
+          brouk::AddressSuggestion::Kind::kHistory) {
+    std::string url = _suggestionRows[static_cast<std::size_t>(row)].url;
+    BRTab* tab = [self activeTab];
+    if (brouk::HistoryService* history = [_owner historyService];
+        history && tab) {
+      history->DeletePage(tab.profileId, url);
+    }
+    std::erase_if(_historyMatches, [&url](const brouk::HistoryMatch& match) {
+      return match.url == url;
+    });
+    [_addressField showSuggestionText:nil];
+    [self showSuggestions];
+    return YES;
+  }
+  return NO;
+}
+
+- (void)suggestionsPopup:(BRSuggestionsPopup*)popup
+            didChooseRow:(NSInteger)row {
+  [self openSuggestionRow:row];
+}
+
+// Loads a row in the active tab, as Return does.
+- (void)openSuggestionRow:(NSInteger)row {
+  BRTab* tab = [self activeTab];
+  if (!tab || row < 0 ||
+      row >= static_cast<NSInteger>(_suggestionRows.size())) {
+    return;
+  }
+  brouk::AddressSuggestion suggestion =
+      _suggestionRows[static_cast<std::size_t>(row)];
+  [self closeSuggestions];
+  tab.pendingAddressText = nil;
+  // Addresses and history pages count as typed (Chrome); searches do not.
+  tab.nextVisitTyped =
+      suggestion.kind == brouk::AddressSuggestion::Kind::kTypedUrl ||
+      suggestion.kind == brouk::AddressSuggestion::Kind::kHistory;
+  [tab loadURL:@(suggestion.url.c_str())];
+  [self updateToolbar];
+  [tab focusContent];
 }
 
 #pragma mark - Menu and toolbar actions

@@ -10,6 +10,9 @@
 @implementation BRAddressField {
   BOOL _isEditing;
   BOOL _hasPendingText;
+  NSString* _typedText;
+  // The last edit added text at the end: inline completion is allowed.
+  BOOL _allowInline;
 }
 
 - (instancetype)initWithFrame:(NSRect)frame {
@@ -23,8 +26,39 @@
     self.cell.scrollable = YES;
     self.accessibilityLabel = @"Address and search bar";
     _pageURL = @"";
+    _typedText = @"";
   }
   return self;
+}
+
+- (NSString*)typedText {
+  return _typedText;
+}
+
+// Replaces the field editor's text without a change notification.
+- (void)replaceEditorText:(NSString*)text selection:(NSRange)selection {
+  NSText* editor = self.currentEditor;
+  if (!editor) {
+    return;
+  }
+  editor.string = text;
+  editor.selectedRange = selection;
+}
+
+- (void)setInlineCompletion:(NSString*)completion
+               forTypedText:(NSString*)typed {
+  if (!_allowInline || completion.length == 0 ||
+      ![typed isEqualToString:_typedText] ||
+      ![self.currentEditor.string isEqualToString:typed]) {
+    return;
+  }
+  [self replaceEditorText:[typed stringByAppendingString:completion]
+                selection:NSMakeRange(typed.length, completion.length)];
+}
+
+- (void)showSuggestionText:(nullable NSString*)text {
+  NSString* shown = text ?: _typedText;
+  [self replaceEditorText:shown selection:NSMakeRange(shown.length, 0)];
 }
 
 - (BOOL)isEditing {
@@ -56,6 +90,8 @@
   BOOL ok = [super becomeFirstResponder];
   if (ok) {
     _isEditing = YES;
+    _typedText = @"";
+    _allowInline = NO;
     if (!_hasPendingText) {
       // Edit the real URL, not the shortened form.
       std::string display = brouk::FormatUrlForDisplay(_pageURL.UTF8String);
@@ -79,6 +115,10 @@
 
 - (void)controlTextDidEndEditing:(NSNotification*)notification {
   _isEditing = NO;
+  if ([_addressDelegate
+          respondsToSelector:@selector(addressFieldDidEndEditing:)]) {
+    [_addressDelegate addressFieldDidEndEditing:self];
+  }
   if (!_hasPendingText) {
     [self showDisplayText];
   }
@@ -86,12 +126,34 @@
 
 - (void)controlTextDidChange:(NSNotification*)notification {
   _hasPendingText = YES;
+  NSTextView* editor = (NSTextView*)self.currentEditor;
+  NSString* text = editor.string ?: self.stringValue;
+  NSRange selection = editor.selectedRange;
+  BOOL composing =
+      [editor isKindOfClass:NSTextView.class] && editor.hasMarkedText;
+  _allowInline = !composing && text.length > _typedText.length &&
+                 [text hasPrefix:_typedText] &&
+                 selection.location == text.length && selection.length == 0;
+  _typedText = [text copy];
   [_addressDelegate addressFieldDidEdit:self];
 }
 
 - (BOOL)control:(NSControl*)control
                textView:(NSTextView*)textView
     doCommandBySelector:(SEL)selector {
+  BOOL shift =
+      (NSApp.currentEvent.modifierFlags & NSEventModifierFlagShift) != 0;
+  BOOL forList = selector == @selector(moveUp:) ||
+                 selector == @selector(moveDown:) ||
+                 selector == @selector(cancelOperation:) ||
+                 (shift && (selector == @selector(deleteBackward:) ||
+                            selector == @selector(deleteForward:)));
+  if (forList &&
+      [_addressDelegate
+          respondsToSelector:@selector(addressField:doCommand:)] &&
+      [_addressDelegate addressField:self doCommand:selector]) {
+    return YES;
+  }
   if (selector == @selector(insertNewline:)) {
     NSString* text = self.stringValue;
     _hasPendingText = NO;

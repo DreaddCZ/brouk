@@ -10,6 +10,7 @@
 
 #include "cef/devtools_preferences.h"
 #include "cef/tab_client.h"
+#include "core/history_store.h"
 #include "core/profile_id.h"
 #include "core/tab_strip_model.h"
 #include "include/cef_browser.h"
@@ -34,6 +35,12 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)tab:(BRTab*)tab releaseDownloadPath:(const std::string&)path;
 - (void)tab:(BRTab*)tab downloadUpdated:(const brouk::DownloadInfo&)info;
 - (void)tab:(BRTab*)tab fullscreenChanged:(BOOL)fullscreen;
+// History (013): a page was shown, or its title changed.
+- (void)tab:(BRTab*)tab
+    visitedURL:(const std::string&)url
+         title:(const std::string&)title
+    transition:(brouk::VisitTransition)transition;
+- (void)tab:(BRTab*)tab titleChanged:(NSString*)title forURL:(NSString*)url;
 - (void)tab:(BRTab*)tab
         openURL:(NSString*)url
     disposition:(brouk::OpenDisposition)disposition;
@@ -120,6 +127,8 @@ NS_ASSUME_NONNULL_BEGIN
 // What the user typed in the address bar but has not submitted yet; kept per
 // tab like in Chrome.
 @property(nonatomic, copy, nullable) NSString* pendingAddressText;
+// The next page shown was typed in the address bar (history, 013).
+@property(nonatomic) BOOL nextVisitTyped;
 
 // `profileId`: the profile the tab belongs to (005); its browser must be
 // created in that profile's request context. It never changes: moving a tab

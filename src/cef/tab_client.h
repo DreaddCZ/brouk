@@ -103,6 +103,13 @@ class TabClientDelegate {
   virtual void OnBrowserCreated(CefRefPtr<CefBrowser> browser) = 0;
   virtual void OnTitleChanged(const std::string& title) = 0;
   virtual void OnAddressChanged(const std::string& url) = 0;
+  // A page was shown in the main frame (history, 013): after loading,
+  // without an error, at its final URL after redirects; also for
+  // same-document navigations (history.pushState). `transition` is CEF's
+  // source and qualifiers.
+  virtual void OnPageVisited(const std::string& url,
+                             const std::string& title,
+                             cef_transition_type_t transition) = 0;
   virtual void OnLoadingStateChanged(bool is_loading,
                                      bool can_go_back,
                                      bool can_go_forward) = 0;
@@ -337,6 +344,14 @@ class TabClient : public CefClient,
                             bool is_loading,
                             bool can_go_back,
                             bool can_go_forward) override;
+  void OnLoadEnd(CefRefPtr<CefBrowser> browser,
+                 CefRefPtr<CefFrame> frame,
+                 int http_status_code) override;
+  void OnLoadError(CefRefPtr<CefBrowser> browser,
+                   CefRefPtr<CefFrame> frame,
+                   ErrorCode error_code,
+                   const CefString& error_text,
+                   const CefString& failed_url) override;
 
   // CefPermissionHandler:
   bool OnRequestMediaAccessPermission(
@@ -413,6 +428,12 @@ class TabClient : public CefClient,
   std::vector<OneTimeGrant> one_time_grants_;
   // Frames whose page script reported audio playing.
   std::set<std::string> audible_frames_;
+  // For history: whether the tab is loading (a document), and whether the
+  // main frame's current load failed (an error page). UI thread.
+  bool loading_ = false;
+  bool main_load_failed_ = false;
+  // Reports the visible navigation entry as a visit.
+  void ReportVisit(const CefRefPtr<CefBrowser>& browser);
   void SetFrameAudible(const std::string& frame_id, bool audible);
   // An external-protocol question is open (one at a time, like Chrome).
   bool asking_external_protocol_ = false;

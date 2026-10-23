@@ -30,7 +30,35 @@ constexpr std::array<std::pair<std::string_view, std::string_view>, 5>
         {"ecosia", "https://www.ecosia.org/search?q=%s"},
     }};
 
+// Their suggestion services, all answering in the OpenSearch format
+// ["text", ["suggestion", …]]. Google's is the one Chrome uses.
+constexpr std::array<std::pair<std::string_view, std::string_view>, 5>
+    kSuggestions = {{
+        {"google", "https://www.google.com/complete/search?client=chrome&q=%s"},
+        {"bing", "https://api.bing.com/osjson.aspx?query=%s"},
+        {"duckduckgo", "https://duckduckgo.com/ac/?q=%s&type=list"},
+        {"startpage", "https://www.startpage.com/osuggestions?q=%s"},
+        {"ecosia", "https://ac.ecosia.org/autocomplete?q=%s&type=list"},
+    }};
+
 }  // namespace
+
+std::string SearchSuggestTemplate(const Settings& global) {
+  if (!global.GetBool("suggestions.search")) {
+    return {};
+  }
+  const std::string& engine = global.GetString("search.engine");
+  if (engine == "custom" &&
+      !global.GetString("search.custom_template").empty()) {
+    return {};
+  }
+  for (const auto& [name, url] : kSuggestions) {
+    if (name == engine) {
+      return std::string(url);
+    }
+  }
+  return std::string(kSuggestions[0].second);  // Google, the fallback.
+}
 
 std::string SearchTemplate(const Settings& global) {
   const std::string& engine = global.GetString("search.engine");

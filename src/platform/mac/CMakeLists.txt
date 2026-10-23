@@ -11,6 +11,8 @@ set(HELPER_NAME_BASE "${APP_NAME} Helper")
 add_executable(brouk_app
   address_field.h
   address_field.mm
+  address_suggestions_popup.h
+  address_suggestions_popup.mm
   app_delegate.h
   app_delegate.mm
   browser_tab.h

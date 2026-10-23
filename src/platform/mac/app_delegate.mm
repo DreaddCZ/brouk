@@ -23,6 +23,7 @@
 #include "brouk/app_info.h"
 #include "cef/browser_app.h"
 #include "cef/devtools_preferences.h"
+#include "cef/history_service.h"
 #include "cef/internal_scheme.h"
 #include "cef/profile_manager_handler.h"
 #include "cef/settings_handler.h"
@@ -224,6 +225,8 @@ class AppSettingsPage : public SettingsPageDelegate {
   NSMutableArray<BRBrowserWindowController*>* _windows;
   // Profiles (005); loaded at launch, before CEF starts.
   std::unique_ptr<brouk::ProfileRegistry> _profiles;
+  // History databases (013); from cefContextInitialized to shutdown.
+  std::unique_ptr<brouk::HistoryService> _history;
   // Each profile's request context (its isolated web data), created when the
   // profile is first used.
   std::map<brouk::ProfileId, CefRefPtr<CefRequestContext>> _requestContexts;
@@ -277,6 +280,13 @@ class AppSettingsPage : public SettingsPageDelegate {
 - (void)cefContextInitialized {
   CEF_REQUIRE_UI_THREAD();
   _profilesLoaded = YES;
+  std::filesystem::path profilesDir =
+      std::filesystem::path(brouk::mac::AppDataDirectory().UTF8String) /
+      "profiles";
+  _history = std::make_unique<brouk::HistoryService>(
+      [profilesDir](const brouk::ProfileId& profile) {
+        return profilesDir / profile / "history.db";
+      });
   // Remote debugging (006) is fixed for this run: from the setting (passed
   // to CefInitialize) or the --remote-debugging-port switch.
   CefRefPtr<CefCommandLine> commandLine =
@@ -528,6 +538,7 @@ class AppSettingsPage : public SettingsPageDelegate {
 }
 
 - (void)releaseBrowserObjects {
+  _history.reset();  // Finishes queued history work, closes the databases.
   _settingsWatcher = nil;
   _profileManager = nil;
   _settingsWindow = nil;
@@ -745,6 +756,12 @@ class AppSettingsPage : public SettingsPageDelegate {
   // Conflicts are reported with the other settings problems (registry).
   std::vector<std::string> ignored;
   brouk::mac::SetShortcuts(brouk::ResolveShortcuts(global, ignored));
+  if (_history) {
+    const std::string& keep = global.GetString("history.keep");
+    _history->SetRetentionDays(
+        keep == "forever" ? std::nullopt
+                          : std::optional<int>(std::atoi(keep.c_str())));
+  }
   const std::string& theme = global.GetString("appearance.theme");
   NSApp.appearance =
       theme == "light" ? [NSAppearance appearanceNamed:NSAppearanceNameAqua]
@@ -939,6 +956,18 @@ class AppSettingsPage : public SettingsPageDelegate {
                         _profileManagerDelegate.get())
             context:[self internalContext]];
   [_profileManager showWindow:nil];
+}
+
+- (nullable brouk::HistoryService*)historyService {
+  return _history.get();
+}
+
+- (BOOL)historySuggestionsEnabled {
+  return _profiles->global_settings().GetBool("suggestions.history");
+}
+
+- (std::string)searchSuggestTemplate {
+  return brouk::SearchSuggestTemplate(_profiles->global_settings());
 }
 
 - (NSArray<BRBrowserWindowController*>*)browserWindowControllers {
@@ -1268,6 +1297,9 @@ class AppSettingsPage : public SettingsPageDelegate {
       [controller closeTabsInProfile:target];
     }
     strongSelf->_requestContexts.erase(target);
+    if (strongSelf->_history) {
+      strongSelf->_history->CloseProfile(target);
+    }
     std::optional<brouk::Error> error =
         strongSelf->_profiles->DeleteProfile(target);
     [strongSelf profilesChangedInApp];
