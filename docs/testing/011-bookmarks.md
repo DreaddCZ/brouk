@@ -29,3 +29,21 @@ Use at least two profiles (e.g. "Work" and "Home") with tabs in the same window.
 17. Add bookmarks, quit Brouk (⌘Q) and start it again. Expected: all bookmarks are there.
 18. In `~/Library/Application Support/Brouk/`, `bookmarks.json` and `bookmarks.json.bak` (the previous version) exist after two changes.
 19. Quit Brouk, damage `bookmarks.json` (e.g. delete its last line), start Brouk. Expected: the bookmarks of the previous version are there.
+
+## Bookmarks bar
+
+20. Open a new tab (⌘T). Expected: the bookmarks bar is shown below the toolbar with the "Bookmarks bar" folder's items; load a page in it: the bar hides.
+21. With no bookmarks on the bar, the new tab page shows the hint "For quick access, place your bookmarks here on the bookmarks bar."
+22. Press ⇧⌘B (or View → Always Show Bookmarks Bar, which gets a checkmark). Expected: the bar shows on every tab; quit and restart: still shown; ⇧⌘B again: only on the new tab page.
+23. Click a bookmark on the bar. Expected: it opens in the current tab. ⌘-click and middle-click: a new background tab. ⇧⌘-click: a new tab that becomes active.
+24. Click a folder. Expected: a menu with its items, subfolders as submenus; choosing an item opens it (with ⌘ held: in a new tab).
+25. Make the window narrow. Expected: items that do not fit disappear and a "»" button at the right lists them.
+26. Switch to a tab of another profile. Expected: bookmarks and folders linked to the first profile disappear from the bar; general ones stay.
+27. Drag a bookmark along the bar. Expected: a blue line shows where it goes; dropping moves it there.
+28. Drag a bookmark onto the middle of a folder. Expected: the folder highlights; dropping moves the bookmark into it (at the end).
+29. Drag a link from a web page onto the bar. Expected: a bookmark with the link's title and address appears where dropped.
+30. Drag the site icon (left of the address) onto the bar. Expected: the current page is bookmarked there.
+31. Right-click a bookmark: Open in New Tab, Open in New Window, Edit…, Delete, Add Bookmark…, Add Folder…, Bookmark Manager, Always Show Bookmarks Bar. Edit… opens a dialog with name, URL, folder and profile; changes are saved.
+32. Right-click a folder: Open All (n) opens its bookmarks in new tabs (more than 15 asks first); Edit… shows name and profile.
+33. Delete a bookmark from the right-click menu. Expected: "Bookmark deleted" with Undo; Undo puts it back.
+34. Right-click the empty part of the bar → Add Bookmark… Expected: the dialog is filled with the current page; Save adds it at the end of the bar. Add Folder… adds a folder.

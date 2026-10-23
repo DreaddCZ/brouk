@@ -24,15 +24,6 @@ NS_ASSUME_NONNULL_BEGIN
 
 @class BRBrowserWindowController;
 
-// Where a bookmark opens (011): click, ⌘-click or middle-click, ⇧⌘-click,
-// "Open in New Window".
-typedef NS_ENUM(NSInteger, BRBookmarkOpenDisposition) {
-  BRBookmarkOpenCurrentTab,
-  BRBookmarkOpenBackgroundTab,
-  BRBookmarkOpenForegroundTab,
-  BRBookmarkOpenNewWindow,
-};
-
 // Implemented by the app delegate: app-wide bookkeeping of windows and
 // browsers (needed to quit CEF only after every browser has closed).
 @protocol BRBrowserWindowOwner <BRBrowserCounter>
@@ -106,6 +97,8 @@ typedef NS_ENUM(NSInteger, BRBookmarkOpenDisposition) {
 // Bookmarks (011): the app's one tree, and the profiles for its dialogs.
 - (BRBookmarkStore*)bookmarkStore;
 - (std::vector<brouk::ProfileInfo>)profileList;
+// ⇧⌘B: the bookmarks bar on every tab, or on the new tab page only.
+- (IBAction)toggleBookmarksBar:(nullable id)sender;
 @end
 
 @interface BRBrowserWindowController : NSWindowController <NSWindowDelegate>
@@ -186,6 +179,8 @@ typedef NS_ENUM(NSInteger, BRBookmarkOpenDisposition) {
 // another profile).
 - (void)openBookmark:(brouk::BookmarkId)bookmarkId
          disposition:(BRBookmarkOpenDisposition)disposition;
+// The bookmarks bar on every tab, not only on the new tab page (setting).
+@property(nonatomic) BOOL bookmarksBarAlwaysShown;
 // Only one tab, never used (a new tab page): replaced by a restored session.
 - (BOOL)hasOnlyNewTab;
 

@@ -17,6 +17,15 @@ NS_ASSUME_NONNULL_BEGIN
 
 extern NSNotificationName const BRBookmarksDidChangeNotification;
 
+// Where a bookmark opens (011): click, ⌘-click or middle-click, ⇧⌘-click,
+// "Open in New Window".
+typedef NS_ENUM(NSInteger, BRBookmarkOpenDisposition) {
+  BRBookmarkOpenCurrentTab,
+  BRBookmarkOpenBackgroundTab,
+  BRBookmarkOpenForegroundTab,
+  BRBookmarkOpenNewWindow,
+};
+
 @interface BRBookmarkStore : NSObject
 
 - (instancetype)initWithFile:(NSString*)path NS_DESIGNATED_INITIALIZER;
