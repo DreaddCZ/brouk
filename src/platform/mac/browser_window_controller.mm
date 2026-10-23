@@ -414,6 +414,7 @@ NSButton* ToolbarButton(NSString* symbol,
     item.colorName = @(info.color.c_str());
     item.collapsed = group.collapsed;
     item.startIndex = group.start;
+    item.pinnedCount = group.pinned_count;
     NSMutableArray<BRTab*>* tabs = [NSMutableArray array];
     for (std::size_t i = group.start; i < group.start + group.count; ++i) {
       BRTab* tab = _tabs[@(_model->id_at(i))];
@@ -1066,6 +1067,57 @@ NSButton* ToolbarButton(NSString* symbol,
   }
 }
 
+- (void)tabStripDidActivateGroup:(NSString*)profileId {
+  std::optional<brouk::TabId> tabId =
+      _model->LastActiveTabOf(profileId.UTF8String);
+  if (tabId) {
+    [self activateTab:_tabs[@(*tabId)]];
+  }
+}
+
+- (void)tabStripDidSetPinned:(BOOL)pinned tab:(brouk::TabId)tabId {
+  if (_model->SetPinned(tabId, pinned)) {
+    [self modelDidChange];
+  }
+}
+
+- (void)tabStripDidReloadTab:(brouk::TabId)tabId {
+  [_tabs[@(tabId)] reload];
+}
+
+- (void)tabStripDidRequestNewTabAfter:(brouk::TabId)tabId {
+  [self openTabAfter:_tabs[@(tabId)] withURL:nil];
+}
+
+// Like Chrome's Duplicate, but only the address: CEF cannot copy the
+// back/forward history into a new browser.
+- (void)tabStripDidDuplicateTab:(brouk::TabId)tabId {
+  BRTab* tab = _tabs[@(tabId)];
+  [self openTabAfter:tab withURL:tab.url.length ? tab.url : nil];
+}
+
+- (void)tabStripDidCloseTabs:(brouk::TabStripModel::CloseScope)scope
+                     fromTab:(brouk::TabId)tabId {
+  for (brouk::TabId other : _model->TabsToClose(tabId, scope)) {
+    [self closeTab:_tabs[@(other)]];
+  }
+}
+
+// A new active tab right after `after`, in its profile.
+- (void)openTabAfter:(nullable BRTab*)after withURL:(nullable NSString*)url {
+  if (!after) {
+    return;
+  }
+  BRTab* tab = [self makeTabInProfile:after.profileId];
+  _model->InsertAfter(tab.tabId, after.tabId, true);
+  [tab createBrowserWithURL:url ?: @"about:blank"
+             requestContext:[_owner requestContextForProfile:after.profileId]];
+  [self modelDidChange];
+  if (!url) {
+    [_addressField focusAndSelectAll];
+  }
+}
+
 - (void)tabStripDidDropTab:(brouk::TabId)tabId onProfile:(NSString*)profileId {
   [self moveTab:_tabs[@(tabId)] toProfile:profileId.UTF8String];
 }
@@ -1275,6 +1327,14 @@ NSButton* ToolbarButton(NSString* symbol,
   [self focusActiveTab];
 }
 
+// Tab > Pin Tab / Unpin Tab.
+- (IBAction)togglePinTab:(id)sender {
+  BRTab* tab = [self activeTab];
+  if (tab) {
+    [self tabStripDidSetPinned:!_model->IsPinned(tab.tabId) tab:tab.tabId];
+  }
+}
+
 // Cmd+1 ... Cmd+9; the menu item's tag is the number.
 - (IBAction)selectTabByNumber:(id)sender {
   _model->ActivateByShortcutNumber(static_cast<int>([sender tag]));
@@ -1297,6 +1357,10 @@ NSButton* ToolbarButton(NSString* symbol,
   if (action == @selector(selectNextTab:) ||
       action == @selector(selectPreviousTab:)) {
     return _model->count() > 1;
+  }
+  if (action == @selector(togglePinTab:)) {
+    item.title = tab && _model->IsPinned(tab.tabId) ? @"Unpin Tab" : @"Pin Tab";
+    return tab != nil;
   }
   if (action == @selector(toggleDevTools:)) {
     item.state =

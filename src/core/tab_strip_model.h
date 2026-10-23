@@ -23,6 +23,9 @@ using TabId = std::int64_t;
 // The default profile's group is always last (rightmost) and always exists,
 // even without tabs; other groups appear with their first tab, in the order
 // they appeared, and disappear with their last.
+//
+// Pinned tabs (003) work as in Chrome, except that they sit at the start of
+// their own profile group instead of at the start of the strip.
 class TabStripModel {
  public:
   explicit TabStripModel(ProfileId default_profile);
@@ -31,8 +34,9 @@ class TabStripModel {
 
   struct Group {
     ProfileId profile;
-    std::size_t start = 0;  // Index of its first tab.
-    std::size_t count = 0;  // 0 only for the default profile's group.
+    std::size_t start = 0;         // Index of its first tab.
+    std::size_t count = 0;         // 0 only for the default profile's group.
+    std::size_t pinned_count = 0;  // Its first `pinned_count` tabs.
     bool collapsed = false;
   };
 
@@ -44,9 +48,16 @@ class TabStripModel {
 
   // Inserts a tab opened from `opener` (a link, a popup) in the opener's
   // profile, right after the opener and after tabs opened from it earlier,
-  // as Chrome does. Falls back to appending in the default profile if the
-  // opener is not in this strip. Returns its index.
+  // as Chrome does; never among the group's pinned tabs. Falls back to
+  // appending in the default profile if the opener is not in this strip.
+  // Returns its index.
   std::size_t InsertFromOpener(TabId id, TabId opener, bool activate);
+
+  // Inserts a tab in `after`'s profile right after it (never among the
+  // pinned tabs), without an opener relation: "New Tab to the Right" and
+  // "Duplicate". Falls back to appending in the default profile if `after`
+  // is not in this strip. Returns its index.
+  std::size_t InsertAfter(TabId id, TabId after, bool activate);
 
   // Removes a tab. If it was active, picks the next active tab: another tab
   // opened by the same opener, then the opener, then the tab to the right,
@@ -67,8 +78,21 @@ class TabStripModel {
   void ActivateByShortcutNumber(int number);
 
   // Moves a tab to `to_index`, kept inside its own group (dragging a tab to
-  // another profile reopens it there instead, see 005).
+  // another profile reopens it there instead, see 005), and pinned tabs
+  // among the pinned ones, others after them.
   bool MoveTab(TabId id, std::size_t to_index);
+
+  // Pins a tab (it moves to the end of its group's pinned tabs) or unpins it
+  // (it moves to the first place after them), as Chrome does. Returns
+  // whether anything changed.
+  bool SetPinned(TabId id, bool pinned);
+  bool IsPinned(TabId id) const;
+
+  // The tabs that "Close Other Tabs", "Close Tabs to the Right" and "Close
+  // Tabs to the Left" of `id` close: only in its own profile group, and
+  // never pinned ones (as Chrome keeps pinned tabs). Left to right.
+  enum class CloseScope { kOthers, kRight, kLeft };
+  std::vector<TabId> TabsToClose(TabId id, CloseScope scope) const;
 
   // Collapses or expands a group (clicking its label). Collapsing the group
   // of the active tab activates the nearest tab outside it; if there is none,
@@ -77,6 +101,10 @@ class TabStripModel {
 
   // The default profile changed (settings): its group moves to the end.
   void SetDefaultProfile(const ProfileId& profile);
+  // The tab of `profile` that was active most recently, else its first tab;
+  // nullopt if it has no tabs. Clicking a group the strip collapsed for lack
+  // of space switches to it.
+  std::optional<TabId> LastActiveTabOf(std::string_view profile) const;
   const ProfileId& default_profile() const { return default_profile_; }
 
   // Left to right, always ending with the default profile's group.
@@ -97,11 +125,22 @@ class TabStripModel {
     TabId id;
     ProfileId profile;
     std::optional<TabId> opener;
+    bool pinned = false;
+    // Increases each time a tab becomes active (0: never was).
+    std::uint64_t activated = 0;
   };
 
   // Where `profile`'s group ends (one past its last tab); for a profile
   // without tabs, where its group would start.
   std::size_t GroupEnd(const ProfileId& profile) const;
+  std::size_t GroupStart(const ProfileId& profile) const;
+  // One past the group's last pinned tab.
+  std::size_t PinnedEnd(const ProfileId& profile) const;
+  // Makes the tab at `index` active and remembers when.
+  void SetActiveIndex(std::size_t index);
+  // Moves the tab at `from` to `to` (both valid indices), keeping the active
+  // tab active.
+  void Relocate(std::size_t from, std::size_t to);
   std::size_t InsertAt(std::size_t index, Entry entry, bool activate);
   bool IsCollapsedAt(std::size_t index) const;
   void ForgetOpeners();
@@ -114,6 +153,7 @@ class TabStripModel {
   // Non-default groups in the order they appeared.
   std::vector<ProfileId> group_order_;
   std::set<ProfileId, std::less<>> collapsed_;
+  std::uint64_t activation_count_ = 0;
 };
 
 }  // namespace brouk

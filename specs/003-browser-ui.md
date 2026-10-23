@@ -1,6 +1,6 @@
 # 003 – Browser UI
 
-- **Status:** ready
+- **Status:** in-progress
 - **Priority:** P1
 - **Depends on:** 001, 004, 005
 
@@ -72,3 +72,6 @@ None.
 
 - 2026-10-21 (decision in 001): hybrid UI shell. Windows, tabs, toolbar, address bar and menus are native (Objective-C++/AppKit on macOS); settings, history, bookmarks, downloads and other internal pages are HTML/TypeScript pages rendered in CEF. This answers "native look or custom cross-platform look" for the main window chrome; internal pages follow the same theme.
 - 2026-10-21 (UI and profiles review): horizontal tabs first, vertical later. Tab groups are profile groups (one group per profile per window, see 005), collapsible like in Chrome. Separate workspaces are not needed for now.
+- 2026-10-23 (user's decision): 003 is built next, then 013, then 011. The command palette opens with ⌘K (Chrome has no comparable shortcut on macOS). History for suggestions is stored in SQLite (013), approved as a library by the user. Built in several pull requests: pinned tabs and tab overflow; remappable shortcuts; command palette; history storage and address bar suggestions.
+- 2026-10-23 (implementation, pinned tabs and overflow): pinned tabs follow Chrome's rules inside their group: pinning moves a tab to the end of the group's pinned tabs, unpinning to the first place after them, pinned and other tabs cannot be dragged past each other, and links from a pinned tab open as normal tabs after the pinned ones. Pin/Unpin is in the tab's right-click menu and in a new Tab menu, as in Chrome (Select Next/Previous Tab moved there from Window). Overflow (`src/core/tab_strip_layout`): the narrowest tab is icon plus close button; a pinned tab keeps at least ~96 pt (icon and the start of its title) while the others can still shrink. Step 2 collapses the other groups with the most tabs first, only as many as needed; they are drawn like collapsed groups and expand again when space returns; clicking the label of such a group switches to its most recently active tab. Step 3 (to be tuned in testing): the active group shows its pinned tabs, the active tab and as many tabs after it as fit (near the end of the group, tabs before it fill the space); the hidden tabs are listed in a "+N" menu next to the group's "+" button.
+- 2026-10-23 (user's decision, testing feedback): pinned tabs show a pin badge on their icon and a faint background. The tab's right-click menu follows Chrome's: New Tab to the Right, Reload, Duplicate, Pin/Unpin, Mute/Unmute, Close Tab, Close Other Tabs, Close Tabs to the Left (not in Chrome, asked for by the user) and Close Tabs to the Right. The "Close …" items act only inside the tab's own profile group and keep pinned tabs (Chrome acts on the whole window). Duplicate opens the same address only: CEF cannot copy the back/forward history.

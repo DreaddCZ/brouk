@@ -51,6 +51,8 @@ set(BROUK_CORE_SOURCES
   settings_file.h
   settings_schema.cc
   settings_schema.h
+  tab_strip_layout.cc
+  tab_strip_layout.h
   tab_strip_model.cc
   tab_strip_model.h
   url_display.cc

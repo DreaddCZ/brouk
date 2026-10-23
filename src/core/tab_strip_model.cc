@@ -34,12 +34,24 @@ std::size_t TabStripModel::InsertFromOpener(TabId id,
   if (!opener_index) {
     return AppendTab(id, activate);
   }
-  // Tabs opened from the opener are in its group, right after it.
-  std::size_t index = *opener_index + 1;
+  // Tabs opened from the opener are in its group, right after it (and after
+  // the pinned tabs: links from a pinned tab open as normal tabs).
+  const ProfileId& profile = tabs_[*opener_index].profile;
+  std::size_t index = std::max(*opener_index + 1, PinnedEnd(profile));
   while (index < tabs_.size() && tabs_[index].opener == opener) {
     ++index;
   }
-  return InsertAt(index, {id, tabs_[*opener_index].profile, opener}, activate);
+  return InsertAt(index, {id, profile, opener}, activate);
+}
+
+std::size_t TabStripModel::InsertAfter(TabId id, TabId after, bool activate) {
+  std::optional<std::size_t> after_index = IndexOf(after);
+  if (!after_index) {
+    return AppendTab(id, activate);
+  }
+  const ProfileId& profile = tabs_[*after_index].profile;
+  std::size_t index = std::max(*after_index + 1, PinnedEnd(profile));
+  return InsertAt(index, {id, profile, std::nullopt}, activate);
 }
 
 std::size_t TabStripModel::InsertAt(std::size_t index,
@@ -54,7 +66,7 @@ std::size_t TabStripModel::InsertAt(std::size_t index,
     ++*active_index_;
   }
   if (activate || !active_index_) {
-    active_index_ = index;
+    SetActiveIndex(index);
     collapsed_.erase(tabs_[index].profile);
   }
   return index;
@@ -137,7 +149,7 @@ bool TabStripModel::RemoveTab(TabId id) {
       next = start;
     }
   }
-  active_index_ = next;
+  SetActiveIndex(*next);
   collapsed_.erase(tabs_[*next].profile);
   return true;
 }
@@ -154,7 +166,7 @@ bool TabStripModel::ActivateIndex(std::size_t index) {
   collapsed_.erase(tabs_[index].profile);
   if (active_index_ != index) {
     ForgetOpeners();
-    active_index_ = index;
+    SetActiveIndex(index);
   }
   return true;
 }
@@ -202,26 +214,74 @@ bool TabStripModel::MoveTab(TabId id, std::size_t to_index) {
     return false;
   }
   const ProfileId profile = tabs_[*from].profile;
-  std::size_t end = GroupEnd(profile);
-  std::size_t start = end;
-  while (start > 0 && tabs_[start - 1].profile == profile) {
-    --start;
-  }
+  std::size_t pinned_end = PinnedEnd(profile);
+  // Pinned tabs stay among the pinned ones, others after them.
+  std::size_t start = tabs_[*from].pinned ? GroupStart(profile) : pinned_end;
+  std::size_t end = tabs_[*from].pinned ? pinned_end : GroupEnd(profile);
   to_index = std::clamp(to_index, start, end - 1);
-  if (to_index == *from) {
-    return true;
-  }
-  std::optional<TabId> active = active_id();
-  Entry entry = tabs_[*from];
   // Moving a tab is a user action that breaks Chrome's opener relation.
-  entry.opener.reset();
-  tabs_.erase(tabs_.begin() + static_cast<std::ptrdiff_t>(*from));
-  tabs_.insert(tabs_.begin() + static_cast<std::ptrdiff_t>(to_index),
-               std::move(entry));
-  if (active) {
-    active_index_ = IndexOf(*active);
-  }
+  tabs_[*from].opener.reset();
+  Relocate(*from, to_index);
   return true;
+}
+
+bool TabStripModel::SetPinned(TabId id, bool pinned) {
+  std::optional<std::size_t> from = IndexOf(id);
+  if (!from || tabs_[*from].pinned == pinned) {
+    return false;
+  }
+  const ProfileId profile = tabs_[*from].profile;
+  // Pinning: the end of the pinned tabs; unpinning: the first place after
+  // them. Both are PinnedEnd() once the tab is counted on its new side.
+  std::size_t to = PinnedEnd(profile);
+  if (pinned) {
+    tabs_[*from].pinned = true;
+  } else {
+    tabs_[*from].pinned = false;
+    --to;
+  }
+  tabs_[*from].opener.reset();
+  Relocate(*from, to);
+  return true;
+}
+
+bool TabStripModel::IsPinned(TabId id) const {
+  std::optional<std::size_t> index = IndexOf(id);
+  return index && tabs_[*index].pinned;
+}
+
+std::vector<TabId> TabStripModel::TabsToClose(TabId id,
+                                              CloseScope scope) const {
+  std::vector<TabId> result;
+  std::optional<std::size_t> index = IndexOf(id);
+  if (!index) {
+    return result;
+  }
+  const ProfileId& profile = tabs_[*index].profile;
+  for (std::size_t i = GroupStart(profile); i < GroupEnd(profile); ++i) {
+    bool wanted = scope == CloseScope::kOthers  ? i != *index
+                  : scope == CloseScope::kRight ? i > *index
+                                                : i < *index;
+    if (wanted && !tabs_[i].pinned) {
+      result.push_back(tabs_[i].id);
+    }
+  }
+  return result;
+}
+
+std::optional<TabId> TabStripModel::LastActiveTabOf(
+    std::string_view profile) const {
+  const Entry* best = nullptr;
+  for (const Entry& entry : tabs_) {
+    if (entry.profile == profile &&
+        (!best || entry.activated > best->activated)) {
+      best = &entry;
+    }
+  }
+  if (!best) {
+    return std::nullopt;
+  }
+  return best->id;
 }
 
 bool TabStripModel::SetGroupCollapsed(std::string_view profile,
@@ -280,20 +340,15 @@ void TabStripModel::SetDefaultProfile(const ProfileId& profile) {
 std::vector<TabStripModel::Group> TabStripModel::groups() const {
   std::vector<Group> groups;
   for (const ProfileId& profile : group_order_) {
-    Group group{profile, GroupEnd(profile), 0, collapsed_.contains(profile)};
-    while (group.start > 0 && tabs_[group.start - 1].profile == profile) {
-      --group.start;
-      ++group.count;
-    }
-    groups.push_back(group);
+    std::size_t start = GroupStart(profile);
+    groups.push_back({profile, start, GroupEnd(profile) - start,
+                      PinnedEnd(profile) - start,
+                      collapsed_.contains(profile)});
   }
-  Group last{default_profile_, tabs_.size(), 0,
-             collapsed_.contains(default_profile_)};
-  while (last.start > 0 && tabs_[last.start - 1].profile == default_profile_) {
-    --last.start;
-    ++last.count;
-  }
-  groups.push_back(last);
+  std::size_t start = GroupStart(default_profile_);
+  groups.push_back({default_profile_, start, tabs_.size() - start,
+                    PinnedEnd(default_profile_) - start,
+                    collapsed_.contains(default_profile_)});
   return groups;
 }
 
@@ -339,6 +394,42 @@ std::size_t TabStripModel::GroupEnd(const ProfileId& profile) const {
   auto first_default =
       std::ranges::find(tabs_, default_profile_, &Entry::profile);
   return static_cast<std::size_t>(std::distance(tabs_.begin(), first_default));
+}
+
+std::size_t TabStripModel::GroupStart(const ProfileId& profile) const {
+  std::size_t start = GroupEnd(profile);
+  while (start > 0 && tabs_[start - 1].profile == profile) {
+    --start;
+  }
+  return start;
+}
+
+std::size_t TabStripModel::PinnedEnd(const ProfileId& profile) const {
+  std::size_t index = GroupStart(profile);
+  while (index < tabs_.size() && tabs_[index].profile == profile &&
+         tabs_[index].pinned) {
+    ++index;
+  }
+  return index;
+}
+
+void TabStripModel::SetActiveIndex(std::size_t index) {
+  active_index_ = index;
+  tabs_[index].activated = ++activation_count_;
+}
+
+void TabStripModel::Relocate(std::size_t from, std::size_t to) {
+  if (from == to) {
+    return;
+  }
+  std::optional<TabId> active = active_id();
+  Entry entry = std::move(tabs_[from]);
+  tabs_.erase(tabs_.begin() + static_cast<std::ptrdiff_t>(from));
+  tabs_.insert(tabs_.begin() + static_cast<std::ptrdiff_t>(to),
+               std::move(entry));
+  if (active) {
+    active_index_ = IndexOf(*active);
+  }
 }
 
 bool TabStripModel::IsCollapsedAt(std::size_t index) const {
