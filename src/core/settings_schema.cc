@@ -3,6 +3,9 @@
 #include <array>
 #include <span>
 #include <string_view>
+#include <vector>
+
+#include "core/shortcuts.h"
 
 namespace brouk {
 
@@ -193,14 +196,32 @@ constexpr std::array<SettingDef, 17> kSettings = {{
      .description = "Colour of the profile's tab groups and toolbar."},
 }};
 
+// The settings above, then one per shortcut action (003).
+std::vector<SettingDef> BuildSettingDefs() {
+  std::vector<SettingDef> defs(kSettings.begin(), kSettings.end());
+  for (const ShortcutAction& action : AllShortcutActions()) {
+    defs.push_back({.key = action.setting_key,
+                    .scope = SettingScope::kGlobal,
+                    .type = SettingDef::Type::kString,
+                    .default_value = action.defaults,
+                    .format = SettingDef::Format::kShortcut,
+                    .max_length = 200,
+                    .section = "Shortcuts",
+                    .label = action.label});
+  }
+  return defs;
+}
+
 }  // namespace
 
 std::span<const SettingDef> AllSettingDefs() {
-  return kSettings;
+  // Built once; the strings it points to are all constants.
+  static const std::vector<SettingDef> defs = BuildSettingDefs();
+  return defs;
 }
 
 const SettingDef* FindSettingDef(SettingScope scope, std::string_view key) {
-  for (const SettingDef& def : kSettings) {
+  for (const SettingDef& def : AllSettingDefs()) {
     if (def.scope == scope && def.key == key) {
       return &def;
     }

@@ -34,3 +34,17 @@ build/debug-x86_64/Brouk.app/Contents/MacOS/brouk $(for i in $(seq 1 30); do ech
 11. Open 30 tabs in one group and keep the window narrow. Expected: the pinned tabs, the active tab and the tabs after it are shown, and a "+N" button appears before the group's "+". Clicking "+N" lists the hidden tabs; choosing one switches to it.
 12. Activate the last tab in that state. Expected: the tabs before it fill the space.
 13. Collapse and expand a group by clicking its label (as before). Expected: unchanged behaviour.
+
+## Shortcuts
+
+18. Open Settings (⌘,) → Shortcuts. Expected: every browser action is listed with its shortcut (e.g. New tab `cmd+t`, Next tab `opt+cmd+right, cmd+}, ctrl+tab`).
+19. Click the "Pin or unpin tab" field and press ⌘E. Expected: the field shows `cmd+e` and is saved; Tab → Pin Tab now shows ⌘E and ⌘E pins the current tab.
+20. Set "Reload" to ⌘E too. Expected: the settings page shows a problem ("⌘E is set for both …"), the toolbar shows the settings problem button, and ⌘E reloads (the first action keeps it).
+21. Set "Print" to `cmd+shift+p`. Expected: ⇧⌘P prints, ⌘P no longer does. Set it to `none`: no menu shortcut.
+22. Type `t` or `shift+x` into a shortcut field and leave it. Expected: an error next to the field; the old value stays.
+23. Change "Close tab" to `cmd+e`, open a page that captures keys (e.g. a text field on any site) and press ⌘E. Expected: the tab closes (reserved shortcuts win over pages); ⌘W no longer closes the tab.
+24. Edit `~/Library/Application Support/Brouk/settings.yaml` by hand (e.g. `shortcuts: { reload: "cmd+e" }`) while Brouk runs. Expected: the menu changes at once.
+25. Hover the Back, Forward, Reload and developer tools buttons. Expected: the tooltips show the current shortcuts and update after a change.
+26. Change "Developer tools on/off" (006). Expected: the new shortcut toggles dev tools; ⌥⌘I no longer does.
+27. Reset everything: delete the `shortcuts:` section from `settings.yaml`. Expected: Chrome's shortcuts again.
+

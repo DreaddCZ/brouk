@@ -12,6 +12,7 @@
 #import "platform/mac/browser_window.h"
 #import "platform/mac/download_notice.h"
 #import "platform/mac/find_bar.h"
+#import "platform/mac/menu_shortcuts.h"
 #import "platform/mac/profile_colors.h"
 #import "platform/mac/site_info_popover.h"
 
@@ -203,6 +204,12 @@ NSButton* ToolbarButton(NSString* symbol,
     _pendingPopups = [NSMutableDictionary dictionary];
     window.delegate = self;
     [self buildViews];
+    // Tooltips name the shortcuts, which can change (003).
+    [NSNotificationCenter.defaultCenter
+        addObserver:self
+           selector:@selector(updateToolbar)
+               name:brouk::mac::kShortcutsChangedNotification
+             object:nil];
   }
   return self;
 }
@@ -235,12 +242,13 @@ NSButton* ToolbarButton(NSString* symbol,
   _tabStrip.hidden = _isPopup;
   [root addSubview:_tabStrip];
 
-  _backButton = ToolbarButton(@"chevron.left", @"Back", @"Back (⌘[)", self,
-                              @selector(goBack:));
-  _forwardButton = ToolbarButton(@"chevron.right", @"Forward", @"Forward (⌘])",
-                                 self, @selector(goForward:));
-  _reloadButton = ToolbarButton(@"arrow.clockwise", @"Reload", @"Reload (⌘R)",
-                                self, @selector(reloadOrStop:));
+  // Tooltips are set in updateToolbar.
+  _backButton =
+      ToolbarButton(@"chevron.left", @"Back", @"", self, @selector(goBack:));
+  _forwardButton = ToolbarButton(@"chevron.right", @"Forward", @"", self,
+                                 @selector(goForward:));
+  _reloadButton = ToolbarButton(@"arrow.clockwise", @"Reload", @"", self,
+                                @selector(reloadOrStop:));
   CGFloat x = 8;
   // Popup windows show only the (read-only) address, as in Chrome.
   if (!_isPopup) {
@@ -253,9 +261,8 @@ NSButton* ToolbarButton(NSString* symbol,
   }
 
   // Site info (lock) at the left of the address bar, as in Chrome.
-  _siteInfoButton =
-      ToolbarButton(@"info.circle", @"Site information",
-                    @"View site information", self, @selector(showSiteInfo:));
+  _siteInfoButton = ToolbarButton(@"info.circle", @"Site information", @"",
+                                  self, @selector(showSiteInfo:));
   _siteInfoButton.frame = NSMakeRect(x + 4, 8, 26, 24);
   _siteInfoButton.autoresizingMask = NSViewMaxXMargin;
   _siteInfoButton.symbolConfiguration = [NSImageSymbolConfiguration
@@ -310,8 +317,7 @@ NSButton* ToolbarButton(NSString* symbol,
   [_toolbar addSubview:_settingsProblemButton];
 
   // Dev tools toggle (006): always shown, next to the address bar.
-  _devToolsToggle = ToolbarButton(@"hammer", @"Developer tools",
-                                  @"Developer tools for this tab (⌥⌘I)", self,
+  _devToolsToggle = ToolbarButton(@"hammer", @"Developer tools", @"", self,
                                   @selector(toggleDevTools:));
   [_devToolsToggle setButtonType:NSButtonTypePushOnPushOff];
   _devToolsToggle.bordered = YES;
@@ -541,9 +547,10 @@ NSButton* ToolbarButton(NSString* symbol,
   _devToolsToggle.accessibilityValue =
       ruled ? @"on, request rules changed this page"
             : (tab.devToolsOn ? @"on" : @"off");
-  _devToolsToggle.toolTip =
-      ruled ? @"Request rules changed this page (developer tools, ⌥⌘I)"
-            : @"Developer tools for this tab (⌥⌘I)";
+  _devToolsToggle.toolTip = brouk::mac::ToolTip(
+      ruled ? @"Request rules changed this page (developer tools)"
+            : @"Developer tools for this tab",
+      "devtools");
   _devToolsToggle.image =
       [NSImage imageWithSystemSymbolName:ruled ? @"hammer.circle.fill"
                                          : tab.devToolsOn ? @"hammer.fill"
@@ -565,7 +572,12 @@ NSButton* ToolbarButton(NSString* symbol,
   _reloadButton.image =
       [NSImage imageWithSystemSymbolName:loading ? @"xmark" : @"arrow.clockwise"
                 accessibilityDescription:loading ? @"Stop" : @"Reload"];
-  _reloadButton.toolTip = loading ? @"Stop loading (⌘.)" : @"Reload (⌘R)";
+  _reloadButton.toolTip = loading ? brouk::mac::ToolTip(@"Stop loading", "stop")
+                                  : brouk::mac::ToolTip(@"Reload", "reload");
+  _backButton.toolTip = brouk::mac::ToolTip(@"Back", "back");
+  _forwardButton.toolTip = brouk::mac::ToolTip(@"Forward", "forward");
+  _siteInfoButton.toolTip =
+      brouk::mac::ToolTip(@"View site information", "site_info");
   _addressField.pageURL = tab.url ?: @"";
   [_addressField showPendingText:tab.pendingAddressText];
   NSString* title =
@@ -586,7 +598,8 @@ NSButton* ToolbarButton(NSString* symbol,
   _zoomButton.hidden = !brouk::IsZoomIndicatorShown(level);
   _zoomButton.title =
       [NSString stringWithFormat:@"%d %%", brouk::ZoomPercentFromLevel(level)];
-  _zoomButton.toolTip = @"Zoom: click to reset to 100 % (⌘0)";
+  _zoomButton.toolTip =
+      brouk::mac::ToolTip(@"Zoom: click to reset to 100 %", "zoom_reset");
   _zoomButton.accessibilityLabel =
       [NSString stringWithFormat:@"Zoom %d percent, reset",
                                  brouk::ZoomPercentFromLevel(level)];
@@ -1328,6 +1341,11 @@ NSButton* ToolbarButton(NSString* symbol,
 }
 
 // Tab > Pin Tab / Unpin Tab.
+// Tab > Mute Tab.
+- (IBAction)toggleMuteTab:(id)sender {
+  [[self activeTab] toggleMute];
+}
+
 - (IBAction)togglePinTab:(id)sender {
   BRTab* tab = [self activeTab];
   if (tab) {
@@ -1357,6 +1375,10 @@ NSButton* ToolbarButton(NSString* symbol,
   if (action == @selector(selectNextTab:) ||
       action == @selector(selectPreviousTab:)) {
     return _model->count() > 1;
+  }
+  if (action == @selector(toggleMuteTab:)) {
+    item.title = tab.isMuted ? @"Unmute Tab" : @"Mute Tab";
+    return tab != nil;
   }
   if (action == @selector(togglePinTab:)) {
     item.title = tab && _model->IsPinned(tab.tabId) ? @"Unpin Tab" : @"Pin Tab";

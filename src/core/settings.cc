@@ -1,6 +1,7 @@
 #include "core/settings.h"
 
 #include "core/profile_id.h"
+#include "core/shortcuts.h"
 
 #include <cassert>
 #include <charconv>
@@ -102,6 +103,13 @@ std::optional<std::string> CheckFormat(SettingDef::Format format,
     case SettingDef::Format::kProfileId:
       if (!IsValidProfileId(text)) {
         return std::string("must be a profile id (see the profiles folder)");
+      }
+      return std::nullopt;
+    case SettingDef::Format::kShortcut:
+      if (!ParseShortcutList(text)) {
+        return std::string(
+            "must be shortcuts such as cmd+shift+t or ctrl+tab, separated by "
+            "commas, or none; each needs cmd or ctrl (except f1 to f12)");
       }
       return std::nullopt;
   }

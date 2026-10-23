@@ -48,6 +48,8 @@ std::string_view FormatName(SettingDef::Format format) {
       return "folder";
     case SettingDef::Format::kProfileId:
       return "profileId";
+    case SettingDef::Format::kShortcut:
+      return "shortcut";
   }
   return "text";
 }

@@ -24,6 +24,7 @@ struct SettingDef {
     kUrlTemplate,  // An http(s) URL containing %s (a search engine).
     kFolder,       // Empty (the default folder), an absolute path or ~/...
     kProfileId,    // A profile id (the settings page offers the profiles).
+    kShortcut,     // Keyboard shortcuts, e.g. "cmd+shift+t, ctrl+tab" (003).
   };
 
   // Dotted path; "profile.color" is `color:` under `profile:` in the file.

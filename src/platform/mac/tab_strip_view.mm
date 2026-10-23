@@ -1,6 +1,7 @@
 #import "platform/mac/tab_strip_view.h"
 
 #import "platform/mac/browser_tab.h"
+#import "platform/mac/menu_shortcuts.h"
 #import "platform/mac/profile_colors.h"
 
 #include <algorithm>
@@ -104,7 +105,6 @@ NSColor* ActiveTabColor() {
         configurationWithPointSize:9
                             weight:NSFontWeightSemibold];
     _close.contentTintColor = NSColor.secondaryLabelColor;
-    _close.toolTip = @"Close tab (⌘W)";
     [self addSubview:_close];
 
     _audio = [NSButton buttonWithImage:[NSImage new]
@@ -198,6 +198,7 @@ NSColor* ActiveTabColor() {
   _label.stringValue = title;
   _title = title;
   [self updateDescriptions];
+  _close.toolTip = brouk::mac::ToolTip(@"Close tab", "close_tab");
   _icon.image = tab.favicon
                     ?: [NSImage imageWithSystemSymbolName:@"globe"
                                  accessibilityDescription:nil];

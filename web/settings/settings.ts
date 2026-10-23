@@ -7,7 +7,7 @@
 import { cefTransport } from '../shared/bridge.js';
 import { button, byId, element, errorText } from '../shared/dom.js';
 import { SettingsApi, type SettingItem, type SettingsState } from './api.js';
-import { isShown, sections } from './logic.js';
+import { isShown, sections, shortcutFromKey } from './logic.js';
 
 const api = new SettingsApi(cefTransport());
 let state: SettingsState | null = null;
@@ -96,6 +96,19 @@ function control(scopeProfile: string | null, item: SettingItem, inputId: string
   input.autocomplete = 'off';
   if (item.format === 'folder') input.placeholder = 'Downloads';
   if (item.format === 'urlTemplate') input.placeholder = 'https://example.com/search?q=%s';
+  if (item.format === 'shortcut') {
+    // Pressing a shortcut records it (003); plain keys edit the text, e.g.
+    // to add a second shortcut after a comma or to type "none".
+    input.placeholder = 'none';
+    input.title = 'Press the keys to record a shortcut, or type e.g. cmd+shift+t';
+    input.addEventListener('keydown', (event) => {
+      const shortcut = shortcutFromKey(event);
+      if (shortcut === null) return;
+      event.preventDefault();
+      input.value = shortcut;
+      void change(scopeProfile, item, shortcut);
+    });
+  }
   // Saved when the field is left or Return is pressed.
   input.addEventListener('change', () => void change(scopeProfile, item, input.value.trim()));
   return input;

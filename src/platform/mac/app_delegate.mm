@@ -16,6 +16,7 @@
 #import "platform/mac/browser_window_controller.h"
 #import "platform/mac/data_paths.h"
 #import "platform/mac/internal_page_window.h"
+#import "platform/mac/menu_shortcuts.h"
 #import "platform/mac/profile_colors.h"
 #import "platform/mac/settings_watcher.h"
 
@@ -32,6 +33,7 @@
 #include "core/request_rules.h"
 #include "core/search_engines.h"
 #include "core/settings_export.h"
+#include "core/shortcuts.h"
 #include "include/cef_app.h"
 #include "include/cef_command_line.h"
 #include "include/cef_request_context.h"
@@ -283,6 +285,8 @@ class AppSettingsPage : public SettingsPageDelegate {
 
 - (void)applicationDidFinishLaunching:(NSNotification*)notification {
   NSApp.mainMenu = [self buildMainMenu];
+  // The settings may have been read already (CEF can be ready first).
+  brouk::mac::ApplyShortcutsToMenu(NSApp.mainMenu);
   // Our tab strip replaces macOS window tabs.
   NSWindow.allowsAutomaticWindowTabbing = NO;
 }
@@ -600,9 +604,28 @@ class AppSettingsPage : public SettingsPageDelegate {
   [menu addItemWithTitle:@"New Profile…"
                   action:@selector(newProfile:)
            keyEquivalent:@""];
-  [menu addItemWithTitle:@"Manage Profiles…"
-                  action:@selector(manageProfiles:)
-           keyEquivalent:@""];
+  NSMenuItem* manage = [menu addItemWithTitle:@"Manage Profiles…"
+                                       action:@selector(manageProfiles:)
+                                keyEquivalent:@""];
+  manage.identifier = @"manage_profiles";
+  brouk::mac::ApplyShortcutsToMenu(menu);
+}
+
+// NSMenuDelegate: the Profiles menu is filled only when opened, so the
+// shortcut of "Manage Profiles…" (003) is checked here.
+- (BOOL)menuHasKeyEquivalent:(NSMenu*)menu
+                    forEvent:(NSEvent*)event
+                      target:(id _Nullable*)target
+                      action:(SEL _Nullable*)action {
+  for (const brouk::Shortcut& shortcut :
+       brouk::mac::ShortcutsFor("manage_profiles")) {
+    if (brouk::mac::EventMatchesShortcut(event, shortcut)) {
+      *target = self;
+      *action = @selector(manageProfiles:);
+      return YES;
+    }
+  }
+  return NO;
 }
 
 #pragma mark - Settings (004)
@@ -732,10 +755,13 @@ class AppSettingsPage : public SettingsPageDelegate {
   controller.remoteDebuggingPort = _remoteDebuggingPort;
 }
 
-// Main thread. Applies the global settings that act right away: theme and
-// spell checking (search and downloads are read when used).
+// Main thread. Applies the global settings that act right away: theme,
+// shortcuts and spell checking (search and downloads are read when used).
 - (void)applySettings {
   const brouk::Settings& global = _profiles->global_settings();
+  // Conflicts are reported with the other settings problems (registry).
+  std::vector<std::string> ignored;
+  brouk::mac::SetShortcuts(brouk::ResolveShortcuts(global, ignored));
   const std::string& theme = global.GetString("appearance.theme");
   NSApp.appearance =
       theme == "light" ? [NSAppearance appearanceNamed:NSAppearanceNameAqua]
@@ -1338,6 +1364,19 @@ class AppSettingsPage : public SettingsPageDelegate {
   return item;
 }
 
+// A browser action whose shortcuts come from the settings (003); the
+// identifier is the action id (see menu_shortcuts.h).
+- (NSMenuItem*)addItem:(NSMenu*)menu
+                 title:(NSString*)title
+                action:(SEL)action
+              shortcut:(NSString*)actionId {
+  NSMenuItem* item = [menu addItemWithTitle:title
+                                     action:action
+                              keyEquivalent:@""];
+  item.identifier = actionId;
+  return item;
+}
+
 - (NSMenu*)submenu:(NSString*)title in:(NSMenu*)bar {
   NSMenuItem* holder = [bar addItemWithTitle:title
                                       action:nil
@@ -1352,7 +1391,6 @@ class AppSettingsPage : public SettingsPageDelegate {
   const NSEventModifierFlags cmd = NSEventModifierFlagCommand;
   const NSEventModifierFlags shift = NSEventModifierFlagShift;
   const NSEventModifierFlags opt = NSEventModifierFlagOption;
-  const NSEventModifierFlags ctrl = NSEventModifierFlagControl;
   NSString* appName = @(brouk::kAppName);
 
   NSMenu* bar = [[NSMenu alloc] initWithTitle:@""];
@@ -1367,8 +1405,7 @@ class AppSettingsPage : public SettingsPageDelegate {
   [self addItem:app
           title:@"Settings…"
          action:@selector(openSettings:)
-            key:@","
-      modifiers:cmd];
+       shortcut:@"settings"];
   [app addItem:NSMenuItem.separatorItem];
   NSMenu* services = [[NSMenu alloc] initWithTitle:@"Services"];
   [app addItemWithTitle:@"Services" action:nil keyEquivalent:@""].submenu =
@@ -1401,35 +1438,29 @@ class AppSettingsPage : public SettingsPageDelegate {
   [self addItem:file
           title:@"New Tab"
          action:@selector(newTab:)
-            key:@"t"
-      modifiers:cmd];
+       shortcut:@"new_tab"];
   [self addItem:file
           title:@"New Window"
          action:@selector(newWindow:)
-            key:@"n"
-      modifiers:cmd];
+       shortcut:@"new_window"];
   [self addItem:file
           title:@"Open Location…"
          action:@selector(focusLocation:)
-            key:@"l"
-      modifiers:cmd];
+       shortcut:@"open_location"];
   [file addItem:NSMenuItem.separatorItem];
   [self addItem:file
           title:@"Print…"
          action:@selector(printPage:)
-            key:@"p"
-      modifiers:cmd];
+       shortcut:@"print"];
   [file addItem:NSMenuItem.separatorItem];
   [self addItem:file
           title:@"Close Window"
          action:@selector(performClose:)
-            key:@"w"
-      modifiers:cmd | shift];
+       shortcut:@"close_window"];
   [self addItem:file
           title:@"Close Tab"
          action:@selector(closeCurrentTab:)
-            key:@"w"
-      modifiers:cmd];
+       shortcut:@"close_tab"];
 
   NSMenu* edit = [self submenu:@"Edit" in:bar];
   [self addItem:edit
@@ -1479,65 +1510,47 @@ class AppSettingsPage : public SettingsPageDelegate {
   [self addItem:find
           title:@"Find…"
          action:@selector(showFindBar:)
-            key:@"f"
-      modifiers:cmd];
+       shortcut:@"find"];
   [self addItem:find
           title:@"Find Next"
          action:@selector(findNext:)
-            key:@"g"
-      modifiers:cmd];
+       shortcut:@"find_next"];
   [self addItem:find
           title:@"Find Previous"
          action:@selector(findPrevious:)
-            key:@"g"
-      modifiers:cmd | shift];
+       shortcut:@"find_previous"];
 
   NSMenu* view = [self submenu:@"View" in:bar];
   [self addItem:view
           title:@"Stop"
          action:@selector(stopLoading:)
-            key:@"."
-      modifiers:cmd];
+       shortcut:@"stop"];
   [self addItem:view
           title:@"Reload This Page"
          action:@selector(reload:)
-            key:@"r"
-      modifiers:cmd];
+       shortcut:@"reload"];
   [self addItem:view
           title:@"Force Reload This Page"
          action:@selector(reloadIgnoringCache:)
-            key:@"r"
-      modifiers:cmd | shift];
+       shortcut:@"force_reload"];
   [view addItem:NSMenuItem.separatorItem];
   [self addItem:view
           title:@"Actual Size"
          action:@selector(resetZoom:)
-            key:@"0"
-      modifiers:cmd];
+       shortcut:@"zoom_reset"];
   [self addItem:view
           title:@"Zoom In"
          action:@selector(zoomIn:)
-            key:@"+"
-      modifiers:cmd];
+       shortcut:@"zoom_in"];
   [self addItem:view
           title:@"Zoom Out"
          action:@selector(zoomOut:)
-            key:@"-"
-      modifiers:cmd];
-  // Cmd+= zooms in too (the + key without Shift), as in Chrome.
-  NSMenuItem* zoomInAlt = [self addItem:view
-                                  title:@"Zoom In"
-                                 action:@selector(zoomIn:)
-                                    key:@"="
-                              modifiers:cmd];
-  zoomInAlt.hidden = YES;
-  zoomInAlt.allowsKeyEquivalentWhenHidden = YES;
+       shortcut:@"zoom_out"];
   [view addItem:NSMenuItem.separatorItem];
   [self addItem:view
           title:@"Enter Full Screen"
          action:@selector(toggleFullScreen:)
-            key:@"f"
-      modifiers:cmd | ctrl];
+       shortcut:@"full_screen"];
 
   // View > Developer, as in Chrome (006).
   [view addItem:NSMenuItem.separatorItem];
@@ -1547,30 +1560,25 @@ class AppSettingsPage : public SettingsPageDelegate {
   [self addItem:developer
           title:@"Developer Tools"
          action:@selector(toggleDevTools:)
-            key:@"i"
-      modifiers:cmd | opt];
+       shortcut:@"devtools"];
   [self addItem:developer
           title:@"JavaScript Console"
          action:@selector(showDevToolsConsole:)
-            key:@"j"
-      modifiers:cmd | opt];
+       shortcut:@"devtools_console"];
   [self addItem:developer
           title:@"Inspect Elements"
          action:@selector(pickElementToInspect:)
-            key:@"c"
-      modifiers:cmd | opt];
+       shortcut:@"devtools_inspect"];
 
   NSMenu* history = [self submenu:@"History" in:bar];
   [self addItem:history
           title:@"Back"
          action:@selector(goBack:)
-            key:@"["
-      modifiers:cmd];
+       shortcut:@"back"];
   [self addItem:history
           title:@"Forward"
          action:@selector(goForward:)
-            key:@"]"
-      modifiers:cmd];
+       shortcut:@"forward"];
 
   // Profiles (005), like Chrome's Profiles menu; filled when opened.
   NSMenu* profiles = [self submenu:@"Profiles" in:bar];
@@ -1581,37 +1589,23 @@ class AppSettingsPage : public SettingsPageDelegate {
   [self addItem:tab
           title:@"Select Next Tab"
          action:@selector(selectNextTab:)
-            key:[NSString
-                    stringWithFormat:@"%C", (unichar)NSRightArrowFunctionKey]
-      modifiers:cmd | opt];
+       shortcut:@"next_tab"];
   [self addItem:tab
           title:@"Select Previous Tab"
          action:@selector(selectPreviousTab:)
-            key:[NSString
-                    stringWithFormat:@"%C", (unichar)NSLeftArrowFunctionKey]
-      modifiers:cmd | opt];
-  // Chrome's alternative tab shortcuts, not shown in the menu.
-  NSMenuItem* next = [self addItem:tab
-                             title:@"Select Next Tab"
-                            action:@selector(selectNextTab:)
-                               key:@"}"
-                         modifiers:cmd];
-  NSMenuItem* previous = [self addItem:tab
-                                 title:@"Select Previous Tab"
-                                action:@selector(selectPreviousTab:)
-                                   key:@"{"
-                             modifiers:cmd];
-  for (NSMenuItem* item in @[ next, previous ]) {
-    item.hidden = YES;
-    item.allowsKeyEquivalentWhenHidden = YES;
-  }
+       shortcut:@"previous_tab"];
+  // Tabs by number, not shown in the menu (as in Chrome); the tag is the
+  // number, 9 being the last tab.
   for (NSInteger number = 1; number <= 9; ++number) {
+    NSString* identifier =
+        number == 9
+            ? @"select_last_tab"
+            : [NSString stringWithFormat:@"select_tab_%ld", (long)number];
     NSMenuItem* item = [self
-          addItem:tab
-            title:[NSString stringWithFormat:@"Select Tab %ld", (long)number]
-           action:@selector(selectTabByNumber:)
-              key:[NSString stringWithFormat:@"%ld", (long)number]
-        modifiers:cmd];
+         addItem:tab
+           title:[NSString stringWithFormat:@"Select Tab %ld", (long)number]
+          action:@selector(selectTabByNumber:)
+        shortcut:identifier];
     item.tag = number;
     item.hidden = YES;
     item.allowsKeyEquivalentWhenHidden = YES;
@@ -1621,8 +1615,15 @@ class AppSettingsPage : public SettingsPageDelegate {
   [self addItem:tab
           title:@"Pin Tab"
          action:@selector(togglePinTab:)
-            key:@""
-      modifiers:0];
+       shortcut:@"pin_tab"];
+  [self addItem:tab
+          title:@"Mute Tab"
+         action:@selector(toggleMuteTab:)
+       shortcut:@"mute_tab"];
+  [self addItem:tab
+          title:@"Site Information"
+         action:@selector(showSiteInfo:)
+       shortcut:@"site_info"];
 
   NSMenu* window = [self submenu:@"Window" in:bar];
   [self addItem:window
