@@ -36,6 +36,9 @@ void ApplyShortcutsToMenu(NSMenu* menu);
 
 bool EventMatchesShortcut(NSEvent* event, const Shortcut& shortcut);
 
+// The main menu item of an action, or nil.
+NSMenuItem* _Nullable MenuItemForAction(std::string_view action);
+
 // The menu item to run for `event` before the page sees it: one whose action
 // is reserved (Chrome's new tab, close tab, switching tabs…) or whose
 // shortcut uses the Tab key (which menus do not handle). Nil otherwise.

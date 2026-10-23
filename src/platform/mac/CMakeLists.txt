@@ -19,6 +19,8 @@ add_executable(brouk_app
   browser_window.mm
   browser_window_controller.h
   browser_window_controller.mm
+  command_palette_panel.h
+  command_palette_panel.mm
   data_paths.h
   data_paths.mm
   devtools_dock.h

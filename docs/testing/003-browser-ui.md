@@ -48,3 +48,15 @@ build/debug-x86_64/Brouk.app/Contents/MacOS/brouk $(for i in $(seq 1 30); do ech
 26. Change "Developer tools on/off" (006). Expected: the new shortcut toggles dev tools; ⌥⌘I no longer does.
 27. Reset everything: delete the `shortcuts:` section from `settings.yaml`. Expected: Chrome's shortcuts again.
 
+## Command palette
+
+28. Press ⌘K in a browser window. Expected: a search panel appears at the top of the window with the field focused, listing the open tabs first.
+29. Type `rel`. Expected: "Reload" (with ⌘R at the right) is near the top; Return reloads the page and closes the panel.
+30. Open tabs in two windows and two profiles; type a word from a tab title in the other window. Expected: the tab is listed with its profile name and address; Return brings that window to the front and switches to the tab.
+31. Type a word without accents that a tab title has with accents (e.g. `prehled` for "Přehled"). Expected: the tab is found.
+32. Type `theme`. Expected: the "Theme" setting is listed ("Settings · Appearance"); Return opens Settings scrolled to it, highlighted and focused. Try a profile setting (`colour`): the page shows the active tab's profile.
+33. Up/Down move the selection, clicking a row runs it, Escape closes the panel, clicking outside closes it.
+34. Type `back` on a new tab with no history. Expected: "Back" is not listed (it cannot run now).
+35. Tab menu: New Tab to the Right, Duplicate Tab, Close Other Tabs / to the Left / to the Right act on the active tab like the tab's right-click menu; the close items are greyed out when there is nothing to close.
+36. Remap the palette (Settings → Shortcuts → Command palette). Expected: the new shortcut opens it.
+

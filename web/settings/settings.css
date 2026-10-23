@@ -8,6 +8,8 @@ section.group h3 { font-size: 14px; margin: 10px 0 2px; }
 .setting { display: grid; grid-template-columns: 1fr minmax(180px, 280px); gap: 4px 16px;
   align-items: center; padding: 10px 0; border-top: 1px solid var(--line); }
 .setting:first-of-type { border-top: 0; }
+.setting.highlight { background: color-mix(in srgb, var(--accent) 15%, transparent);
+  border-radius: 6px; transition: background 0.4s; }
 .setting.toggle { grid-template-columns: 1fr auto; }
 .setting label.title { font-weight: 500; }
 .setting .description { grid-column: 1; color: var(--muted); font-size: 12px; margin: 0; }

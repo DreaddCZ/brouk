@@ -7,7 +7,7 @@
 import { cefTransport } from '../shared/bridge.js';
 import { button, byId, element, errorText } from '../shared/dom.js';
 import { SettingsApi, type SettingItem, type SettingsState } from './api.js';
-import { isShown, sections, shortcutFromKey } from './logic.js';
+import { isShown, parseSettingTarget, sections, shortcutFromKey } from './logic.js';
 
 const api = new SettingsApi(cefTransport());
 let state: SettingsState | null = null;
@@ -186,6 +186,28 @@ async function refresh(): Promise<void> {
   render();
 }
 
+/**
+ * The command palette (003) opens the page at one setting:
+ * brouk://settings/#<global or profile id>:<key>.
+ */
+async function showTarget(): Promise<void> {
+  const target = parseSettingTarget(window.location.hash);
+  if (target === null) return;
+  // Cleared, so choosing the same setting again changes the hash again.
+  history.replaceState(null, '', window.location.pathname);
+  if (target.profile !== null && target.profile !== profileId) {
+    profileId = target.profile;
+    await refresh();
+  }
+  const input = document.getElementById(`setting-${target.profile ?? 'global'}-${target.key}`);
+  const row = input?.closest('.setting');
+  if (input === null || !(row instanceof HTMLElement)) return;
+  row.scrollIntoView({ block: 'center' });
+  input.focus();
+  row.classList.add('highlight');
+  setTimeout(() => row.classList.remove('highlight'), 1500);
+}
+
 async function fileAction(action: () => Promise<{ finished: boolean; problems: readonly string[] }>, done: string): Promise<void> {
   try {
     const result = await action();
@@ -215,7 +237,8 @@ function start(): void {
   // Settings may change in the files or elsewhere: reload when the window
   // comes back to the front.
   window.addEventListener('focus', () => void refresh());
-  void refresh();
+  window.addEventListener('hashchange', () => void showTarget());
+  void refresh().then(showTarget);
 }
 
 start();

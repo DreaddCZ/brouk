@@ -228,6 +228,13 @@ bool EventMatchesShortcut(NSEvent* event, const Shortcut& shortcut) {
          (!IsLetterOrDigit(key) && flags == (mask | NSEventModifierFlagShift));
 }
 
+NSMenuItem* _Nullable MenuItemForAction(std::string_view action) {
+  if (!NSApp.mainMenu) {
+    return nil;
+  }
+  return FindItem(NSApp.mainMenu, @(std::string(action).c_str()));
+}
+
 NSMenuItem* _Nullable ReservedMenuItemForEvent(NSEvent* event) {
   if (event.type != NSEventTypeKeyDown || !NSApp.mainMenu) {
     return nil;

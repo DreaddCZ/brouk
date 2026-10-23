@@ -122,6 +122,12 @@ class InternalPageBridge : public InternalPageDelegate {
 
 #pragma mark - Page events (UI thread)
 
+- (void)loadURL:(NSString*)url {
+  if (_browser) {
+    _browser->GetMainFrame()->LoadURL(url.UTF8String);
+  }
+}
+
 - (void)handleBrowserCreated:(CefRefPtr<CefBrowser>)browser {
   _browser = browser;
   // The browser view follows the window's size.

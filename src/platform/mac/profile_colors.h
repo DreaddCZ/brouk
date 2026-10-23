@@ -13,6 +13,8 @@ namespace brouk::mac {
 NSColor* ProfileColor(std::string_view name);
 // Readable text on top of ProfileColor().
 NSColor* ProfileTextColor(std::string_view name);
+// A small filled circle in the profile's colour, for menus and lists.
+NSImage* ProfileDot(std::string_view name);
 
 }  // namespace brouk::mac
 

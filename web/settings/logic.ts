@@ -111,3 +111,17 @@ export function shortcutFromKey(press: KeyPress): string | null {
   parts.push(key);
   return parts.join('+');
 }
+
+/** A setting to show: its key, and the profile id for a profile's setting. */
+export interface SettingTarget {
+  readonly profile: string | null;
+  readonly key: string;
+}
+
+/** Reads "#global:search.engine" or "#<profile id>:profile.color". */
+export function parseSettingTarget(hash: string): SettingTarget | null {
+  const match = /^#([a-z0-9-]+):([a-z0-9_.]+)$/.exec(hash);
+  if (match === null) return null;
+  const [, scope = '', key = ''] = match;
+  return { profile: scope === 'global' ? null : scope, key };
+}

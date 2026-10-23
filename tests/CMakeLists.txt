@@ -19,6 +19,7 @@ include(GoogleTest)
 
 add_executable(brouk_core_tests
   core/address_input_test.cc
+  core/command_palette_test.cc
   core/context_menu_test.cc
   core/crash_error_code_test.cc
   core/devtools_tools_test.cc

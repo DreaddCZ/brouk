@@ -4,6 +4,8 @@ include(BroukYaml)
 set(BROUK_CORE_SOURCES
   address_input.cc
   address_input.h
+  command_palette.cc
+  command_palette.h
   context_menu.cc
   context_menu.h
   crash_error_code.cc
