@@ -177,6 +177,7 @@ TEST(SettingsTest, FileFormat) {
             "  home: \"shift+cmd+h\"\n"
             "  reopen_closed_tab: \"shift+cmd+t\"\n"
             "  show_history: \"cmd+y\"\n"
+            "  clear_browsing_data: \"shift+cmd+delete\"\n"
             "  next_tab: \"opt+cmd+right, cmd+}, ctrl+tab\"\n"
             "  previous_tab: \"opt+cmd+left, cmd+{, ctrl+shift+tab\"\n"
             "  select_tab_1: \"cmd+1\"\n"

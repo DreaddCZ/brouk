@@ -146,6 +146,16 @@ function renderItems(container: HTMLElement, scopeProfile: string | null, items:
       group.setAttribute('aria-label', section.title);
       group.append(element('h3', { text: section.title }));
       group.append(...section.items.map((item) => settingRow(scopeProfile, item)));
+      if (section.title === 'History' && scopeProfile === null) {
+        const row = element('div', { className: 'setting' });
+        row.append(
+          element('span', { className: 'title', text: 'Browsing data' }),
+          button('Clear browsing data…', () => {
+            api.clearBrowsingData().catch((error: unknown) => showError(errorText(error)));
+          }),
+        );
+        group.append(row);
+      }
       return group;
     }),
   );

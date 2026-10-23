@@ -2,6 +2,8 @@
 #define BROUK_CEF_HISTORY_PAGE_HANDLER_H_
 
 #include <cstdint>
+#include <functional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -37,6 +39,22 @@ class HistoryPageDelegate {
   virtual std::vector<std::string> KeepList(const ProfileId& profile) = 0;
   virtual void SetKeepList(const ProfileId& profile,
                            const std::vector<std::string>& hosts) = 0;
+  // Clear browsing data (013) outside the history: what would go (cookies
+  // created since `since`, the size of the whole cache), and clearing
+  // cookies and the site data of `sites`, and the cache.
+  using DataPreviewDone =
+      std::function<void(int cookies, std::int64_t cache_bytes)>;
+  virtual void PreviewProfileData(const ProfileId& profile,
+                                  std::int64_t since,
+                                  DataPreviewDone done) = 0;
+  // `done` gets false if the cookies could not be cleared (the cookie store
+  // did not answer); the rest is cleared anyway.
+  virtual void ClearProfileData(const ProfileId& profile,
+                                std::int64_t since,
+                                bool cookies_and_site_data,
+                                bool cache,
+                                std::set<std::string> sites,
+                                std::function<void(bool cookies_ok)> done) = 0;
 };
 
 // Answers the history page's bridge messages (web/history/api.ts). Every
@@ -58,7 +76,9 @@ class HistoryPageHandler : public CefMessageRouterBrowserSide::Handler {
                CefRefPtr<Callback> callback) override;
 
  private:
-  std::unique_ptr<HistoryPageDelegate> delegate_;
+  // Shared with operations that outlive one message (Clear browsing data),
+  // so it stays valid if the page closes meanwhile.
+  std::shared_ptr<HistoryPageDelegate> delegate_;
 };
 
 }  // namespace brouk

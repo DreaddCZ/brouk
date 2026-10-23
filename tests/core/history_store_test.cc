@@ -337,5 +337,18 @@ TEST_F(HistoryStoreTest, CleanUpByHostAndTime) {
   EXPECT_FALSE(store_->FindPage("https://a.com/1"));
 }
 
+TEST_F(HistoryStoreTest, ClearVisitsSince) {
+  Visit("https://a.com/", "", kNow - 3 * kDay);
+  Visit("https://a.com/", "", kNow - 60);
+  Visit("https://b.com/", "", kNow - 30);
+  EXPECT_EQ(store_->CountVisitsSince(kNow - kDay), 2);
+  EXPECT_EQ(store_->CountVisitsSince(0), 3);
+  EXPECT_EQ(store_->DeleteVisitsSince(kNow - kDay), 2);
+  EXPECT_EQ(store_->FindPage("https://a.com/")->visit_count, 1);
+  EXPECT_FALSE(store_->FindPage("https://b.com/"));
+  EXPECT_EQ(store_->DeleteVisitsSince(0), 1);
+  EXPECT_FALSE(store_->FindPage("https://a.com/"));
+}
+
 }  // namespace
 }  // namespace brouk

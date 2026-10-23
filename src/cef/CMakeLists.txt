@@ -2,6 +2,8 @@
 add_library(brouk_cef STATIC
   browser_app.cc
   browser_app.h
+  browsing_data.cc
+  browsing_data.h
   context_menu_model.cc
   context_menu_model.h
   devtools_channel.cc

@@ -34,6 +34,21 @@ export interface CleanupPreview {
   readonly keepLists: ReadonlyMap<string, readonly string[]>;
 }
 
+/** What Clear browsing data would clear in one profile. */
+export interface ClearPreview {
+  readonly profile: string;
+  readonly visits: number;
+  readonly sites: number;
+  readonly cookies: number;
+  readonly cacheBytes: number;
+}
+
+export interface ClearChoice {
+  readonly history: boolean;
+  readonly cookies: boolean;
+  readonly cache: boolean;
+}
+
 /** What Clean up does in one profile. */
 export interface CleanupPlan {
   readonly profile: string;
@@ -266,6 +281,26 @@ export class HistoryApi {
   async cleanupRun(since: number, profiles: readonly CleanupPlan[]): Promise<number> {
     const answer = await send('history.cleanup.run', { since, profiles }, this.#transport);
     return count(record(answer), 'visits');
+  }
+
+  async clearPreview(profile: string | null, since: number): Promise<ClearPreview[]> {
+    const answer = await send('history.clear.preview', { ...profileArgs(profile), since }, this.#transport);
+    return list(answer, 'profiles').map((p) => {
+      const item = record(p);
+      return {
+        profile: text(item, 'profile'),
+        visits: count(item, 'visits'),
+        sites: count(item, 'sites'),
+        cookies: typeof item['cookies'] === 'number' && item['cookies'] >= -1 ? item['cookies'] : count(item, 'cookies'),
+        cacheBytes: count(item, 'cacheBytes'),
+      };
+    });
+  }
+
+  /** Resolves with false if the cookies could not be cleared. */
+  async clear(profile: string | null, since: number, choice: ClearChoice): Promise<boolean> {
+    const answer = await send('history.clear.run', { ...profileArgs(profile), since, ...choice }, this.#transport);
+    return !(isRecord(answer) && answer['cookiesFailed'] === true);
   }
 
   async copy(text: string): Promise<void> {

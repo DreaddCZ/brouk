@@ -519,14 +519,26 @@ NSButton* ToolbarButton(NSString* symbol,
 // ⌘Y: the history page as a tab in the current tab's profile group, in
 // place of an unused new tab.
 - (IBAction)showHistory:(id)sender {
+  [self showHistoryWithFragment:@""];
+}
+
+- (void)showHistoryWithFragment:(NSString*)fragment {
+  NSString* url = fragment.length
+                      ? [@"brouk://history/#" stringByAppendingString:fragment]
+                      : @"brouk://history/";
   BRTab* active = [self activeTab];
   if (active.isInternalPage &&
       [[self internalPageOf:active.url] isEqualToString:@"history"]) {
+    CefRefPtr<CefBrowser> browser = [active browser];
+    if (fragment.length && browser) {
+      // Same page: only the fragment changes (the page opens the dialog).
+      browser->GetMainFrame()->LoadURL(url.UTF8String);
+    }
     return;
   }
   if (active &&
       (active.url.length == 0 || [active.url isEqualToString:@"about:blank"])) {
-    [self replaceTab:active withURL:@"brouk://history/" typed:NO];
+    [self replaceTab:active withURL:url typed:NO];
     return;
   }
   brouk::ProfileId profile = [self activeProfileId];
@@ -536,8 +548,18 @@ NSButton* ToolbarButton(NSString* symbol,
   } else {
     _model->AppendTab(tab.tabId, profile, true);
   }
-  [self startTab:tab url:@"brouk://history/"];
+  [self startTab:tab url:url];
   [self modelDidChange];
+}
+
+- (CefRefPtr<CefBrowser>)anyBrowserInProfile:(const brouk::ProfileId&)profile {
+  for (BRTab* tab in _tabs.allValues) {
+    if (tab.profileId == profile && !tab.isInternalPage && [tab browser] &&
+        !tab.isClosing) {
+      return [tab browser];
+    }
+  }
+  return nullptr;
 }
 
 - (brouk::ProfileId)profileOfTab:(brouk::TabId)tabId {

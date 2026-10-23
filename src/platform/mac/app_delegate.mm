@@ -22,6 +22,7 @@
 
 #include "brouk/app_info.h"
 #include "cef/browser_app.h"
+#include "cef/browsing_data.h"
 #include "cef/devtools_preferences.h"
 #include "cef/history_page_handler.h"
 #include "cef/history_service.h"
@@ -93,10 +94,20 @@
                                          profile:(std::string_view)profile
                                            value:(brouk::SettingValue)value;
 - (void)revealSettingsFolder;
+- (IBAction)clearBrowsingData:(nullable id)sender;
 - (void)exportSettingsWithDone:(brouk::SettingsPageDelegate::FileDone)done;
 - (void)importSettingsWithDone:(brouk::SettingsPageDelegate::FileDone)done;
 - (std::vector<brouk::ProfileInfo>)allProfiles;
 - (std::vector<std::string>)keepListOfProfile:(const brouk::ProfileId&)profile;
+- (void)previewDataOfProfile:(const brouk::ProfileId&)profile
+                       since:(std::int64_t)since
+                        done:(brouk::HistoryPageDelegate::DataPreviewDone)done;
+- (void)clearDataOfProfile:(const brouk::ProfileId&)profile
+                     since:(std::int64_t)since
+                   cookies:(bool)cookies
+                     cache:(bool)cache
+                     sites:(std::set<std::string>)sites
+                      done:(std::function<void(bool)>)done;
 - (std::string)historyView;
 @end
 
@@ -220,6 +231,34 @@ class AppHistoryPage : public HistoryPageDelegate {
                     profile:profile
                       value:SettingValue(joined)];
   }
+  void PreviewProfileData(const ProfileId& profile,
+                          std::int64_t since,
+                          DataPreviewDone done) override {
+    BRAppDelegate* app = app_;
+    if (!app) {
+      done(0, 0);
+      return;
+    }
+    [app previewDataOfProfile:profile since:since done:std::move(done)];
+  }
+  void ClearProfileData(const ProfileId& profile,
+                        std::int64_t since,
+                        bool cookies_and_site_data,
+                        bool cache,
+                        std::set<std::string> sites,
+                        std::function<void(bool)> done) override {
+    BRAppDelegate* app = app_;
+    if (!app) {
+      done(false);
+      return;
+    }
+    [app clearDataOfProfile:profile
+                      since:since
+                    cookies:cookies_and_site_data
+                      cache:cache
+                      sites:std::move(sites)
+                       done:std::move(done)];
+  }
   void CopyText(const std::string& text) override {
     NSPasteboard* pasteboard = NSPasteboard.generalPasteboard;
     [pasteboard clearContents];
@@ -261,6 +300,7 @@ class AppSettingsPage : public SettingsPageDelegate {
                : std::optional<Error>(Error{kClosing});
   }
   void RevealSettingsFolder() override { [app_ revealSettingsFolder]; }
+  void OpenClearBrowsingData() override { [app_ clearBrowsingData:nil]; }
   void ExportSettings(FileDone done) override {
     BRAppDelegate* app = app_;
     if (!app) {
@@ -1180,6 +1220,163 @@ class AppSettingsPage : public SettingsPageDelegate {
   return hosts;
 }
 
+#pragma mark - Clear browsing data (013)
+
+// History → Clear Browsing Data… and the settings page: the dialog on the
+// history page of the front window.
+- (IBAction)clearBrowsingData:(nullable id)sender {
+  BRBrowserWindowController* front =
+      [self frontController] ?: [self openWindow];
+  [front showHistoryWithFragment:@"clear"];
+  [front showWindow:nil];
+}
+
+// Size of a folder and everything in it (on a background queue: the cache
+// can hold many files).
+static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
+  dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+    std::int64_t total = 0;
+    NSDirectoryEnumerator* files = [NSFileManager.defaultManager
+                   enumeratorAtURL:[NSURL fileURLWithPath:path]
+        includingPropertiesForKeys:@[ NSURLTotalFileAllocatedSizeKey ]
+                           options:0
+                      errorHandler:nil];
+    for (NSURL* file in files) {
+      NSNumber* size = nil;
+      [file getResourceValue:&size
+                      forKey:NSURLTotalFileAllocatedSizeKey
+                       error:nil];
+      total += size.longLongValue;
+    }
+    dispatch_async(dispatch_get_main_queue(), ^{
+      done(total);
+    });
+  });
+}
+
+// Cookies are read and deleted with a browser of the profile running: a
+// profile's network context (and its cookies) exists only then.
+- (void)previewDataOfProfile:(const brouk::ProfileId&)profile
+                       since:(std::int64_t)since
+                        done:(brouk::HistoryPageDelegate::DataPreviewDone)done {
+  CEF_REQUIRE_UI_THREAD();
+  NSString* cache = [brouk::mac::ProfileWebDataDirectory(@(profile.c_str()))
+      stringByAppendingPathComponent:@"Cache"];
+  auto shared = std::make_shared<brouk::HistoryPageDelegate::DataPreviewDone>(
+      std::move(done));
+  CefRefPtr<CefRequestContext> context =
+      [self requestContextForProfile:profile];
+  [self withBrowserInProfile:profile
+                          do:^(CefRefPtr<CefBrowser> /*browser*/,
+                               void (^release)(void)) {
+                            brouk::VisitCookiesSince(
+                                context, since, /*remove=*/false,
+                                [cache, shared, release](
+                                    int cookies,
+                                    std::set<std::string> /*hosts*/) {
+                                  release();
+                                  FolderSize(cache, ^(std::int64_t bytes) {
+                                    (*shared)(cookies, bytes);
+                                  });
+                                });
+                          }];
+}
+
+- (void)clearDataOfProfile:(const brouk::ProfileId&)profile
+                     since:(std::int64_t)since
+                   cookies:(bool)cookies
+                     cache:(bool)cache
+                     sites:(std::set<std::string>)sites
+                      done:(std::function<void(bool)>)done {
+  CEF_REQUIRE_UI_THREAD();
+  CefRefPtr<CefRequestContext> context =
+      [self requestContextForProfile:profile];
+  auto finish = std::make_shared<std::function<void(bool)>>(std::move(done));
+  auto cookies_ok = std::make_shared<bool>(true);
+  // The cache last (it does not depend on the rest).
+  auto clear_cache = [context, cache, finish, cookies_ok] {
+    if (cache) {
+      brouk::ClearHttpCache(context,
+                            [finish, cookies_ok] { (*finish)(*cookies_ok); });
+    } else {
+      (*finish)(*cookies_ok);
+    }
+  };
+  if (!cookies) {
+    clear_cache();
+    return;
+  }
+  auto shared_sites = std::make_shared<std::set<std::string>>(std::move(sites));
+  [self
+      withBrowserInProfile:profile
+                        do:^(CefRefPtr<CefBrowser> browser,
+                             void (^release)(void)) {
+                          brouk::VisitCookiesSince(
+                              context, since, /*remove=*/true,
+                              [browser, release, shared_sites, clear_cache,
+                               cookies_ok](int count,
+                                           std::set<std::string> cookie_hosts) {
+                                *cookies_ok = count >= 0;
+                                shared_sites->insert(cookie_hosts.begin(),
+                                                     cookie_hosts.end());
+                                brouk::ClearSiteData(
+                                    browser,
+                                    brouk::OriginsOfHosts(*shared_sites),
+                                    [release, clear_cache] {
+                                      release();
+                                      clear_cache();
+                                    });
+                              });
+                        }];
+}
+
+// A browser of `profile` for the DevTools protocol: one of its tabs, or a
+// hidden helper browser closed again by `release`.
+- (void)withBrowserInProfile:(const brouk::ProfileId&)profile
+                          do:(void (^)(CefRefPtr<CefBrowser> browser,
+                                       void (^release)(void)))work {
+  for (BRBrowserWindowController* controller in _windows) {
+    CefRefPtr<CefBrowser> browser = [controller anyBrowserInProfile:profile];
+    if (browser) {
+      work(browser, ^{
+           });
+      return;
+    }
+  }
+  NSWindow* hidden =
+      [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 200, 200)
+                                  styleMask:NSWindowStyleMaskBorderless
+                                    backing:NSBackingStoreBuffered
+                                      defer:NO];
+  hidden.releasedWhenClosed = NO;
+  __weak BRAppDelegate* weakSelf = self;
+  CefRefPtr<CefClient> client = brouk::MakeHelperBrowserClient(
+      [weakSelf, work](CefRefPtr<CefBrowser> browser) {
+        BRAppDelegate* strongSelf = weakSelf;
+        if (strongSelf) {
+          ++strongSelf->_browserCount;
+        }
+        work(browser, ^{
+          browser->GetHost()->CloseBrowser(true);
+        });
+      },
+      // The window stays alive with the helper's client, until it closes.
+      [weakSelf, hidden]() {
+        [hidden close];
+        BRAppDelegate* strongSelf = weakSelf;
+        if (strongSelf) {
+          --strongSelf->_browserCount;
+          [strongSelf quitIfDone];
+        }
+      });
+  CefWindowInfo info;
+  info.SetAsChild((__bridge void*)hidden.contentView, CefRect(0, 0, 200, 200));
+  info.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
+  CefBrowserSettings settings;
+  CefBrowserHost::CreateBrowser(info, client, "about:blank", settings, nullptr,
+                                [self requestContextForProfile:profile]);
+}
+
 - (std::string)historyView {
   return _profiles->global_settings().GetString("history.view");
 }
@@ -2040,6 +2237,10 @@ class AppSettingsPage : public SettingsPageDelegate {
           title:@"Reopen Closed Tab"
          action:@selector(reopenClosedTab:)
        shortcut:@"reopen_closed_tab"];
+  [self addItem:history
+          title:@"Clear Browsing Data…"
+         action:@selector(clearBrowsingData:)
+       shortcut:@"clear_browsing_data"];
   // Filled when opened (menuNeedsUpdate:).
   _recentlyClosedMenu = [self submenu:@"Recently Closed" in:history];
   _recentlyClosedMenu.delegate = self;
