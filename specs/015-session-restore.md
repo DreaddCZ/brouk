@@ -1,6 +1,6 @@
 # 015 – Session restore
 
-- **Status:** in-progress
+- **Status:** done
 - **Priority:** P1
 - **Depends on:** 003, 005
 
@@ -40,12 +40,12 @@ The session is kept in `session.yaml` in the app's data folder (machine-written,
 
 ## Acceptance criteria
 
-- [ ] With "Continue where you left off" (default), quitting with two windows of tabs in two profiles and starting again brings back both windows with their tabs in order, in their profiles, with pinned tabs, collapsed groups, the active tab, and window size and position.
-- [ ] Only the active tab of each restored window loads at startup; another tab loads when it is first shown, and shows its title before that.
-- [ ] With "Open a new tab", starting opens one window with a new tab.
-- [ ] After a crash, "Continue where you left off" restores the last session; with "Open a new tab", a "Restore pages?" bar offers to restore it.
-- [ ] URLs passed on the command line open as tabs in the front restored window.
-- [ ] Pop-up windows are not restored; tabs of a deleted profile open in the default profile.
+- [x] With "Continue where you left off" (default), quitting with two windows of tabs in two profiles and starting again brings back both windows with their tabs in order, in their profiles, with pinned tabs, collapsed groups, the active tab, and window size and position.
+- [x] Only the active tab of each restored window loads at startup; another tab loads when it is first shown, and shows its title before that.
+- [x] With "Open a new tab", starting opens one window with a new tab.
+- [x] After a crash, "Continue where you left off" restores the last session; with "Open a new tab", a "Restore pages?" bar offers to restore it.
+- [x] URLs passed on the command line open as tabs in the front restored window.
+- [x] Pop-up windows are not restored; tabs of a deleted profile open in the default profile.
 
 ## Out of scope
 
@@ -68,4 +68,4 @@ None.
 
 - 2026-10-23 (user's decisions): asked for restoring the pages open at the last quit; default "Continue where you left off" (Chrome's default is a new tab); background tabs load when first shown; after a crash with "Open a new tab", offer "Restore pages?" as Chrome does. Created as its own spec because 003 left session restore open ("to be resolved during testing") and is done.
 - 2026-10-23 (implementation): `src/core/session` (data, YAML, atomic save, startup decision) with tests; `session.yaml` is written 1.5 s after a change (tabs, pages, order, pinning, collapsing, window frame) and once more at quit with `clean_exit: true`; the start writes `clean_exit: false` first, so the next start can tell a crash. Windows are saved back to front, so the front window is restored last and ends up in front. A saved frame that is no longer on any screen is ignored. Restored background tabs have no browser until first shown (they show the saved title, or the address); closing one that was never shown just removes it. The profile manager at startup (005) is not shown when a session is restored. After a crash with "Open a new tab", Restore brings the windows back and closes the start's window if it still holds only an unused new tab. Known for testing: the "Restore pages?" bar lies over the top of the page until it is closed.
-
+- 2026-10-23 (user's testing): acceptance criteria verified by the user; spec set to `done`.
