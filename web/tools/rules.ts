@@ -6,7 +6,7 @@
 import { button, element, errorText } from '../shared/dom.js';
 import type { ToolsApi } from './api.js';
 import {
-  describeRule, kActions, needsHeader, needsValue, ruleLimitation, ruleProblem, type Rule, type RuleAction,
+  describeRule, kActions, needsHeader, needsValue, ruleProblem, type Rule, type RuleAction,
 } from './rules_logic.js';
 
 export class RulesTool {
@@ -119,8 +119,6 @@ export class RulesTool {
       const text = element('td', { text: describeRule(rule) });
       text.title = describeRule(rule);
       if (!rule.enabled || this.#paused) text.classList.add('flags');
-      const limitation = ruleLimitation(rule);
-      if (limitation !== null) text.append(element('div', { className: 'error-text', text: limitation }));
       const actions = element('td', { className: 'actions' });
       actions.append(
         button('Edit', () => { this.#editing = index; this.render(); }, 'small'), ' ',

@@ -3,9 +3,11 @@
 
 #include <functional>
 #include <map>
+#include <optional>
 #include <string>
 #include <string_view>
 
+#include "cef/own_request_loader.h"
 #include "core/request_log.h"
 #include "core/request_rules.h"
 #include "include/cef_browser.h"
@@ -54,6 +56,13 @@ class DevToolsChannel : public CefDevToolsMessageObserver {
 
  private:
   void SendNow(int id, const std::string& json);
+  // Response header rules (006): Brouk loads the request itself and answers
+  // the paused request with the changed headers.
+  void LoadForResponseRules(const std::string& id,
+                            const OwnRequestLoader::Request& request);
+  void AnswerLoaded(const std::string& id,
+                    const std::string& url,
+                    std::optional<OwnRequestLoader::Response> response);
   // Handles one message of OnDevToolsMessage; true if it was only for us.
   bool Dispatch(std::string_view text);
 

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { describeRule, needsHeader, needsValue, parseRule, ruleLimitation, ruleProblem, type Rule } from './rules_logic.js';
+import { describeRule, needsHeader, needsValue, parseRule, ruleProblem, type Rule } from './rules_logic.js';
 
 const rule = (overrides: Partial<Rule>): Rule => ({
   pattern: 'api.example.com', action: 'set-request-header', header: 'X-Env', value: 'staging', enabled: true,
@@ -31,11 +31,4 @@ test('fields and problems', () => {
   assert.ok(ruleProblem(rule({ header: 'X Y' })));
   assert.ok(ruleProblem(rule({ action: 'redirect', value: 'javascript:x' })));
   assert.equal(ruleProblem(rule({ action: 'block', header: '' })), null);
-});
-
-test('response header rules are marked as not applied', () => {
-  assert.ok(ruleLimitation(rule({ action: 'set-response-header' })));
-  assert.ok(ruleLimitation(rule({ action: 'remove-response-header' })));
-  assert.equal(ruleLimitation(rule({ action: 'set-request-header' })), null);
-  assert.equal(ruleLimitation(rule({ action: 'block' })), null);
 });

@@ -59,14 +59,6 @@ export function describeRule(rule: Rule): string {
   }
 }
 
-/** Why a valid rule still has no effect, or null. */
-export function ruleLimitation(rule: Rule): string | null {
-  if (rule.action === 'set-response-header' || rule.action === 'remove-response-header') {
-    return 'Not applied yet: the browser engine keeps the server\'s response headers.';
-  }
-  return null;
-}
-
 /** Quick feedback while typing; the browser checks again. */
 export function ruleProblem(rule: Rule): string | null {
   if (!/^\s*(\*\.)?[A-Za-z0-9._-]+(:\d{1,5})?(\/\S*)?\s*$/.test(rule.pattern.replace(/^[a-z]+:\/\//i, ''))) {

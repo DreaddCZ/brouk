@@ -1,5 +1,7 @@
 #include "cef/devtools_channel.h"
 
+#include <algorithm>
+#include <cctype>
 #include <charconv>
 #include <cstdint>
 #include <optional>
@@ -9,6 +11,7 @@
 #include <utility>
 
 #include "cef/json_util.h"
+#include "cef/own_request_loader.h"
 #include "include/base/cef_callback.h"
 #include "include/cef_parser.h"
 #include "include/wrapper/cef_closure_task.h"
@@ -104,9 +107,9 @@ void DevToolsChannel::SetRules(RequestRuleSet rules,
 }
 
 void DevToolsChannel::UpdateFetch() {
-  // Only the request stage: CEF 154 replaces the response headers that reach
-  // the page with the ones it got from the network, so changes made with
-  // Fetch.continueResponse are lost (see the notes of spec 006).
+  // Only the request stage: response header changes made at the response
+  // stage are lost in CEF 154, so those requests are loaded by Brouk itself
+  // (LoadForResponseRules).
   bool enable = HasActiveRules(rules_);
   if (enable == fetch_enabled_ || !tab_) {
     return;
@@ -141,6 +144,73 @@ CefRefPtr<CefListValue> HeaderEntryList(const Headers& headers) {
   return list;
 }
 
+// The request's headers from a Fetch.requestPaused "request" object.
+Headers RequestHeadersOf(const CefRefPtr<CefDictionaryValue>& request) {
+  Headers headers;
+  if (!request || request->GetType("headers") != VTYPE_DICTIONARY) {
+    return headers;
+  }
+  CefRefPtr<CefDictionaryValue> object = request->GetDictionary("headers");
+  CefDictionaryValue::KeyList names;
+  object->GetKeys(names);
+  for (const CefString& name : names) {
+    if (object->GetType(name) == VTYPE_STRING) {
+      headers.emplace_back(name.ToString(), object->GetString(name).ToString());
+    }
+  }
+  return headers;
+}
+
+// The request for Brouk to load itself, or nullopt when it cannot be:
+// streams, or a body the event does not include.
+std::optional<OwnRequestLoader::Request> OwnRequestOf(
+    const CefRefPtr<CefDictionaryValue>& request,
+    const std::string& url,
+    const Headers& headers) {
+  if (!request || request->GetType("method") != VTYPE_STRING ||
+      !CanLoadForResponseRules(headers)) {
+    return std::nullopt;
+  }
+  OwnRequestLoader::Request own;
+  own.method = request->GetString("method").ToString();
+  own.url = url;
+  for (const auto& [name, value] : headers) {
+    if (std::ranges::equal(
+            name, std::string_view("referer"), [](char a, char b) {
+              return std::tolower(static_cast<unsigned char>(a)) == b;
+            })) {
+      own.referrer = value;
+    }
+  }
+  if (request->GetType("hasPostData") == VTYPE_BOOL &&
+      request->GetBool("hasPostData")) {
+    if (request->GetType("postDataEntries") != VTYPE_LIST) {
+      return std::nullopt;
+    }
+    CefRefPtr<CefListValue> entries = request->GetList("postDataEntries");
+    std::string body;
+    for (std::size_t i = 0; i < entries->GetSize(); ++i) {
+      CefRefPtr<CefDictionaryValue> entry =
+          entries->GetType(i) == VTYPE_DICTIONARY ? entries->GetDictionary(i)
+                                                  : nullptr;
+      if (!entry || entry->GetType("bytes") != VTYPE_STRING) {
+        return std::nullopt;  // E.g. a file upload.
+      }
+      CefRefPtr<CefBinaryValue> bytes =
+          CefBase64Decode(entry->GetString("bytes"));
+      if (!bytes) {
+        return std::nullopt;
+      }
+      std::size_t size = bytes->GetSize();
+      std::string part(size, '\0');
+      bytes->GetData(part.data(), size, 0);
+      body += part;
+    }
+    own.body = std::move(body);
+  }
+  return own;
+}
+
 }  // namespace
 
 void DevToolsChannel::HandleRequestPaused(std::string_view message) {
@@ -172,6 +242,13 @@ void DevToolsChannel::HandleRequestPaused(std::string_view message) {
     return;
   }
   RequestRuleDecision decision = DecideRequest(rules_, url);
+  Headers headers = RequestHeadersOf(request);
+  std::optional<OwnRequestLoader::Request> own;
+  if (!decision.block && !decision.redirect &&
+      decision.changes_response_headers) {
+    own = OwnRequestOf(request, url, headers);
+  }
+  bool load_ourselves = own.has_value();
   if (decision.block) {
     reply->SetString("errorReason", "BlockedByClient");
     Send("Fetch.failRequest", reply, ignore);
@@ -180,18 +257,11 @@ void DevToolsChannel::HandleRequestPaused(std::string_view message) {
     reply->SetInt("responseCode", 307);
     reply->SetList("responseHeaders", HeaderEntryList(location));
     Send("Fetch.fulfillRequest", reply, ignore);
-  } else if (decision.changes_request_headers && request &&
-             request->GetType("headers") == VTYPE_DICTIONARY) {
-    Headers headers;
-    CefRefPtr<CefDictionaryValue> object = request->GetDictionary("headers");
-    CefDictionaryValue::KeyList names;
-    object->GetKeys(names);
-    for (const CefString& name : names) {
-      if (object->GetType(name) == VTYPE_STRING) {
-        headers.emplace_back(name.ToString(),
-                             object->GetString(name).ToString());
-      }
-    }
+  } else if (own) {
+    own->headers =
+        HeadersForOwnRequest(ApplyRequestHeaderRules(rules_, url, headers));
+    LoadForResponseRules(id, *own);
+  } else if (decision.changes_request_headers) {
     reply->SetList("headers", HeaderEntryList(ApplyRequestHeaderRules(
                                   rules_, url, std::move(headers))));
     Send("Fetch.continueRequest", reply, ignore);
@@ -199,10 +269,65 @@ void DevToolsChannel::HandleRequestPaused(std::string_view message) {
     Send("Fetch.continueRequest", reply, ignore);
   }
   if ((decision.block || decision.redirect ||
-       decision.changes_request_headers) &&
+       decision.changes_request_headers || load_ourselves) &&
       rules_affected_) {
     rules_affected_();
   }
+}
+
+void DevToolsChannel::LoadForResponseRules(
+    const std::string& id,
+    const OwnRequestLoader::Request& request) {
+  CEF_REQUIRE_UI_THREAD();
+  CefRefPtr<DevToolsChannel> self(this);
+  std::string url = request.url;
+  OwnRequestLoader::Start(
+      tab_->GetHost()->GetRequestContext(), request,
+      [self, id, url](std::optional<OwnRequestLoader::Response> response) {
+        self->AnswerLoaded(id, url, std::move(response));
+      });
+}
+
+void DevToolsChannel::AnswerLoaded(
+    const std::string& id,
+    const std::string& url,
+    std::optional<OwnRequestLoader::Response> response) {
+  CEF_REQUIRE_UI_THREAD();
+  if (!tab_) {
+    return;  // Closed meanwhile; the tab dropped the request.
+  }
+  auto ignore = [](const CefRefPtr<CefDictionaryValue>&, const std::string&) {};
+  CefRefPtr<CefDictionaryValue> reply = CefDictionaryValue::Create();
+  reply->SetString("requestId", id);
+  if (!response) {
+    reply->SetString("errorReason", "Failed");
+    Send("Fetch.failRequest", reply, ignore);
+    return;
+  }
+  CefRefPtr<CefDictionaryValue> fail = reply->Copy(false);
+  reply->SetInt("responseCode", response->status);
+  if (!response->status_text.empty()) {
+    reply->SetString("responsePhrase", response->status_text);
+  }
+  reply->SetList(
+      "responseHeaders",
+      HeaderEntryList(ApplyResponseHeaderRules(
+          rules_, url, HeadersForLoadedResponse(response->headers))));
+  if (!response->body.empty()) {
+    reply->SetString(
+        "body", CefBase64Encode(response->body.data(), response->body.size()));
+  }
+  CefRefPtr<DevToolsChannel> self(this);
+  Send("Fetch.fulfillRequest", reply,
+       [self, fail](const CefRefPtr<CefDictionaryValue>& result,
+                    const std::string& error) {
+         if (!result && !error.empty() && self->tab_) {
+           fail->SetString("errorReason", "Failed");
+           self->Send(
+               "Fetch.failRequest", fail,
+               [](const CefRefPtr<CefDictionaryValue>&, const std::string&) {});
+         }
+       });
 }
 
 void DevToolsChannel::StartRecording() {
