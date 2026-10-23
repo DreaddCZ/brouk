@@ -1,6 +1,7 @@
 #import "platform/mac/browser_window_controller.h"
 
 #import "platform/mac/bookmark_dialogs.h"
+#import "platform/mac/bookmarks_bar.h"
 
 #include <algorithm>
 #include <cmath>
@@ -38,6 +39,7 @@ namespace {
 
 constexpr CGFloat kTabStripHeight = 38;
 constexpr CGFloat kToolbarHeight = 40;
+constexpr CGFloat kBookmarksBarHeight = 28;
 // Room for the close/minimize/zoom buttons at the left of the tab strip.
 constexpr CGFloat kTrafficLightsInset = 78;
 constexpr CGFloat kFullScreenInset = 8;
@@ -126,6 +128,7 @@ NSButton* ToolbarButton(NSString* symbol,
                                          BRTabStripDelegate,
                                          BRAddressFieldDelegate,
                                          BRFindBarDelegate,
+                                         BRBookmarksBarDelegate,
                                          BRSuggestionsPopupDelegate>
 @end
 
@@ -149,6 +152,8 @@ NSButton* ToolbarButton(NSString* symbol,
   NSButton* _siteInfoButton;
   NSButton* _zoomButton;
   NSButton* _starButton;  // Bookmark this tab (011).
+  BRBookmarksBar* _bookmarksBar;
+  BOOL _browserUIHidden;  // Page full screen.
   NSView* _contentArea;
   BRFindBar* _findBar;
   BRDownloadNotice* _downloadNotice;
@@ -290,6 +295,15 @@ NSButton* ToolbarButton(NSString* symbol,
   _toolbar.autoresizingMask = NSViewWidthSizable | NSViewMinYMargin;
   [root addSubview:_toolbar];
 
+  // Bookmarks bar (011), shown by updateBookmarksBar.
+  _bookmarksBar = [[BRBookmarksBar alloc]
+      initWithFrame:NSMakeRect(0, NSMinY(_toolbar.frame) - kBookmarksBarHeight,
+                               b.size.width, kBookmarksBarHeight)];
+  _bookmarksBar.autoresizingMask = NSViewWidthSizable | NSViewMinYMargin;
+  _bookmarksBar.delegate = self;
+  _bookmarksBar.hidden = YES;
+  [root addSubview:_bookmarksBar];
+
   _tabStrip = [[BRTabStripView alloc]
       initWithFrame:NSMakeRect(0, b.size.height - kTabStripHeight, b.size.width,
                                kTabStripHeight)];
@@ -318,8 +332,24 @@ NSButton* ToolbarButton(NSString* symbol,
   }
 
   // Site info (lock) at the left of the address bar, as in Chrome.
-  _siteInfoButton = ToolbarButton(@"info.circle", @"Site information", @"",
-                                  self, @selector(showSiteInfo:));
+  // It can be dragged onto the bookmarks bar as a link to the page (011).
+  BRLinkDragButton* siteInfo = [BRLinkDragButton
+      buttonWithImage:[NSImage imageWithSystemSymbolName:@"info.circle"
+                                accessibilityDescription:@"Site information"]
+               target:self
+               action:@selector(showSiteInfo:)];
+  siteInfo.bezelStyle = NSBezelStyleToolbar;
+  siteInfo.bordered = NO;
+  __weak BRBrowserWindowController* weakSelf = self;
+  siteInfo.link = ^NSArray<NSString*>* {
+    BRBrowserWindowController* strongSelf = weakSelf;
+    BRTab* tab = [strongSelf activeTab];
+    if (![strongSelf canBookmarkTab:tab]) {
+      return nil;
+    }
+    return @[ tab.url, tab.title.length ? tab.title : tab.url ];
+  };
+  _siteInfoButton = siteInfo;
   _siteInfoButton.frame = NSMakeRect(x + 4, 8, 26, 24);
   _siteInfoButton.autoresizingMask = NSViewMaxXMargin;
   _siteInfoButton.symbolConfiguration = [NSImageSymbolConfiguration
@@ -703,7 +733,7 @@ NSButton* ToolbarButton(NSString* symbol,
 - (void)showRestorePagesBar:(void (^)(void))restore {
   NSView* content = self.window.contentView;
   NSRect contentBounds = content.bounds;
-  CGFloat top = NSMaxY(contentBounds) - _stripHeight - kToolbarHeight;
+  CGFloat top = NSMaxY(_contentArea.frame);
   NSVisualEffectView* bar = [[NSVisualEffectView alloc]
       initWithFrame:NSMakeRect(0, top - 40, contentBounds.size.width, 40)];
   bar.material = NSVisualEffectMaterialHeaderView;
@@ -1036,6 +1066,8 @@ NSButton* ToolbarButton(NSString* symbol,
   _zoomButton.accessibilityLabel =
       [NSString stringWithFormat:@"Zoom %d percent, reset",
                                  brouk::ZoomPercentFromLevel(level)];
+
+  [self updateBookmarksBar];
 
   _findBar.hidden = !tab.findBarVisible;
   if (tab.findBarVisible) {
@@ -1430,14 +1462,31 @@ NSButton* ToolbarButton(NSString* symbol,
 
 // Page full screen: the page fills the whole window.
 - (void)setBrowserUIHidden:(BOOL)hidden {
-  NSRect b = self.window.contentView.bounds;
+  _browserUIHidden = hidden;
   _tabStrip.hidden = hidden || _isPopup;
   _toolbar.hidden = hidden;
   _findBar.hidden = hidden || ![self activeTab].findBarVisible;
-  _contentArea.frame =
-      hidden ? b
-             : NSMakeRect(0, 0, b.size.width,
-                          b.size.height - _stripHeight - kToolbarHeight);
+  [self updateBookmarksBar];
+  [self layoutContentArea];
+}
+
+// The page area below the toolbar and (when shown) the bookmarks bar.
+- (void)layoutContentArea {
+  NSRect b = self.window.contentView.bounds;
+  if (_browserUIHidden) {
+    _contentArea.frame = b;
+    return;
+  }
+  CGFloat top = b.size.height - _stripHeight - kToolbarHeight;
+  _bookmarksBar.frame = NSMakeRect(0, top - kBookmarksBarHeight, b.size.width,
+                                   kBookmarksBarHeight);
+  if (!_bookmarksBar.hidden) {
+    top -= kBookmarksBarHeight;
+  }
+  _contentArea.frame = NSMakeRect(0, 0, b.size.width, top);
+  NSRect find = _findBar.frame;
+  find.origin.y = top - 44;
+  _findBar.frame = find;
 }
 
 // Chrome's hint: "Press Esc to exit full screen", fading after 4 s.
@@ -2311,6 +2360,217 @@ static std::int64_t Now() {
                          }];
                          store.lastUsedFolder = values.folder;
                        }];
+}
+
+// Shown on the new tab page, or always (the setting, ⇧⌘B); never in popup
+// windows or page full screen (011).
+- (void)updateBookmarksBar {
+  BRTab* tab = [self activeTab];
+  BOOL newTabPage =
+      tab && !tab.isInternalPage &&
+      (tab.url.length == 0 || [tab.url isEqualToString:@"about:blank"]);
+  BOOL show = !_isPopup && !_browserUIHidden && tab &&
+              (_bookmarksBarAlwaysShown || newTabPage);
+  if (show) {
+    [_bookmarksBar showStore:[_owner bookmarkStore] profile:tab.profileId];
+  }
+  if (show == _bookmarksBar.hidden) {
+    _bookmarksBar.hidden = !show;
+    [self layoutContentArea];
+  }
+}
+
+- (void)setBookmarksBarAlwaysShown:(BOOL)shown {
+  if (shown != _bookmarksBarAlwaysShown) {
+    _bookmarksBarAlwaysShown = shown;
+    [self updateBookmarksBar];
+  }
+}
+
+// The edit dialog for an item (011): a bookmark's name, URL, folder and
+// profile, or a folder's name and profile.
+- (void)editBookmarkItem:(brouk::BookmarkId)itemId {
+  BRBookmarkStore* store = [_owner bookmarkStore];
+  const brouk::BookmarkItem* item = store.model.Find(itemId);
+  if (!item || brouk::BookmarkModel::IsRoot(itemId)) {
+    return;
+  }
+  BOOL folder = item->folder;
+  [BRBookmarkEditor runKind:folder ? BookmarkEditorKind::kFolder
+                                   : BookmarkEditorKind::kBookmark
+                      title:folder ? @"Edit Folder" : @"Edit Bookmark"
+                     values:{.name = item->name,
+                             .url = item->url,
+                             .folder = item->parent,
+                             .profile = item->profile}
+                    editing:itemId
+                      store:store
+                   profiles:[_owner profileList]
+              activeProfile:[self activeProfileId]
+                     window:self.window
+                       done:^(const BookmarkEditorValues& values) {
+                         [store change:[&](brouk::BookmarkModel& model) {
+                           const brouk::BookmarkItem* current =
+                               model.Find(itemId);
+                           if (!current) {
+                             return;  // Deleted meanwhile.
+                           }
+                           if (current->name != values.name) {
+                             model.Rename(itemId, values.name);
+                           }
+                           if (!folder && current->url != values.url) {
+                             model.SetUrl(itemId, values.url);
+                           }
+                           if (!folder && values.folder != current->parent &&
+                               model.Find(values.folder)) {
+                             model.Move(itemId, values.folder,
+                                        brouk::BookmarkModel::kEnd);
+                           }
+                           if (model.InheritedProfile(itemId).empty() &&
+                               model.Find(itemId)->profile != values.profile) {
+                             model.SetProfile(itemId, values.profile);
+                           }
+                         }];
+                       }];
+}
+
+#pragma mark - BRBookmarksBarDelegate
+
+- (void)bookmarksBar:(BRBookmarksBar*)bar
+        openBookmark:(brouk::BookmarkId)bookmark
+         disposition:(BRBookmarkOpenDisposition)disposition {
+  [self openBookmark:bookmark disposition:disposition];
+}
+
+// Open All (n): the folder's bookmarks in new tabs, the first one active;
+// Chrome asks first when there are many.
+- (void)bookmarksBar:(BRBookmarksBar*)bar
+           openAllIn:(brouk::BookmarkId)folderId {
+  BRBookmarkStore* store = [_owner bookmarkStore];
+  const brouk::BookmarkItem* folder = store.model.Find(folderId);
+  if (!folder) {
+    return;
+  }
+  brouk::ProfileId profile = [self activeProfileId];
+  std::vector<brouk::BookmarkId> bookmarks;
+  for (brouk::BookmarkId child : folder->children) {
+    const brouk::BookmarkItem* item = store.model.Find(child);
+    if (item && !item->folder && store.model.IsVisibleIn(child, profile)) {
+      bookmarks.push_back(child);
+    }
+  }
+  constexpr std::size_t kAskAbove = 15;
+  if (bookmarks.size() > kAskAbove) {
+    NSAlert* alert = [[NSAlert alloc] init];
+    alert.messageText =
+        [NSString stringWithFormat:@"Open %zu tabs?", bookmarks.size()];
+    [alert addButtonWithTitle:@"Open"];
+    [alert addButtonWithTitle:@"Cancel"];
+    if ([alert runModal] != NSAlertFirstButtonReturn) {
+      return;
+    }
+  }
+  for (std::size_t i = 0; i < bookmarks.size(); ++i) {
+    [self openBookmark:bookmarks[i]
+           disposition:i == 0 ? BRBookmarkOpenForegroundTab
+                              : BRBookmarkOpenBackgroundTab];
+  }
+}
+
+- (void)bookmarksBar:(BRBookmarksBar*)bar edit:(brouk::BookmarkId)item {
+  [self editBookmarkItem:item];
+}
+
+- (void)bookmarksBar:(BRBookmarksBar*)bar remove:(brouk::BookmarkId)item {
+  BRBookmarkStore* store = [_owner bookmarkStore];
+  const brouk::BookmarkItem* found = store.model.Find(item);
+  if (!found) {
+    return;
+  }
+  NSString* message = found->folder ? @"Folder deleted" : @"Bookmark deleted";
+  [store removeItems:{item}];
+  if ([store canUndoRemove]) {
+    [BRBookmarkUndoNotice showMessage:message store:store relativeTo:bar];
+  }
+}
+
+- (void)bookmarksBar:(BRBookmarksBar*)bar
+       addBookmarkIn:(brouk::BookmarkId)folder
+               index:(std::size_t)index {
+  BRBookmarkStore* store = [_owner bookmarkStore];
+  BRTab* tab = [self activeTab];
+  BOOL page = [self canBookmarkTab:tab];
+  brouk::ProfileId profile = [self activeProfileId];
+  [BRBookmarkEditor runKind:BookmarkEditorKind::kBookmark
+                      title:@"Add Bookmark"
+                     values:{.name = page ? (tab.title.UTF8String ?: "") : "",
+                             .url = page ? (tab.url.UTF8String ?: "") : "",
+                             .folder = folder,
+                             .profile = profile}
+                    editing:0
+                      store:store
+                   profiles:[_owner profileList]
+              activeProfile:profile
+                     window:self.window
+                       done:^(const BookmarkEditorValues& values) {
+                         // At the place clicked when the folder stayed, else at
+                         // the end.
+                         std::size_t at = values.folder == folder
+                                              ? index
+                                              : brouk::BookmarkModel::kEnd;
+                         [store change:[&](brouk::BookmarkModel& model) {
+                           model.AddBookmark(values.folder, at, values.name,
+                                             values.url, values.profile, Now());
+                         }];
+                       }];
+}
+
+- (void)bookmarksBar:(BRBookmarksBar*)bar
+         addFolderIn:(brouk::BookmarkId)folder
+               index:(std::size_t)index {
+  BRBookmarkStore* store = [_owner bookmarkStore];
+  brouk::ProfileId profile = [self activeProfileId];
+  [BRBookmarkEditor runKind:BookmarkEditorKind::kFolder
+                      title:@"Add Folder"
+                     values:{.name = "New folder",
+                             .url = "",
+                             .folder = folder,
+                             .profile = profile}
+                    editing:0
+                      store:store
+                   profiles:[_owner profileList]
+              activeProfile:profile
+                     window:self.window
+                       done:^(const BookmarkEditorValues& values) {
+                         [store change:[&](brouk::BookmarkModel& model) {
+                           model.AddFolder(folder, index, values.name,
+                                           values.profile, Now());
+                         }];
+                       }];
+}
+
+// A dropped link becomes a bookmark there, in the active tab's profile as
+// new bookmarks are (011).
+- (void)bookmarksBar:(BRBookmarksBar*)bar
+             dropURL:(NSString*)url
+               title:(NSString*)title
+              folder:(brouk::BookmarkId)folder
+               index:(std::size_t)index {
+  BRBookmarkStore* store = [_owner bookmarkStore];
+  brouk::ProfileId profile = [self activeProfileId];
+  std::string name = title.UTF8String ?: "";
+  std::string address = url.UTF8String ?: "";
+  [store change:[&](brouk::BookmarkModel& model) {
+    model.AddBookmark(folder, index, name, address, profile, Now());
+  }];
+}
+
+- (void)bookmarksBarToggleAlwaysShow:(BRBookmarksBar*)bar {
+  [_owner toggleBookmarksBar:nil];
+}
+
+- (BOOL)bookmarksBarAlwaysShown:(BRBookmarksBar*)bar {
+  return _bookmarksBarAlwaysShown;
 }
 
 // After a deletion (011: any deletion can be undone): a short notice with

@@ -999,6 +999,8 @@ class AppSettingsPage : public SettingsPageDelegate {
                               "left"];
   [controller setDockPosition:[self dockPosition] size:[self dockSize]];
   controller.remoteDebuggingPort = _remoteDebuggingPort;
+  controller.bookmarksBarAlwaysShown =
+      global.GetString("bookmarks.bar") == "always";
 }
 
 // Main thread. Applies the global settings that act right away: theme,
@@ -1567,6 +1569,14 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
   return _profiles->profiles();
 }
 
+- (IBAction)toggleBookmarksBar:(nullable id)sender {
+  BOOL always =
+      _profiles->global_settings().GetString("bookmarks.bar") == "always";
+  [self setGlobalSetting:"bookmarks.bar"
+                   value:brouk::SettingValue(
+                             std::string(always ? "new_tab_page" : "always"))];
+}
+
 // The bar's bookmarks, then Other bookmarks as a submenu; only what is
 // visible in the front window's active profile.
 - (void)fillBookmarksMenu:(NSMenu*)menu {
@@ -1648,6 +1658,13 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
 }
 
 - (BOOL)validateMenuItem:(NSMenuItem*)item {
+  if (item.action == @selector(toggleBookmarksBar:)) {
+    item.state =
+        _profiles->global_settings().GetString("bookmarks.bar") == "always"
+            ? NSControlStateValueOn
+            : NSControlStateValueOff;
+    return YES;
+  }
   if (item.action == @selector(reopenClosedTab:)) {
     return !_closedTabs.empty();
   }
@@ -2270,6 +2287,10 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
           title:@"Command Palette…"
          action:@selector(showCommandPalette:)
        shortcut:@"command_palette"];
+  [self addItem:view
+          title:@"Always Show Bookmarks Bar"
+         action:@selector(toggleBookmarksBar:)
+       shortcut:@"toggle_bookmarks_bar"];
   [view addItem:NSMenuItem.separatorItem];
   [self addItem:view
           title:@"Stop"

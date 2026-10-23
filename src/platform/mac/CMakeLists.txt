@@ -15,6 +15,8 @@ add_executable(brouk_app
   bookmark_dialogs.mm
   bookmark_store.h
   bookmark_store.mm
+  bookmarks_bar.h
+  bookmarks_bar.mm
   address_suggestions_popup.h
   address_suggestions_popup.mm
   app_delegate.h
