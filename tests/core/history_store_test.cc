@@ -221,5 +221,62 @@ TEST_F(HistoryStoreTest, DeleteMatchingRemovesNeverRecordedSites) {
   EXPECT_EQ(store_->DeleteMatching({}), 0);
 }
 
+TEST_F(HistoryStoreTest, SitesAndTheirPages) {
+  Visit("https://companya.atlassian.net/browse/A-1", "A-1", kNow - kDay);
+  Visit("https://companya.atlassian.net/browse/A-2", "A-2", kNow - 2 * kDay);
+  Visit("https://companya.atlassian.net/browse/A-1", "A-1", kNow - kDay);
+  Visit("https://companyb.atlassian.net/", "B", kNow);
+  Visit("file:///Users/me/a.html", "Local", kNow - 3 * kDay);
+  std::vector<HistorySite> sites = store_->Sites();
+  ASSERT_EQ(sites.size(), 3U);
+  EXPECT_EQ(sites[0].host, "companyb.atlassian.net");  // Newest first.
+  EXPECT_EQ(sites[1].host, "companya.atlassian.net");
+  EXPECT_EQ(sites[1].visit_count, 3);
+  EXPECT_EQ(sites[1].page_count, 2);
+  EXPECT_EQ(sites[1].last_visit, kNow - kDay);
+  EXPECT_EQ(sites[2].host, "");  // Local files.
+  std::vector<HistoryMatch> pages =
+      store_->PagesOfHost("companya.atlassian.net");
+  ASSERT_EQ(pages.size(), 2U);
+  EXPECT_EQ(pages[0].title, "A-1");
+  EXPECT_EQ(pages[0].visit_count, 2);
+}
+
+TEST_F(HistoryStoreTest, VisitsNewestFirstInPages) {
+  for (int i = 0; i < 5; ++i) {
+    Visit("https://a.com/" + std::to_string(i), "", kNow - i * 60,
+          i == 0 ? VisitTransition::kTyped : VisitTransition::kLink);
+  }
+  std::vector<HistoryVisit> first = store_->Visits(0, 3);
+  ASSERT_EQ(first.size(), 3U);
+  EXPECT_EQ(first[0].url, "https://a.com/0");
+  EXPECT_EQ(first[0].transition, VisitTransition::kTyped);
+  EXPECT_EQ(first[0].host, "a.com");
+  std::vector<HistoryVisit> next = store_->Visits(first.back().time, 3);
+  ASSERT_EQ(next.size(), 2U);
+  EXPECT_EQ(next[0].url, "https://a.com/3");
+}
+
+TEST_F(HistoryStoreTest, DeleteHostAndVisits) {
+  Visit("https://a.com/1", "", kNow - 60);
+  Visit("https://a.com/1", "", kNow);
+  Visit("https://b.com/", "", kNow);
+  std::vector<HistoryVisit> visits = store_->Visits(0, 10);
+  // The newest visit of a.com/1 only: the page stays with one visit.
+  std::int64_t newest_a = 0;
+  for (const HistoryVisit& visit : visits) {
+    if (visit.url == "https://a.com/1" && visit.time == kNow) {
+      newest_a = visit.id;
+    }
+  }
+  std::vector<std::int64_t> ids = {newest_a};
+  EXPECT_EQ(store_->DeleteVisits(ids), 1);
+  EXPECT_EQ(store_->FindPage("https://a.com/1")->visit_count, 1);
+  EXPECT_EQ(store_->FindPage("https://a.com/1")->last_visit, kNow - 60);
+  EXPECT_EQ(store_->DeleteHost("a.com"), 1);
+  EXPECT_FALSE(store_->FindPage("https://a.com/1"));
+  EXPECT_TRUE(store_->FindPage("https://b.com/"));
+}
+
 }  // namespace
 }  // namespace brouk

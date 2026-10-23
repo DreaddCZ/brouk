@@ -49,6 +49,24 @@ struct HistoryMatch {
   std::string inline_completion;
 };
 
+// One row of the history page's "by site" view (013): an exact host.
+struct HistorySite {
+  std::string host;  // "" for local files.
+  std::int64_t visit_count = 0;
+  std::int64_t page_count = 0;
+  std::int64_t last_visit = 0;
+};
+
+// One visit, for the "by day" view.
+struct HistoryVisit {
+  std::int64_t id = 0;
+  std::string url;
+  std::string title;
+  std::string host;
+  std::int64_t time = 0;
+  VisitTransition transition = VisitTransition::kOther;
+};
+
 // One profile's history database (013): pages and their visits, in
 // profiles/<id>/history.db. Not thread-safe: the browser uses it from one
 // thread only.
@@ -93,6 +111,17 @@ class HistoryStore {
   // The most recently visited pages, newest first (History → Recently
   // Visited).
   std::vector<HistoryMatch> RecentPages(std::size_t limit);
+
+  // The history page (013). Sites: every host, newest visit first. Pages of
+  // one host, newest first. Visits before `before` (seconds; 0 for now),
+  // newest first, at most `limit`.
+  std::vector<HistorySite> Sites();
+  std::vector<HistoryMatch> PagesOfHost(std::string_view host);
+  std::vector<HistoryVisit> Visits(std::int64_t before, std::size_t limit);
+  // Removes all pages of a host. Returns the number removed.
+  int DeleteHost(std::string_view host);
+  // Removes single visits, and pages left without visits.
+  int DeleteVisits(std::span<const std::int64_t> ids);
 
   // For tests and the history page later.
   std::optional<HistoryMatch> FindPage(std::string_view url);

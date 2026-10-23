@@ -172,3 +172,4 @@ None.
 
 - 2026-10-22 (bookmarks review with the user): the earlier draft had separate bookmarks per profile. It was replaced by one shared tree with optional links to a profile. Folders can be linked too, and their contents follow them. The add dialog preselects the active tab's profile. Deleting a profile makes its linked bookmarks general. The bar is shown on the new tab page only, with ⌘⇧B for "always". Tags, keywords, notes and direct import from other browsers were dropped to keep it simple. Storage is a JSON file, like Chrome's. Spec set to `ready`. 005 and 003 were updated to match.
 - Ordering behaviour not specified here (e.g. where a new bookmark goes in a folder, which is at the end) follows Chrome.
+- 2026-10-23 (user's decision, from 013): the bookmark manager opens as a tab, like the history page (internal page in a tab, see 013 notes).

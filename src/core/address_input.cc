@@ -17,9 +17,10 @@ namespace {
 // listed so that typing them still asks to open the external app (012).
 // "javascript:" is deliberately missing: like Chrome's paste protection, it
 // keeps pasted scripts from running in the current page.
-constexpr std::array<std::string_view, 14> kKnownSchemes = {
-    "http", "https",       "file",     "about",  "data", "blob", "chrome",
-    "ftp",  "view-source", "devtools", "mailto", "tel",  "ws",   "wss",
+constexpr std::array<std::string_view, 15> kKnownSchemes = {
+    "http",  "https",       "file",     "about",  "data", "blob", "chrome",
+    "ftp",   "view-source", "devtools", "mailto", "tel",  "ws",   "wss",
+    "brouk",  // Internal pages (brouk://history).
 };
 
 bool IsAsciiAlpha(char c) {

@@ -101,5 +101,11 @@ TEST(AddressInputTest, EncodeQueryComponentKeepsUnreserved) {
   EXPECT_EQ(EncodeQueryComponent("/?#%"), "%2F%3F%23%25");
 }
 
+TEST(AddressInputTest, InternalPagesAreAddresses) {
+  AddressInputResult result = ClassifyAddressInput("brouk://history/");
+  EXPECT_EQ(result.kind, AddressInputResult::Kind::kUrl);
+  EXPECT_EQ(result.url, "brouk://history/");
+}
+
 }  // namespace
 }  // namespace brouk

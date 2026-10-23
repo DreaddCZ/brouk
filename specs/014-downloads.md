@@ -128,3 +128,4 @@ None.
   - Not available: Safe Browsing (not in CEF).
   - Spec set to `ready`.
 - Check in the CEF headers before implementing: `CefDownloadHandler` (`CanDownload`, `OnBeforeDownload`, `OnDownloadUpdated`), `CefDownloadItem`, `CefDownloadItemCallback` (pause/resume/cancel). Verify whether CEF already sets the quarantine attribute on macOS before adding our own.
+- 2026-10-23 (user's decision, from 013): the downloads page opens as a tab, like the history page (internal page in a tab, see 013 notes).

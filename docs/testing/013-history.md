@@ -25,3 +25,16 @@ Address bar suggestions and recording are in `003-browser-ui.md` (steps 37–48)
 16. Enter an invalid value (e.g. `not a site`). Expected: an error under the field; the previous list stays.
 17. Remove a site from the list and visit it. Expected: it is recorded again.
 
+## History page
+
+18. Press ⌘Y (or History → Show Full History). Expected: a "History" tab with a clock icon opens next to the current tab, in its profile group; on an unused new tab, that tab becomes the history page. ⌘Y on the history tab does nothing.
+19. The page lists one row per exact host (e.g. two different `*.atlassian.net` sites are two rows), with visits, pages and last visit, newest first; each row has its profile's colour dot. Sort by Visits and by Site.
+20. Choose a profile in the Profile menu. Expected: only its sites; "All profiles" shows all (the same host in two profiles is two rows).
+21. Click a site. Expected: its pages appear below it (title, path, visits, last visit); click again to fold them.
+22. "By day": visits under Today, Yesterday and dates; "Show more" loads older ones. Reopen the page later: it remembers the view.
+23. Click a page title in the same profile as the history tab. Expected: the history tab becomes that page. In another profile's entry: a new tab in that profile's group. ⌘-click: a background tab.
+24. Check two rows' checkboxes, ⇧-click a third to select the range, press Delete and confirm. Expected: they disappear (site rows remove all their pages). ✕ on a single row deletes it at once.
+    Expand a site and check its checkbox. Expected: its pages show checked and greyed out (they are deleted with the site) and the count does not include them; unchecking the site frees them again.
+25. In the history tab, type a web address in the address bar. Expected: the tab is replaced by a normal tab with that page (no Back to the history page). Type `brouk://history` in a normal tab: it becomes the history page. `brouk://settings` opens the Settings window.
+26. Close the history tab and press ⇧⌘T; quit and start again with "Continue where you left off". Expected: the history tab comes back as the history page.
+

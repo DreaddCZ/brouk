@@ -47,7 +47,11 @@ constexpr std::array<std::string_view, 2> kStartup = {"last_session",
 constexpr std::array<std::string_view, 2> kStartupLabels = {
     "Continue where you left off", "Open a new tab"};
 
-constexpr std::array<SettingDef, 22> kSettings = {{
+constexpr std::array<std::string_view, 2> kHistoryViews = {"site", "day"};
+constexpr std::array<std::string_view, 2> kHistoryViewLabels = {"By site",
+                                                                "By day"};
+
+constexpr std::array<SettingDef, 23> kSettings = {{
     // Global.
     {.key = "appearance.theme",
      .scope = SettingScope::kGlobal,
@@ -116,6 +120,15 @@ constexpr std::array<SettingDef, 22> kSettings = {{
      .section = "History",
      .label = "Keep history for",
      .description = "Older visits are deleted automatically."},
+    {.key = "history.view",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kChoice,
+     .default_value = "site",
+     .choices = kHistoryViews,
+     .choice_labels = kHistoryViewLabels,
+     .section = "History",
+     .label = "History page view",
+     .description = "The history page remembers the last view chosen."},
     {.key = "history.never_record",
      .scope = SettingScope::kGlobal,
      .type = SettingDef::Type::kString,

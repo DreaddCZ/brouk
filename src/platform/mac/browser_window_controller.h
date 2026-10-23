@@ -16,6 +16,7 @@
 #include "core/closed_tabs.h"
 #include "core/profile_registry.h"
 #include "core/session.h"
+#include "core/tab_strip_model.h"
 #include "include/cef_request_context.h"
 
 NS_ASSUME_NONNULL_BEGIN
@@ -30,6 +31,16 @@ NS_ASSUME_NONNULL_BEGIN
     (const brouk::ProfileId&)profile;
 - (brouk::ProfileId)defaultProfileId;
 - (BOOL)profileExists:(const brouk::ProfileId&)profile;
+// Internal pages in tabs (013: brouk://history): their context and the
+// bridge handler of one tab's page; null for pages that do not open in tabs.
+- (CefRefPtr<CefRequestContext>)internalPagesContext;
+- (std::unique_ptr<CefMessageRouterBrowserSide::Handler>)
+    internalPageHandler:(NSString*)page
+                  tabId:(brouk::TabId)tabId
+             controller:(BRBrowserWindowController*)controller;
+// brouk://settings and brouk://profiles open in their own windows.
+- (IBAction)openSettings:(nullable id)sender;
+- (IBAction)manageProfiles:(nullable id)sender;
 // Name and colour; a placeholder for a profile that no longer exists.
 - (brouk::ProfileInfo)profileInfo:(const brouk::ProfileId&)profile;
 - (void)browserWindowDidCreateBrowser;
@@ -144,6 +155,12 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)restoreSessionWindow:(const brouk::SessionWindow&)window;
 // "Restore pages?" after a crash (015); `restore` runs on "Restore".
 - (void)showRestorePagesBar:(void (^)(void))restore;
+// History page (013): opens one of its entries in `profile`, in the history
+// tab itself when it is in that profile's group (unless `newTab`).
+- (void)openPage:(NSString*)url
+         profile:(const brouk::ProfileId&)profile
+          newTab:(BOOL)newTab
+     fromHistory:(brouk::TabId)historyTab;
 // Only one tab, never used (a new tab page): replaced by a restored session.
 - (BOOL)hasOnlyNewTab;
 
