@@ -73,4 +73,16 @@ NSColor* ProfileTextColor(std::string_view name) {
                 }];
 }
 
+NSImage* ProfileDot(std::string_view name) {
+  NSColor* fill = ProfileColor(name);
+  return [NSImage
+       imageWithSize:NSMakeSize(12, 12)
+             flipped:NO
+      drawingHandler:^BOOL(NSRect rect) {
+        [fill setFill];
+        [[NSBezierPath bezierPathWithOvalInRect:NSInsetRect(rect, 1, 1)] fill];
+        return YES;
+      }];
+}
+
 }  // namespace brouk::mac

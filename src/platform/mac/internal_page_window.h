@@ -40,6 +40,8 @@ NS_ASSUME_NONNULL_BEGIN
 
 // Closes the page (and then the window).
 - (void)closePage;
+// Navigates the page; only a changed #fragment keeps the page loaded.
+- (void)loadURL:(NSString*)url;
 
 @end
 

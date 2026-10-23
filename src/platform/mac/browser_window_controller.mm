@@ -20,6 +20,8 @@
 #import "platform/mac/tab_strip_view.h"
 
 #include "core/address_input.h"
+#include "core/settings_schema.h"
+#include "core/shortcuts.h"
 #include "core/tab_strip_model.h"
 #include "core/url_display.h"
 #include "core/zoom.h"
@@ -138,6 +140,7 @@ NSButton* ToolbarButton(NSString* symbol,
   NSButton* _remoteDebuggingButton;
   BOOL _toggleOnLeft;
   CGFloat _addressLeft;  // Where the address area starts (after site info).
+  BRCommandPalette* _palette;
 }
 
 - (instancetype)initWithOwner:(id<BRBrowserWindowOwner>)owner {
@@ -1341,6 +1344,171 @@ NSButton* ToolbarButton(NSString* symbol,
 }
 
 // Tab > Pin Tab / Unpin Tab.
+#pragma mark - Command palette (003)
+
+- (IBAction)showCommandPalette:(id)sender {
+  if (_isPopup) {
+    return;
+  }
+  if (!_palette) {
+    _palette = [[BRCommandPalette alloc] init];
+  }
+  NSMutableArray<BRPaletteEntry*>* entries = [NSMutableArray array];
+  for (BRBrowserWindowController* controller in
+       [_owner browserWindowControllers]) {
+    [entries addObjectsFromArray:[controller paletteTabEntries]];
+  }
+  [entries addObjectsFromArray:[self paletteActionEntries]];
+  [entries addObjectsFromArray:[self paletteSettingEntries]];
+  [_palette showInWindow:self.window entries:entries];
+}
+
+- (NSArray<BRPaletteEntry*>*)paletteTabEntries {
+  NSMutableArray<BRPaletteEntry*>* entries = [NSMutableArray array];
+  __weak BRBrowserWindowController* weakSelf = self;
+  for (std::size_t i = 0; i < _model->count(); ++i) {
+    BRTab* tab = _tabs[@(_model->id_at(i))];
+    if (!tab || tab.isClosing) {
+      continue;
+    }
+    brouk::ProfileInfo info = [_owner profileInfo:tab.profileId];
+    BRPaletteEntry* entry = [[BRPaletteEntry alloc] init];
+    entry.kind = brouk::PaletteItem::Kind::kTab;
+    entry.title =
+        tab.title.length ? tab.title : (tab.url.length ? tab.url : @"New Tab");
+    std::string address = brouk::FormatUrlForDisplay(tab.url.UTF8String ?: "");
+    entry.detail = [NSString
+        stringWithFormat:@"%s · %s", info.name.c_str(), address.c_str()];
+    entry.image = tab.favicon ?: brouk::mac::ProfileDot(info.color);
+    brouk::TabId tabId = tab.tabId;
+    entry.run = ^{
+      BRBrowserWindowController* strongSelf = weakSelf;
+      [strongSelf showWindow:nil];
+      [strongSelf activateTab:strongSelf->_tabs[@(tabId)]];
+    };
+    [entries addObject:entry];
+  }
+  return entries;
+}
+
+// The browser actions (shortcut actions) that can run now, as their menu
+// items would.
+- (NSArray<BRPaletteEntry*>*)paletteActionEntries {
+  NSMutableArray<BRPaletteEntry*>* entries = [NSMutableArray array];
+  NSImage* icon = [NSImage imageWithSystemSymbolName:@"command"
+                            accessibilityDescription:nil];
+  for (const brouk::ShortcutAction& action : brouk::AllShortcutActions()) {
+    std::string_view actionId = action.id;
+    if (actionId.starts_with("select_") || actionId == "command_palette") {
+      continue;  // Tab numbers are noise here; the palette is open.
+    }
+    SEL selector = nil;
+    id target = nil;
+    NSMenuItem* item = brouk::mac::MenuItemForAction(actionId);
+    if (item) {
+      target = [NSApp targetForAction:item.action to:item.target from:item];
+      if (!target ||
+          ([target respondsToSelector:@selector(validateMenuItem:)] &&
+           ![target validateMenuItem:item])) {
+        continue;
+      }
+      selector = item.action;
+    } else if (actionId == "manage_profiles") {
+      selector = @selector(manageProfiles:);  // In the Profiles menu.
+    } else {
+      continue;
+    }
+    BRPaletteEntry* entry = [[BRPaletteEntry alloc] init];
+    entry.kind = brouk::PaletteItem::Kind::kAction;
+    entry.title = @(std::string(action.label).c_str());
+    entry.detail = @"";
+    entry.image = icon;
+    const std::vector<brouk::Shortcut>& shortcuts =
+        brouk::mac::ShortcutsFor(actionId);
+    if (!shortcuts.empty()) {
+      entry.shortcut = @(brouk::DisplayShortcut(shortcuts[0]).c_str());
+    }
+    entry.run = ^{
+      [NSApp sendAction:selector to:nil from:item];
+    };
+    [entries addObject:entry];
+  }
+  return entries;
+}
+
+// Every setting on the settings page; choosing one opens the page there.
+- (NSArray<BRPaletteEntry*>*)paletteSettingEntries {
+  NSMutableArray<BRPaletteEntry*>* entries = [NSMutableArray array];
+  NSImage* icon = [NSImage imageWithSystemSymbolName:@"gearshape"
+                            accessibilityDescription:nil];
+  BRTab* active = [self activeTab];
+  brouk::ProfileId profile =
+      active ? active.profileId : _model->default_profile();
+  NSString* profileId = @(profile.c_str());
+  brouk::ProfileInfo info = [_owner profileInfo:profile];
+  __weak id<BRBrowserWindowOwner> owner = _owner;
+  for (const brouk::SettingDef& def : brouk::AllSettingDefs()) {
+    if (def.advanced) {
+      continue;
+    }
+    BOOL perProfile = def.scope == brouk::SettingScope::kProfile;
+    BRPaletteEntry* entry = [[BRPaletteEntry alloc] init];
+    entry.kind = brouk::PaletteItem::Kind::kSetting;
+    entry.title = @(std::string(def.label).c_str());
+    entry.detail =
+        perProfile
+            ? [NSString stringWithFormat:@"Settings · %s (%s)",
+                                         std::string(def.section).c_str(),
+                                         info.name.c_str()]
+            : [NSString stringWithFormat:@"Settings · %s",
+                                         std::string(def.section).c_str()];
+    entry.image = icon;
+    NSString* key = @(std::string(def.key).c_str());
+    entry.run = ^{
+      [owner openSettingsAtKey:key profile:perProfile ? profileId : nil];
+    };
+    [entries addObject:entry];
+  }
+  return entries;
+}
+
+#pragma mark - Tab actions for the active tab (Tab menu, palette)
+
+- (IBAction)newTabToTheRight:(id)sender {
+  if (BRTab* tab = [self activeTab]) {
+    [self tabStripDidRequestNewTabAfter:tab.tabId];
+  }
+}
+
+- (IBAction)duplicateTab:(id)sender {
+  if (BRTab* tab = [self activeTab]) {
+    [self tabStripDidDuplicateTab:tab.tabId];
+  }
+}
+
+- (IBAction)closeOtherTabs:(id)sender {
+  [self closeTabsOfActiveTab:brouk::TabStripModel::CloseScope::kOthers];
+}
+
+- (IBAction)closeTabsToTheLeft:(id)sender {
+  [self closeTabsOfActiveTab:brouk::TabStripModel::CloseScope::kLeft];
+}
+
+- (IBAction)closeTabsToTheRight:(id)sender {
+  [self closeTabsOfActiveTab:brouk::TabStripModel::CloseScope::kRight];
+}
+
+- (void)closeTabsOfActiveTab:(brouk::TabStripModel::CloseScope)scope {
+  if (BRTab* tab = [self activeTab]) {
+    [self tabStripDidCloseTabs:scope fromTab:tab.tabId];
+  }
+}
+
+- (BOOL)activeTabCanClose:(brouk::TabStripModel::CloseScope)scope {
+  BRTab* tab = [self activeTab];
+  return tab && !_model->TabsToClose(tab.tabId, scope).empty();
+}
+
 // Tab > Mute Tab.
 - (IBAction)toggleMuteTab:(id)sender {
   [[self activeTab] toggleMute];
@@ -1375,6 +1543,20 @@ NSButton* ToolbarButton(NSString* symbol,
   if (action == @selector(selectNextTab:) ||
       action == @selector(selectPreviousTab:)) {
     return _model->count() > 1;
+  }
+  if (action == @selector(closeOtherTabs:)) {
+    return [self activeTabCanClose:brouk::TabStripModel::CloseScope::kOthers];
+  }
+  if (action == @selector(closeTabsToTheLeft:)) {
+    return [self activeTabCanClose:brouk::TabStripModel::CloseScope::kLeft];
+  }
+  if (action == @selector(closeTabsToTheRight:)) {
+    return [self activeTabCanClose:brouk::TabStripModel::CloseScope::kRight];
+  }
+  if (action == @selector(newTabToTheRight:) ||
+      action == @selector(duplicateTab:) ||
+      action == @selector(showCommandPalette:)) {
+    return tab != nil && !_isPopup;
   }
   if (action == @selector(toggleMuteTab:)) {
     item.title = tab.isMuted ? @"Unmute Tab" : @"Mute Tab";

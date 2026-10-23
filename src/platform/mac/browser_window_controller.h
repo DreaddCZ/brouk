@@ -6,6 +6,7 @@
 
 #include <string>
 
+#import "platform/mac/command_palette_panel.h"
 #import "platform/mac/devtools_dock.h"
 
 #include "cef/devtools_preferences.h"
@@ -56,6 +57,10 @@ NS_ASSUME_NONNULL_BEGIN
 // Downloads (app-wide, so concurrent downloads never share a file name).
 - (std::string)reserveDownloadPath:(const std::string&)suggested;
 - (void)releaseDownloadPath:(const std::string&)path;
+// The command palette (003) lists the tabs of all browser windows, front
+// window first, and opens settings at one setting.
+- (NSArray<BRBrowserWindowController*>*)browserWindowControllers;
+- (void)openSettingsAtKey:(NSString*)key profile:(nullable NSString*)profileId;
 @end
 
 @interface BRBrowserWindowController : NSWindowController <NSWindowDelegate>
@@ -92,6 +97,9 @@ NS_ASSUME_NONNULL_BEGIN
 // Tabs of a profile in this window (including tabs still closing), and
 // closing them (a profile is deleted, 005).
 - (NSUInteger)tabCountInProfile:(const brouk::ProfileId&)profile;
+// This window's tabs for the command palette (003), left to right; choosing
+// one brings the window to the front and switches to the tab.
+- (NSArray<BRPaletteEntry*>*)paletteTabEntries;
 - (void)closeTabsInProfile:(const brouk::ProfileId&)profile;
 
 // Starts closing every tab (pages may ask to stay via beforeunload); the

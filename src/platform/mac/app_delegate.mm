@@ -39,23 +39,6 @@
 #include "include/cef_request_context.h"
 #include "include/wrapper/cef_helpers.h"
 
-namespace {
-
-// A small filled circle in the profile's colour, for menus.
-NSImage* ProfileDot(const std::string& color) {
-  NSColor* fill = brouk::mac::ProfileColor(color);
-  return [NSImage
-       imageWithSize:NSMakeSize(12, 12)
-             flipped:NO
-      drawingHandler:^BOOL(NSRect rect) {
-        [fill setFill];
-        [[NSBezierPath bezierPathWithOvalInRect:NSInsetRect(rect, 1, 1)] fill];
-        return YES;
-      }];
-}
-
-}  // namespace
-
 @implementation BRApplication {
   BOOL _handlingSendEvent;
 }
@@ -589,7 +572,7 @@ class AppSettingsPage : public SettingsPageDelegate {
                                       action:@selector(newTabInProfile:)
                                keyEquivalent:@""];
     tab.representedObject = @(profile.id.c_str());
-    tab.image = ProfileDot(profile.color);
+    tab.image = brouk::mac::ProfileDot(profile.color);
     tab.toolTip = [NSString stringWithFormat:@"New tab in %@", name];
     NSMenuItem* window = [menu
         addItemWithTitle:[NSString stringWithFormat:@"New Window in %@", name]
@@ -958,19 +941,55 @@ class AppSettingsPage : public SettingsPageDelegate {
   [_profileManager showWindow:nil];
 }
 
+- (NSArray<BRBrowserWindowController*>*)browserWindowControllers {
+  // Front window first.
+  NSMutableArray<BRBrowserWindowController*>* result = [NSMutableArray array];
+  for (NSWindow* window in NSApp.orderedWindows) {
+    for (BRBrowserWindowController* controller in _windows) {
+      if (controller.window == window) {
+        [result addObject:controller];
+      }
+    }
+  }
+  for (BRBrowserWindowController* controller in _windows) {
+    if (![result containsObject:controller]) {
+      [result addObject:controller];
+    }
+  }
+  return result;
+}
+
+// The command palette (003): the settings page, scrolled to one setting.
+- (void)openSettingsAtKey:(NSString*)key profile:(nullable NSString*)profileId {
+  NSString* scope = profileId ?: @"global";
+  [self openSettingsWithFragment:[NSString
+                                     stringWithFormat:@"%@:%@", scope, key]];
+}
+
 // Settings (004): Cmd+, as in every Mac app.
 - (IBAction)openSettings:(nullable id)sender {
+  [self openSettingsWithFragment:nil];
+}
+
+// `fragment` ("<scope>:<key>") makes the page show that setting.
+- (void)openSettingsWithFragment:(nullable NSString*)fragment {
   CEF_REQUIRE_UI_THREAD();
   if (_quitting || !_profilesLoaded) {
     return;
   }
+  NSString* url = fragment
+                      ? [@"brouk://settings/#" stringByAppendingString:fragment]
+                      : @"brouk://settings/";
   if (_settingsWindow) {
+    if (fragment) {
+      [_settingsWindow loadURL:url];
+    }
     [_settingsWindow showWindow:nil];
     return;
   }
   _settingsWindow = [[BRInternalPageWindowController alloc]
       initWithOwner:self
-                url:@"brouk://settings/"
+                url:url
               title:@"Settings"
                size:NSMakeSize(720, 680)
             handler:std::make_unique<brouk::SettingsHandler>(
@@ -1318,7 +1337,7 @@ class AppSettingsPage : public SettingsPageDelegate {
     NSString* title = @(std::string(colorName).c_str());
     [colorButton addItemWithTitle:title.capitalizedString];
     colorButton.lastItem.representedObject = title;
-    colorButton.lastItem.image = ProfileDot(std::string(colorName));
+    colorButton.lastItem.image = brouk::mac::ProfileDot(colorName);
     if (colorName == color) {
       [colorButton selectItem:colorButton.lastItem];
     }
@@ -1522,6 +1541,11 @@ class AppSettingsPage : public SettingsPageDelegate {
 
   NSMenu* view = [self submenu:@"View" in:bar];
   [self addItem:view
+          title:@"Command Palette…"
+         action:@selector(showCommandPalette:)
+       shortcut:@"command_palette"];
+  [view addItem:NSMenuItem.separatorItem];
+  [self addItem:view
           title:@"Stop"
          action:@selector(stopLoading:)
        shortcut:@"stop"];
@@ -1613,6 +1637,14 @@ class AppSettingsPage : public SettingsPageDelegate {
   [tab addItem:NSMenuItem.separatorItem];
   // The title switches to "Unpin Tab" (validateMenuItem:).
   [self addItem:tab
+          title:@"New Tab to the Right"
+         action:@selector(newTabToTheRight:)
+       shortcut:@"new_tab_right"];
+  [self addItem:tab
+          title:@"Duplicate Tab"
+         action:@selector(duplicateTab:)
+       shortcut:@"duplicate_tab"];
+  [self addItem:tab
           title:@"Pin Tab"
          action:@selector(togglePinTab:)
        shortcut:@"pin_tab"];
@@ -1624,6 +1656,19 @@ class AppSettingsPage : public SettingsPageDelegate {
           title:@"Site Information"
          action:@selector(showSiteInfo:)
        shortcut:@"site_info"];
+  [tab addItem:NSMenuItem.separatorItem];
+  [self addItem:tab
+          title:@"Close Other Tabs"
+         action:@selector(closeOtherTabs:)
+       shortcut:@"close_other_tabs"];
+  [self addItem:tab
+          title:@"Close Tabs to the Left"
+         action:@selector(closeTabsToTheLeft:)
+       shortcut:@"close_tabs_left"];
+  [self addItem:tab
+          title:@"Close Tabs to the Right"
+         action:@selector(closeTabsToTheRight:)
+       shortcut:@"close_tabs_right"];
 
   NSMenu* window = [self submenu:@"Window" in:bar];
   [self addItem:window

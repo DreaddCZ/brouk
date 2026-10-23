@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { SettingItem } from './api.js';
-import { isShown, sections, shortcutFromKey, type KeyPress } from './logic.js';
+import { isShown, parseSettingTarget, sections, shortcutFromKey, type KeyPress } from './logic.js';
 
 function item(key: string, section: string, value: string | boolean = ''): SettingItem {
   return {
@@ -61,4 +61,12 @@ test('typing and modifier keys alone are not shortcuts', () => {
   assert.equal(shortcutFromKey(press('Meta', 'MetaLeft', { metaKey: true })), null);
   assert.equal(shortcutFromKey(press('Shift', 'ShiftLeft', { metaKey: true, shiftKey: true })), null);
   assert.equal(shortcutFromKey(press('ArrowLeft', 'ArrowLeft')), null);
+});
+
+test('the page opens at the setting in the address fragment', () => {
+  assert.deepEqual(parseSettingTarget('#global:search.engine'), { profile: null, key: 'search.engine' });
+  assert.deepEqual(parseSettingTarget('#p-work:profile.color'), { profile: 'p-work', key: 'profile.color' });
+  assert.equal(parseSettingTarget(''), null);
+  assert.equal(parseSettingTarget('#global'), null);
+  assert.equal(parseSettingTarget('#global:<script>'), null);
 });
