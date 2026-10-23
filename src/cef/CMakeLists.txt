@@ -4,14 +4,19 @@ add_library(brouk_cef STATIC
   browser_app.h
   context_menu_model.cc
   context_menu_model.h
+  devtools_channel.cc
+  devtools_channel.h
   devtools_frontend_client.cc
   devtools_frontend_client.h
   devtools_preferences.cc
   devtools_preferences.h
+  devtools_tools_handler.cc
+  devtools_tools_handler.h
   internal_page_client.cc
   internal_page_client.h
   internal_scheme.cc
   internal_scheme.h
+  json_util.h
   permission_mapping.cc
   permission_mapping.h
   profile_prefs.cc

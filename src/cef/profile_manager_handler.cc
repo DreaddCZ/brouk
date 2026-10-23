@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+#include "cef/json_util.h"
 #include "core/internal_pages.h"
 #include "core/profile_id.h"
 #include "core/settings_schema.h"
@@ -97,7 +98,7 @@ bool ProfileManagerHandler::OnQuery(CefRefPtr<CefBrowser> /*browser*/,
   }
   std::string text = request.ToString();
   CefRefPtr<CefValue> parsed = text.size() <= kMaxRequestBytes && !persistent
-                                   ? CefParseJSON(text, JSON_PARSER_RFC)
+                                   ? ParseJson(text)
                                    : nullptr;
   CefRefPtr<CefDictionaryValue> message =
       parsed && parsed->GetType() == VTYPE_DICTIONARY ? parsed->GetDictionary()

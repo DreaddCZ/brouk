@@ -25,7 +25,7 @@ compile() {  # compile <dir>
   # The JSON viewer is a plain script, compiled on its own (see its file).
   "$TSC" -p jsonview/tsconfig.json --outDir "$1"
   # Pages and styles next to their scripts.
-  find shared profiles settings -name '*.html' -o -name '*.css' | while read -r f; do
+  find shared profiles settings tools -name '*.html' -o -name '*.css' | while read -r f; do
     mkdir -p "$1/$(dirname "$f")"
     cp "$f" "$1/$f"
   done

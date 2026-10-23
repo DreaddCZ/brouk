@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include "cef/json_util.h"
 #include "core/devtools_frontend.h"
 #include "core/external_protocol.h"
 #include "include/cef_parser.h"
@@ -184,7 +185,7 @@ void DevToolsFrontendClient::ResetPage() {
       {"Runtime.disable", "{}"},
   });
   for (const auto& [method, params] : kResets) {
-    CefRefPtr<CefValue> parsed = CefParseJSON(params, JSON_PARSER_RFC);
+    CefRefPtr<CefValue> parsed = ParseJson(params);
     SendToPage(method, parsed ? parsed->GetDictionary() : nullptr, nullptr);
   }
 }
@@ -219,7 +220,7 @@ bool DevToolsFrontendClient::OnProcessMessageReceived(
 }
 
 void DevToolsFrontendClient::HandleEmbedderMessage(const std::string& json) {
-  CefRefPtr<CefValue> parsed = CefParseJSON(json, JSON_PARSER_RFC);
+  CefRefPtr<CefValue> parsed = ParseJson(json);
   CefRefPtr<CefDictionaryValue> message =
       parsed && parsed->GetType() == VTYPE_DICTIONARY ? parsed->GetDictionary()
                                                       : nullptr;
@@ -419,8 +420,7 @@ bool DevToolsFrontendClient::OnDevToolsMessage(
     if (it != own_requests_.end()) {
       PageResult done = std::move(it->second);
       own_requests_.erase(it);
-      CefRefPtr<CefValue> parsed =
-          CefParseJSON(text.data(), text.size(), JSON_PARSER_RFC);
+      CefRefPtr<CefValue> parsed = ParseJson(text);
       CefRefPtr<CefDictionaryValue> dict =
           parsed && parsed->GetType() == VTYPE_DICTIONARY
               ? parsed->GetDictionary()
