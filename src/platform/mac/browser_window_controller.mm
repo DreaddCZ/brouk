@@ -535,6 +535,12 @@ NSButton* ToolbarButton(NSString* symbol,
   _devToolsToggle.state =
       tab.devToolsOn ? NSControlStateValueOn : NSControlStateValueOff;
   _devToolsToggle.accessibilityValue = tab.devToolsOn ? @"on" : @"off";
+  // On: filled and in the accent colour, so the state is visible at once.
+  _devToolsToggle.image = [NSImage
+      imageWithSystemSymbolName:tab.devToolsOn ? @"hammer.fill" : @"hammer"
+       accessibilityDescription:@"Developer tools"];
+  _devToolsToggle.contentTintColor =
+      tab.devToolsOn ? NSColor.controlAccentColor : NSColor.secondaryLabelColor;
   if (tab) {
     brouk::ProfileInfo info = [_owner profileInfo:tab.profileId];
     _toolbar.profileColorName = @(info.color.c_str());

@@ -113,7 +113,7 @@ class DevToolsFrontendClient : public CefClient,
   using PageResult = std::function<void(CefRefPtr<CefDictionaryValue>)>;
 
   void HandleEmbedderMessage(const std::string& json);
-  void Ack(int id, CefRefPtr<CefValue> result);
+  void Ack(int id, const CefRefPtr<CefValue>& result);
   // Calls `function` (e.g. "DevToolsAPI.dispatchMessage") in the frontend.
   void CallFrontend(std::string_view function,
                     const std::vector<CefRefPtr<CefValue>>& args);
@@ -121,7 +121,7 @@ class DevToolsFrontendClient : public CefClient,
   // A protocol command of our own (ids above the frontend's); its result
   // goes to `done` and never to the frontend.
   void SendToPage(const std::string& method,
-                  CefRefPtr<CefDictionaryValue> params,
+                  const CefRefPtr<CefDictionaryValue>& params,
                   PageResult done);
   void WhenLoaded(std::function<void()> action);
   void ResetPage();
@@ -133,7 +133,8 @@ class DevToolsFrontendClient : public CefClient,
   DevToolsPreferences* preferences_;  // Not owned; outlives the client.
   bool loaded_ = false;
   std::vector<std::function<void()>> after_load_;
-  int next_own_id_;
+  // Ids of our own protocol commands; the frontend counts up from 1.
+  int next_own_id_ = 1'000'000'000;
   std::map<int, PageResult> own_requests_;
 
   IMPLEMENT_REFCOUNTING(DevToolsFrontendClient);

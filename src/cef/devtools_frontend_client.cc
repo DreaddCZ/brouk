@@ -1,6 +1,7 @@
 #include "cef/devtools_frontend_client.h"
 
 #include <algorithm>
+#include <array>
 #include <charconv>
 #include <cstddef>
 #include <optional>
@@ -20,7 +21,7 @@ namespace brouk {
 
 namespace {
 
-// Ids of our own protocol commands; the frontend counts up from 1.
+// Ids of our own protocol commands start here (see next_own_id_).
 constexpr int kOwnIdBase = 1'000'000'000;
 // Messages from the frontend renderer (it is ours, but limit anyway).
 constexpr std::size_t kMaxFrontendMessageBytes = std::size_t{64} * 1024 * 1024;
@@ -82,8 +83,7 @@ DevToolsFrontendClient::DevToolsFrontendClient(
     DevToolsPreferences* preferences)
     : delegate_(delegate),
       inspected_(std::move(inspected)),
-      preferences_(preferences),
-      next_own_id_(kOwnIdBase) {}
+      preferences_(preferences) {}
 
 void DevToolsFrontendClient::DetachDelegate() {
   CEF_REQUIRE_UI_THREAD();
@@ -96,33 +96,35 @@ void DevToolsFrontendClient::DetachDelegate() {
 
 void DevToolsFrontendClient::InspectAt(int x, int y) {
   CEF_REQUIRE_UI_THREAD();
+  // Find the node at once: opening the dock resizes the page, and then
+  // something else would be at (x, y). Both commands go out together.
+  SendToPage("DOM.getDocument", nullptr, nullptr);
+  CefRefPtr<CefDictionaryValue> params = CefDictionaryValue::Create();
+  params->SetInt("x", x);
+  params->SetInt("y", y);
+  params->SetBool("includeUserAgentShadowDOM", false);
+  params->SetBool("ignorePointerEventsNone", true);
   CefRefPtr<DevToolsFrontendClient> self(this);
-  WhenLoaded([self, x, y] {
-    // As Chrome's InspectElement: the backend reports the node as if the
-    // user had picked it, and the frontend reveals it in Elements.
-    self->SendToPage("DOM.getDocument", nullptr, [self, x, y](auto) {
-      CefRefPtr<CefDictionaryValue> params = CefDictionaryValue::Create();
-      params->SetInt("x", x);
-      params->SetInt("y", y);
-      params->SetBool("includeUserAgentShadowDOM", false);
-      params->SetBool("ignorePointerEventsNone", true);
-      self->SendToPage(
-          "DOM.getNodeForLocation", params,
-          [self](CefRefPtr<CefDictionaryValue> result) {
-            if (!result || result->GetType("backendNodeId") != VTYPE_INT) {
-              return;
-            }
-            CefRefPtr<CefDictionaryValue> event_params =
-                CefDictionaryValue::Create();
-            event_params->SetInt("backendNodeId",
-                                 result->GetInt("backendNodeId"));
-            CefRefPtr<CefDictionaryValue> event = CefDictionaryValue::Create();
-            event->SetString("method", "Overlay.inspectNodeRequested");
-            event->SetDictionary("params", event_params);
-            self->ForwardToFrontend(ToJson(DictValue(event)));
-          });
-    });
-  });
+  SendToPage("DOM.getNodeForLocation", params,
+             [self](const CefRefPtr<CefDictionaryValue>& result) {
+               if (!result || result->GetType("backendNodeId") != VTYPE_INT) {
+                 return;
+               }
+               int node = result->GetInt("backendNodeId");
+               // As Chrome's InspectElement: the backend reports the node as if
+               // the user had picked it, and the frontend reveals it in
+               // Elements.
+               self->WhenLoaded([self, node] {
+                 CefRefPtr<CefDictionaryValue> event_params =
+                     CefDictionaryValue::Create();
+                 event_params->SetInt("backendNodeId", node);
+                 CefRefPtr<CefDictionaryValue> event =
+                     CefDictionaryValue::Create();
+                 event->SetString("method", "Overlay.inspectNodeRequested");
+                 event->SetDictionary("params", event_params);
+                 self->ForwardToFrontend(ToJson(DictValue(event)));
+               });
+             });
 }
 
 void DevToolsFrontendClient::ShowPanel(const std::string& panel) {
@@ -159,7 +161,7 @@ void DevToolsFrontendClient::ResetPage() {
   }
   // Chrome detaches the frontend's session, which resets all of this; the
   // CEF session stays attached for the tab's lifetime, so undo it here.
-  const char* const kResets[][2] = {
+  constexpr std::array<std::pair<const char*, const char*>, 27> kResets = {{
       {"Debugger.disable", "{}"},
       {"Overlay.setInspectMode", R"({"mode":"none","highlightConfig":{}})"},
       {"Overlay.hideHighlight", "{}"},
@@ -180,7 +182,7 @@ void DevToolsFrontendClient::ResetPage() {
       {"Overlay.disable", "{}"},
       {"Log.disable", "{}"},
       {"Runtime.disable", "{}"},
-  };
+  }};
   for (const auto& [method, params] : kResets) {
     CefRefPtr<CefValue> parsed = CefParseJSON(params, JSON_PARSER_RFC);
     SendToPage(method, parsed ? parsed->GetDictionary() : nullptr, nullptr);
@@ -325,7 +327,7 @@ void DevToolsFrontendClient::HandleEmbedderMessage(const std::string& json) {
   }
 }
 
-void DevToolsFrontendClient::Ack(int id, CefRefPtr<CefValue> result) {
+void DevToolsFrontendClient::Ack(int id, const CefRefPtr<CefValue>& result) {
   CefRefPtr<CefValue> id_value = CefValue::Create();
   id_value->SetInt(id);
   if (result) {
@@ -374,9 +376,10 @@ void DevToolsFrontendClient::ForwardToFrontend(std::string_view message) {
   }
 }
 
-void DevToolsFrontendClient::SendToPage(const std::string& method,
-                                        CefRefPtr<CefDictionaryValue> params,
-                                        PageResult done) {
+void DevToolsFrontendClient::SendToPage(
+    const std::string& method,
+    const CefRefPtr<CefDictionaryValue>& params,
+    PageResult done) {
   if (!inspected_) {
     return;
   }
