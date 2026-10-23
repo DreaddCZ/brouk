@@ -1,5 +1,7 @@
 #import "platform/mac/browser_window_controller.h"
 
+#import "platform/mac/bookmark_dialogs.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -146,6 +148,7 @@ NSButton* ToolbarButton(NSString* symbol,
   BRAddressField* _addressField;
   NSButton* _siteInfoButton;
   NSButton* _zoomButton;
+  NSButton* _starButton;  // Bookmark this tab (011).
   NSView* _contentArea;
   BRFindBar* _findBar;
   BRDownloadNotice* _downloadNotice;
@@ -257,6 +260,12 @@ NSButton* ToolbarButton(NSString* symbol,
         addObserver:self
            selector:@selector(updateToolbar)
                name:brouk::mac::kShortcutsChangedNotification
+             object:nil];
+    // The star shows whether the page is bookmarked (011).
+    [NSNotificationCenter.defaultCenter
+        addObserver:self
+           selector:@selector(updateToolbar)
+               name:BRBookmarksDidChangeNotification
              object:nil];
   }
   return self;
@@ -383,6 +392,15 @@ NSButton* ToolbarButton(NSString* symbol,
   _remoteDebuggingButton.contentTintColor = NSColor.systemOrangeColor;
   _remoteDebuggingButton.hidden = YES;
   [_toolbar addSubview:_remoteDebuggingButton];
+
+  // Bookmark star at the right end of the address bar, as in Chrome (011).
+  _starButton = ToolbarButton(@"star", @"Bookmark this tab", @"", self,
+                              @selector(bookmarkPage:));
+  _starButton.symbolConfiguration = [NSImageSymbolConfiguration
+      configurationWithPointSize:13
+                          weight:NSFontWeightMedium];
+  _starButton.hidden = YES;
+  [_toolbar addSubview:_starButton];
   [self layoutAddressArea];
 
   _findBar = [[BRFindBar alloc]
@@ -849,15 +867,16 @@ NSButton* ToolbarButton(NSString* symbol,
   }
   _addressField.frame = NSMakeRect(left, 8, right - left, 24);
   CGFloat end = NSMaxX(_addressField.frame);
-  _zoomButton.frame = NSMakeRect(end - 58, 10, 54, 20);
-  _popupBlockedButton.frame = NSMakeRect(end - 88, 8, 26, 24);
-  _settingsProblemButton.frame = NSMakeRect(end - 118, 8, 26, 24);
+  _starButton.frame = NSMakeRect(end - 28, 8, 26, 24);
+  _zoomButton.frame = NSMakeRect(end - 86, 10, 54, 20);
+  _popupBlockedButton.frame = NSMakeRect(end - 116, 8, 26, 24);
+  _settingsProblemButton.frame = NSMakeRect(end - 146, 8, 26, 24);
   [_remoteDebuggingButton sizeToFit];
   NSSize size = _remoteDebuggingButton.frame.size;
   _remoteDebuggingButton.frame =
-      NSMakeRect(end - 122 - size.width, 10, size.width, 20);
+      NSMakeRect(end - 150 - size.width, 10, size.width, 20);
   for (NSView* view in @[
-         _zoomButton, _popupBlockedButton, _settingsProblemButton,
+         _starButton, _zoomButton, _popupBlockedButton, _settingsProblemButton,
          _remoteDebuggingButton
        ]) {
     view.autoresizingMask = NSViewMinXMargin;
@@ -989,6 +1008,24 @@ NSButton* ToolbarButton(NSString* symbol,
   _siteInfoButton.contentTintColor = [BRSiteInfoPopover tintForBrowser:browser];
 
   _popupBlockedButton.hidden = tab.blockedPopupURLs.count == 0;
+
+  BOOL bookmarkable = [self canBookmarkTab:tab];
+  _starButton.hidden = !bookmarkable;
+  if (bookmarkable) {
+    BOOL bookmarked =
+        ![_owner bookmarkStore]
+             .model.BookmarksWithUrl(tab.url.UTF8String, tab.profileId)
+             .empty();
+    _starButton.image =
+        [NSImage imageWithSystemSymbolName:bookmarked ? @"star.fill" : @"star"
+                  accessibilityDescription:bookmarked ? @"Edit bookmark"
+                                                      : @"Bookmark this tab"];
+    _starButton.contentTintColor =
+        bookmarked ? NSColor.controlAccentColor : nil;
+    _starButton.toolTip = brouk::mac::ToolTip(
+        bookmarked ? @"Edit bookmark for this tab" : @"Bookmark this tab",
+        "bookmark_page");
+  }
 
   double level = [tab zoomLevel];
   _zoomButton.hidden = !brouk::IsZoomIndicatorShown(level);
@@ -2155,9 +2192,189 @@ NSButton* ToolbarButton(NSString* symbol,
   [self focusActiveTab];
 }
 
+#pragma mark - Bookmarks (011)
+
+// Web pages can be bookmarked; new tab pages and internal pages cannot.
+- (BOOL)canBookmarkTab:(nullable BRTab*)tab {
+  return tab && !_isPopup && !tab.isInternalPage && tab.url.length > 0 &&
+         ![tab.url isEqualToString:@"about:blank"];
+}
+
+static std::int64_t Now() {
+  return static_cast<std::int64_t>(NSDate.date.timeIntervalSince1970);
+}
+
+// ⌘D and the star: bookmarks the page at once (as Chrome does) and opens
+// the bubble; on a bookmarked page the bubble edits that bookmark.
+- (IBAction)bookmarkPage:(id)sender {
+  BRTab* tab = [self activeTab];
+  if (![self canBookmarkTab:tab]) {
+    NSBeep();
+    return;
+  }
+  BRBookmarkStore* store = [_owner bookmarkStore];
+  brouk::ProfileId profile = tab.profileId;
+  std::string url = tab.url.UTF8String ?: "";
+  std::vector<brouk::BookmarkId> existing =
+      store.model.BookmarksWithUrl(url, profile);
+  brouk::BookmarkId bookmark = existing.empty() ? 0 : existing.front();
+  BOOL added = NO;
+  if (bookmark == 0) {
+    brouk::BookmarkId folder = store.lastUsedFolder;
+    if (!store.model.Find(folder) ||
+        !store.model.IsVisibleIn(folder, profile)) {
+      folder = brouk::BookmarkModel::kBarId;
+    }
+    std::string title = tab.title.length ? tab.title.UTF8String : url;
+    [store change:[&](brouk::BookmarkModel& model) {
+      // Linked to the tab's profile unless the user picks General (011).
+      brouk::Result<brouk::BookmarkId> id = model.AddBookmark(
+          folder, brouk::BookmarkModel::kEnd, title, url, profile, Now());
+      if (id) {
+        bookmark = id.value();
+      }
+    }];
+    added = YES;
+  }
+  if (bookmark == 0) {
+    NSBeep();
+    return;
+  }
+  __weak BRBrowserWindowController* weakSelf = self;
+  [BRBookmarkBubble showForBookmark:bookmark
+                              store:store
+                           profiles:[_owner profileList]
+                      activeProfile:profile
+                         newlyAdded:added
+                         relativeTo:_starButton
+                            removed:^{
+                              [weakSelf offerUndoRemove:@"Bookmark removed"];
+                            }];
+}
+
+// "Bookmark All Tabs…": the tabs of the active tab's profile group, in a
+// new folder.
+- (IBAction)bookmarkAllTabs:(id)sender {
+  BRTab* active = [self activeTab];
+  if (!active || _isPopup) {
+    NSBeep();
+    return;
+  }
+  brouk::ProfileId profile = active.profileId;
+  NSMutableArray<BRTab*>* tabs = [NSMutableArray array];
+  for (std::size_t i = 0; i < _model->count(); ++i) {
+    BRTab* tab = _tabs[@(_model->id_at(i))];
+    if (tab.profileId == profile && [self canBookmarkTab:tab]) {
+      [tabs addObject:tab];
+    }
+  }
+  if (tabs.count == 0) {
+    NSBeep();
+    return;
+  }
+  BRBookmarkStore* store = [_owner bookmarkStore];
+  brouk::BookmarkId folder = store.lastUsedFolder;
+  if (!store.model.Find(folder) || !store.model.IsVisibleIn(folder, profile)) {
+    folder = brouk::BookmarkModel::kBarId;
+  }
+  std::vector<std::pair<std::string, std::string>> pages;
+  for (BRTab* tab in tabs) {
+    std::string url = tab.url.UTF8String ?: "";
+    pages.emplace_back(tab.title.length ? tab.title.UTF8String : url, url);
+  }
+  [BRBookmarkEditor runKind:BookmarkEditorKind::kNewFolderWithParent
+                      title:@"Bookmark All Tabs"
+                     values:{.name = "",
+                             .url = "",
+                             .folder = folder,
+                             .profile = profile}
+                    editing:0
+                      store:store
+                   profiles:[_owner profileList]
+              activeProfile:profile
+                     window:self.window
+                       done:^(const BookmarkEditorValues& values) {
+                         [store change:[&](brouk::BookmarkModel& model) {
+                           brouk::Result<brouk::BookmarkId> created =
+                               model.AddFolder(
+                                   values.folder, brouk::BookmarkModel::kEnd,
+                                   values.name.empty() ? "Tabs" : values.name,
+                                   values.profile, Now());
+                           if (!created) {
+                             return;
+                           }
+                           for (const auto& [title, url] : pages) {
+                             model.AddBookmark(created.value(),
+                                               brouk::BookmarkModel::kEnd,
+                                               title, url, "", Now());
+                           }
+                         }];
+                         store.lastUsedFolder = values.folder;
+                       }];
+}
+
+// After a deletion (011: any deletion can be undone): a short notice with
+// Undo, under the star.
+- (void)offerUndoRemove:(NSString*)message {
+  BRBookmarkStore* store = [_owner bookmarkStore];
+  if (![store canUndoRemove]) {
+    return;
+  }
+  NSView* anchor = _starButton.hidden ? _addressField : _starButton;
+  [BRBookmarkUndoNotice showMessage:message store:store relativeTo:anchor];
+}
+
+- (void)openBookmark:(brouk::BookmarkId)bookmarkId
+         disposition:(BRBookmarkOpenDisposition)disposition {
+  BRBookmarkStore* store = [_owner bookmarkStore];
+  const brouk::BookmarkItem* item = store.model.Find(bookmarkId);
+  if (!item || item->folder) {
+    return;
+  }
+  NSString* url = @(item->url.c_str());
+  if (!url.length) {
+    return;
+  }
+  BRTab* active = [self activeTab];
+  brouk::ProfileId linked = store.model.EffectiveProfile(bookmarkId);
+  brouk::ProfileId profile = !linked.empty() ? linked : [self activeProfileId];
+  if (![_owner profileExists:profile]) {
+    profile = [_owner defaultProfileId];
+  }
+  if (disposition == BRBookmarkOpenNewWindow) {
+    [_owner openWindowWithURL:url profile:profile];
+    return;
+  }
+  if (disposition == BRBookmarkOpenCurrentTab && active && !_isPopup &&
+      active.profileId == profile) {
+    active.nextVisitBookmark = YES;
+    [self navigateTab:active toURL:url typed:NO];
+    return;
+  }
+  BOOL activate = disposition != BRBookmarkOpenBackgroundTab;
+  BRTab* tab = [self makeTabInProfile:profile];
+  if (active && active.profileId == profile) {
+    _model->InsertAfter(tab.tabId, active.tabId, activate);
+  } else {
+    _model->AppendTab(tab.tabId, profile, activate);
+  }
+  tab.nextVisitBookmark = YES;
+  [self startTab:tab url:url];
+  [self modelDidChange];
+  if (activate) {
+    [self focusActiveTab];
+  }
+}
+
 - (BOOL)validateMenuItem:(NSMenuItem*)item {
   BRTab* tab = [self activeTab];
   SEL action = item.action;
+  if (action == @selector(bookmarkPage:)) {
+    return [self canBookmarkTab:tab];
+  }
+  if (action == @selector(bookmarkAllTabs:)) {
+    return tab != nil && !_isPopup;
+  }
   if (action == @selector(goBack:)) {
     return tab.canGoBack;
   }

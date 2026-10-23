@@ -132,6 +132,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, copy, nullable) NSString* pendingAddressText;
 // The next page shown was typed in the address bar (history, 013).
 @property(nonatomic) BOOL nextVisitTyped;
+// The next page shown was opened from a bookmark (011).
+@property(nonatomic) BOOL nextVisitBookmark;
 
 // `profileId`: the profile the tab belongs to (005); its browser must be
 // created in that profile's request context. It never changes: moving a tab

@@ -655,6 +655,8 @@ class TabInternalPageBridge : public InternalPageDelegate {
   int source = transition & TT_SOURCE_MASK;
   if (_nextVisitTyped) {
     kind = brouk::VisitTransition::kTyped;
+  } else if (_nextVisitBookmark) {
+    kind = brouk::VisitTransition::kBookmark;
   } else if (source == TT_RELOAD) {
     kind = brouk::VisitTransition::kReload;
   } else if (source == TT_AUTO_BOOKMARK) {
@@ -663,6 +665,7 @@ class TabInternalPageBridge : public InternalPageDelegate {
     kind = brouk::VisitTransition::kLink;
   }
   _nextVisitTyped = NO;
+  _nextVisitBookmark = NO;
   // A page that forwarded here by itself (meta refresh, script) is not kept:
   // only the end of a redirect chain is (013). The chain keeps how it
   // started (typed, link…).
