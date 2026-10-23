@@ -7,13 +7,16 @@
 #include "cef/internal_page_client.h"
 #include "include/cef_browser.h"
 #include "include/wrapper/cef_helpers.h"
+#import "platform/mac/devtools_window.h"
 
-@interface BRInternalPageWindowController () <NSWindowDelegate>
+@interface BRInternalPageWindowController () <BRDevToolsWindowOwner,
+                                              NSWindowDelegate>
 - (void)handleBrowserCreated:(CefRefPtr<CefBrowser>)browser;
 - (void)handleCloseReady;
 - (void)handleBrowserClosed;
 - (void)handleTitle:(NSString*)title;
 - (BOOL)handleKeyEvent:(NSEvent*)event;
+- (void)inspectAt:(NSPoint)point;
 @end
 
 namespace brouk {
@@ -39,6 +42,9 @@ class InternalPageBridge : public InternalPageDelegate {
            ns_event.type == NSEventTypeKeyDown &&
            [controller_ handleKeyEvent:ns_event];
   }
+  void OnInspectElement(int x, int y) override {
+    [controller_ inspectAt:NSMakePoint(x, y)];
+  }
 
  private:
   __weak BRInternalPageWindowController* controller_;
@@ -54,6 +60,8 @@ class InternalPageBridge : public InternalPageDelegate {
   BOOL _closing;
   BOOL _closeWhenCreated;
   NSString* _defaultTitle;
+  // DevTools for this page (006), while open.
+  BRDevToolsWindowController* _devTools;
 }
 
 - (instancetype)
@@ -103,6 +111,8 @@ class InternalPageBridge : public InternalPageDelegate {
     return;
   }
   _closing = YES;
+  [_devTools detach];
+  _devTools = nil;
   if (_browser) {
     _browser->GetHost()->CloseBrowser(false);
   } else {
@@ -134,6 +144,8 @@ class InternalPageBridge : public InternalPageDelegate {
 
 - (void)handleBrowserClosed {
   _browser = nullptr;
+  [_devTools detach];
+  _devTools = nil;
   _client->DetachDelegate();
   // Release CEF objects while CEF is running (see app shutdown).
   _client = nullptr;
@@ -147,6 +159,65 @@ class InternalPageBridge : public InternalPageDelegate {
 
 - (BOOL)handleKeyEvent:(NSEvent*)event {
   return [_owner internalPageHandleKeyEvent:event];
+}
+
+#pragma mark - Developer tools (006)
+
+// Opens DevTools for the page (or brings it to the front); with a point,
+// the element there is selected.
+- (void)openDevToolsInspecting:(NSPoint)point {
+  if (_devTools) {
+    if (point.x != NSNotFound) {
+      [_devTools inspectAt:point];
+    }
+    [_devTools showWindow:nil];
+    return;
+  }
+  if (!_browser || _closing) {
+    return;
+  }
+  id<BRInternalPageOwner> owner = _owner;
+  if (!owner) {
+    return;
+  }
+  _devTools = [[BRDevToolsWindowController alloc]
+      initWithInspectedBrowser:_browser
+                         title:self.window.title
+                       inspect:point
+                       context:[owner devToolsContext]
+                   preferences:[owner devToolsPreferences]
+                       counter:owner
+                         owner:self];
+  [_devTools showWindow:nil];
+}
+
+- (void)inspectAt:(NSPoint)point {
+  [self openDevToolsInspecting:point];
+}
+
+// View > Developer, as in a browser window (Cmd+Opt+I/J/C).
+- (IBAction)toggleDevTools:(id)sender {
+  if (_devTools) {
+    [_devTools closeDevTools];
+  } else {
+    [self openDevToolsInspecting:NSMakePoint(NSNotFound, NSNotFound)];
+  }
+}
+
+- (IBAction)showDevToolsConsole:(id)sender {
+  [self openDevToolsInspecting:NSMakePoint(NSNotFound, NSNotFound)];
+  [_devTools showPanel:@"console"];
+}
+
+- (IBAction)pickElementToInspect:(id)sender {
+  [self openDevToolsInspecting:NSMakePoint(NSNotFound, NSNotFound)];
+  [_devTools enterInspectElementMode];
+}
+
+- (void)devToolsWindowDidClose:(BRDevToolsWindowController*)controller {
+  if (controller == _devTools) {
+    _devTools = nil;
+  }
 }
 
 // File > Close Tab (Cmd+W) closes this window.

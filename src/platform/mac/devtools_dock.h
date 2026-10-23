@@ -43,11 +43,14 @@ NS_ASSUME_NONNULL_BEGIN
 // Opens DevTools for `inspected`; if `point` is not NSNotFound, the element
 // there is selected in Elements ("Inspect"). The frontend runs in `context`
 // (the internal pages' context) and keeps its settings in `preferences`.
+// Without `ownTools` (for internal pages) the dock is only DevTools: no
+// header, no request recording or rules.
 - (instancetype)initWithInspectedBrowser:(CefRefPtr<CefBrowser>)inspected
                                  inspect:(NSPoint)point
                                  context:(CefRefPtr<CefRequestContext>)context
                              preferences:
                                  (brouk::DevToolsPreferences*)preferences
+                                ownTools:(BOOL)ownTools
                                  counter:(id<BRBrowserCounter>)counter
                                 delegate:(id<BRDevToolsDockDelegate>)delegate;
 - (instancetype)init NS_UNAVAILABLE;

@@ -973,6 +973,23 @@ class AppSettingsPage : public SettingsPageDelegate {
   return [NSApp.mainMenu performKeyEquivalent:event];
 }
 
+// A link in DevTools of an internal page (006): a tab of the default
+// profile in the front window, as Chrome opens links from its own pages.
+- (void)openURLFromDevTools:(NSString*)url {
+  if (_quitting || !_profilesLoaded || ![url isKindOfClass:NSString.class]) {
+    return;
+  }
+  BRBrowserWindowController* front = [self frontController];
+  if (!front) {
+    [self openWindowWithURL:url profile:_profiles->default_profile().id];
+    return;
+  }
+  [front openTabWithURL:url
+                profile:_profiles->default_profile().id
+               activate:YES];
+  [front showWindow:nil];
+}
+
 // The profiles changed here (not through the files): redraw at once.
 - (void)profilesChangedInApp {
   for (BRBrowserWindowController* controller in _windows) {

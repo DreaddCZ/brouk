@@ -118,6 +118,37 @@ TEST(ContextMenuTest, NoDoubledOrTrailingSeparators) {
   }
 }
 
+TEST(ContextMenuTest, InternalPageMenu) {
+  ContextMenuContext context;
+  context.can_go_back = true;
+  context.has_link = true;
+  context.has_image = true;
+  // Links and images of internal pages get no web commands.
+  EXPECT_EQ(Commands(BuildInternalPageContextMenu(context)),
+            (std::vector<C>{C::kReload, C::kSeparator, C::kInspect}));
+}
+
+TEST(ContextMenuTest, InternalPageSelectionMenu) {
+  ContextMenuContext context;
+  context.selection_text = "hello";
+  EXPECT_EQ(Commands(BuildInternalPageContextMenu(context)),
+            (std::vector<C>{C::kCopy, C::kSeparator, C::kInspect}));
+}
+
+TEST(ContextMenuTest, InternalPageEditableMenu) {
+  ContextMenuContext context;
+  context.is_editable = true;
+  context.selection_text = "hello";
+  context.can_copy = true;
+  std::vector<MenuItem> menu = BuildInternalPageContextMenu(context);
+  EXPECT_EQ(
+      Commands(menu),
+      (std::vector<C>{C::kUndo, C::kRedo, C::kSeparator, C::kCut, C::kCopy,
+                      C::kPaste, C::kSelectAll, C::kSeparator, C::kInspect}));
+  EXPECT_FALSE(menu[0].enabled);
+  EXPECT_TRUE(menu[4].enabled);
+}
+
 TEST(ContextMenuTest, SearchLabelCollapsesAndShortens) {
   EXPECT_EQ(SearchSelectionLabel("Google", "  a \n\t b  "),
             "Search Google for “a b”");

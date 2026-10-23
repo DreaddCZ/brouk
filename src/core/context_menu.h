@@ -74,6 +74,13 @@ struct ContextMenuContext {
 // separators.
 std::vector<MenuItem> BuildContextMenu(const ContextMenuContext& context);
 
+// The context menu of internal pages (settings, profile manager, our dev
+// tools): editing commands in fields, Copy for a selection, otherwise
+// Reload; "Inspect" at the end, so the pages can be debugged like web pages
+// (006). Nothing that opens web content.
+std::vector<MenuItem> BuildInternalPageContextMenu(
+    const ContextMenuContext& context);
+
 // Chrome's label for searching the selection, e.g.
 // Search Google for “some text”, with whitespace collapsed and long
 // selections shortened to 50 characters plus "…".

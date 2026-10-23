@@ -21,12 +21,15 @@ class InternalPageDelegate {
   // Keys the page did not use (menu shortcuts like Cmd+W).
   virtual bool OnUnhandledKeyEvent(const CefKeyEvent& event,
                                    CefEventHandle os_event) = 0;
+  // "Inspect" in the page's context menu, at page coordinates (006).
+  virtual void OnInspectElement(int x, int y) = 0;
 };
 
 // CefClient for a window showing an internal page (brouk://...). Answers the
 // page's bridge messages through CEF's message router, with `handler`
 // (owned). The page stays on internal URLs and cannot open popups.
 class InternalPageClient : public CefClient,
+                           public CefContextMenuHandler,
                            public CefDisplayHandler,
                            public CefKeyboardHandler,
                            public CefLifeSpanHandler,
@@ -43,6 +46,9 @@ class InternalPageClient : public CefClient,
   void DetachDelegate();
 
   // CefClient:
+  CefRefPtr<CefContextMenuHandler> GetContextMenuHandler() override {
+    return this;
+  }
   CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
   CefRefPtr<CefKeyboardHandler> GetKeyboardHandler() override { return this; }
   CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
@@ -51,6 +57,17 @@ class InternalPageClient : public CefClient,
                                 CefRefPtr<CefFrame> frame,
                                 CefProcessId source_process,
                                 CefRefPtr<CefProcessMessage> message) override;
+
+  // CefContextMenuHandler:
+  void OnBeforeContextMenu(CefRefPtr<CefBrowser> browser,
+                           CefRefPtr<CefFrame> frame,
+                           CefRefPtr<CefContextMenuParams> params,
+                           CefRefPtr<CefMenuModel> model) override;
+  bool OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
+                            CefRefPtr<CefFrame> frame,
+                            CefRefPtr<CefContextMenuParams> params,
+                            int command_id,
+                            EventFlags event_flags) override;
 
   // CefDisplayHandler:
   void OnTitleChange(CefRefPtr<CefBrowser> browser,

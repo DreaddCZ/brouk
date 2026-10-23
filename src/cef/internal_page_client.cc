@@ -4,6 +4,8 @@
 #include <string>
 #include <utility>
 
+#include "cef/context_menu_model.h"
+#include "core/context_menu.h"
 #include "core/internal_pages.h"
 #include "include/wrapper/cef_helpers.h"
 
@@ -36,6 +38,33 @@ bool InternalPageClient::OnProcessMessageReceived(
   CEF_REQUIRE_UI_THREAD();
   return router_->OnProcessMessageReceived(browser, frame, source_process,
                                            message);
+}
+
+void InternalPageClient::OnBeforeContextMenu(
+    CefRefPtr<CefBrowser> browser,
+    CefRefPtr<CefFrame> /*frame*/,
+    CefRefPtr<CefContextMenuParams> params,
+    CefRefPtr<CefMenuModel> model) {
+  CEF_REQUIRE_UI_THREAD();
+  FillMenuModel(model,
+                BuildInternalPageContextMenu(ContextFromParams(
+                    params, browser->CanGoBack(), browser->CanGoForward())));
+}
+
+bool InternalPageClient::OnContextMenuCommand(
+    CefRefPtr<CefBrowser> /*browser*/,
+    CefRefPtr<CefFrame> /*frame*/,
+    CefRefPtr<CefContextMenuParams> params,
+    int command_id,
+    EventFlags /*event_flags*/) {
+  CEF_REQUIRE_UI_THREAD();
+  if (CustomCommandForId(command_id) != MenuCommand::kInspect) {
+    return false;  // Chromium's own command (reload, copy, ...).
+  }
+  if (delegate_) {
+    delegate_->OnInspectElement(params->GetXCoord(), params->GetYCoord());
+  }
+  return true;
 }
 
 void InternalPageClient::OnTitleChange(CefRefPtr<CefBrowser> /*browser*/,
