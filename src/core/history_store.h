@@ -134,6 +134,13 @@ class HistoryStore {
                                          std::int64_t before,
                                          std::size_t limit);
 
+  // Clean up (013): every host with its visits since `since` (0: all time),
+  // most visited first; and removing the visits since `since` of `hosts`
+  // (pages left without visits go too). Returns the visits removed.
+  std::vector<HistorySite> HostsSince(std::int64_t since);
+  int DeleteHostVisitsSince(std::span<const std::string> hosts,
+                            std::int64_t since);
+
   // Removes all pages of a host. Returns the number removed.
   int DeleteHost(std::string_view host);
   // Removes single visits, and pages left without visits.

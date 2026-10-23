@@ -63,3 +63,15 @@ Address bar suggestions and recording are in `003-browser-ui.md` (steps 37–48)
 44. `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n) SELECT count(*) FROM n`. Expected: stopped after 2 seconds with a message. Without `count(*)` (`SELECT i FROM n`): 1,000 rows and "(stopped at 1,000)".
 45. A mistake (`SELECT nope FROM pages`). Expected: SQLite's message ("no such column: nope").
 
+## Clean up
+
+46. On the history page press "Clean up…". Expected: a dialog with Profile (this tab's profile selected), Time (All time), "Keep selected sites, delete everything else" selected, and the sites listed most visited first; the 10 most visited are checked and marked "suggested".
+47. Uncheck one suggested site and check a small one. Expected: the summary updates ("Deletes N visits from M sites.").
+48. Press Clean up. Expected: it asks "Delete N visits from M sites? This cannot be undone."; Delete removes them, the dialog closes and the page shows only the kept sites.
+49. Open Clean up again. Expected: the sites kept last time are checked (the keep list), plus the suggestions.
+50. "Delete selected sites": nothing is checked; check two sites and clean up. Expected: only those two are deleted; the keep list is unchanged.
+51. Time "Last 24 hours" with a site visited today and last week, deleting it. Expected: only today's visits go; the site stays with its older visits.
+52. Profile "All profiles". Expected: rows of every profile with their colour dots; each profile's own keep list and top 10 are preselected; deleting works per profile.
+53. Type in the filter box. Expected: the list narrows to matching sites; checked sites that are hidden by the filter keep their state.
+54. Escape or Cancel closes the dialog without deleting.
+

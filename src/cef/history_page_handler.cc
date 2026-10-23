@@ -351,6 +351,80 @@ std::string SqlJson(const SqlResult& result) {
   return ToJson(answer);
 }
 
+// What Clean up does in one profile: the sites whose visits go, and (in
+// "keep" mode) the sites kept, which become the keep list.
+struct CleanupPlan {
+  ProfileId profile;
+  std::vector<std::string> remove;
+  std::optional<std::vector<std::string>> keep;
+};
+
+constexpr std::size_t kMaxCleanupHosts = 50000;
+
+std::optional<std::vector<std::string>> HostList(
+    const CefRefPtr<CefDictionaryValue>& entry,
+    const char* key) {
+  if (entry->GetType(key) != VTYPE_LIST) {
+    return std::nullopt;
+  }
+  CefRefPtr<CefListValue> list = entry->GetList(key);
+  if (list->GetSize() > kMaxCleanupHosts) {
+    return std::nullopt;
+  }
+  std::vector<std::string> hosts;
+  for (std::size_t i = 0; i < list->GetSize(); ++i) {
+    if (list->GetType(i) != VTYPE_STRING) {
+      return std::nullopt;
+    }
+    std::string host = list->GetString(i).ToString();
+    if (host.size() > 255) {
+      return std::nullopt;
+    }
+    hosts.push_back(std::move(host));
+  }
+  return hosts;
+}
+
+std::optional<std::vector<CleanupPlan>> CleanupPlans(
+    const CefRefPtr<CefDictionaryValue>& message,
+    const std::vector<ProfileInfo>& profiles) {
+  if (message->GetType("profiles") != VTYPE_LIST) {
+    return std::nullopt;
+  }
+  CefRefPtr<CefListValue> list = message->GetList("profiles");
+  if (list->GetSize() > profiles.size()) {
+    return std::nullopt;
+  }
+  std::vector<CleanupPlan> plans;
+  for (std::size_t i = 0; i < list->GetSize(); ++i) {
+    if (list->GetType(i) != VTYPE_DICTIONARY) {
+      return std::nullopt;
+    }
+    CefRefPtr<CefDictionaryValue> entry = list->GetDictionary(i);
+    std::optional<std::string> profile = StringField(entry, "profile");
+    std::optional<std::vector<std::string>> remove = HostList(entry, "remove");
+    if (!profile || !remove ||
+        std::ranges::none_of(
+            profiles,
+            [&](const ProfileInfo& info) { return info.id == *profile; }) ||
+        std::ranges::any_of(plans, [&](const CleanupPlan& plan) {
+          return plan.profile == *profile;
+        })) {
+      return std::nullopt;
+    }
+    CleanupPlan plan{
+        .profile = *profile, .remove = std::move(*remove), .keep = {}};
+    if (entry->HasKey("keep")) {
+      plan.keep = HostList(entry, "keep");
+      if (!plan.keep) {
+        return std::nullopt;
+      }
+    }
+    plans.push_back(std::move(plan));
+  }
+  return plans;
+}
+
 // One thing to delete, checked.
 struct DeleteItem {
   ProfileId profile;
@@ -491,6 +565,7 @@ bool HistoryPageHandler::OnQuery(CefRefPtr<CefBrowser> /*browser*/,
     CefRefPtr<CefDictionaryValue> answer = CefDictionaryValue::Create();
     answer->SetList("profiles", profiles);
     answer->SetString("view", delegate.View());
+    answer->SetString("currentProfile", delegate.CurrentProfile());
     callback->Success(ToJson(answer));
     return true;
   }
@@ -596,6 +671,85 @@ bool HistoryPageHandler::OnQuery(CefRefPtr<CefBrowser> /*browser*/,
                       }
                       callback->Success(SqlJson(result.value()));
                     });
+  } else if (*type == "history.cleanup.preview") {
+    std::optional<std::vector<ProfileId>> profiles =
+        ProfilesOf(message, delegate);
+    std::optional<std::int64_t> since = TimeField(message, "since");
+    if (!profiles || !since) {
+      callback->Failure(kBadRequest, "Invalid request.");
+      return true;
+    }
+    CefRefPtr<CefDictionaryValue> keep_lists = CefDictionaryValue::Create();
+    for (const ProfileId& profile : *profiles) {
+      CefRefPtr<CefListValue> hosts = CefListValue::Create();
+      for (const std::string& host : delegate.KeepList(profile)) {
+        hosts->SetString(hosts->GetSize(), host);
+      }
+      keep_lists->SetList(profile, hosts);
+    }
+    std::int64_t from = *since;
+    ForEachProfile<HistorySite>(
+        *history, *profiles,
+        [from](HistoryStore& store, const ProfileId& /*profile*/) {
+          return store.HostsSince(from);
+        },
+        [callback, keep_lists](const auto& results) {
+          CefRefPtr<CefListValue> rows = CefListValue::Create();
+          for (const auto& [profile, sites] : results) {
+            for (const HistorySite& site : sites) {
+              CefRefPtr<CefDictionaryValue> row = CefDictionaryValue::Create();
+              row->SetString("profile", profile);
+              row->SetString("host", site.host);
+              row->SetDouble("visits", static_cast<double>(site.visit_count));
+              row->SetDouble("lastVisit", static_cast<double>(site.last_visit));
+              rows->SetDictionary(rows->GetSize(), row);
+            }
+          }
+          CefRefPtr<CefDictionaryValue> answer = CefDictionaryValue::Create();
+          answer->SetList("rows", rows);
+          answer->SetDictionary("keepLists", keep_lists);
+          callback->Success(ToJson(answer));
+        });
+  } else if (*type == "history.cleanup.run") {
+    std::optional<std::vector<CleanupPlan>> plans =
+        CleanupPlans(message, delegate.Profiles());
+    std::optional<std::int64_t> since = TimeField(message, "since");
+    if (!plans || !since) {
+      callback->Failure(kBadRequest, "Invalid request.");
+      return true;
+    }
+    // The kept sites become each profile's keep list (013).
+    std::vector<ProfileId> profiles;
+    for (const CleanupPlan& plan : *plans) {
+      if (plan.keep) {
+        delegate.SetKeepList(plan.profile, *plan.keep);
+      }
+      profiles.push_back(plan.profile);
+    }
+    auto shared = std::make_shared<std::vector<CleanupPlan>>(std::move(*plans));
+    std::int64_t from = *since;
+    ForEachProfile<int>(
+        *history, profiles,
+        [shared, from](HistoryStore& store, const ProfileId& profile) {
+          for (const CleanupPlan& plan : *shared) {
+            if (plan.profile == profile) {
+              return std::vector<int>{
+                  store.DeleteHostVisitsSince(plan.remove, from)};
+            }
+          }
+          return std::vector<int>{0};
+        },
+        [callback](const auto& results) {
+          double removed = 0;
+          for (const auto& [profile, counts] : results) {
+            for (int count : counts) {
+              removed += count;
+            }
+          }
+          CefRefPtr<CefDictionaryValue> answer = CefDictionaryValue::Create();
+          answer->SetDouble("visits", removed);
+          callback->Success(ToJson(answer));
+        });
   } else if (*type == "history.delete") {
     std::optional<std::vector<DeleteItem>> items =
         DeleteItems(message, delegate.Profiles());

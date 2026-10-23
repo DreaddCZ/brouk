@@ -115,7 +115,9 @@ TEST(SettingsTest, FileFormat) {
   EXPECT_EQ(EmitYaml(settings.ToYaml()),
             "profile:\n"
             "  name: \"Work\"\n"
-            "  color: blue\n");
+            "  color: blue\n"
+            "history:\n"
+            "  keep_list: \"\"\n");
   EXPECT_EQ(EmitYaml(Settings(SettingScope::kGlobal).ToYaml()),
             "appearance:\n"
             "  theme: system\n"

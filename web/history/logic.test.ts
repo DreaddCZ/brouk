@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addFilter, isOpenableUrl, toCsv, dayLabel, filterText, groupByDay, hostLabel, lastVisitLabel, pathOf, querySegments, sortSites, updateSelection, type Site, type Visit } from './logic.js';
+import { addFilter, cleanupKey, cleanupSince, isOpenableUrl, planCleanup, preselectCleanup, toCsv, dayLabel, filterText, groupByDay, hostLabel, lastVisitLabel, pathOf, querySegments, sortSites, updateSelection, type Site, type Visit } from './logic.js';
 
 function site(host: string, visits: number, lastVisit: number): Site {
   return { profile: 'default', host, visits, pages: 1, lastVisit };
@@ -87,4 +87,42 @@ test('openable addresses in results', () => {
   assert.equal(isOpenableUrl('brouk://history'), false);
   assert.equal(isOpenableUrl(3), false);
   assert.equal(isOpenableUrl(null), false);
+});
+
+const cleanupRows = [
+  { profile: 'w', host: 'jira.com', visits: 50 },
+  { profile: 'w', host: 'news.com', visits: 20 },
+  { profile: 'w', host: 'ads.com', visits: 2 },
+  { profile: 'm', host: 'mail.com', visits: 5 },
+];
+
+test('keep mode starts with the keep list and the top sites', () => {
+  const { selected, suggested } = preselectCleanup(cleanupRows, new Map([['w', ['ads.com', 'gone.com']]]), 1);
+  assert.deepEqual([...suggested].sort(), [cleanupKey('m', 'mail.com'), cleanupKey('w', 'jira.com')]);
+  assert.deepEqual([...selected].sort(), [cleanupKey('m', 'mail.com'), cleanupKey('w', 'ads.com'), cleanupKey('w', 'jira.com')]);
+});
+
+test('keep mode deletes everything else and updates the keep list', () => {
+  const selected = new Set([cleanupKey('w', 'jira.com')]);
+  const outcome = planCleanup(cleanupRows, selected, 'keep', new Map([['w', ['old.com', 'news.com']]]));
+  assert.equal(outcome.sites, 3);
+  assert.equal(outcome.visits, 27);
+  const work = outcome.plans.find((p) => p.profile === 'w');
+  assert.deepEqual(work?.remove, ['news.com', 'ads.com']);
+  // old.com was not in this time range: it stays on the list; news.com was unchecked.
+  assert.deepEqual(work?.keep, ['old.com', 'jira.com']);
+  assert.deepEqual(outcome.plans.find((p) => p.profile === 'm')?.remove, ['mail.com']);
+});
+
+test('delete mode deletes only the checked sites', () => {
+  const outcome = planCleanup(cleanupRows, new Set([cleanupKey('w', 'ads.com')]), 'delete', new Map());
+  assert.equal(outcome.sites, 1);
+  assert.equal(outcome.visits, 2);
+  assert.deepEqual(outcome.plans.find((p) => p.profile === 'w'), { profile: 'w', remove: ['ads.com'] });
+});
+
+test('time ranges', () => {
+  assert.equal(cleanupSince('24h', 1_000_000), 1_000_000 - 86_400);
+  assert.equal(cleanupSince('4w', 10_000_000), 10_000_000 - 28 * 86_400);
+  assert.equal(cleanupSince('all', 5), 0);
 });

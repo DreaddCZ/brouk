@@ -37,6 +37,7 @@
 #include "core/session.h"
 #include "core/settings_export.h"
 #include "core/shortcuts.h"
+#include "core/url_pattern.h"
 #include "include/cef_app.h"
 #include "include/cef_command_line.h"
 #include "include/cef_request_context.h"
@@ -95,6 +96,7 @@
 - (void)exportSettingsWithDone:(brouk::SettingsPageDelegate::FileDone)done;
 - (void)importSettingsWithDone:(brouk::SettingsPageDelegate::FileDone)done;
 - (std::vector<brouk::ProfileInfo>)allProfiles;
+- (std::vector<std::string>)keepListOfProfile:(const brouk::ProfileId&)profile;
 - (std::string)historyView;
 @end
 
@@ -200,6 +202,23 @@ class AppHistoryPage : public HistoryPageDelegate {
   std::string View() override {
     BRAppDelegate* app = app_;
     return app ? [app historyView] : "site";
+  }
+  ProfileId CurrentProfile() override {
+    return [controller_ profileOfTab:tab_];
+  }
+  std::vector<std::string> KeepList(const ProfileId& profile) override {
+    BRAppDelegate* app = app_;
+    return app ? [app keepListOfProfile:profile] : std::vector<std::string>{};
+  }
+  void SetKeepList(const ProfileId& profile,
+                   const std::vector<std::string>& hosts) override {
+    std::string joined;
+    for (const std::string& host : hosts) {
+      joined += joined.empty() ? host : ", " + host;
+    }
+    [app_ setProfileSetting:"history.keep_list"
+                    profile:profile
+                      value:SettingValue(joined)];
   }
   void CopyText(const std::string& text) override {
     NSPasteboard* pasteboard = NSPasteboard.generalPasteboard;
@@ -1145,6 +1164,20 @@ class AppSettingsPage : public SettingsPageDelegate {
 
 - (std::vector<brouk::ProfileInfo>)allProfiles {
   return _profiles->profiles();
+}
+
+- (std::vector<std::string>)keepListOfProfile:(const brouk::ProfileId&)profile {
+  std::vector<std::string> hosts;
+  std::optional<brouk::Settings> settings = _profiles->ProfileSettings(profile);
+  if (!settings) {
+    return hosts;
+  }
+  for (const brouk::UrlPattern& pattern :
+       brouk::ParseUrlPatternList(settings->GetString("history.keep_list"))
+           .value_or(std::vector<brouk::UrlPattern>{})) {
+    hosts.push_back(pattern.host);
+  }
+  return hosts;
 }
 
 - (std::string)historyView {

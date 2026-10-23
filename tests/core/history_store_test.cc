@@ -312,5 +312,30 @@ TEST_F(HistoryStoreTest, SearchCountsOnlyMatchingVisits) {
           .empty());
 }
 
+TEST_F(HistoryStoreTest, CleanUpByHostAndTime) {
+  Visit("https://a.com/1", "", kNow - 10 * kDay);
+  Visit("https://a.com/1", "", kNow - 60);
+  Visit("https://a.com/2", "", kNow - 60);
+  Visit("https://b.com/", "", kNow - 120);
+  Visit("https://c.com/", "", kNow - 20 * kDay);
+  std::vector<HistorySite> week = store_->HostsSince(kNow - 7 * kDay);
+  ASSERT_EQ(week.size(), 2U);
+  EXPECT_EQ(week[0].host, "a.com");  // Most visits first.
+  EXPECT_EQ(week[0].visit_count, 2);
+  EXPECT_EQ(week[0].page_count, 2);
+  EXPECT_EQ(store_->HostsSince(0).size(), 3U);
+  // Delete a.com's visits of the last week: the older visit stays.
+  std::vector<std::string> hosts = {"a.com"};
+  EXPECT_EQ(store_->DeleteHostVisitsSince(hosts, kNow - 7 * kDay), 2);
+  std::optional<HistoryMatch> page = store_->FindPage("https://a.com/1");
+  ASSERT_TRUE(page);
+  EXPECT_EQ(page->visit_count, 1);
+  EXPECT_FALSE(store_->FindPage("https://a.com/2"));
+  EXPECT_TRUE(store_->FindPage("https://b.com/"));
+  // All time.
+  EXPECT_EQ(store_->DeleteHostVisitsSince(hosts, 0), 1);
+  EXPECT_FALSE(store_->FindPage("https://a.com/1"));
+}
+
 }  // namespace
 }  // namespace brouk

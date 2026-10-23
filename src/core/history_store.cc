@@ -705,6 +705,62 @@ std::vector<HistoryVisit> HistoryStore::SearchVisits(
   return visits;
 }
 
+std::vector<HistorySite> HistoryStore::HostsSince(std::int64_t since) {
+  std::vector<HistorySite> hosts;
+  Error error;
+  std::optional<SqliteStatement> query = db_->Prepare(
+      "SELECT urls.host, count(*), count(DISTINCT urls.id), "
+      "max(visits.visit_time) FROM visits JOIN urls ON urls.id = visits.url_id "
+      "WHERE visits.visit_time >= ?1 GROUP BY urls.host "
+      "ORDER BY count(*) DESC, max(visits.visit_time) DESC",
+      error);
+  if (!query) {
+    return hosts;
+  }
+  query->Bind(1, since);
+  while (query->Step()) {
+    hosts.push_back({.host = query->ColumnText(0),
+                     .visit_count = query->ColumnInt(1),
+                     .page_count = query->ColumnInt(2),
+                     .last_visit = query->ColumnInt(3)});
+  }
+  return hosts;
+}
+
+int HistoryStore::DeleteHostVisitsSince(std::span<const std::string> hosts,
+                                        std::int64_t since) {
+  Error error;
+  std::optional<SqliteStatement> remove = db_->Prepare(
+      "DELETE FROM visits WHERE visit_time >= ?2 AND url_id IN "
+      "(SELECT id FROM urls WHERE host = ?1)",
+      error);
+  if (!remove) {
+    return 0;
+  }
+  int removed = 0;
+  db_->Execute("BEGIN;");
+  for (const std::string& host : hosts) {
+    remove->Reset();
+    remove->Bind(1, host);
+    remove->Bind(2, since);
+    if (remove->Run()) {
+      removed += db_->changes();
+    }
+  }
+  if (removed > 0) {
+    db_->Execute(
+        "DELETE FROM urls WHERE id NOT IN (SELECT url_id FROM visits);"
+        "UPDATE urls SET"
+        "  visit_count = (SELECT count(*) FROM visits WHERE url_id = urls.id),"
+        "  typed_count = (SELECT count(*) FROM visits"
+        "    WHERE url_id = urls.id AND transition = 1),"
+        "  last_visit = (SELECT max(visit_time) FROM visits"
+        "    WHERE url_id = urls.id);");
+  }
+  db_->Execute("COMMIT;");
+  return removed;
+}
+
 int HistoryStore::DeleteHost(std::string_view host) {
   Error error;
   std::optional<SqliteStatement> remove =

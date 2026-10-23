@@ -157,6 +157,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)showRestorePagesBar:(void (^)(void))restore;
 // History page (013): opens one of its entries in `profile`, in the history
 // tab itself when it is in that profile's group (unless `newTab`).
+// The profile of a tab (the default profile if the tab is gone).
+- (brouk::ProfileId)profileOfTab:(brouk::TabId)tabId;
 - (void)openPage:(NSString*)url
          profile:(const brouk::ProfileId&)profile
           newTab:(BOOL)newTab
