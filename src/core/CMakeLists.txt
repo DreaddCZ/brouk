@@ -1,8 +1,11 @@
 # Portable core: no CEF, no platform headers. Builds and is tested on Linux.
 include(BroukYaml)
 include(BroukSqlite)
+include(BroukAdblock)
 
 set(BROUK_CORE_SOURCES
+  adblock_engine.cc
+  adblock_engine.h
   address_input.cc
   address_input.h
   address_suggestions.cc
@@ -108,8 +111,10 @@ brouk_target_options(brouk_core_testing)
 set_source_files_properties(yaml_io.cc PROPERTIES COMPILE_OPTIONS -fexceptions)
 
 target_link_libraries(brouk_core PRIVATE brouk_yaml_cpp brouk_sqlite)
+target_link_libraries(brouk_core PUBLIC brouk_adblock_rs)
 target_link_libraries(brouk_core_testing PRIVATE brouk_yaml_cpp_testing
   brouk_sqlite_testing)
+target_link_libraries(brouk_core_testing PUBLIC brouk_adblock_rs)
 
 foreach(target brouk_core brouk_core_testing)
   target_include_directories(${target} PUBLIC

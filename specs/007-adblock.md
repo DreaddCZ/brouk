@@ -1,6 +1,6 @@
 # 007 – Ad and tracker blocking
 
-- **Status:** ready
+- **Status:** in-progress
 - **Priority:** P1
 - **Depends on:** 001, 003, 004, 005
 
@@ -139,3 +139,4 @@ None.
   - **Secure DNS scope:** in Chromium, secure DNS is configured for the whole network service (local state), not per profile. Check whether CEF allows a different setting per request context. If not, Secure DNS is app-wide, and per-profile DNS-style blocking is done with the domain lists.
   - **Injection timing:** that scriptlets can be injected before page scripts in every frame (`CefRenderProcessHandler::OnContextCreated`), and how procedural cosmetic filters returned by the engine are applied.
 - Default lists are downloaded at runtime from their publishers, not bundled (except a first copy for offline first start, where licences allow).
+- 2026-10-23 (implementation, engine): Brave's C interface (`adblock-rust-ffi`) is archived, so `src/adblock` is our thin wrapper crate around `adblock` 0.13.3 with a C ABI (`src/adblock/include/brouk_adblock.h`), and `src/core/adblock_engine.h` wraps it in RAII C++ (portable, tested on Linux too). Rust 1.98.0 is pinned in `scripts/install_tools` (standalone installers, SHA-256 checked, installed into `.tools`; Cargo's downloads go to `.tools/cargo`); `Cargo.lock` pins every crate with its checksum. The crate is always built in release mode with `panic = "abort"`, and every exported function also catches panics, so nothing unwinds into C++. Engines are built in debug mode so each match tells its list and line (for the blocked requests list). Matching is thread-safe (adblock-rust without its single-thread feature). uBlock's own lists and My filters will be "trusted" (may use scriptlets needing trust), as in uBlock Origin. Measured: about 35 µs per request against 40,000 rules in a sanitizer debug build.

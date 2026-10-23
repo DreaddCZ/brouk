@@ -1,0 +1,25 @@
+# Our thin C interface to Brave's adblock-rust (specs/007). This is the only
+# Rust code in the project (CLAUDE.md); everything else is C++.
+[package]
+name = "brouk_adblock"
+version = "0.1.0"
+edition = "2021"
+license = "MPL-2.0"
+publish = false
+
+[lib]
+crate-type = ["staticlib"]
+path = "src/lib.rs"
+
+[dependencies]
+adblock = { version = "=0.13.3", default-features = false, features = ["full-regex-handling", "embedded-domain-resolver", "css-validation"] }
+serde_json = "1"
+
+[profile.release]
+panic = "abort"
+lto = true
+codegen-units = 1
+opt-level = 3
+
+[profile.dev]
+panic = "abort"
