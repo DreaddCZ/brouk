@@ -52,6 +52,8 @@ set(BROUK_CORE_SOURCES
   security_state.h
   service_workers.cc
   service_workers.h
+  session.cc
+  session.h
   settings.cc
   settings.h
   settings_export.cc

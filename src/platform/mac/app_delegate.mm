@@ -33,6 +33,7 @@
 #include "core/profile_registry.h"
 #include "core/request_rules.h"
 #include "core/search_engines.h"
+#include "core/session.h"
 #include "core/settings_export.h"
 #include "core/shortcuts.h"
 #include "include/cef_app.h"
@@ -233,6 +234,12 @@ class AppSettingsPage : public SettingsPageDelegate {
   std::map<brouk::ProfileId, std::vector<brouk::HistoryMatch>, std::less<>>
       _recentPages;
   NSMenu* _profilesMenu;
+  // Session restore (015): saved shortly after changes while running (not
+  // before the start has restored, not after quitting began).
+  std::filesystem::path _sessionPath;
+  NSTimer* _sessionTimer;
+  BOOL _sessionReady;
+  BOOL _sessionFrozen;
   NSMenu* _recentlyClosedMenu;
   NSMenu* _recentlyVisitedMenu;
   // Each profile's request context (its isolated web data), created when the
@@ -318,6 +325,18 @@ class AppSettingsPage : public SettingsPageDelegate {
   // Like Chrome, URLs given on the command line open as tabs.
   brouk::LaunchRequest request = brouk::BrowserApp::LaunchRequestFrom(
       CefCommandLine::GetGlobalCommandLine());
+  brouk::Session last = [self startSession];
+  brouk::StartupAction action = brouk::DecideStartup(
+      _profiles->global_settings().GetString("startup.restore"), last);
+  if (action == brouk::StartupAction::kRestore) {
+    [self restoreSession:last];
+    if (!request.urls.empty()) {
+      [self openLaunchRequest:request inController:[self frontController]];
+    }
+    _sessionReady = YES;
+    return;
+  }
+  _sessionReady = YES;
   if (_profiles->show_manager_at_startup() && request.urls.empty() &&
       !request.profile) {
     _profileManagerAtStartup = YES;
@@ -325,6 +344,95 @@ class AppSettingsPage : public SettingsPageDelegate {
     return;
   }
   [self openLaunchRequest:request inController:nil];
+  if (action == brouk::StartupAction::kNewWindowOfferRestore) {
+    __weak BRAppDelegate* weakDelegate = self;
+    BRBrowserWindowController* front = [self frontController];
+    __weak BRBrowserWindowController* weakFront = front;
+    [front showRestorePagesBar:^{
+      [weakDelegate restoreSession:last];
+      // The new tab the start opened is not needed any more (Chrome).
+      BRBrowserWindowController* blank = weakFront;
+      if (blank.hasOnlyNewTab) {
+        [blank closeAllTabs];
+      }
+    }];
+  }
+}
+
+#pragma mark - Session restore (015)
+
+// Main thread. Reads the last run's session and marks this run as running
+// (clean_exit: false), so a crash is noticed at the next start.
+- (brouk::Session)startSession {
+  _sessionPath =
+      std::filesystem::path(brouk::mac::AppDataDirectory().UTF8String) /
+      "session.yaml";
+  brouk::Result<brouk::Session> loaded = brouk::LoadSession(_sessionPath);
+  if (!loaded) {
+    NSLog(@"Session: %s", loaded.error().message.c_str());
+  }
+  brouk::Session last = loaded ? loaded.value() : brouk::Session{};
+  brouk::Session running = last;
+  running.clean_exit = false;
+  if (std::optional<brouk::Error> error =
+          brouk::SaveSession(_sessionPath, running)) {
+    NSLog(@"Session: %s", error->message.c_str());
+  }
+  return last;
+}
+
+- (void)restoreSession:(const brouk::Session&)session {
+  // Saved back to front: the last one restored ends up in front.
+  for (const brouk::SessionWindow& window : session.windows) {
+    BRBrowserWindowController* controller = [self openWindow];
+    [controller restoreSessionWindow:window];
+    [controller showWindow:nil];
+  }
+}
+
+- (void)browserWindowSessionChanged {
+  if (!_sessionReady || _sessionFrozen || _sessionTimer) {
+    return;
+  }
+  __weak BRAppDelegate* weakSelf = self;
+  _sessionTimer = [NSTimer
+      scheduledTimerWithTimeInterval:1.5
+                             repeats:NO
+                               block:^(NSTimer* /*timer*/) {
+                                 BRAppDelegate* strongSelf = weakSelf;
+                                 if (strongSelf) {
+                                   strongSelf->_sessionTimer = nil;
+                                   [strongSelf saveSessionWithCleanExit:NO];
+                                 }
+                               }];
+}
+
+// Main thread. The open browser windows, back to front.
+- (void)saveSessionWithCleanExit:(BOOL)cleanExit {
+  if (_sessionPath.empty()) {
+    return;
+  }
+  brouk::Session session;
+  session.clean_exit = cleanExit;
+  for (NSWindow* window in NSApp.orderedWindows.reverseObjectEnumerator) {
+    for (BRBrowserWindowController* controller in _windows) {
+      if (controller.window != window) {
+        continue;
+      }
+      if (std::optional<brouk::SessionWindow> saved =
+              [controller sessionWindow]) {
+        session.windows.push_back(std::move(*saved));
+      }
+    }
+  }
+  if (std::optional<brouk::Error> error =
+          brouk::SaveSession(_sessionPath, session)) {
+    NSLog(@"Session: %s", error->message.c_str());
+  }
+}
+
+- (BOOL)profileExists:(const brouk::ProfileId&)profile {
+  return _profiles->Find(profile) != nullptr;
 }
 
 - (void)relaunchedWithRequest:(const brouk::LaunchRequest&)request {
@@ -452,6 +560,7 @@ class AppSettingsPage : public SettingsPageDelegate {
   // Keep the controller alive until AppKit is done with the close.
   dispatch_async(dispatch_get_main_queue(), ^{
     [self->_windows removeObject:controller];
+    [self browserWindowSessionChanged];
     [self quitIfDone];
   });
 }
@@ -537,6 +646,11 @@ class AppSettingsPage : public SettingsPageDelegate {
     return;
   }
   _quitting = YES;
+  // The windows open now are the session to continue with (015).
+  [_sessionTimer invalidate];
+  _sessionTimer = nil;
+  [self saveSessionWithCleanExit:YES];
+  _sessionFrozen = YES;
   [_profileManager closePage];
   [_settingsWindow closePage];
   for (BRBrowserWindowController* controller in [_windows copy]) {

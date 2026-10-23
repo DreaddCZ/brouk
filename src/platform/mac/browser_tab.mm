@@ -295,6 +295,10 @@ class TabDelegateBridge : public TabClientDelegate {
   CefRefPtr<CefBrowser> _browser;
   // Set when closing was requested before the browser existed.
   BOOL _closeWhenCreated;
+  // Session restore (015): a tab shown with its page's title, whose browser
+  // is created when the tab is first shown.
+  BOOL _deferred;
+  CefRefPtr<CefRequestContext> _deferredContext;
   BRTabDialogView* _dialog;
   BRTabDialogView* _unresponsiveDialog;
   // An unresponsive report that arrived while a modal panel (e.g. the print
@@ -381,7 +385,47 @@ class TabDelegateBridge : public TabClientDelegate {
                                 nullptr, requestContext);
 }
 
+- (void)deferBrowserWithURL:(NSString*)url
+                      title:(NSString*)title
+             requestContext:(CefRefPtr<CefRequestContext>)requestContext {
+  _url = [url copy];
+  _title = [title copy];
+  _deferred = YES;
+  _deferredContext = requestContext;
+}
+
+- (BOOL)hasDeferredBrowser {
+  return _deferred;
+}
+
+- (void)createDeferredBrowser {
+  if (!_deferred) {
+    return;
+  }
+  _deferred = NO;
+  CefRefPtr<CefRequestContext> context = std::move(_deferredContext);
+  [self createBrowserWithURL:_url requestContext:context];
+}
+
+// A deferred tab has no browser to close: it is gone at once (after this
+// call returns, like a real close).
+- (void)closeDeferred {
+  _deferred = NO;
+  _deferredContext = nullptr;
+  __weak BRTab* weakSelf = self;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    BRTab* tab = weakSelf;
+    [tab.delegate tabCloseReady:tab];
+    [tab.delegate tabDidClose:tab];
+  });
+}
+
 - (void)loadURL:(NSString*)url {
+  if (_deferred) {
+    _url = [url copy];
+    [self createDeferredBrowser];
+    return;
+  }
   _url = [url copy];
   if (_browser) {
     _browser->GetMainFrame()->LoadURL(url.UTF8String);
@@ -484,7 +528,9 @@ class TabDelegateBridge : public TabClientDelegate {
 
 - (void)requestClose {
   _isClosing = YES;
-  if (_browser) {
+  if (_deferred) {
+    [self closeDeferred];
+  } else if (_browser) {
     _browser->GetHost()->CloseBrowser(false);
   } else {
     _closeWhenCreated = YES;
@@ -493,7 +539,9 @@ class TabDelegateBridge : public TabClientDelegate {
 
 - (void)forceClose {
   _isClosing = YES;
-  if (_browser) {
+  if (_deferred) {
+    [self closeDeferred];
+  } else if (_browser) {
     _browser->GetHost()->CloseBrowser(true);
   } else {
     _closeWhenCreated = YES;
@@ -504,6 +552,7 @@ class TabDelegateBridge : public TabClientDelegate {
 
 - (void)handleBrowserCreated:(CefRefPtr<CefBrowser>)browser {
   _browser = browser;
+  _hasCreatedBrowser = YES;
   [_delegate tabDidCreateBrowser:self];
   // Let the browser view follow the container's size (window resizes).
   NSView* browserView = (__bridge NSView*)browser->GetHost()->GetWindowHandle();
