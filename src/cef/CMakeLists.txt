@@ -14,6 +14,8 @@ add_library(brouk_cef STATIC
   profile_manager_handler.cc
   profile_manager_handler.h
   profile_prefs.h
+  settings_handler.cc
+  settings_handler.h
   site_info.cc
   site_info.h
   tab_client.cc

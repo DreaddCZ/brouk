@@ -62,6 +62,16 @@ class ProfileRegistry {
   // taken, " 2", " 3", ... is added.
   Result<ProfileId> ImportProfile(Settings settings);
   std::optional<Error> SetShowManagerAtStartup(bool show);
+
+  // One setting changed (settings page): checked, then written to the file,
+  // keeping the file's other values. A profile's name must stay unique.
+  std::optional<Error> SetGlobalSetting(std::string_view key,
+                                        SettingValue value);
+  std::optional<Error> SetProfileSetting(std::string_view id,
+                                         std::string_view key,
+                                         SettingValue value);
+  // All global settings at once (importing settings, 004).
+  std::optional<Error> ReplaceGlobalSettings(const Settings& settings);
   bool show_manager_at_startup() const {
     return global_.GetBool("profiles.show_manager_at_startup");
   }
@@ -84,8 +94,6 @@ class ProfileRegistry {
   std::filesystem::path ProfileSettingsPath(std::string_view id) const;
   std::optional<Error> CheckName(std::string_view name,
                                  std::string_view except_id) const;
-  std::optional<Error> SetGlobalSetting(std::string_view key,
-                                        SettingValue value);
   void Sort();
 
   std::filesystem::path data_dir_;

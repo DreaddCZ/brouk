@@ -34,6 +34,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)tab:(BRTab*)tab
         openURL:(NSString*)url
     disposition:(brouk::OpenDisposition)disposition;
+// Settings the tab follows (004).
+- (brouk::TabClientDelegate::SearchEngine)searchEngine;
+- (BOOL)askWhereToSaveDownloads;
 @end
 
 @interface BRTab : NSObject

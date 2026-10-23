@@ -1,5 +1,7 @@
 #include "core/settings.h"
 
+#include "core/profile_id.h"
+
 #include <cassert>
 #include <optional>
 #include <string>
@@ -46,6 +48,39 @@ std::variant<SettingValue, std::string> ValueFromYaml(const SettingDef& def,
     return std::string("must be true or false (without quotes)");
   }
   return SettingValue(node.scalar);
+}
+
+std::optional<std::string> CheckFormat(SettingDef::Format format,
+                                       const std::string& text) {
+  switch (format) {
+    case SettingDef::Format::kText:
+      return std::nullopt;
+    case SettingDef::Format::kUrlTemplate:
+      if (text.empty()) {
+        return std::nullopt;
+      }
+      if ((!text.starts_with("https://") && !text.starts_with("http://")) ||
+          text.find("%s") == std::string::npos ||
+          text.find(' ') != std::string::npos) {
+        return std::string(
+            "must be an http or https address containing %s, e.g. "
+            "https://example.com/search?q=%s");
+      }
+      return std::nullopt;
+    case SettingDef::Format::kFolder:
+      if (!text.empty() && !text.starts_with("/") && !text.starts_with("~/")) {
+        return std::string(
+            "must be empty (your Downloads folder), a full path such as "
+            "/Users/me/Downloads, or a path starting with ~/");
+      }
+      return std::nullopt;
+    case SettingDef::Format::kProfileId:
+      if (!IsValidProfileId(text)) {
+        return std::string("must be a profile id (see the profiles folder)");
+      }
+      return std::nullopt;
+  }
+  return std::nullopt;
 }
 
 void Flatten(const YamlNode& map,
@@ -98,7 +133,7 @@ std::optional<std::string> ValidateSetting(const SettingDef& def,
               "characters");
         }
       }
-      return std::nullopt;
+      return CheckFormat(def.format, *text);
     }
     case SettingDef::Type::kChoice: {
       const std::string* text = std::get_if<std::string>(&value);

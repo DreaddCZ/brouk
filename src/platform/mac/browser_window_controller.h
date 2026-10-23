@@ -6,6 +6,7 @@
 
 #include <string>
 
+#include "cef/tab_client.h"
 #include "core/profile_registry.h"
 #include "include/cef_request_context.h"
 
@@ -32,6 +33,9 @@ NS_ASSUME_NONNULL_BEGIN
 // the page asked for.
 - (BRBrowserWindowController*)openPopupWindowWithContentSize:(NSSize)size;
 - (void)openNewWindow;
+// Settings (004) tabs and the address bar follow.
+- (brouk::TabClientDelegate::SearchEngine)searchEngine;
+- (BOOL)askWhereToSaveDownloads;
 // Downloads (app-wide, so concurrent downloads never share a file name).
 - (std::string)reserveDownloadPath:(const std::string&)suggested;
 - (void)releaseDownloadPath:(const std::string&)path;
@@ -53,6 +57,9 @@ NS_ASSUME_NONNULL_BEGIN
 
 // Profile names, colours or the default profile changed: redraw.
 - (void)profilesDidChange;
+
+// Problems found in the settings files; a toolbar warning leads to them.
+@property(nonatomic) NSUInteger settingsProblemCount;
 
 // Tabs of a profile in this window (including tabs still closing), and
 // closing them (a profile is deleted, 005).

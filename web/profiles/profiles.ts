@@ -4,6 +4,7 @@
  * the browser is set with textContent, never as HTML.
  */
 import { cefTransport } from '../shared/bridge.js';
+import { button, byId, element, errorText } from '../shared/dom.js';
 import { ProfilesApi, type ImportResult, type Profile, type ProfilesState } from './api.js';
 import { colorLabel, nameProblem, tabsLabel } from './logic.js';
 
@@ -11,31 +12,6 @@ const api = new ProfilesApi(cefTransport());
 let state: ProfilesState = { profiles: [], colors: [], showAtStartup: false };
 /** The profile being edited, 'new' for the new-profile form, or null. */
 let editing: string | null = null;
-
-function byId<T extends HTMLElement>(id: string): T {
-  const element = document.getElementById(id);
-  if (element === null) {
-    throw new Error(`Missing #${id}`);
-  }
-  return element as T;
-}
-
-function element<K extends keyof HTMLElementTagNameMap>(
-  tag: K,
-  options: { className?: string; text?: string } = {},
-): HTMLElementTagNameMap[K] {
-  const node = document.createElement(tag);
-  if (options.className !== undefined) node.className = options.className;
-  if (options.text !== undefined) node.textContent = options.text;
-  return node;
-}
-
-function button(text: string, onClick: () => void, className?: string): HTMLButtonElement {
-  const node = element('button', className === undefined ? { text } : { text, className });
-  node.type = 'button';
-  node.addEventListener('click', onClick);
-  return node;
-}
 
 /** An information box (not an error), e.g. what an import left out. */
 function showNotice(title: string | null, lines: readonly string[] = []): void {
@@ -70,7 +46,7 @@ async function run<T>(action: () => Promise<T>): Promise<T | null> {
     showError(null);
     return result;
   } catch (error) {
-    showError(error instanceof Error ? error.message : String(error));
+    showError(errorText(error));
     return null;
   } finally {
     await refresh();
@@ -240,7 +216,7 @@ async function refresh(): Promise<void> {
   try {
     state = await api.state();
   } catch (error) {
-    showError(error instanceof Error ? error.message : String(error));
+    showError(errorText(error));
   }
   render();
 }

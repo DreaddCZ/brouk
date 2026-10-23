@@ -11,7 +11,7 @@ namespace brouk {
 namespace {
 
 // Pages that exist. New pages are added here.
-constexpr std::array<std::string_view, 1> kPages = {"profiles"};
+constexpr std::array<std::string_view, 2> kPages = {"profiles", "settings"};
 
 constexpr std::array<std::string_view, 4> kExtensions = {".html", ".js", ".css",
                                                          ".svg"};

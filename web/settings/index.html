@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="light dark">
+<title>Settings</title>
+<link rel="stylesheet" href="shared/base.css">
+<link rel="stylesheet" href="settings.css">
+<script type="module" src="settings.js"></script>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Settings</h1>
+    <p class="intro">Changes apply at once and are saved in the settings
+      files. More settings can be changed in the files directly.</p>
+  </header>
+  <div id="problems" class="error" role="alert" hidden></div>
+  <p id="error" class="error" role="alert" hidden></p>
+  <div id="notice" class="notice" role="status" hidden></div>
+  <h2 class="scope">For all profiles</h2>
+  <div id="global"></div>
+  <h2 class="scope">For one profile</h2>
+  <label class="profile-pick">Profile
+    <select id="profile"></select>
+  </label>
+  <div id="profile-settings"></div>
+  <h2 class="scope">Settings files</h2>
+  <div class="files">
+    <button type="button" id="open-folder">Show in Finder</button>
+    <button type="button" id="export">Export Settings…</button>
+    <button type="button" id="import">Import Settings…</button>
+  </div>
+  <p class="hint">Profiles are exported and imported in the profile manager
+    (Profiles &gt; Manage Profiles).</p>
+</main>
+</body>
+</html>

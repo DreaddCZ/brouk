@@ -262,6 +262,49 @@ std::optional<Error> ProfileRegistry::SetGlobalSetting(std::string_view key,
   return std::nullopt;
 }
 
+std::optional<Error> ProfileRegistry::SetProfileSetting(std::string_view id,
+                                                        std::string_view key,
+                                                        SettingValue value) {
+  auto it = std::ranges::find(profiles_, id, &ProfileInfo::id);
+  if (it == profiles_.end()) {
+    return Error{"There is no such profile."};
+  }
+  if (key == "profile.name") {
+    const std::string* name = std::get_if<std::string>(&value);
+    if (name) {
+      if (std::optional<Error> problem = CheckName(*name, id)) {
+        return problem;
+      }
+    }
+  }
+  LoadedSettings loaded =
+      LoadSettingsFile(ProfileSettingsPath(id), SettingScope::kProfile);
+  if (std::optional<std::string> problem =
+          loaded.settings.Set(key, std::move(value))) {
+    return Error{*problem};
+  }
+  if (std::optional<Error> save =
+          SaveSettingsFile(ProfileSettingsPath(id), loaded.settings)) {
+    return save;
+  }
+  *it = InfoFrom(std::string(id), loaded.settings);
+  Sort();
+  return std::nullopt;
+}
+
+std::optional<Error> ProfileRegistry::ReplaceGlobalSettings(
+    const Settings& settings) {
+  if (settings.scope() != SettingScope::kGlobal) {
+    return Error{"These are not global settings."};
+  }
+  if (std::optional<Error> save =
+          SaveSettingsFile(data_dir_ / kSettingsFile, settings)) {
+    return save;
+  }
+  global_ = settings;
+  return std::nullopt;
+}
+
 std::optional<Error> ProfileRegistry::DeleteProfile(std::string_view id) {
   auto it = std::ranges::find(profiles_, id, &ProfileInfo::id);
   if (it == profiles_.end()) {

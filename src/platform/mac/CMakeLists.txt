@@ -25,13 +25,13 @@ add_executable(brouk_app
   download_notice.mm
   find_bar.h
   find_bar.mm
+  internal_page_window.h
+  internal_page_window.mm
   main.mm
   permission_prompt_view.h
   permission_prompt_view.mm
   profile_colors.h
   profile_colors.mm
-  profile_manager_window.h
-  profile_manager_window.mm
   sad_tab_view.h
   sad_tab_view.mm
   screen_share_picker.h
@@ -73,7 +73,8 @@ set(_bundle_commands "")
 
 # Internal pages (web/, TypeScript), compiled into the bundle's resources.
 file(GLOB_RECURSE _web_sources CONFIGURE_DEPENDS
-  "${PROJECT_SOURCE_DIR}/web/shared/*" "${PROJECT_SOURCE_DIR}/web/profiles/*")
+  "${PROJECT_SOURCE_DIR}/web/shared/*" "${PROJECT_SOURCE_DIR}/web/profiles/*"
+  "${PROJECT_SOURCE_DIR}/web/settings/*")
 set(_web_stamp "${CMAKE_CURRENT_BINARY_DIR}/web.stamp")
 add_custom_command(OUTPUT "${_web_stamp}"
   COMMAND "${PROJECT_SOURCE_DIR}/scripts/web" build

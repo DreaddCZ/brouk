@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "core/address_input.h"
 #include "include/cef_browser.h"
 #include "include/wrapper/cef_helpers.h"
 
@@ -131,6 +132,16 @@ class TabDelegateBridge : public TabClientDelegate {
     NSPasteboard* pasteboard = NSPasteboard.generalPasteboard;
     [pasteboard clearContents];
     [pasteboard setData:data forType:NSPasteboardTypePNG];
+  }
+  SearchEngine CurrentSearchEngine() override {
+    id<BRTabDelegate> delegate = tab_.delegate;
+    // A C++ value from a message to nil is not constructed: check first.
+    return delegate
+               ? [delegate searchEngine]
+               : SearchEngine{"Google", std::string(kDefaultSearchTemplate)};
+  }
+  bool AskWhereToSaveDownloads() override {
+    return [tab_.delegate askWhereToSaveDownloads];
   }
   std::string ReserveDownloadPath(const std::string& suggested) override {
     BRTab* tab = tab_;

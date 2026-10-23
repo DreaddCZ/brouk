@@ -29,11 +29,15 @@ set(BROUK_CORE_SOURCES
   profile_registry.h
   result.h
   screen_share.cc
+  search_engines.cc
+  search_engines.h
   screen_share.h
   security_state.cc
   security_state.h
   settings.cc
   settings.h
+  settings_export.cc
+  settings_export.h
   settings_file.cc
   settings_file.h
   settings_schema.cc

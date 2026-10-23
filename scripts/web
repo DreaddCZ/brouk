@@ -23,7 +23,7 @@ compile() {  # compile <dir>
   rm -rf "$1"
   "$TSC" -p tsconfig.json --outDir "$1"
   # Pages and styles next to their scripts.
-  find shared profiles -name '*.html' -o -name '*.css' | while read -r f; do
+  find shared profiles settings -name '*.html' -o -name '*.css' | while read -r f; do
     mkdir -p "$1/$(dirname "$f")"
     cp "$f" "$1/$f"
   done
