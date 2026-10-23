@@ -174,6 +174,14 @@ NS_ASSUME_NONNULL_BEGIN
          profile:(const brouk::ProfileId&)profile
           newTab:(BOOL)newTab
      fromHistory:(brouk::TabId)historyTab;
+// The same for the bookmark manager (011): `fromTab` is its tab; the visit
+// counts as opened from a bookmark. An empty or deleted `profile` means the
+// tab's own.
+- (void)openPage:(NSString*)url
+         profile:(const brouk::ProfileId&)profile
+          newTab:(BOOL)newTab
+         fromTab:(brouk::TabId)fromTab
+        bookmark:(BOOL)bookmark;
 // Opens a bookmark (011): a general one in the active tab's profile, a
 // linked one always in its profile (in a new tab when the active tab is in
 // another profile).

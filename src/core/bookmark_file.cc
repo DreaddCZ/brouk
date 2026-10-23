@@ -40,7 +40,7 @@ Result<BookmarkModel> Read(const std::filesystem::path& path) {
   if (!file && !file.eof()) {
     return Error{"cannot read " + path.string()};
   }
-  Result<JsonValue> json = ParseJson(text);
+  Result<JsonValue> json = ParseJsonDocument(text);
   if (!json) {
     return Error{path.string() + ": " + json.error().message};
   }
@@ -93,7 +93,7 @@ std::optional<Error> SaveBookmarks(const std::filesystem::path& path,
   std::filesystem::path temp = WithSuffix(path, ".tmp");
   {
     std::ofstream file(temp, std::ios::binary | std::ios::trunc);
-    file << WriteJson(model.ToJson());
+    file << WriteJsonDocument(model.ToJson());
     file.close();
     if (!file) {
       std::filesystem::remove(temp, error);

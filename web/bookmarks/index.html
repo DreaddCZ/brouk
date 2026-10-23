@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="light dark">
+<title>Bookmarks</title>
+<link rel="stylesheet" href="shared/base.css">
+<link rel="stylesheet" href="bookmarks.css">
+<script type="module" src="bookmarks.js"></script>
+</head>
+<body>
+<main>
+  <header class="top">
+    <h1>Bookmarks</h1>
+    <input type="search" id="query" placeholder="Search bookmarks (name or address)" aria-label="Search bookmarks"
+      spellcheck="false" autocomplete="off">
+    <label>Profile <select id="profile-filter" aria-label="Show bookmarks of"></select></label>
+  </header>
+  <div class="toolbar" role="toolbar" aria-label="Bookmarks">
+    <button type="button" id="add-bookmark">Add bookmark</button>
+    <button type="button" id="add-folder">Add folder</button>
+    <span class="spacer"></span>
+    <span id="selection" class="selection" hidden></span>
+    <button type="button" id="edit-selected" hidden>Edit…</button>
+    <button type="button" id="delete-selected" class="danger" hidden>Delete</button>
+    <button type="button" id="import">Import…</button>
+    <button type="button" id="export">Export…</button>
+  </div>
+  <p id="error" class="error" role="alert" hidden></p>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <div class="panes">
+    <nav id="tree" class="tree" aria-label="Folders" role="tree"></nav>
+    <section class="content" aria-labelledby="content-title">
+      <h2 id="content-title" class="content-title"></h2>
+      <div id="list" class="list" role="listbox" aria-multiselectable="true" aria-labelledby="content-title"></div>
+      <p id="empty" class="empty" hidden></p>
+    </section>
+  </div>
+</main>
+<div id="editor" class="modal" hidden>
+  <form class="dialog" id="editor-form" role="dialog" aria-modal="true" aria-labelledby="editor-title">
+    <h2 id="editor-title">Edit bookmark</h2>
+    <label class="field">Name <input type="text" id="editor-name" spellcheck="false" autocomplete="off"></label>
+    <label class="field" id="editor-url-row">URL <input type="text" id="editor-url" spellcheck="false" autocomplete="off"></label>
+    <label class="field" id="editor-folder-row">Folder <select id="editor-folder"></select></label>
+    <label class="field">Profile <select id="editor-profile"></select></label>
+    <p id="editor-hint" class="hint"></p>
+    <p id="editor-error" class="error" role="alert" hidden></p>
+    <div class="dialog-buttons">
+      <button type="button" id="editor-cancel">Cancel</button>
+      <button type="submit" class="primary">Save</button>
+    </div>
+  </form>
+</div>
+</body>
+</html>

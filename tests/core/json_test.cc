@@ -8,7 +8,7 @@ namespace brouk {
 namespace {
 
 TEST(JsonTest, ParsesValues) {
-  Result<JsonValue> json = ParseJson(
+  Result<JsonValue> json = ParseJsonDocument(
       R"({"a": 1, "b": -2.5, "c": "x\ny", "d": [true, false, null], "e": {}})");
   ASSERT_TRUE(json) << json.error().message;
   const JsonValue& value = json.value();
@@ -26,7 +26,7 @@ TEST(JsonTest, ParsesValues) {
 }
 
 TEST(JsonTest, DecodesUnicodeEscapes) {
-  Result<JsonValue> json = ParseJson(R"("\u010d\ud83d\ude00\/")");
+  Result<JsonValue> json = ParseJsonDocument(R"("\u010d\ud83d\ude00\/")");
   ASSERT_TRUE(json);
   EXPECT_EQ(json.value().string, "\xC4\x8D\xF0\x9F\x98\x80/");
 }
@@ -35,17 +35,17 @@ TEST(JsonTest, RejectsInvalidDocuments) {
   for (const char* text :
        {"", "{", "[1,]", "{\"a\" 1}", "\"\\x\"", "\"\\ud800\"", "01x", "tru",
         "\"a\nb\"", "1 2", "{\"a\":1,}", "-"}) {
-    EXPECT_FALSE(ParseJson(text)) << text;
+    EXPECT_FALSE(ParseJsonDocument(text)) << text;
   }
 }
 
 TEST(JsonTest, LimitsNesting) {
   std::string deep(2000, '[');
   deep += std::string(2000, ']');
-  EXPECT_FALSE(ParseJson(deep));
+  EXPECT_FALSE(ParseJsonDocument(deep));
   std::string fine(500, '[');
   fine += std::string(500, ']');
-  EXPECT_TRUE(ParseJson(fine));
+  EXPECT_TRUE(ParseJsonDocument(fine));
 }
 
 TEST(JsonTest, WritesAndReadsBack) {
@@ -57,14 +57,14 @@ TEST(JsonTest, WritesAndReadsBack) {
   list.items.push_back(JsonValue());
   value.Add("list", list);
   value.Add("empty", JsonValue::Array());
-  std::string text = WriteJson(value);
+  std::string text = WriteJsonDocument(value);
   EXPECT_NE(text.find("\\u0001"), std::string::npos);
-  Result<JsonValue> back = ParseJson(text);
+  Result<JsonValue> back = ParseJsonDocument(text);
   ASSERT_TRUE(back) << back.error().message;
   EXPECT_EQ(back.value().StringOr("name", ""), "a \"quote\"\\ \t\x01 č");
   EXPECT_EQ(back.value().IntegerOr("n", 0), -9007199254740993);
   EXPECT_EQ(back.value().Find("list")->items.size(), 2U);
-  EXPECT_EQ(WriteJson(back.value()), text);
+  EXPECT_EQ(WriteJsonDocument(back.value()), text);
 }
 
 }  // namespace

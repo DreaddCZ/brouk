@@ -58,6 +58,33 @@ TEST(BookmarkModelTest, AddsAtTheEndOrAtAnIndex) {
   EXPECT_FALSE(model.AddFolder(999, kEnd, "x", "", 1));
 }
 
+TEST(BookmarkModelTest, MovesSeveralItemsInOrder) {
+  BookmarkModel model;
+  BookmarkId a = AddUrl(model, kBar, "https://a.com/");
+  BookmarkId b = AddUrl(model, kBar, "https://b.com/");
+  BookmarkId c = AddUrl(model, kBar, "https://c.com/");
+  BookmarkId d = AddUrl(model, kBar, "https://d.com/");
+  // c and a before b, in the order selected.
+  EXPECT_FALSE(model.MoveItems({c, a}, kBar, 1));
+  EXPECT_EQ(model.Find(kBar)->children, (std::vector<BookmarkId>{c, a, b, d}));
+  BookmarkId folder = AddDir(model, kOther, "F");
+  EXPECT_FALSE(model.MoveItems({b, d}, folder, kEnd));
+  EXPECT_EQ(model.Find(folder)->children, (std::vector<BookmarkId>{b, d}));
+  EXPECT_TRUE(model.MoveItems({folder}, folder, 0)) << "into itself";
+}
+
+TEST(BookmarkModelTest, ItemsInsideMovedFoldersGoAlong) {
+  BookmarkModel model;
+  BookmarkId folder = AddDir(model, kBar, "F");
+  BookmarkId inside = AddUrl(model, folder, "https://in.com/");
+  BookmarkId other = AddUrl(model, kBar, "https://o.com/");
+  EXPECT_EQ(model.WithoutNested({inside, folder, other, 999}),
+            (std::vector<BookmarkId>{folder, other}));
+  EXPECT_FALSE(model.MoveItems({inside, folder}, kOther, kEnd));
+  EXPECT_EQ(model.Find(inside)->parent, folder);
+  EXPECT_EQ(model.Find(kOther)->children, (std::vector<BookmarkId>{folder}));
+}
+
 TEST(BookmarkModelTest, NestedFoldersAndMoving) {
   BookmarkModel model;
   BookmarkId outer = AddDir(model, kBar, "Outer");
@@ -248,11 +275,12 @@ TEST(BookmarkModelTest, JsonRoundTrip) {
   EXPECT_EQ(copy.Find(page)->url, "https://jira.example/");
   EXPECT_EQ(copy.Find(page)->added, 100);
   EXPECT_EQ(copy.Find(other)->profile, "home");
-  EXPECT_EQ(WriteJson(copy.ToJson()), WriteJson(model.ToJson()));
+  EXPECT_EQ(WriteJsonDocument(copy.ToJson()),
+            WriteJsonDocument(model.ToJson()));
 }
 
 TEST(BookmarkModelTest, ReadingRepairsBadItems) {
-  Result<JsonValue> json = ParseJson(R"({
+  Result<JsonValue> json = ParseJsonDocument(R"({
     "version": 1, "next_id": 3,
     "roots": {
       "bookmark_bar": {"children": [
@@ -283,7 +311,7 @@ TEST(BookmarkModelTest, ReadingRepairsBadItems) {
   EXPECT_EQ(model.value().Find(10)->profile, "");
   EXPECT_FALSE(BookmarkModel::FromJson(JsonValue::Array()));
   EXPECT_FALSE(BookmarkModel::FromJson(
-      ParseJson(R"({"version": 99, "roots": {}})").value()));
+      ParseJsonDocument(R"({"version": 99, "roots": {}})").value()));
 }
 
 }  // namespace

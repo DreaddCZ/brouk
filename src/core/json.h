@@ -52,11 +52,11 @@ struct JsonMember {
 
 // RFC 8259 JSON. Nesting deeper than 1000 levels is rejected, so a hostile
 // file cannot exhaust the stack.
-Result<JsonValue> ParseJson(std::string_view text);
+Result<JsonValue> ParseJsonDocument(std::string_view text);
 
 // Pretty-printed with two-space indentation, UTF-8 kept as is; control
 // characters, quotes and backslashes escaped.
-std::string WriteJson(const JsonValue& value);
+std::string WriteJsonDocument(const JsonValue& value);
 
 }  // namespace brouk
 

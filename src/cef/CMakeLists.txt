@@ -2,6 +2,8 @@
 add_library(brouk_cef STATIC
   browser_app.cc
   browser_app.h
+  bookmarks_page_handler.cc
+  bookmarks_page_handler.h
   browsing_data.cc
   browsing_data.h
   context_menu_model.cc

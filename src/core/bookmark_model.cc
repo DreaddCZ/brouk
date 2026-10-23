@@ -258,6 +258,43 @@ std::optional<Error> BookmarkModel::Move(BookmarkId id,
   return std::nullopt;
 }
 
+std::vector<BookmarkId> BookmarkModel::WithoutNested(
+    const std::vector<BookmarkId>& ids) const {
+  std::vector<BookmarkId> result;
+  for (BookmarkId id : ids) {
+    const BookmarkItem* item = Find(id);
+    if (item == nullptr || std::ranges::find(result, id) != result.end()) {
+      continue;
+    }
+    bool nested = std::ranges::any_of(ids, [&](BookmarkId other) {
+      return other != id && IsInside(item->parent, other);
+    });
+    if (!nested) {
+      result.push_back(id);
+    }
+  }
+  return result;
+}
+
+std::optional<Error> BookmarkModel::MoveItems(
+    const std::vector<BookmarkId>& ids,
+    BookmarkId parent,
+    std::size_t index) {
+  for (BookmarkId id : WithoutNested(ids)) {
+    if (std::optional<Error> error = Move(id, parent, index)) {
+      return error;
+    }
+    if (index != kEnd) {
+      // The next one goes right after this one.
+      const std::vector<BookmarkId>& children = Find(parent)->children;
+      index = static_cast<std::size_t>(std::ranges::find(children, id) -
+                                       children.begin()) +
+              1;
+    }
+  }
+  return std::nullopt;
+}
+
 void BookmarkModel::Collect(BookmarkId id,
                             std::vector<BookmarkItem>& out) const {
   const BookmarkItem* item = Find(id);

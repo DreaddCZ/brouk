@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BridgeError, send } from './bridge.js';
+import { BridgeError, send, subscribe } from './bridge.js';
 
 test('send adds the type and parses the answer', async () => {
   let sent = '';
@@ -28,4 +28,18 @@ test('an empty answer is null; a broken one is an error', async () => {
 
 test('outside Brouk there is no transport', async () => {
   await assert.rejects(send('a', {}, null), /only inside Brouk/);
+});
+
+test('subscribe sends the type and calls back on every message', () => {
+  let sent = '';
+  let calls = 0;
+  subscribe('bookmarks.watch', () => calls++, (request, onMessage) => {
+    sent = request;
+    onMessage('changed');
+    onMessage('changed');
+  });
+  assert.deepEqual(JSON.parse(sent), { type: 'bookmarks.watch' });
+  assert.equal(calls, 2);
+  subscribe('x', () => calls++, null);
+  assert.equal(calls, 2);
 });

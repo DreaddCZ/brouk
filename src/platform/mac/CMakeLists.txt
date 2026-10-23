@@ -90,6 +90,7 @@ set(_bundle_commands "")
 # Internal pages (web/, TypeScript), compiled into the bundle's resources.
 file(GLOB_RECURSE _web_sources CONFIGURE_DEPENDS
   "${PROJECT_SOURCE_DIR}/web/shared/*" "${PROJECT_SOURCE_DIR}/web/history/*"
+  "${PROJECT_SOURCE_DIR}/web/bookmarks/*"
   "${PROJECT_SOURCE_DIR}/web/profiles/*"
   "${PROJECT_SOURCE_DIR}/web/settings/*" "${PROJECT_SOURCE_DIR}/web/tools/*"
   "${PROJECT_SOURCE_DIR}/web/jsonview/*")

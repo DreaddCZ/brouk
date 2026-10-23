@@ -35,7 +35,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 008 | [Password manager](008-password-manager.md) | ready | P1 |
 | 009 | [Form autofill](009-autofill.md) | ready | P1 |
 | 010 | [Link routing and window picker](010-link-routing.md) | ready | P1 |
-| 011 | [Bookmark manager](011-bookmarks.md) | in-progress — model, storage and HTML import/export (PR #28), star, bubble and Bookmarks menu (PR #29), bookmarks bar (PR #30) built; manager page, suggestions and profiles next | P1 |
+| 011 | [Bookmark manager](011-bookmarks.md) | in-progress — model, storage and HTML import/export (PR #28), star, bubble and Bookmarks menu (PR #29), bookmarks bar (PR #30), manager page (PR #31) built; suggestions, palette and profiles next | P1 |
 | 012 | [Web platform basics](012-web-platform-basics.md) | in-progress | P1 |
 | 013 | [History](013-history.md) | in-progress — storage, recording, retention, address bar suggestions, History menu with closed tabs, history limits, the history page as a tab with search, SQL editor, Clean up and Clear browsing data (merged); history in profile export postponed | P1 |
 | 014 | [Downloads](014-downloads.md) | ready | P2 |

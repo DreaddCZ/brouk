@@ -92,6 +92,17 @@ class BookmarkModel {
                             BookmarkId parent,
                             std::size_t index);
 
+  // Moves several items (the manager page's multi-selection) to `index` of
+  // `parent`, keeping their order; items inside another moved item go with
+  // it. Stops at the first item that cannot move.
+  std::optional<Error> MoveItems(const std::vector<BookmarkId>& ids,
+                                 BookmarkId parent,
+                                 std::size_t index);
+  // `ids` without those inside another of them (deleting or moving a folder
+  // takes its contents along).
+  std::vector<BookmarkId> WithoutNested(
+      const std::vector<BookmarkId>& ids) const;
+
   // Removes the item and everything inside it.
   std::optional<BookmarkRemoval> Remove(BookmarkId id);
   // Puts a removal back with the same ids: at its old place, or at the end
