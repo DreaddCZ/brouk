@@ -1,6 +1,7 @@
 #ifndef BROUK_CORE_REQUEST_RULES_H_
 #define BROUK_CORE_REQUEST_RULES_H_
 
+#include <cstddef>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -77,9 +78,25 @@ Headers ApplyRequestHeaderRules(const RequestRuleSet& set,
 Headers ApplyResponseHeaderRules(const RequestRuleSet& set,
                                  std::string_view url,
                                  Headers headers);
-// Whether any enabled rule changes responses (the response stage is
-// needed only then).
-bool HasResponseRules(const RequestRuleSet& set);
+// Response header rules cannot change a response Chromium loads: CEF hands
+// the page the headers it got from the network. So Brouk loads requests
+// that response header rules apply to itself and answers them with the
+// changed headers (spec 006 notes). The whole response is kept in memory
+// first, up to this size.
+inline constexpr std::size_t kMaxOwnResponseBytes =
+    std::size_t{64} * 1024 * 1024;
+
+// Whether Brouk can load a request itself: not event streams or
+// connection upgrades, which never end.
+bool CanLoadForResponseRules(const Headers& request_headers);
+// The page's request headers for Brouk's own request: without those the
+// network stack sets itself (Host, Content-Length, Connection, ...) and
+// without Referer, which is passed separately.
+Headers HeadersForOwnRequest(const Headers& headers);
+// The headers of a response Brouk loaded itself, for the page: the body is
+// complete and already decoded, so without Content-Encoding,
+// Content-Length and Transfer-Encoding.
+Headers HeadersForLoadedResponse(const Headers& headers);
 bool HasActiveRules(const RequestRuleSet& set);
 
 }  // namespace brouk

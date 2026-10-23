@@ -104,10 +104,33 @@ TEST(RequestRulesTest, BlockAndRedirect) {
   RequestRuleSet loop;
   loop.rules = {Rule("a.com", A::kRedirect, "", "https://a.com/")};
   EXPECT_FALSE(DecideRequest(loop, "https://a.com/").redirect);
-  EXPECT_TRUE(HasResponseRules(set));
-  set.rules[2].enabled = false;
-  EXPECT_FALSE(HasResponseRules(set));
   EXPECT_TRUE(HasActiveRules(set));
+  set.paused = true;
+  EXPECT_FALSE(HasActiveRules(set));
+}
+
+TEST(RequestRulesTest, OwnRequestsSkipStreams) {
+  EXPECT_TRUE(CanLoadForResponseRules({{"Accept", "application/json"}}));
+  EXPECT_FALSE(CanLoadForResponseRules({{"accept", "text/event-stream"}}));
+  EXPECT_FALSE(CanLoadForResponseRules({{"Upgrade", "websocket"}}));
+}
+
+TEST(RequestRulesTest, OwnRequestHeaders) {
+  Headers sent = HeadersForOwnRequest({{"Host", "a.com"},
+                                       {"X-Env", "staging"},
+                                       {"content-length", "3"},
+                                       {"Referer", "https://a.com/"},
+                                       {"Accept-Encoding", "gzip"},
+                                       {"Accept", "*/*"}});
+  EXPECT_EQ(sent, (Headers{{"X-Env", "staging"}, {"Accept", "*/*"}}));
+  Headers answered =
+      HeadersForLoadedResponse({{"Content-Type", "application/json"},
+                                {"Content-Encoding", "gzip"},
+                                {"Content-Length", "120"},
+                                {"transfer-encoding", "chunked"},
+                                {"Set-Cookie", "a=1"}});
+  EXPECT_EQ(answered, (Headers{{"Content-Type", "application/json"},
+                               {"Set-Cookie", "a=1"}}));
 }
 
 TEST(RequestRulesTest, FileRoundTrip) {

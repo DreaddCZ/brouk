@@ -336,13 +336,40 @@ Headers ApplyResponseHeaderRules(const RequestRuleSet& set,
                           RequestRule::Action::kRemoveResponseHeader);
 }
 
-bool HasResponseRules(const RequestRuleSet& set) {
-  return !set.paused &&
-         std::ranges::any_of(set.rules, [](const RequestRule& rule) {
-           return rule.enabled &&
-                  (rule.action == RequestRule::Action::kSetResponseHeader ||
-                   rule.action == RequestRule::Action::kRemoveResponseHeader);
-         });
+bool CanLoadForResponseRules(const Headers& request_headers) {
+  return std::ranges::none_of(request_headers, [](const Header& header) {
+    return EqualsIgnoringCase(header.first, "Upgrade") ||
+           (EqualsIgnoringCase(header.first, "Accept") &&
+            header.second.find("text/event-stream") != std::string::npos);
+  });
+}
+
+Headers HeadersForOwnRequest(const Headers& headers) {
+  static constexpr auto kSetByNetwork = std::to_array<std::string_view>(
+      {"Host", "Content-Length", "Connection", "Keep-Alive",
+       "Transfer-Encoding", "TE", "Upgrade", "Accept-Encoding",
+       "Proxy-Connection", "Proxy-Authorization", "Referer"});
+  Headers result;
+  for (const Header& header : headers) {
+    if (std::ranges::none_of(kSetByNetwork, [&header](std::string_view name) {
+          return EqualsIgnoringCase(header.first, name);
+        })) {
+      result.push_back(header);
+    }
+  }
+  return result;
+}
+
+Headers HeadersForLoadedResponse(const Headers& headers) {
+  Headers result;
+  for (const Header& header : headers) {
+    if (!EqualsIgnoringCase(header.first, "Content-Encoding") &&
+        !EqualsIgnoringCase(header.first, "Content-Length") &&
+        !EqualsIgnoringCase(header.first, "Transfer-Encoding")) {
+      result.push_back(header);
+    }
+  }
+  return result;
 }
 
 bool HasActiveRules(const RequestRuleSet& set) {
