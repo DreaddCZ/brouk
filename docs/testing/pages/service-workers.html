@@ -1,0 +1,30 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Service worker test</title>
+<style>body { font: 15px -apple-system, sans-serif; margin: 2em; } button { font-size: 15px; margin: .3em; }</style>
+<h1>Service workers (spec 006, Site data)</h1>
+<p>Serve this folder on localhost (see README). "Register" registers two
+service workers with different scopes. Dev tools → Site data → "Service
+workers" lists both, with their script and state; "Delete" unregisters one.</p>
+<button id="register">Register two service workers</button>
+<button id="status">Show registrations</button>
+<pre id="out"></pre>
+<script>
+  const out = document.getElementById('out');
+  async function show() {
+    const list = await navigator.serviceWorker.getRegistrations();
+    out.textContent = list.length ? list.map((r) => r.scope).join('\n') : '(none)';
+  }
+  document.getElementById('register').onclick = async () => {
+    try {
+      await navigator.serviceWorker.register('sw.js', { scope: './' });
+      await navigator.serviceWorker.register('sw.js?second', { scope: './second/' });
+    } catch (error) {
+      out.textContent = String(error);
+      return;
+    }
+    show();
+  };
+  document.getElementById('status').onclick = show;
+  show();
+</script>
