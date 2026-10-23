@@ -28,6 +28,32 @@ The browser keeps a live model of all its windows and tabs, including which disp
 - Navigation within a tab, including redirects: never. Otherwise sign-in flows (Microsoft, Google, GitHub) would jump to another profile and break.
 - Popups opened by page scripts (e.g. sign-in popups that report back to the page): never; they always stay in the opener's profile, for the same reason.
 
+**Link wrappers (safe links):** links from Outlook, Teams and other mail and chat tools often point to a security wrapper first: Microsoft Safe Links, Proofpoint URL Defense, Mimecast and others. The wrapper checks the link and then redirects to the real page. Routing always uses the **real URL**, never the wrapper's. Otherwise every wrapped link would match no rule, and the redirect would never change profile.
+
+- **Known wrappers:**
+  - Brouk has a built-in list of wrappers. Each entry says how to find the real URL.
+  - The user can add their own wrapper hosts in settings: either the name of the URL parameter that holds the real URL, or "opaque".
+- **Built-in decodable wrappers** (the real URL can be read from the link itself):
+  - Microsoft Safe Links: `*.safelinks.protection.outlook.com` and the Teams Safe Links page (parameter `url`);
+  - Proofpoint URL Defense: `urldefense.com`, `urldefense.proofpoint.com` (formats v1, v2 and v3);
+  - Barracuda `linkprotect.cudasvc.com` (`a`);
+  - Cisco `secure-web.cisco.com`;
+  - Google `www.google.com/url` (`q` or `url`).
+- **Built-in opaque wrappers** (the real URL is known only after loading): Mimecast `protect-*.mimecast.com`, `url.uk.m.mimecastprotect.com` and similar.
+- **Decodable wrapper:**
+  1. Brouk reads the real URL. Wrappers inside wrappers are unwrapped too, up to 5 levels.
+  2. It routes by the real URL, choosing the profile and window, with the picker if needed.
+  3. It then opens the **wrapper URL** in the chosen tab, so the company's check still runs and the click is logged.
+  4. The wrapper redirects to the real page inside that tab, in the same profile, as for any redirect.
+  - The decoded URL is treated as untrusted. If it is not a valid `http`/`https` URL, the wrapper is handled as opaque.
+- **Opaque wrapper:**
+  1. Brouk loads the wrapper in a **neutral, temporary context**: in memory only, no cookies or storage kept, deleted afterwards, and in no profile. No tab is shown.
+  2. When the wrapper navigates or redirects to a host that is not a wrapper, Brouk stops that navigation and routes that URL as a link from the original source.
+  3. If the wrapper does not leave its host within 5 seconds, it has a page of its own: a warning, a "continue" button, or an error. That page is shown in a small separate **"Checking link"** window. When the user continues and the page leaves the wrapper host, the window closes and the URL is routed.
+  4. A download started in the neutral context is cancelled, and its URL is routed instead.
+- **The picker and the "Always open…" checkbox use the real URL.** The picker shows "via Safe Links", "via Mimecast", etc. next to it.
+- **Which links are unwrapped:** the same link opens that are routed (from other apps, new tabs, typed into a new tab). Clicking a wrapped link that navigates within the current tab is not routed, as before.
+
 **When no rule matches:**
 
 - Link from inside the browser: stays in the current profile.
@@ -76,6 +102,14 @@ The browser keeps a live model of all its windows and tabs, including which disp
 - [ ] A link from inside the browser that matches no rule stays in the current profile.
 - [ ] The destination window follows the rules above (default profile → most recent window on the current screen; other profiles: one window → there; several → user chooses; none → new group in the frontmost window).
 - [ ] Routing rules can be added, edited and deleted in settings.
+
+**Link wrappers**
+- [ ] A Safe Links link from Outlook or Teams to `https://companya.atlassian.net/browse/X-1`, with a rule `companya.atlassian.net` → A, opens in profile A without a prompt. The wrapper URL is loaded first in that tab, and the tab ends on the Jira page.
+- [ ] The same works for Proofpoint URL Defense v1, v2 and v3, Barracuda, Cisco and Google redirect links, and for wrappers inside wrappers.
+- [ ] A Mimecast link is resolved in the neutral context and opens in the profile the rules give for the final URL. That context keeps no cookies, and no data from it reaches any profile.
+- [ ] An opaque wrapper that shows its own page (e.g. a warning) shows it in the "Checking link" window. After the user continues, the final URL is routed.
+- [ ] The picker shows the real URL with "via <wrapper>". "Always open links matching …" changes the rule that matches the real URL, never one for the wrapper's host.
+- [ ] A wrapper host added in settings, with a parameter name or as opaque, is unwrapped the same way.
 - [ ] The picker shows the URL and where the link came from. In the window step, each window shows a thumbnail of its active tab, the active tab's favicon and title, and its profile groups with tab counts. "New window" is always the last entry.
 - [ ] Choosing "New window" opens the link in a new window, in the chosen profile.
 - [ ] Every picker step works with the keyboard alone (number keys, arrows plus Enter); Esc in the first step cancels without opening the link.
@@ -88,6 +122,7 @@ The browser keeps a live model of all its windows and tabs, including which disp
 - Choosing a tab position or a specific tab in the picker.
 - Thumbnails of all tabs of a window (only the active tab).
 - Rules based on anything other than the URL (e.g. the app the link came from).
+- Skipping the company's link check: Brouk always loads the wrapper (or lets it run in the neutral context) and never opens the real URL without it.
 
 ## Configuration
 
@@ -95,6 +130,7 @@ The browser keeps a live model of all its windows and tabs, including which disp
 |---|---|---|
 | Routing rules (pattern → one or more profiles) | none | global |
 | When the chosen window is on another Space | switch to that Space (alternative: move the window here) | global |
+| Link wrappers | built-in list (see Description) plus the user's own entries (host pattern + parameter name, or opaque) | global |
 
 ## Open questions
 
@@ -113,3 +149,8 @@ None.
   - A window on another Space: by default macOS switches to it; a setting moves the window to the current Space instead. That uses the public `NSWindowCollectionBehaviorMoveToActiveSpace`; verify it in the SDK headers.
   - The picker can save the choice by narrowing the matched rule to one profile.
   - Spec set to `ready`.
+- 2026-10-23 (with the user): mail and chat tools wrap links in security redirects (Safe Links, URL Defense, Mimecast), so routing by the first URL would send every wrapped link to the default profile.
+  - Agreed: route by the real URL.
+  - For decodable wrappers, still load the wrapper in the chosen profile so the company check runs.
+  - Resolve opaque wrappers in a neutral throwaway request context, showing their page only when it needs the user.
+  - The decoders (Proofpoint v3 in particular) are pure core functions; cover them with unit tests using real sample links.
