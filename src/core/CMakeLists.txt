@@ -1,9 +1,12 @@
 # Portable core: no CEF, no platform headers. Builds and is tested on Linux.
 include(BroukYaml)
+include(BroukSqlite)
 
 set(BROUK_CORE_SOURCES
   address_input.cc
   address_input.h
+  address_suggestions.cc
+  address_suggestions.h
   command_palette.cc
   command_palette.h
   context_menu.cc
@@ -19,6 +22,8 @@ set(BROUK_CORE_SOURCES
   download_paths.h
   external_protocol.cc
   external_protocol.h
+  history_store.cc
+  history_store.h
   internal_pages.cc
   internal_pages.h
   launch_args.cc
@@ -55,6 +60,8 @@ set(BROUK_CORE_SOURCES
   settings_schema.h
   shortcuts.cc
   shortcuts.h
+  sqlite_db.cc
+  sqlite_db.h
   tab_strip_layout.cc
   tab_strip_layout.h
   tab_strip_model.cc
@@ -82,8 +89,9 @@ brouk_target_options(brouk_core_testing)
 # yaml-cpp throws; the one file using it catches everything (see the file).
 set_source_files_properties(yaml_io.cc PROPERTIES COMPILE_OPTIONS -fexceptions)
 
-target_link_libraries(brouk_core PRIVATE brouk_yaml_cpp)
-target_link_libraries(brouk_core_testing PRIVATE brouk_yaml_cpp_testing)
+target_link_libraries(brouk_core PRIVATE brouk_yaml_cpp brouk_sqlite)
+target_link_libraries(brouk_core_testing PRIVATE brouk_yaml_cpp_testing
+  brouk_sqlite_testing)
 
 foreach(target brouk_core brouk_core_testing)
   target_include_directories(${target} PUBLIC

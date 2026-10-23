@@ -16,6 +16,11 @@ std::string SearchTemplate(const Settings& global);
 // the host of its address.
 std::string SearchEngineName(const Settings& global);
 
+// The engine's address for search suggestions (OpenSearch JSON, "%s" for the
+// encoded text), or "" when there is none (a custom engine, or the setting
+// suggestions.search is off).
+std::string SearchSuggestTemplate(const Settings& global);
+
 }  // namespace brouk
 
 #endif  // BROUK_CORE_SEARCH_ENGINES_H_
