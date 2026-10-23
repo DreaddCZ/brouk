@@ -201,6 +201,12 @@ class AppHistoryPage : public HistoryPageDelegate {
     BRAppDelegate* app = app_;
     return app ? [app historyView] : "site";
   }
+  void CopyText(const std::string& text) override {
+    NSPasteboard* pasteboard = NSPasteboard.generalPasteboard;
+    [pasteboard clearContents];
+    [pasteboard setString:@(text.c_str()) ?: @""
+                  forType:NSPasteboardTypeString];
+  }
   void SetView(const std::string& view) override {
     [app_ setGlobalSetting:"history.view" value:SettingValue(view)];
   }

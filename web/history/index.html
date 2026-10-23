@@ -14,8 +14,11 @@
     <h1>History</h1>
   </header>
   <div class="search">
+    <div class="search-row">
     <input type="search" id="query" placeholder="Search history — words, &quot;phrases&quot;, site:, after:7d, visits:&gt;3, -word, a OR b"
       aria-label="Search history" aria-describedby="query-hint" spellcheck="false" autocomplete="off">
+    <button type="button" id="sql-toggle" aria-pressed="false" title="Read-only SQL over the history of all profiles">SQL</button>
+    </div>
     <p id="query-hint" class="hint" aria-live="polite" hidden></p>
     <div class="chips" role="group" aria-label="Add a filter">
       <button type="button" class="chip" data-chip="site">Site</button>
@@ -26,6 +29,28 @@
     </div>
     <div id="chip-menu" class="chip-menu" role="dialog" hidden></div>
   </div>
+  <section id="sql-panel" class="sql-panel" aria-label="SQL" hidden>
+    <div class="sql-main">
+      <textarea id="sql" rows="6" spellcheck="false" aria-label="SQL query (read-only, SQLite)"
+        placeholder="SELECT title, url, visit_count FROM pages ORDER BY visit_count DESC LIMIT 20"></textarea>
+      <div class="sql-actions">
+        <button type="button" id="sql-run" class="primary">Run</button>
+        <span class="hint">⌘↩ runs. Only SELECT; at most 1,000 rows and 2 seconds.</span>
+        <span class="spacer"></span>
+        <button type="button" id="sql-copy" disabled>Copy as CSV</button>
+      </div>
+      <p id="sql-status" class="hint" role="status"></p>
+      <div id="sql-results" class="sql-results"></div>
+    </div>
+    <aside class="sql-help" aria-label="Views and examples">
+      <h2>Views</h2>
+      <p><code>pages</code>: profile, host, url, title, visit_count, typed_count, last_visit</p>
+      <p><code>visits</code>: profile, host, url, title, visit_time, transition</p>
+      <p class="hint">Times are local, as text: <code>2026-10-23 17:30:00</code>. transition is typed, link, bookmark, reload or other. All profiles are included; profile is the profile's name.</p>
+      <h2>Examples</h2>
+      <div id="sql-examples"></div>
+    </aside>
+  </section>
   <div class="toolbar" role="toolbar" aria-label="History view">
     <label>Profile <select id="profile"></select></label>
     <div class="segmented" role="group" aria-label="View">

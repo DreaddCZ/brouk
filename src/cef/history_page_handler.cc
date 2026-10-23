@@ -2,8 +2,10 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <map>
 #include <memory>
 #include <optional>
@@ -13,6 +15,7 @@
 
 #include "cef/json_util.h"
 #include "core/history_query.h"
+#include "core/history_sql.h"
 #include "core/history_store.h"
 #include "core/internal_pages.h"
 #include "core/profile_registry.h"
@@ -24,10 +27,14 @@ namespace brouk {
 
 namespace {
 
-constexpr std::size_t kMaxRequestBytes = std::size_t{256} * 1024;
+// Large enough for "Copy as CSV" (kMaxCopyBytes); every field has its own
+// limit.
+constexpr std::size_t kMaxRequestBytes = std::size_t{9} * 1024 * 1024;
 constexpr std::size_t kMaxFieldBytes = 8192;
 constexpr std::size_t kMaxDeleteItems = 5000;
 constexpr int kMaxVisits = 500;
+constexpr std::size_t kMaxSqlBytes = std::size_t{16} * 1024;
+constexpr std::size_t kMaxCopyBytes = std::size_t{8} * 1024 * 1024;
 constexpr int kBadRequest = 400;
 constexpr int kFailed = 500;
 
@@ -308,6 +315,42 @@ void AnswerVisits(HistoryService& history,
       });
 }
 
+// Cells are null, a number (integers and reals that JSON holds exactly) or
+// text.
+std::string SqlJson(const SqlResult& result) {
+  CefRefPtr<CefListValue> columns = CefListValue::Create();
+  for (const std::string& column : result.columns) {
+    columns->SetString(columns->GetSize(), column);
+  }
+  CefRefPtr<CefListValue> rows = CefListValue::Create();
+  for (const std::vector<SqlCell>& row : result.rows) {
+    CefRefPtr<CefListValue> cells = CefListValue::Create();
+    for (const SqlCell& cell : row) {
+      std::size_t index = cells->GetSize();
+      if (cell.type == SqlCell::Type::kNull) {
+        cells->SetNull(index);
+        continue;
+      }
+      if (cell.type == SqlCell::Type::kInteger ||
+          cell.type == SqlCell::Type::kReal) {
+        char* end = nullptr;
+        double number = std::strtod(cell.text.c_str(), &end);
+        if (end && *end == '\0' && std::abs(number) < 9.0e15) {
+          cells->SetDouble(index, number);
+          continue;
+        }
+      }
+      cells->SetString(index, cell.text);
+    }
+    rows->SetList(rows->GetSize(), cells);
+  }
+  CefRefPtr<CefDictionaryValue> answer = CefDictionaryValue::Create();
+  answer->SetList("columns", columns);
+  answer->SetList("rows", rows);
+  answer->SetBool("truncated", result.truncated);
+  return ToJson(answer);
+}
+
 // One thing to delete, checked.
 struct DeleteItem {
   ProfileId profile;
@@ -461,6 +504,21 @@ bool HistoryPageHandler::OnQuery(CefRefPtr<CefBrowser> /*browser*/,
     callback->Success("");
     return true;
   }
+  if (*type == "history.copy") {
+    // Not StringField: results can be bigger than other fields.
+    if (message->GetType("text") != VTYPE_STRING) {
+      callback->Failure(kBadRequest, "Invalid request.");
+      return true;
+    }
+    std::string copied = message->GetString("text").ToString();
+    if (copied.size() > kMaxCopyBytes) {
+      callback->Failure(kBadRequest, "Too much to copy.");
+      return true;
+    }
+    delegate.CopyText(copied);
+    callback->Success("");
+    return true;
+  }
   if (*type == "history.open") {
     std::optional<std::vector<ProfileId>> profiles =
         ProfilesOf(message, delegate);
@@ -468,12 +526,15 @@ bool HistoryPageHandler::OnQuery(CefRefPtr<CefBrowser> /*browser*/,
     bool new_tab =
         message->GetType("newTab") == VTYPE_BOOL && message->GetBool("newTab");
     // Only pages a history can hold: never brouk://, javascript: and such.
-    if (!profiles || profiles->size() != 1 || !message->HasKey("profile") ||
-        !url || !ShouldRecordInHistory(*url)) {
+    // Without a profile (an SQL result without one): the history tab's.
+    bool own_profile = !message->HasKey("profile");
+    if (!profiles || (!own_profile && profiles->size() != 1) || !url ||
+        !ShouldRecordInHistory(*url)) {
       callback->Failure(kBadRequest, "Invalid request.");
       return true;
     }
-    delegate.OpenPage(profiles->front(), *url, new_tab);
+    delegate.OpenPage(own_profile ? ProfileId() : profiles->front(), *url,
+                      new_tab);
     callback->Success("");
     return true;
   }
@@ -516,6 +577,25 @@ bool HistoryPageHandler::OnQuery(CefRefPtr<CefBrowser> /*browser*/,
     }
     AnswerVisits(*history, *profiles, *before, static_cast<int>(*limit),
                  shared_search, callback);
+  } else if (*type == "history.sql") {
+    if (message->GetType("query") != VTYPE_STRING ||
+        message->GetString("query").ToString().size() > kMaxSqlBytes) {
+      callback->Failure(kBadRequest, "Invalid request.");
+      return true;
+    }
+    std::vector<std::pair<ProfileId, std::string>> profiles;
+    for (const ProfileInfo& info : delegate.Profiles()) {
+      profiles.emplace_back(info.id, info.name);
+    }
+    history->RunSql(std::move(profiles), message->GetString("query").ToString(),
+                    [callback](Result<SqlResult> result) {
+                      if (!result) {
+                        // SQLite's own message (013).
+                        callback->Failure(kFailed, result.error().message);
+                        return;
+                      }
+                      callback->Success(SqlJson(result.value()));
+                    });
   } else if (*type == "history.delete") {
     std::optional<std::vector<DeleteItem>> items =
         DeleteItems(message, delegate.Profiles());

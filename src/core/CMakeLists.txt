@@ -26,6 +26,8 @@ set(BROUK_CORE_SOURCES
   external_protocol.h
   history_query.cc
   history_query.h
+  history_sql.cc
+  history_sql.h
   history_store.cc
   history_store.h
   internal_pages.cc

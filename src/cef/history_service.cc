@@ -204,6 +204,25 @@ void HistoryService::Run(const ProfileId& profile,
   });
 }
 
+void HistoryService::RunSql(
+    std::vector<std::pair<ProfileId, std::string>> profiles,
+    std::string sql,
+    SqlDone done) {
+  CEF_REQUIRE_UI_THREAD();
+  Post([profiles = std::move(profiles), sql = std::move(sql),
+        done = std::move(done)](State& state) mutable {
+    std::vector<SqlHistorySource> sources;
+    for (const auto& [id, name] : profiles) {
+      sources.push_back({name, state.database_path(id)});
+    }
+    auto result =
+        std::make_shared<Result<SqlResult>>(RunHistorySql(sources, sql));
+    CefPostTask(TID_UI, new FunctionTask([done = std::move(done), result] {
+                  done(std::move(*result));
+                }));
+  });
+}
+
 void HistoryService::RecentPages(const ProfileId& profile,
                                  std::size_t limit,
                                  SuggestDone done) {

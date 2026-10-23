@@ -51,3 +51,15 @@ Address bar suggestions and recording are in `003-browser-ui.md` (steps 37–48)
 35. Use each chip (Site, Date, Profile, Visits, Type). Expected: it adds the same filter text to the box and the list updates.
 36. With a search active, expand a site: only its matching pages are listed. Search for something that does not exist: "Nothing matches the search."
 
+## SQL
+
+37. Press "SQL" next to the search box. Expected: the editor appears with the views and their columns and example queries on the right; the search and lists are hidden. Press "SQL" again to go back.
+38. Click an example. Expected: it runs and shows a table; the status shows the number of rows and the time.
+39. `SELECT profile, host, count(*) FROM visits GROUP BY profile, host ORDER BY 3 DESC` with ⌘↩. Expected: sites of all profiles.
+40. Click an address in the results. Expected: it opens in the profile of the row's `profile` column (or the history tab's profile if there is none).
+41. "Copy as CSV", then paste into a text editor or Numbers. Expected: the header and rows, commas and quotes handled.
+42. `DELETE FROM pages`, `UPDATE pages SET title = 'x'`, `DROP TABLE pages`, `PRAGMA table_list`, `ATTACH 'x' AS y`, `SELECT 1; SELECT 2`. Expected: each is refused with a message; the history is unchanged.
+43. `SELECT * FROM sqlite_master`. Expected: refused (only the two views can be read).
+44. `WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n) SELECT count(*) FROM n`. Expected: stopped after 2 seconds with a message. Without `count(*)` (`SELECT i FROM n`): 1,000 rows and "(stopped at 1,000)".
+45. A mistake (`SELECT nope FROM pages`). Expected: SQLite's message ("no such column: nope").
+

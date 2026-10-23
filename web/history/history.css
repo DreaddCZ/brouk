@@ -67,3 +67,29 @@ main { max-width: 900px; }
 .chip-menu form { display: flex; gap: 6px; }
 .chip-menu input { font: inherit; padding: 3px 6px; border-radius: 6px; border: 1px solid var(--line);
   background: var(--bg); color: var(--text); }
+.search-row { display: flex; gap: 8px; }
+.search-row input { flex: 1; }
+#sql-toggle[aria-pressed=true] { background: var(--accent); border-color: var(--accent); color: #fff; }
+body.sql .chips, body.sql #query, body.sql #query-hint, body.sql .toolbar, body.sql #list,
+body.sql #empty, body.sql #no-match, body.sql #more, body.sql #chip-menu { display: none; }
+.sql-panel { display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 16px; }
+.sql-panel[hidden] { display: none; }
+.sql-panel textarea { font: 12px ui-monospace, Menlo, monospace; width: 100%; box-sizing: border-box;
+  padding: 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--text);
+  resize: vertical; }
+.sql-actions { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
+.sql-actions .spacer { flex: 1; }
+.sql-actions .hint { margin: 0; }
+.sql-help { font-size: 12px; }
+.sql-help h2 { font-size: 13px; margin: 0 0 6px; }
+.sql-help p { margin: 0 0 8px; }
+.sql-help code { font: 11px ui-monospace, Menlo, monospace; }
+#sql-examples button { display: block; width: 100%; text-align: left; margin-bottom: 4px; font-size: 12px; }
+.sql-results { overflow: auto; max-height: 70vh; border: 1px solid var(--line); border-radius: 8px; background: var(--card); }
+.sql-results:empty { display: none; }
+.sql-results table { border-collapse: collapse; font-size: 12px; width: 100%; }
+.sql-results th, .sql-results td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line);
+  white-space: nowrap; max-width: 420px; overflow: hidden; text-overflow: ellipsis; }
+.sql-results th { position: sticky; top: 0; background: var(--bg); font-weight: 600; }
+.sql-results td.number { text-align: right; font-variant-numeric: tabular-nums; }
+.sql-results td.null { color: var(--muted); font-style: italic; }

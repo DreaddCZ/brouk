@@ -545,6 +545,11 @@ NSButton* ToolbarButton(NSString* symbol,
           newTab:(BOOL)newTab
      fromHistory:(brouk::TabId)historyTab {
   BRTab* history = _tabs[@(historyTab)];
+  if (profile.empty()) {
+    brouk::ProfileId own = history ? history.profileId : [self activeProfileId];
+    [self openPage:url profile:own newTab:newTab fromHistory:historyTab];
+    return;
+  }
   if (!newTab && history && history.profileId == profile) {
     [self replaceTab:history withURL:url typed:NO];
     return;
