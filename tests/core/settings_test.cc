@@ -112,12 +112,17 @@ TEST(SettingsTest, Integers) {
 TEST(SettingsTest, FileFormat) {
   Settings settings(SettingScope::kProfile);
   ASSERT_FALSE(settings.Set("profile.name", std::string("Work")));
-  EXPECT_EQ(EmitYaml(settings.ToYaml()),
-            "profile:\n"
-            "  name: \"Work\"\n"
-            "  color: blue\n"
-            "history:\n"
-            "  keep_list: \"\"\n");
+  EXPECT_EQ(
+      EmitYaml(settings.ToYaml()),
+      "profile:\n"
+      "  name: \"Work\"\n"
+      "  color: blue\n"
+      "adblock:\n"
+      "  enabled: true\n"
+      "  allowlist: \"\"\n"
+      "  categories: \"ads, privacy, malware, cookies, regional, custom\"\n"
+      "history:\n"
+      "  keep_list: \"\"\n");
   EXPECT_EQ(EmitYaml(Settings(SettingScope::kGlobal).ToYaml()),
             "appearance:\n"
             "  theme: system\n"
@@ -136,6 +141,10 @@ TEST(SettingsTest, FileFormat) {
             "  never_record: \"\"\n"
             "bookmarks:\n"
             "  bar: new_tab_page\n"
+            "adblock:\n"
+            "  lists_on: \"\"\n"
+            "  lists_off: \"\"\n"
+            "  custom_lists: \"\"\n"
             "downloads:\n"
             "  folder: \"\"\n"
             "  ask_where_to_save: false\n"

@@ -119,6 +119,11 @@ list(APPEND _bundle_commands
   COMMAND ln -sfn Versions/Current/Libraries "${_framework}/Libraries"
   COMMAND ln -sfn Versions/Current/Resources "${_framework}/Resources")
 
+# Ad blocking resources (007), the first copy (see BroukAdblock.cmake).
+list(APPEND _bundle_commands
+  COMMAND ${CMAKE_COMMAND} -E copy "${BROUK_ADBLOCK_RESOURCES}"
+          "${APP_BUNDLE}/Contents/Resources/adblock-resources.json")
+
 set(_signed_helpers "")
 foreach(_suffix_list ${CEF_HELPER_APP_SUFFIXES})
   # Entries look like " (GPU):_gpu:.gpu" (name suffix, target, bundle id).

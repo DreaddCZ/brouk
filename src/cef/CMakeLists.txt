@@ -1,5 +1,7 @@
 # CEF integration: portable C++ (builds on Linux too), no platform UI code.
 add_library(brouk_cef STATIC
+  adblock_service.cc
+  adblock_service.h
   browser_app.cc
   browser_app.h
   bookmarks_page_handler.cc
