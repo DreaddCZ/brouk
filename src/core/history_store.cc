@@ -422,6 +422,28 @@ int HistoryStore::DeleteVisitsBefore(std::int64_t cutoff) {
   return removed;
 }
 
+std::vector<HistoryMatch> HistoryStore::RecentPages(std::size_t limit) {
+  std::vector<HistoryMatch> pages;
+  Error error;
+  std::optional<SqliteStatement> query = db_->Prepare(
+      "SELECT url, title, visit_count, typed_count, last_visit FROM urls "
+      "ORDER BY last_visit DESC LIMIT ?1",
+      error);
+  if (!query) {
+    return pages;
+  }
+  query->Bind(1, static_cast<std::int64_t>(limit));
+  while (query->Step()) {
+    pages.push_back({.url = query->ColumnText(0),
+                     .title = query->ColumnText(1),
+                     .visit_count = query->ColumnInt(2),
+                     .typed_count = query->ColumnInt(3),
+                     .last_visit = query->ColumnInt(4),
+                     .inline_completion = {}});
+  }
+  return pages;
+}
+
 std::optional<HistoryMatch> HistoryStore::FindPage(std::string_view url) {
   Error error;
   std::optional<SqliteStatement> query = db_->Prepare(

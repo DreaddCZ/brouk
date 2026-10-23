@@ -46,6 +46,11 @@ class HistoryService {
   void CloseProfile(const ProfileId& profile);
 
   using SuggestDone = std::function<void(std::vector<HistoryMatch>)>;
+  // The most recently visited pages of `profile` (History → Recently
+  // Visited); `done` runs on the UI thread.
+  void RecentPages(const ProfileId& profile,
+                   std::size_t limit,
+                   SuggestDone done);
   // Address bar suggestions from `profile`'s history; `done` runs on the UI
   // thread.
   void Suggest(const ProfileId& profile,

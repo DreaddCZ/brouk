@@ -59,6 +59,14 @@ class TabStripModel {
   // is not in this strip. Returns its index.
   std::size_t InsertAfter(TabId id, TabId after, bool activate);
 
+  // Inserts a tab at `position` in `profile`'s group (clamped to the group,
+  // never among its pinned tabs): a closed tab reopened where it was (013).
+  // Returns its index.
+  std::size_t InsertInGroup(TabId id,
+                            const ProfileId& profile,
+                            std::size_t position,
+                            bool activate);
+
   // Removes a tab. If it was active, picks the next active tab: another tab
   // opened by the same opener, then the opener, then the tab to the right,
   // then the one to the left; tabs in collapsed groups only if there is no

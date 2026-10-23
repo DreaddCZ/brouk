@@ -163,6 +163,22 @@ void HistoryService::CloseProfile(const ProfileId& profile) {
   Post([profile](State& state) { state.open.erase(profile); });
 }
 
+void HistoryService::RecentPages(const ProfileId& profile,
+                                 std::size_t limit,
+                                 SuggestDone done) {
+  CEF_REQUIRE_UI_THREAD();
+  Post([profile, limit, done = std::move(done)](State& state) mutable {
+    std::vector<HistoryMatch> pages;
+    if (HistoryStore* store = state.Store(profile)) {
+      pages = store->RecentPages(limit);
+    }
+    CefPostTask(TID_UI, new FunctionTask([done = std::move(done),
+                                          pages = std::move(pages)]() mutable {
+                  done(std::move(pages));
+                }));
+  });
+}
+
 void HistoryService::Suggest(const ProfileId& profile,
                              std::string text,
                              std::size_t limit,

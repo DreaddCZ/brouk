@@ -227,6 +227,14 @@ class AppSettingsPage : public SettingsPageDelegate {
   std::unique_ptr<brouk::ProfileRegistry> _profiles;
   // History databases (013); from cefContextInitialized to shutdown.
   std::unique_ptr<brouk::HistoryService> _history;
+  // History menu (013): tabs and windows closed in this run, and each
+  // profile's recently visited pages (fetched from its history).
+  brouk::ClosedTabList _closedTabs;
+  std::map<brouk::ProfileId, std::vector<brouk::HistoryMatch>, std::less<>>
+      _recentPages;
+  NSMenu* _profilesMenu;
+  NSMenu* _recentlyClosedMenu;
+  NSMenu* _recentlyVisitedMenu;
   // Each profile's request context (its isolated web data), created when the
   // profile is first used.
   std::map<brouk::ProfileId, CefRefPtr<CefRequestContext>> _requestContexts;
@@ -572,6 +580,14 @@ class AppSettingsPage : public SettingsPageDelegate {
 // NSMenuDelegate: the Profiles menu lists the current profiles. A profile
 // opens a new tab in the front window; with Option, a new window.
 - (void)menuNeedsUpdate:(NSMenu*)menu {
+  if (menu == _recentlyClosedMenu) {
+    [self fillRecentlyClosedMenu:menu];
+    return;
+  }
+  if (menu == _recentlyVisitedMenu) {
+    [self fillRecentlyVisitedMenu:menu];
+    return;
+  }
   [menu removeAllItems];
   const std::string& default_id = _profiles->default_profile().id;
   for (const brouk::ProfileInfo& profile : _profiles->profiles()) {
@@ -611,6 +627,9 @@ class AppSettingsPage : public SettingsPageDelegate {
                     forEvent:(NSEvent*)event
                       target:(id _Nullable*)target
                       action:(SEL _Nullable*)action {
+  if (menu != _profilesMenu) {
+    return NO;
+  }
   for (const brouk::Shortcut& shortcut :
        brouk::mac::ShortcutsFor("manage_profiles")) {
     if (brouk::mac::EventMatchesShortcut(event, shortcut)) {
@@ -962,6 +981,159 @@ class AppSettingsPage : public SettingsPageDelegate {
   return _history.get();
 }
 
+#pragma mark - History menu (013)
+
+- (void)historyChangedForProfile:(const brouk::ProfileId&)profile {
+  [self fetchRecentPagesForProfile:profile];
+}
+
+- (void)fetchRecentPagesForProfile:(const brouk::ProfileId&)profile {
+  if (!_history) {
+    return;
+  }
+  __weak BRAppDelegate* weakSelf = self;
+  brouk::ProfileId target = profile;
+  _history->RecentPages(
+      profile, 10, [weakSelf, target](std::vector<brouk::HistoryMatch> pages) {
+        BRAppDelegate* strongSelf = weakSelf;
+        if (strongSelf) {
+          strongSelf->_recentPages[target] = std::move(pages);
+        }
+      });
+}
+
+- (void)browserWindow:(BRBrowserWindowController*)controller
+            closedTab:(brouk::ClosedTab)tab {
+  if (!_quitting) {
+    _closedTabs.AddTab(std::move(tab));
+  }
+}
+
+- (void)browserWindow:(BRBrowserWindowController*)controller
+    closedWindowWithTabs:(std::vector<brouk::ClosedTab>)tabs {
+  if (!_quitting) {
+    _closedTabs.AddWindow(controller.windowId, std::move(tabs));
+  }
+}
+
+// ⇧⌘T: the newest closed tab or window.
+- (IBAction)reopenClosedTab:(nullable id)sender {
+  if (std::optional<brouk::ClosedEntry> entry = _closedTabs.TakeNewest()) {
+    [self reopenEntry:*entry];
+  }
+}
+
+- (void)reopenClosedEntry:(NSMenuItem*)sender {
+  if (std::optional<brouk::ClosedEntry> entry = _closedTabs.Take(sender.tag)) {
+    [self reopenEntry:*entry];
+  }
+}
+
+// A window comes back as a new window with its tabs; a tab goes back into
+// its window if that is still open, else into the front window.
+- (void)reopenEntry:(const brouk::ClosedEntry&)entry {
+  BRBrowserWindowController* target = nil;
+  if (!entry.is_window) {
+    for (BRBrowserWindowController* controller in _windows) {
+      if (controller.windowId == entry.window_id && !controller.isPopup) {
+        target = controller;
+      }
+    }
+    target = target ?: [self frontController];
+  }
+  if (!target) {
+    target = [self openWindow];
+  }
+  for (std::size_t i = 0; i < entry.tabs.size(); ++i) {
+    brouk::ClosedTab tab = entry.tabs[i];
+    if (!_profiles->Find(tab.profile)) {
+      tab.profile = _profiles->default_profile().id;  // Deleted meanwhile.
+    }
+    if (entry.is_window) {
+      tab.position = i;
+    }
+    [target restoreClosedTab:tab activate:i == 0];
+  }
+  [target showWindow:nil];
+}
+
+- (void)fillRecentlyClosedMenu:(NSMenu*)menu {
+  [menu removeAllItems];
+  if (_closedTabs.empty()) {
+    [menu addItemWithTitle:@"No Closed Tabs" action:nil keyEquivalent:@""]
+        .enabled = NO;
+    return;
+  }
+  for (const brouk::ClosedEntry& entry : _closedTabs.entries()) {
+    const brouk::ClosedTab& first = entry.tabs.front();
+    NSString* title =
+        entry.is_window
+            ? [NSString stringWithFormat:@"Window (%lu tabs)",
+                                         static_cast<unsigned long>(
+                                             entry.tabs.size())]
+            : @(first.title.empty() ? first.url.c_str() : first.title.c_str());
+    NSMenuItem* item = [menu addItemWithTitle:title ?: @""
+                                       action:@selector(reopenClosedEntry:)
+                                keyEquivalent:@""];
+    item.target = self;
+    item.tag = static_cast<NSInteger>(entry.id);
+    const brouk::ProfileInfo* profile = _profiles->Find(first.profile);
+    item.image = brouk::mac::ProfileDot(profile ? profile->color : "grey");
+    item.toolTip = @(first.url.c_str());
+  }
+}
+
+- (void)fillRecentlyVisitedMenu:(NSMenu*)menu {
+  [menu removeAllItems];
+  BRBrowserWindowController* front = [self frontController];
+  brouk::ProfileId profile =
+      front ? [front activeProfileId] : _profiles->default_profile().id;
+  auto it = _recentPages.find(profile);
+  if (it == _recentPages.end()) {
+    // Read from the history in the background; shown next time.
+    [self fetchRecentPagesForProfile:profile];
+    [menu addItemWithTitle:@"Loading…" action:nil keyEquivalent:@""].enabled =
+        NO;
+    return;
+  }
+  if (it->second.empty()) {
+    [menu addItemWithTitle:@"No History" action:nil keyEquivalent:@""].enabled =
+        NO;
+    return;
+  }
+  for (const brouk::HistoryMatch& page : it->second) {
+    NSString* title =
+        @(page.title.empty() ? page.url.c_str() : page.title.c_str()) ?: @"";
+    NSMenuItem* item = [menu addItemWithTitle:title
+                                       action:@selector(openRecentPage:)
+                                keyEquivalent:@""];
+    item.target = self;
+    item.representedObject =
+        @[ @(page.url.c_str()) ?: @"", @(profile.c_str()) ];
+    item.toolTip = @(page.url.c_str());
+  }
+}
+
+// A recently visited page opens in a new tab of its profile in the front
+// window, as Chrome opens History menu items.
+- (void)openRecentPage:(NSMenuItem*)sender {
+  NSArray<NSString*>* info = sender.representedObject;
+  if (![info isKindOfClass:NSArray.class] || info.count != 2) {
+    return;
+  }
+  BRBrowserWindowController* front =
+      [self frontController] ?: [self openWindow];
+  [front openTabWithURL:info[0] profile:info[1].UTF8String activate:YES];
+  [front showWindow:nil];
+}
+
+- (BOOL)validateMenuItem:(NSMenuItem*)item {
+  if (item.action == @selector(reopenClosedTab:)) {
+    return !_closedTabs.empty();
+  }
+  return YES;
+}
+
 - (BOOL)historySuggestionsEnabled {
   return _profiles->global_settings().GetBool("suggestions.history");
 }
@@ -1300,6 +1472,8 @@ class AppSettingsPage : public SettingsPageDelegate {
     if (strongSelf->_history) {
       strongSelf->_history->CloseProfile(target);
     }
+    strongSelf->_closedTabs.RemoveProfile(target);
+    strongSelf->_recentPages.erase(target);
     std::optional<brouk::Error> error =
         strongSelf->_profiles->DeleteProfile(target);
     [strongSelf profilesChangedInApp];
@@ -1635,10 +1809,25 @@ class AppSettingsPage : public SettingsPageDelegate {
           title:@"Forward"
          action:@selector(goForward:)
        shortcut:@"forward"];
+  [self addItem:history
+          title:@"Home"
+         action:@selector(goHome:)
+       shortcut:@"home"];
+  [history addItem:NSMenuItem.separatorItem];
+  [self addItem:history
+          title:@"Reopen Closed Tab"
+         action:@selector(reopenClosedTab:)
+       shortcut:@"reopen_closed_tab"];
+  // Filled when opened (menuNeedsUpdate:).
+  _recentlyClosedMenu = [self submenu:@"Recently Closed" in:history];
+  _recentlyClosedMenu.delegate = self;
+  _recentlyVisitedMenu = [self submenu:@"Recently Visited" in:history];
+  _recentlyVisitedMenu.delegate = self;
 
   // Profiles (005), like Chrome's Profiles menu; filled when opened.
   NSMenu* profiles = [self submenu:@"Profiles" in:bar];
   profiles.delegate = self;
+  _profilesMenu = profiles;
 
   // Tab, as in Chrome.
   NSMenu* tab = [self submenu:@"Tab" in:bar];

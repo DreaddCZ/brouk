@@ -185,5 +185,15 @@ TEST_F(HistoryStoreTest, OpenFailsForAnUnusablePath) {
   EXPECT_FALSE(store);
 }
 
+TEST_F(HistoryStoreTest, RecentPagesNewestFirst) {
+  Visit("https://a.com/", "A", kNow - 3 * kDay);
+  Visit("https://b.com/", "B", kNow - kDay);
+  Visit("https://c.com/", "C", kNow - 2 * kDay);
+  std::vector<HistoryMatch> pages = store_->RecentPages(2);
+  ASSERT_EQ(pages.size(), 2U);
+  EXPECT_EQ(pages[0].url, "https://b.com/");
+  EXPECT_EQ(pages[1].url, "https://c.com/");
+}
+
 }  // namespace
 }  // namespace brouk

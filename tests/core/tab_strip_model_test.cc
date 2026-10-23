@@ -412,5 +412,25 @@ TEST(TabStripModelPinnedTest, InsertAfterGoesNextToTheTabInItsGroup) {
   EXPECT_EQ(Order(model), (std::vector<TabId>{2, 1, 11, 10, 3}));
 }
 
+TEST(TabStripModelPinnedTest, InsertInGroupAtAPosition) {
+  TabStripModel model(kMain);
+  model.AppendTab(1, kWork, true);
+  model.AppendTab(2, kWork, true);
+  model.AppendTab(3, true);
+  model.SetPinned(1, true);
+  // Work group: 1 (pinned), 2. Position 1 is right after the pinned tab.
+  model.InsertInGroup(10, kWork, 1, false);
+  EXPECT_EQ(Order(model), (std::vector<TabId>{1, 10, 2, 3}));
+  // Never among the pinned tabs, and clamped to the group's end.
+  model.InsertInGroup(11, kWork, 0, false);
+  model.InsertInGroup(12, kWork, 99, true);
+  EXPECT_EQ(Order(model), (std::vector<TabId>{1, 11, 10, 2, 12, 3}));
+  EXPECT_EQ(model.active_id(), 12);
+  // A profile without a group gets one.
+  model.InsertInGroup(13, kHome, 5, false);
+  EXPECT_EQ(*model.ProfileOf(13), kHome);
+  EXPECT_EQ(model.groups().size(), 3U);
+}
+
 }  // namespace
 }  // namespace brouk

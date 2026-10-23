@@ -20,6 +20,7 @@ include(GoogleTest)
 add_executable(brouk_core_tests
   core/address_input_test.cc
   core/address_suggestions_test.cc
+  core/closed_tabs_test.cc
   core/command_palette_test.cc
   core/context_menu_test.cc
   core/crash_error_code_test.cc

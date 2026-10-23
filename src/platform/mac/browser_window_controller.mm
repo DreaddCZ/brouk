@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 
 #import "platform/mac/address_field.h"
@@ -145,6 +146,10 @@ NSButton* ToolbarButton(NSString* symbol,
   BOOL _toggleOnLeft;
   CGFloat _addressLeft;  // Where the address area starts (after site info).
   BRCommandPalette* _palette;
+  // Reopen Closed Tab (013): the tabs when the whole window started closing,
+  // and the profiles being deleted, whose tabs are not kept.
+  std::vector<brouk::ClosedTab> _windowSnapshot;
+  std::set<brouk::ProfileId, std::less<>> _discardedProfiles;
   // Address bar suggestions (003) for the text in `_suggestText`. Answers
   // carry `_suggestGeneration`, so late answers for older text are dropped.
   BRSuggestionsPopup* _suggestions;
@@ -213,6 +218,8 @@ NSButton* ToolbarButton(NSString* symbol,
   if ((self = [super initWithWindow:window])) {
     _owner = owner;
     _isPopup = isPopup;
+    static std::int64_t nextWindowId = 1;
+    _windowId = nextWindowId++;
     _stripHeight = isPopup ? 0 : kTabStripHeight;
     _model = std::make_unique<brouk::TabStripModel>([owner defaultProfileId]);
     _tabs = [NSMutableDictionary dictionary];
@@ -390,6 +397,37 @@ NSButton* ToolbarButton(NSString* symbol,
   return tab;
 }
 
+- (brouk::ProfileId)activeProfileId {
+  BRTab* tab = [self activeTab];
+  return tab ? tab.profileId : _model->default_profile();
+}
+
+- (void)restoreClosedTab:(const brouk::ClosedTab&)closed
+                activate:(BOOL)activate {
+  BRTab* tab = [self makeTabInProfile:closed.profile];
+  _model->InsertInGroup(tab.tabId, closed.profile, closed.position, activate);
+  if (closed.pinned) {
+    _model->SetPinned(tab.tabId, true);
+  }
+  [tab createBrowserWithURL:@(closed.url.c_str())
+             requestContext:[_owner requestContextForProfile:closed.profile]];
+  [self modelDidChange];
+  if (activate) {
+    [self focusActiveTab];
+  }
+}
+
+// History → Home: the new tab page in the current tab, as in Chrome.
+- (IBAction)goHome:(id)sender {
+  BRTab* tab = [self activeTab];
+  if (!tab) {
+    return;
+  }
+  [tab loadURL:@"about:blank"];
+  [self updateToolbar];
+  [_addressField focusAndSelectAll];
+}
+
 - (void)openTabWithURL:(nullable NSString*)url activate:(BOOL)activate {
   [self openTabWithURL:url profile:_model->default_profile() activate:activate];
 }
@@ -413,7 +451,32 @@ NSButton* ToolbarButton(NSString* symbol,
   }
 }
 
+// The tab as Reopen Closed Tab needs it; `index` is its model index.
+- (brouk::ClosedTab)closedTabFor:(BRTab*)tab atIndex:(std::size_t)index {
+  std::size_t start = index;
+  for (const brouk::TabStripModel::Group& group : _model->groups()) {
+    if (group.profile == tab.profileId) {
+      start = group.start;
+    }
+  }
+  return {.url = tab.url.UTF8String ?: "",
+          .title = tab.title.UTF8String ?: "",
+          .profile = tab.profileId,
+          .pinned = _model->IsPinned(tab.tabId),
+          .window_id = _windowId,
+          .position = index - start};
+}
+
 - (void)closeAllTabs {
+  if (!_closingWindow) {
+    _windowSnapshot.clear();
+    for (std::size_t i = 0; i < _model->count(); ++i) {
+      BRTab* tab = _tabs[@(_model->id_at(i))];
+      if (tab && !_discardedProfiles.contains(tab.profileId)) {
+        _windowSnapshot.push_back([self closedTabFor:tab atIndex:i]);
+      }
+    }
+  }
   _closingWindow = YES;
   if (self.liveTabCount == 0) {
     [self.window close];
@@ -539,6 +602,7 @@ NSButton* ToolbarButton(NSString* symbol,
 }
 
 - (void)closeTabsInProfile:(const brouk::ProfileId&)profile {
+  _discardedProfiles.insert(profile);
   for (BRTab* tab in _tabs.allValues) {
     if (tab.profileId == profile) {
       // Without asking the page (beforeunload): the user confirmed deleting
@@ -810,6 +874,13 @@ NSButton* ToolbarButton(NSString* symbol,
     return;
   }
   BOOL wasActive = tab == [self activeTab];
+  // A tab closed on its own can be reopened; a window closing as a whole is
+  // kept as one entry (windowWillClose:).
+  std::optional<std::size_t> index = _model->IndexOf(tab.tabId);
+  if (index && !_closingWindow && !_discardedProfiles.contains(tab.profileId)) {
+    [_owner browserWindow:self
+                closedTab:[self closedTabFor:tab atIndex:*index]];
+  }
   _model->RemoveTab(tab.tabId);
   [_tabs removeObjectForKey:@(tab.tabId)];
   [_closingTabs addObject:tab];
@@ -1054,6 +1125,7 @@ NSButton* ToolbarButton(NSString* symbol,
     transition:(brouk::VisitTransition)transition {
   if (brouk::HistoryService* history = [_owner historyService]) {
     history->RecordVisit(tab.profileId, url, title, transition);
+    [_owner historyChangedForProfile:tab.profileId];
   }
 }
 
@@ -1398,6 +1470,7 @@ NSButton* ToolbarButton(NSString* symbol,
     if (brouk::HistoryService* history = [_owner historyService];
         history && tab) {
       history->DeletePage(tab.profileId, url);
+      [_owner historyChangedForProfile:tab.profileId];
     }
     std::erase_if(_historyMatches, [&url](const brouk::HistoryMatch& match) {
       return match.url == url;
@@ -1814,6 +1887,10 @@ NSButton* ToolbarButton(NSString* symbol,
 }
 
 - (void)windowWillClose:(NSNotification*)notification {
+  if (_closingWindow && !_windowSnapshot.empty()) {
+    [_owner browserWindow:self closedWindowWithTabs:std::move(_windowSnapshot)];
+    _windowSnapshot.clear();
+  }
   [_owner browserWindowWillClose:self];
 }
 
