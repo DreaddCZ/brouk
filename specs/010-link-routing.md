@@ -154,3 +154,4 @@ None.
   - For decodable wrappers, still load the wrapper in the chosen profile so the company check runs.
   - Resolve opaque wrappers in a neutral throwaway request context, showing their page only when it needs the user.
   - The decoders (Proofpoint v3 in particular) are pure core functions; cover them with unit tests using real sample links.
+- 2026-10-23: the user will provide real wrapped links from their Outlook and Teams during development. When implementing the wrappers, ask for them; until then, use the public format descriptions.
