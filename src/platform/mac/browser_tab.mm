@@ -906,6 +906,7 @@ class TabDelegateBridge : public TabClientDelegate {
                        counter:[_delegate browserCounter]
                       delegate:self];
   _dock.position = _dockPosition;
+  _dock.secretHeaderNames = [_delegate secretHeaderNames] ?: @"";
   [self placeDock];
 }
 

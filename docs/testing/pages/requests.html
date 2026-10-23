@@ -1,0 +1,38 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Requests and tokens test</title>
+<style>body { font: 15px -apple-system, sans-serif; margin: 2em; } button { font-size: 15px; margin: .3em; }</style>
+<h1>Requests and tokens (spec 006)</h1>
+<p>Turn the developer tools on (⌥⌘I), open the "Requests" tab, then press the buttons. The requests appear
+(Fetch/XHR filter by default). Select some and export them to Postman; the Authorization value must
+not be in the collection file, only in the environment file. The "Tokens" tab decodes the JWT.</p>
+<button id="get">GET sample.json with a token</button>
+<button id="post">POST JSON</button>
+<button id="form">POST a form</button>
+<button id="store">Store a token in local storage and a cookie</button>
+<pre id="out"></pre>
+<script>
+  // Test tokens (not real secrets): HS256, issued 2026-10-23, one expires in 1 hour, one expired.
+  const b64 = (o) => btoa(JSON.stringify(o)).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+  const now = Math.floor(Date.now() / 1000);
+  const jwt = (payload) => `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64(payload)}.c2lnbmF0dXJlLW5vdC1yZWFs`;
+  const valid = jwt({ iss: 'https://login.example.com/tenant-1/v2.0', aud: 'api://brouk-test', sub: 'user-42',
+                      tid: 'tenant-1', scp: 'read write', iat: now, exp: now + 3600 });
+  const expired = jwt({ iss: 'https://login.example.com', sub: 'old', iat: now - 7200, exp: now - 3600 });
+  const out = document.getElementById('out');
+  const log = (text) => { out.textContent = text + '\n' + out.textContent; };
+  document.getElementById('get').onclick = () =>
+    fetch('sample.json?page=2', { headers: { Authorization: `Bearer ${valid}`, 'X-Api-Key': 'test-key-123' } })
+      .then((r) => log(`GET ${r.status}`));
+  document.getElementById('post').onclick = () =>
+    fetch('api/items', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${valid}` },
+                         body: JSON.stringify({ name: 'beetle', size: 3 }) }).then((r) => log(`POST ${r.status}`));
+  document.getElementById('form').onclick = () =>
+    fetch('login', { method: 'POST', body: new URLSearchParams({ user: 'radek', remember: 'yes' }) })
+      .then((r) => log(`form ${r.status}`));
+  document.getElementById('store').onclick = () => {
+    localStorage.setItem('access_token', expired);
+    document.cookie = `id_token=${valid}; path=/`;
+    log('stored');
+  };
+</script>

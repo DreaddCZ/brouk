@@ -19,3 +19,30 @@ button.small { padding: 1px 6px; font-size: 11px; }
 .confirm { border: 1px solid var(--danger); border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; }
 .confirm p { margin: 0 0 6px; }
 .flags { color: var(--muted); }
+
+.toolbar input[type=search], .toolbar select { font: inherit; padding: 2px 6px; border: 1px solid var(--line);
+  border-radius: 6px; background: var(--bg); color: var(--text); }
+.request-list { max-height: 45vh; overflow: auto; border-bottom: 1px solid var(--line); }
+.request-list tr { cursor: pointer; }
+.request-list tr:hover td { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.request-list tr.open td { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.request-list tr.failed td { color: var(--danger); }
+.request-list th.check, .request-list td.check { width: 24px; }
+.request-list th:nth-child(2) { width: 60px; } .request-list th:nth-child(3) { width: 60px; }
+.request-list th:nth-child(5) { width: 80px; } .request-list th:nth-child(6), .request-list th:nth-child(7) { width: 70px; }
+table.headers th { width: 30%; color: var(--text); font-family: ui-monospace, Menlo, monospace; font-weight: normal; }
+table.headers td { white-space: pre-wrap; word-break: break-all; }
+pre.body { white-space: pre-wrap; word-break: break-all; background: var(--card); border: 1px solid var(--line);
+  border-radius: 6px; padding: 6px 8px; max-height: 40vh; overflow: auto; margin: 0; }
+
+textarea.paste { width: 100%; box-sizing: border-box; min-height: 48px; font: 12px ui-monospace, Menlo, monospace;
+  padding: 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); }
+section.token { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin: 8px 0; background: var(--card); }
+.token-title { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
+.token-title .where { font-weight: 600; overflow-wrap: anywhere; }
+.badge { font-size: 10px; font-weight: 600; border: 1px solid var(--accent); color: var(--accent); border-radius: 5px; padding: 0 5px; white-space: nowrap; }
+.badge.expired { border-color: var(--danger); color: var(--danger); }
+.badge.muted { border-color: var(--muted); color: var(--muted); }
+.token-text { font: 11px ui-monospace, Menlo, monospace; color: var(--muted); word-break: break-all; max-height: 3.2em; overflow: hidden; }
+table.claims th { width: 110px; font-weight: 600; color: var(--muted); }
+table.claims td { white-space: normal; overflow-wrap: anywhere; }

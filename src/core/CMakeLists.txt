@@ -30,6 +30,8 @@ set(BROUK_CORE_SOURCES
   profile_id.h
   profile_registry.cc
   profile_registry.h
+  request_log.cc
+  request_log.h
   result.h
   screen_share.cc
   search_engines.cc

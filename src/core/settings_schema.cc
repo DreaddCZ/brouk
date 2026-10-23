@@ -34,7 +34,7 @@ constexpr std::array<std::string_view, 4> kDockPositions = {"bottom", "right",
 constexpr std::array<std::string_view, 4> kDockPositionLabels = {
     "Bottom", "Right", "Left", "Separate window"};
 
-constexpr std::array<SettingDef, 16> kSettings = {{
+constexpr std::array<SettingDef, 17> kSettings = {{
     // Global.
     {.key = "appearance.theme",
      .scope = SettingScope::kGlobal,
@@ -128,6 +128,16 @@ constexpr std::array<SettingDef, 16> kSettings = {{
      .label = "Developer tools size",
      .description = "Height or width of the docked developer tools in "
                     "points; remembered when resized."},
+    {.key = "devtools.secret_headers",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kString,
+     .default_value = "Authorization, Cookie, x-api-key, api-key, x-auth-token",
+     .max_length = 1024,
+     .section = "Developer tools",
+     .label = "Secret headers in exports",
+     .description = "Comma-separated header names whose values become "
+                    "variables when requests are exported to Postman or "
+                    "Bruno."},
     {.key = "devtools.remote_debugging",
      .scope = SettingScope::kGlobal,
      .type = SettingDef::Type::kBool,

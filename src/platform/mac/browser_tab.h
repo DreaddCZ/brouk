@@ -53,6 +53,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (CefRefPtr<CefRequestContext>)devToolsContext;
 - (brouk::DevToolsPreferences*)devToolsPreferences;
 - (id<BRBrowserCounter>)browserCounter;
+- (NSString*)secretHeaderNames;
 @end
 
 @interface BRTab : NSObject

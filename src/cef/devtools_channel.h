@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 
+#include "core/request_log.h"
 #include "include/cef_browser.h"
 #include "include/cef_devtools_message_observer.h"
 #include "include/cef_registration.h"
@@ -35,6 +36,11 @@ class DevToolsChannel : public CefDevToolsMessageObserver {
   // The tab's current main frame URL ("" when closed).
   std::string PageUrl() const;
 
+  // Records the tab's requests from now on (006: while dev tools are on).
+  void StartRecording();
+  const RequestLog& requests() const { return requests_; }
+  void ClearRequests() { requests_.Clear(); }
+
   // CefDevToolsMessageObserver:
   bool OnDevToolsMessage(CefRefPtr<CefBrowser> browser,
                          const void* message,
@@ -46,6 +52,10 @@ class DevToolsChannel : public CefDevToolsMessageObserver {
   // Above the frontend's ids and those of DevToolsFrontendClient.
   int next_id_ = 1'500'000'000;
   std::map<int, Done> pending_;
+  RequestLog requests_;
+  bool recording_ = false;
+
+  void HandleNetworkEvent(std::string_view message);
 
   IMPLEMENT_REFCOUNTING(DevToolsChannel);
 };

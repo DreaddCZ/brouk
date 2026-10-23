@@ -2,8 +2,10 @@
 
 #include <iterator>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
+#include <utility>
 
 #include "cef/devtools_channel.h"
 #include "cef/devtools_frontend_client.h"
@@ -22,6 +24,9 @@
 - (void)handleToolsCreated:(CefRefPtr<CefBrowser>)tools;
 - (void)handleToolsCloseReady;
 - (void)handleToolsClosed;
+- (void)saveFile:(brouk::ToolsHost::File)main
+           extra:(std::optional<brouk::ToolsHost::File>)extra
+            done:(brouk::ToolsHost::Done)done;
 @end
 
 namespace brouk {
@@ -78,6 +83,27 @@ class DockToolsBridge : public InternalPageDelegate {
   __weak BRDevToolsDock* dock_;
 };
 
+class DockToolsHost : public ToolsHost {
+ public:
+  explicit DockToolsHost(BRDevToolsDock* dock) : dock_(dock) {}
+  void SaveFiles(File main, std::optional<File> extra, Done done) override {
+    BRDevToolsDock* dock = dock_;
+    if (!dock) {
+      done(false, "The developer tools have closed.");
+      return;
+    }
+    [dock saveFile:std::move(main) extra:std::move(extra) done:std::move(done)];
+  }
+  std::string SecretHeaderNames() override {
+    BRDevToolsDock* dock = dock_;
+    return dock ? std::string(dock.secretHeaderNames.UTF8String)
+                : std::string();
+  }
+
+ private:
+  __weak BRDevToolsDock* dock_;
+};
+
 }  // namespace brouk
 
 namespace {
@@ -90,6 +116,8 @@ struct DockTool {
 const DockTool kDockTools[] = {
     {@"devtools", @"DevTools"},
     {@"site-data", @"Site data"},
+    {@"requests", @"Requests"},
+    {@"tokens", @"Tokens"},
 };
 
 constexpr CGFloat kHeaderHeight = 28;
@@ -153,6 +181,7 @@ NSButton* HeaderButton(NSString* symbol,
   CefRefPtr<CefRequestContext> _context;
   CefRefPtr<brouk::DevToolsChannel> _channel;
   std::unique_ptr<brouk::DockToolsBridge> _toolsBridge;
+  std::unique_ptr<brouk::DockToolsHost> _toolsHost;
   CefRefPtr<brouk::InternalPageClient> _toolsClient;
   CefRefPtr<CefBrowser> _tools;
   BOOL _toolsCounted;
@@ -178,6 +207,9 @@ NSButton* HeaderButton(NSString* symbol,
     _position = @"bottom";
     _context = context;
     _channel = new brouk::DevToolsChannel(inspected);
+    // Dev tools on: record the tab's requests (006).
+    _channel->StartRecording();
+    _toolsHost = std::make_unique<brouk::DockToolsHost>(self);
     _frontendCreating = YES;
     [self buildViews];
     _bridge = std::make_unique<brouk::DevToolsDockBridge>(self);
@@ -362,8 +394,8 @@ NSButton* HeaderButton(NSString* symbol,
   _toolsCreating = YES;
   _toolsBridge = std::make_unique<brouk::DockToolsBridge>(self);
   _toolsClient = new brouk::InternalPageClient(
-      _toolsBridge.get(),
-      std::make_unique<brouk::DevToolsToolsHandler>(_channel));
+      _toolsBridge.get(), std::make_unique<brouk::DevToolsToolsHandler>(
+                              _channel, _toolsHost.get()));
   NSRect bounds = _toolsContent.bounds;
   CefWindowInfo info;
   info.SetAsChild((__bridge void*)_toolsContent,
@@ -372,6 +404,52 @@ NSButton* HeaderButton(NSString* symbol,
   info.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
   CefBrowserHost::CreateBrowser(info, _toolsClient, url, CefBrowserSettings(),
                                 nullptr, _context);
+}
+
+// Saves exported files (Postman collection, environment) where the user
+// chooses; `extra` goes next to the main file.
+- (void)saveFile:(brouk::ToolsHost::File)main
+           extra:(std::optional<brouk::ToolsHost::File>)extra
+            done:(brouk::ToolsHost::Done)done {
+  NSSavePanel* panel = [NSSavePanel savePanel];
+  panel.nameFieldStringValue = @(main.name.c_str());
+  panel.message =
+      extra ? [NSString stringWithFormat:@"“%s” is saved in the same folder.",
+                                         extra->name.c_str()]
+            : @"";
+  __block brouk::ToolsHost::Done answer = std::move(done);
+  __block brouk::ToolsHost::File mainFile = std::move(main);
+  __block std::optional<brouk::ToolsHost::File> extraFile = std::move(extra);
+  void (^completion)(NSModalResponse) = ^(NSModalResponse response) {
+    if (response != NSModalResponseOK || !panel.URL) {
+      answer(false, "");
+      return;
+    }
+    auto write = [](NSURL* url, const std::string& content) -> NSString* {
+      NSData* data = [NSData dataWithBytes:content.data()
+                                    length:content.size()];
+      NSError* error = nil;
+      return
+          [data writeToURL:url options:NSDataWritingAtomic error:&error]
+              ? nil
+              : (error.localizedDescription ?: @"The file could not be saved.");
+    };
+    NSString* error = write(panel.URL, mainFile.content);
+    if (!error && extraFile) {
+      // A plain file name only, next to the main file.
+      NSString* name = @(extraFile->name.c_str()).lastPathComponent;
+      NSURL* url = [panel.URL.URLByDeletingLastPathComponent
+          URLByAppendingPathComponent:name];
+      error = write(url, extraFile->content);
+    }
+    answer(!error, error ? std::string(error.UTF8String) : std::string());
+  };
+  NSWindow* window = _view.window;
+  if (window) {
+    [panel beginSheetModalForWindow:window completionHandler:completion];
+  } else {
+    completion([panel runModal]);
+  }
 }
 
 - (void)handleToolsCreated:(CefRefPtr<CefBrowser>)tools {

@@ -46,6 +46,8 @@ NS_ASSUME_NONNULL_BEGIN
 
 // Header and DevTools; the tab sizes and places it.
 @property(nonatomic, readonly) NSView* view;
+// Header names whose values are secrets in exports (a setting, 006).
+@property(nonatomic, copy) NSString* secretHeaderNames;
 // The current position, to highlight its button.
 @property(nonatomic, copy) NSString* position;
 
