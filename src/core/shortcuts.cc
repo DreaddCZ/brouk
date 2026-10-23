@@ -19,7 +19,7 @@ namespace {
 // Chrome's macOS shortcuts (menus and its accelerator table). Standard
 // macOS items (Quit, Hide, Minimize, Undo, Copy, Paste…) are not listed:
 // they are not browser actions and macOS can remap them already.
-constexpr std::array<ShortcutAction, 37> kActions = {{
+constexpr std::array<ShortcutAction, 43> kActions = {{
     // File.
     {"new_tab", "shortcuts.new_tab", "New tab", "cmd+t", true},
     {"new_window", "shortcuts.new_window", "New window", "cmd+n", true},
@@ -36,6 +36,8 @@ constexpr std::array<ShortcutAction, 37> kActions = {{
     {"find_previous", "shortcuts.find_previous", "Find previous",
      "cmd+shift+g"},
     // View.
+    {"command_palette", "shortcuts.command_palette", "Command palette",
+     "cmd+k"},
     {"stop", "shortcuts.stop", "Stop loading", "cmd+."},
     {"reload", "shortcuts.reload", "Reload", "cmd+r"},
     {"force_reload", "shortcuts.force_reload", "Reload without the cache",
@@ -67,8 +69,15 @@ constexpr std::array<ShortcutAction, 37> kActions = {{
     {"select_tab_7", "shortcuts.select_tab_7", "Tab 7", "cmd+7"},
     {"select_tab_8", "shortcuts.select_tab_8", "Tab 8", "cmd+8"},
     {"select_last_tab", "shortcuts.select_last_tab", "Last tab", "cmd+9"},
+    {"new_tab_right", "shortcuts.new_tab_right", "New tab to the right", ""},
+    {"duplicate_tab", "shortcuts.duplicate_tab", "Duplicate tab", ""},
     {"pin_tab", "shortcuts.pin_tab", "Pin or unpin tab", ""},
     {"mute_tab", "shortcuts.mute_tab", "Mute or unmute tab", ""},
+    {"close_other_tabs", "shortcuts.close_other_tabs", "Close other tabs", ""},
+    {"close_tabs_left", "shortcuts.close_tabs_left", "Close tabs to the left",
+     ""},
+    {"close_tabs_right", "shortcuts.close_tabs_right",
+     "Close tabs to the right", ""},
     // Toolbar.
     {"site_info", "shortcuts.site_info", "Site information", ""},
     {"manage_profiles", "shortcuts.manage_profiles", "Manage profiles", ""},

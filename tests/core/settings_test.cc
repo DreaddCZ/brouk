@@ -150,6 +150,7 @@ TEST(SettingsTest, FileFormat) {
             "  find: \"cmd+f\"\n"
             "  find_next: \"cmd+g\"\n"
             "  find_previous: \"cmd+shift+g\"\n"
+            "  command_palette: \"cmd+k\"\n"
             "  stop: \"cmd+.\"\n"
             "  reload: \"cmd+r\"\n"
             "  force_reload: \"cmd+shift+r\"\n"
@@ -173,8 +174,13 @@ TEST(SettingsTest, FileFormat) {
             "  select_tab_7: \"cmd+7\"\n"
             "  select_tab_8: \"cmd+8\"\n"
             "  select_last_tab: \"cmd+9\"\n"
+            "  new_tab_right: \"\"\n"
+            "  duplicate_tab: \"\"\n"
             "  pin_tab: \"\"\n"
             "  mute_tab: \"\"\n"
+            "  close_other_tabs: \"\"\n"
+            "  close_tabs_left: \"\"\n"
+            "  close_tabs_right: \"\"\n"
             "  site_info: \"\"\n"
             "  manage_profiles: \"\"\n");
 }
