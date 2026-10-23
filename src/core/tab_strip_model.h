@@ -34,8 +34,8 @@ class TabStripModel {
 
   struct Group {
     ProfileId profile;
-    std::size_t start = 0;  // Index of its first tab.
-    std::size_t count = 0;  // 0 only for the default profile's group.
+    std::size_t start = 0;         // Index of its first tab.
+    std::size_t count = 0;         // 0 only for the default profile's group.
     std::size_t pinned_count = 0;  // Its first `pinned_count` tabs.
     bool collapsed = false;
   };
@@ -48,8 +48,9 @@ class TabStripModel {
 
   // Inserts a tab opened from `opener` (a link, a popup) in the opener's
   // profile, right after the opener and after tabs opened from it earlier,
-  // as Chrome does; never among the group's pinned tabs. Falls back to appending in the default profile if the
-  // opener is not in this strip. Returns its index.
+  // as Chrome does; never among the group's pinned tabs. Falls back to
+  // appending in the default profile if the opener is not in this strip.
+  // Returns its index.
   std::size_t InsertFromOpener(TabId id, TabId opener, bool activate);
 
   // Removes a tab. If it was active, picks the next active tab: another tab

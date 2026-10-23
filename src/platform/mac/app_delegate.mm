@@ -1576,6 +1576,54 @@ class AppSettingsPage : public SettingsPageDelegate {
   NSMenu* profiles = [self submenu:@"Profiles" in:bar];
   profiles.delegate = self;
 
+  // Tab, as in Chrome.
+  NSMenu* tab = [self submenu:@"Tab" in:bar];
+  [self addItem:tab
+          title:@"Select Next Tab"
+         action:@selector(selectNextTab:)
+            key:[NSString
+                    stringWithFormat:@"%C", (unichar)NSRightArrowFunctionKey]
+      modifiers:cmd | opt];
+  [self addItem:tab
+          title:@"Select Previous Tab"
+         action:@selector(selectPreviousTab:)
+            key:[NSString
+                    stringWithFormat:@"%C", (unichar)NSLeftArrowFunctionKey]
+      modifiers:cmd | opt];
+  // Chrome's alternative tab shortcuts, not shown in the menu.
+  NSMenuItem* next = [self addItem:tab
+                             title:@"Select Next Tab"
+                            action:@selector(selectNextTab:)
+                               key:@"}"
+                         modifiers:cmd];
+  NSMenuItem* previous = [self addItem:tab
+                                 title:@"Select Previous Tab"
+                                action:@selector(selectPreviousTab:)
+                                   key:@"{"
+                             modifiers:cmd];
+  for (NSMenuItem* item in @[ next, previous ]) {
+    item.hidden = YES;
+    item.allowsKeyEquivalentWhenHidden = YES;
+  }
+  for (NSInteger number = 1; number <= 9; ++number) {
+    NSMenuItem* item = [self
+          addItem:tab
+            title:[NSString stringWithFormat:@"Select Tab %ld", (long)number]
+           action:@selector(selectTabByNumber:)
+              key:[NSString stringWithFormat:@"%ld", (long)number]
+        modifiers:cmd];
+    item.tag = number;
+    item.hidden = YES;
+    item.allowsKeyEquivalentWhenHidden = YES;
+  }
+  [tab addItem:NSMenuItem.separatorItem];
+  // The title switches to "Unpin Tab" (validateMenuItem:).
+  [self addItem:tab
+          title:@"Pin Tab"
+         action:@selector(togglePinTab:)
+            key:@""
+      modifiers:0];
+
   NSMenu* window = [self submenu:@"Window" in:bar];
   [self addItem:window
           title:@"Minimize"
@@ -1587,45 +1635,6 @@ class AppSettingsPage : public SettingsPageDelegate {
          action:@selector(performZoom:)
             key:@""
       modifiers:0];
-  [window addItem:NSMenuItem.separatorItem];
-  [self addItem:window
-          title:@"Select Next Tab"
-         action:@selector(selectNextTab:)
-            key:[NSString
-                    stringWithFormat:@"%C", (unichar)NSRightArrowFunctionKey]
-      modifiers:cmd | opt];
-  [self addItem:window
-          title:@"Select Previous Tab"
-         action:@selector(selectPreviousTab:)
-            key:[NSString
-                    stringWithFormat:@"%C", (unichar)NSLeftArrowFunctionKey]
-      modifiers:cmd | opt];
-  // Chrome's alternative tab shortcuts, not shown in the menu.
-  NSMenuItem* next = [self addItem:window
-                             title:@"Select Next Tab"
-                            action:@selector(selectNextTab:)
-                               key:@"}"
-                         modifiers:cmd];
-  NSMenuItem* previous = [self addItem:window
-                                 title:@"Select Previous Tab"
-                                action:@selector(selectPreviousTab:)
-                                   key:@"{"
-                             modifiers:cmd];
-  for (NSMenuItem* item in @[ next, previous ]) {
-    item.hidden = YES;
-    item.allowsKeyEquivalentWhenHidden = YES;
-  }
-  for (NSInteger number = 1; number <= 9; ++number) {
-    NSMenuItem* item = [self
-          addItem:window
-            title:[NSString stringWithFormat:@"Select Tab %ld", (long)number]
-           action:@selector(selectTabByNumber:)
-              key:[NSString stringWithFormat:@"%ld", (long)number]
-        modifiers:cmd];
-    item.tag = number;
-    item.hidden = YES;
-    item.allowsKeyEquivalentWhenHidden = YES;
-  }
   [window addItem:NSMenuItem.separatorItem];
   [self addItem:window
           title:@"Bring All to Front"

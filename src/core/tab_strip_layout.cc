@@ -22,23 +22,23 @@ TabWidths ShareSpace(double space,
   auto slot = [&m](double room, std::size_t tabs) {
     return std::floor(room / static_cast<double>(tabs) - m.tab_gap);
   };
-  double even = std::clamp(slot(space, count), m.min_tab_width,
-                           m.max_tab_width);
+  double even =
+      std::clamp(slot(space, count), m.min_tab_width, m.max_tab_width);
   if (pinned == 0 || pinned == count || even >= m.pinned_min_width) {
     return {even, even};
   }
   // Pinned tabs keep their minimum while the others can still shrink.
-  double others = slot(space - static_cast<double>(pinned) *
-                                   (m.pinned_min_width + m.tab_gap),
-                       count - pinned);
+  double others = slot(
+      space - static_cast<double>(pinned) * (m.pinned_min_width + m.tab_gap),
+      count - pinned);
   if (others >= m.min_tab_width) {
     return {others, m.pinned_min_width};
   }
   double shrunk_pinned = slot(space - static_cast<double>(count - pinned) *
                                           (m.min_tab_width + m.tab_gap),
                               pinned);
-  return {m.min_tab_width, std::clamp(shrunk_pinned, m.min_tab_width,
-                                      m.pinned_min_width)};
+  return {m.min_tab_width,
+          std::clamp(shrunk_pinned, m.min_tab_width, m.pinned_min_width)};
 }
 
 bool Fits(double space, std::size_t count, const TabStripMetrics& m) {

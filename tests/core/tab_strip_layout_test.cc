@@ -27,9 +27,8 @@ std::size_t Shown(const TabStripGroupLayout& layout) {
 }
 
 TEST(TabStripLayoutTest, TabsShareTheSpaceUpToTheirMaximum) {
-  TabStripLayoutInput input{.groups = {Group(2), Group(1)},
-                            .active_group = 1,
-                            .width = 5000};
+  TabStripLayoutInput input{
+      .groups = {Group(2), Group(1)}, .active_group = 1, .width = 5000};
   std::vector<TabStripGroupLayout> layout = LayoutTabStrip(input);
   EXPECT_EQ(layout[0].tab_widths, (std::vector<double>{220, 220}));
   EXPECT_EQ(layout[1].tab_widths, (std::vector<double>{220}));

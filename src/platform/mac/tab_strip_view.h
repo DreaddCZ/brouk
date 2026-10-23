@@ -1,7 +1,10 @@
 // Horizontal tab strip drawn in the window's title bar area, with one group
 // per profile (003, 005): a label with the profile's name, colour and tab
 // count (click collapses or expands the group), the group's tabs, and a "+"
-// for a new tab in that profile. Main thread only. Renders state; user
+// for a new tab in that profile. When tabs do not fit, it follows
+// brouk::LayoutTabStrip: tabs shrink, other groups collapse, and a group
+// that is still too big hides some tabs behind an "N more" menu. Main thread
+// only. Renders state; user
 // actions go to the delegate.
 
 #import <Cocoa/Cocoa.h>
@@ -21,6 +24,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic) BOOL collapsed;
 // Model index of the group's first tab.
 @property(nonatomic) NSUInteger startIndex;
+// Its first `pinnedCount` tabs are pinned.
+@property(nonatomic) NSUInteger pinnedCount;
 @property(nonatomic, copy) NSArray<BRTab*>* tabs;
 @end
 
@@ -33,6 +38,11 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)tabStripDidDropTab:(brouk::TabId)tabId onProfile:(NSString*)profileId;
 - (void)tabStripDidRequestNewTabInProfile:(NSString*)profileId;
 - (void)tabStripDidToggleGroup:(NSString*)profileId;
+// The label of a group collapsed for lack of space was clicked: switch to
+// the group.
+- (void)tabStripDidActivateGroup:(NSString*)profileId;
+- (void)tabStripDidSetPinned:(BOOL)pinned tab:(brouk::TabId)tabId;
+- (void)tabStripDidReloadTab:(brouk::TabId)tabId;
 - (void)tabStripDidToggleMute:(brouk::TabId)tabId;
 @end
 
