@@ -30,13 +30,13 @@ struct TabStripLayoutGroup {
 };
 
 struct TabStripLayoutInput {
-  std::vector<TabStripLayoutGroup> groups;
+  std::vector<TabStripLayoutGroup> groups = {};
   // The group and position (inside it) of the active tab.
-  std::optional<std::size_t> active_group;
+  std::optional<std::size_t> active_group = std::nullopt;
   std::size_t active_tab = 0;
   // Width available for all groups.
   double width = 0;
-  TabStripMetrics metrics;
+  TabStripMetrics metrics = {};
 };
 
 // How one group is shown.
