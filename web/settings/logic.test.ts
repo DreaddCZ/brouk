@@ -13,6 +13,8 @@ function item(key: string, section: string, value: string | boolean = ''): Setti
     description: '',
     restart: false,
     choices: [],
+    min: 0,
+    max: 0,
     value,
   };
 }

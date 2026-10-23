@@ -25,7 +25,16 @@ constexpr std::array<std::string_view, 6> kSearchEngines = {
 constexpr std::array<std::string_view, 6> kSearchEngineLabels = {
     "Google", "Bing", "DuckDuckGo", "Startpage", "Ecosia", "Custom (below)"};
 
-constexpr std::array<SettingDef, 10> kSettings = {{
+constexpr std::array<std::string_view, 2> kSides = {"right", "left"};
+constexpr std::array<std::string_view, 2> kSideLabels = {
+    "Right of the address bar", "Left of the address bar"};
+
+constexpr std::array<std::string_view, 4> kDockPositions = {"bottom", "right",
+                                                            "left", "window"};
+constexpr std::array<std::string_view, 4> kDockPositionLabels = {
+    "Bottom", "Right", "Left", "Separate window"};
+
+constexpr std::array<SettingDef, 15> kSettings = {{
     // Global.
     {.key = "appearance.theme",
      .scope = SettingScope::kGlobal,
@@ -80,6 +89,56 @@ constexpr std::array<SettingDef, 10> kSettings = {{
      .section = "Pages",
      .label = "Check spelling in text fields",
      .description = "Uses the macOS spelling dictionaries."},
+    // Developer tools (006).
+    {.key = "devtools.toggle_position",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kChoice,
+     .default_value = "right",
+     .choices = kSides,
+     .choice_labels = kSideLabels,
+     .section = "Developer tools",
+     .label = "Dev tools button",
+     .description = "Where the button that switches a tab's developer tools "
+                    "on and off is shown."},
+    {.key = "devtools.dock_position",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kChoice,
+     .default_value = "bottom",
+     .choices = kDockPositions,
+     .choice_labels = kDockPositionLabels,
+     .section = "Developer tools",
+     .label = "Developer tools position",
+     .description = "Also changed with the buttons in the developer tools."},
+    {.key = "devtools.dock_size",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kInteger,
+     .default_value = "320",
+     .min_value = 120,
+     .max_value = 4000,
+     .advanced = true,
+     .section = "Developer tools",
+     .label = "Developer tools size",
+     .description = "Height or width of the docked developer tools in "
+                    "points; remembered when resized."},
+    {.key = "devtools.remote_debugging",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kBool,
+     .default_value = "false",
+     .requires_restart = true,
+     .section = "Developer tools",
+     .label = "Allow remote debugging",
+     .description = "For Playwright, Puppeteer and chrome://inspect, on this "
+                    "Mac only. Programs on this Mac can then control tabs of "
+                    "all profiles, including their sign-ins."},
+    {.key = "devtools.remote_debugging_port",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kInteger,
+     .default_value = "9222",
+     .min_value = 1024,
+     .max_value = 65535,
+     .requires_restart = true,
+     .section = "Developer tools",
+     .label = "Remote debugging port"},
     {.key = "profiles.default",
      .scope = SettingScope::kGlobal,
      .type = SettingDef::Type::kString,

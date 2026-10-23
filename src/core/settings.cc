@@ -3,9 +3,12 @@
 #include "core/profile_id.h"
 
 #include <cassert>
+#include <charconv>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 #include <vector>
 
@@ -13,9 +16,23 @@ namespace brouk {
 
 namespace {
 
+std::optional<std::int64_t> ParseInteger(std::string_view text) {
+  std::int64_t value = 0;
+  auto [end, error] =
+      std::from_chars(text.data(), text.data() + text.size(), value);
+  if (text.empty() || error != std::errc() ||
+      end != text.data() + text.size()) {
+    return std::nullopt;
+  }
+  return value;
+}
+
 SettingValue DefaultValue(const SettingDef& def) {
   if (def.type == SettingDef::Type::kBool) {
     return def.default_value == "true";
+  }
+  if (def.type == SettingDef::Type::kInteger) {
+    return ParseInteger(def.default_value).value_or(def.min_value);
   }
   return std::string(def.default_value);
 }
@@ -46,6 +63,14 @@ std::variant<SettingValue, std::string> ValueFromYaml(const SettingDef& def,
       return SettingValue(node.scalar == "true");
     }
     return std::string("must be true or false (without quotes)");
+  }
+  if (def.type == SettingDef::Type::kInteger) {
+    std::optional<std::int64_t> number =
+        node.plain ? ParseInteger(node.scalar) : std::nullopt;
+    if (!number) {
+      return std::string("must be a whole number (without quotes)");
+    }
+    return SettingValue(*number);
   }
   return SettingValue(node.scalar);
 }
@@ -135,6 +160,14 @@ std::optional<std::string> ValidateSetting(const SettingDef& def,
       }
       return CheckFormat(def.format, *text);
     }
+    case SettingDef::Type::kInteger: {
+      const std::int64_t* number = std::get_if<std::int64_t>(&value);
+      if (!number || *number < def.min_value || *number > def.max_value) {
+        return "must be a whole number from " + std::to_string(def.min_value) +
+               " to " + std::to_string(def.max_value);
+      }
+      return std::nullopt;
+    }
     case SettingDef::Type::kChoice: {
       const std::string* text = std::get_if<std::string>(&value);
       if (text) {
@@ -211,6 +244,8 @@ YamlNode Settings::ToYaml() const {
     const SettingValue& value = values_.find(def.key)->second;
     if (const bool* flag = std::get_if<bool>(&value)) {
       node->GetOrAdd(key) = YamlNode::Scalar(*flag ? "true" : "false", true);
+    } else if (const std::int64_t* number = std::get_if<std::int64_t>(&value)) {
+      node->GetOrAdd(key) = YamlNode::Scalar(std::to_string(*number), true);
     } else {
       // Choices are plain words; free text is quoted so it reads back as
       // text whatever it contains.
@@ -227,6 +262,15 @@ bool Settings::GetBool(std::string_view key) const {
   const bool* value =
       it == values_.end() ? nullptr : std::get_if<bool>(&it->second);
   return value && *value;
+}
+
+std::int64_t Settings::GetInt(std::string_view key) const {
+  auto it = values_.find(key);
+  assert(it != values_.end() &&
+         std::holds_alternative<std::int64_t>(it->second));
+  const std::int64_t* value =
+      it == values_.end() ? nullptr : std::get_if<std::int64_t>(&it->second);
+  return value ? *value : 0;
 }
 
 const std::string& Settings::GetString(std::string_view key) const {

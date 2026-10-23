@@ -2,6 +2,9 @@
 
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
+#include <cmath>
+#include <cstdint>
+#include <cstdlib>
 #include <map>
 #include <memory>
 #include <optional>
@@ -17,6 +20,7 @@
 
 #include "brouk/app_info.h"
 #include "cef/browser_app.h"
+#include "cef/devtools_preferences.h"
 #include "cef/internal_scheme.h"
 #include "cef/profile_manager_handler.h"
 #include "cef/settings_handler.h"
@@ -238,6 +242,8 @@ class AppSettingsPage : public SettingsPageDelegate {
   std::map<brouk::ProfileId, CefRefPtr<CefRequestContext>> _requestContexts;
   BOOL _profilesLoaded;
   BRSettingsWatcher* _settingsWatcher;
+  int _remoteDebuggingPort;  // 0: off.
+  std::unique_ptr<brouk::DevToolsPreferences> _devToolsPreferences;
   // Internal pages (brouk://) load in their own in-memory request context,
   // never in a profile's.
   CefRefPtr<CefRequestContext> _internalContext;
@@ -282,6 +288,18 @@ class AppSettingsPage : public SettingsPageDelegate {
 - (void)cefContextInitialized {
   CEF_REQUIRE_UI_THREAD();
   _profilesLoaded = YES;
+  // Remote debugging (006) is fixed for this run: from the setting (passed
+  // to CefInitialize) or the --remote-debugging-port switch.
+  CefRefPtr<CefCommandLine> commandLine =
+      CefCommandLine::GetGlobalCommandLine();
+  if (commandLine->HasSwitch("remote-debugging-port")) {
+    _remoteDebuggingPort =
+        std::atoi(commandLine->GetSwitchValue("remote-debugging-port")
+                      .ToString()
+                      .c_str());
+  } else {
+    _remoteDebuggingPort = [self remoteDebuggingPortSetting];
+  }
   [self reportProfileProblems];
   [self applySettings];
   __weak BRAppDelegate* weakSelf = self;
@@ -436,6 +454,7 @@ class AppSettingsPage : public SettingsPageDelegate {
   BRBrowserWindowController* controller =
       [[BRBrowserWindowController alloc] initWithOwner:self];
   controller.settingsProblemCount = _profiles->problems().size();
+  [self applyDevToolsSettingsTo:controller];
   [_windows addObject:controller];
   [controller showWindow:nil];
   return controller;
@@ -525,6 +544,7 @@ class AppSettingsPage : public SettingsPageDelegate {
   [_windows removeAllObjects];
   _requestContexts.clear();
   _internalContext = nullptr;
+  _devToolsPreferences.reset();  // Holds CEF values.
 }
 
 - (void)quitIfDone {
@@ -593,6 +613,62 @@ class AppSettingsPage : public SettingsPageDelegate {
   return _profiles->global_settings().GetBool("downloads.ask_where_to_save");
 }
 
+#pragma mark - Developer tools (006)
+
+- (NSString*)dockPosition {
+  return @(
+      _profiles->global_settings().GetString("devtools.dock_position").c_str());
+}
+
+- (CGFloat)dockSize {
+  return static_cast<CGFloat>(
+      _profiles->global_settings().GetInt("devtools.dock_size"));
+}
+
+// The dock's position and size are shared by all tabs and remembered
+// (006): stored as settings, which apply them to every window.
+- (void)setDockPosition:(NSString*)position {
+  [self setGlobalSetting:"devtools.dock_position"
+                   value:std::string(position.UTF8String)];
+}
+
+- (void)setDockSize:(CGFloat)size {
+  [self setGlobalSetting:"devtools.dock_size"
+                   value:static_cast<std::int64_t>(std::lround(size))];
+}
+
+// The DevTools frontend runs with the internal pages (in memory).
+- (CefRefPtr<CefRequestContext>)devToolsContext {
+  return [self internalContext];
+}
+
+- (brouk::DevToolsPreferences*)devToolsPreferences {
+  if (!_devToolsPreferences) {
+    NSString* path = [brouk::mac::AppDataDirectory()
+        stringByAppendingPathComponent:@"devtools-preferences.json"];
+    _devToolsPreferences =
+        std::make_unique<brouk::DevToolsPreferences>(path.UTF8String);
+  }
+  return _devToolsPreferences.get();
+}
+
+- (int)remoteDebuggingPortSetting {
+  const brouk::Settings& global = _profiles->global_settings();
+  return global.GetBool("devtools.remote_debugging")
+             ? static_cast<int>(global.GetInt("devtools.remote_debugging_port"))
+             : 0;
+}
+
+// Main thread. Applies the developer tools settings to a window.
+- (void)applyDevToolsSettingsTo:(BRBrowserWindowController*)controller {
+  const brouk::Settings& global = _profiles->global_settings();
+  [controller
+      setDevToolsToggleOnLeft:global.GetString("devtools.toggle_position") ==
+                              "left"];
+  [controller setDockPosition:[self dockPosition] size:[self dockSize]];
+  controller.remoteDebuggingPort = _remoteDebuggingPort;
+}
+
 // Main thread. Applies the global settings that act right away: theme and
 // spell checking (search and downloads are read when used).
 - (void)applySettings {
@@ -609,6 +685,7 @@ class AppSettingsPage : public SettingsPageDelegate {
   NSUInteger problems = _profiles->problems().size();
   for (BRBrowserWindowController* controller in _windows) {
     controller.settingsProblemCount = problems;
+    [self applyDevToolsSettingsTo:controller];
   }
 }
 
@@ -1377,6 +1454,27 @@ class AppSettingsPage : public SettingsPageDelegate {
          action:@selector(toggleFullScreen:)
             key:@"f"
       modifiers:cmd | ctrl];
+
+  // View > Developer, as in Chrome (006).
+  [view addItem:NSMenuItem.separatorItem];
+  NSMenu* developer = [[NSMenu alloc] initWithTitle:@"Developer"];
+  [view addItemWithTitle:@"Developer" action:nil keyEquivalent:@""].submenu =
+      developer;
+  [self addItem:developer
+          title:@"Developer Tools"
+         action:@selector(toggleDevTools:)
+            key:@"i"
+      modifiers:cmd | opt];
+  [self addItem:developer
+          title:@"JavaScript Console"
+         action:@selector(showDevToolsConsole:)
+            key:@"j"
+      modifiers:cmd | opt];
+  [self addItem:developer
+          title:@"Inspect Elements"
+         action:@selector(pickElementToInspect:)
+            key:@"c"
+      modifiers:cmd | opt];
 
   NSMenu* history = [self submenu:@"History" in:bar];
   [self addItem:history

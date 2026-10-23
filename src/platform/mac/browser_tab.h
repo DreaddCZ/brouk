@@ -6,6 +6,9 @@
 #include <optional>
 #include <string>
 
+#import "platform/mac/devtools_dock.h"
+
+#include "cef/devtools_preferences.h"
 #include "cef/tab_client.h"
 #include "core/profile_id.h"
 #include "core/tab_strip_model.h"
@@ -37,14 +40,44 @@ NS_ASSUME_NONNULL_BEGIN
 // Settings the tab follows (004).
 - (brouk::TabClientDelegate::SearchEngine)searchEngine;
 - (BOOL)askWhereToSaveDownloads;
+// Developer tools (006): the tab's state changed (the toolbar toggle shows
+// it); the dock's position buttons and divider change the shared position
+// and size; keys DevTools did not use.
+- (void)tabDevToolsChanged:(BRTab*)tab;
+- (void)tab:(BRTab*)tab wantsDockPosition:(NSString*)position;
+- (void)tab:(BRTab*)tab resizedDockTo:(CGFloat)size;
+- (NSString*)dockPosition;
+- (CGFloat)dockSize;
+// Where the DevTools frontend runs, its settings, and the app's browser
+// counter (006).
+- (CefRefPtr<CefRequestContext>)devToolsContext;
+- (brouk::DevToolsPreferences*)devToolsPreferences;
+- (id<BRBrowserCounter>)browserCounter;
 @end
 
 @interface BRTab : NSObject
 
 @property(nonatomic, readonly) brouk::TabId tabId;
 @property(nonatomic, weak) id<BRTabDelegate> delegate;
-// Hosts the CEF browser view; sized to the window's content area.
+// The tab as placed in the window: the page and, while dev tools are on
+// and docked, the dock (006). Sized to the window's content area.
+@property(nonatomic, readonly) NSView* tabView;
+// The page: hosts the CEF browser view and the tab's overlays (dialogs,
+// prompts). Inside `tabView`.
 @property(nonatomic, readonly) NSView* containerView;
+
+// Developer tools (006), on or off per tab. Turning them on opens the
+// dock; turning them off (or closing the dock) closes it.
+@property(nonatomic, readonly) BOOL devToolsOn;
+- (void)setDevToolsOn:(BOOL)on;
+// "Inspect": turns dev tools on and selects the element at `point` (page
+// coordinates, as CEF reports them).
+- (void)inspectElementAt:(NSPoint)point;
+// Turns dev tools on and shows the console / starts picking an element.
+- (void)showDevToolsConsole;
+- (void)startDevToolsElementPicker;
+// The shared dock position ("bottom", "right", "left", "window") and size.
+- (void)setDockPosition:(NSString*)position size:(CGFloat)size;
 
 @property(nonatomic, readonly, copy) NSString* title;
 @property(nonatomic, readonly, copy) NSString* url;

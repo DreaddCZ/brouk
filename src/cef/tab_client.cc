@@ -233,11 +233,9 @@ bool TabClient::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
           OpenDisposition::kNewForegroundTab);
       break;
     case MenuCommand::kInspect:
-      // Until the dev tools dock (006) exists, DevTools opens in its own
-      // window, with the clicked element selected.
-      browser->GetHost()->ShowDevTools(
-          CefWindowInfo(), nullptr, CefBrowserSettings(),
-          CefPoint(params->GetXCoord(), params->GetYCoord()));
+      // Turns the tab's dev tools on, with the clicked element selected in
+      // Elements (006).
+      delegate_->InspectElement(params->GetXCoord(), params->GetYCoord());
       break;
     default:
       return false;

@@ -12,6 +12,8 @@ const theme = {
   description: '',
   restart: false,
   choices: [{ value: 'system', label: 'Same as macOS' }],
+  min: 0,
+  max: 0,
   value: 'system',
 };
 const spelling = { ...theme, key: 'content.spellcheck', type: 'bool', choices: [], value: true };
@@ -23,6 +25,10 @@ test('parseItem checks types and values', () => {
   assert.throws(() => parseItem({ ...spelling, value: 'yes' }), BridgeError);
   assert.throws(() => parseItem({ ...theme, value: false }), BridgeError);
   assert.throws(() => parseItem({ ...theme, format: 'html' }), BridgeError);
+  const port = { ...theme, type: 'integer', choices: [], min: 1024, max: 65535, value: 9222 };
+  assert.equal(parseItem(port).value, 9222);
+  assert.throws(() => parseItem({ ...port, value: 9222.5 }), BridgeError);
+  assert.throws(() => parseItem({ ...port, value: '9222' }), BridgeError);
 });
 
 test('parseState', () => {

@@ -1,6 +1,7 @@
 #include "cef/settings_handler.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -30,6 +31,8 @@ std::string_view TypeName(SettingDef::Type type) {
       return "string";
     case SettingDef::Type::kChoice:
       return "choice";
+    case SettingDef::Type::kInteger:
+      return "integer";
   }
   return "string";
 }
@@ -80,8 +83,13 @@ CefRefPtr<CefListValue> Items(SettingScope scope, const Settings& values) {
       choices->SetDictionary(i, choice);
     }
     item->SetList("choices", choices);
+    // Limits of integers (well within a double's exact range).
+    item->SetDouble("min", static_cast<double>(def.min_value));
+    item->SetDouble("max", static_cast<double>(def.max_value));
     if (def.type == SettingDef::Type::kBool) {
       item->SetBool("value", values.GetBool(def.key));
+    } else if (def.type == SettingDef::Type::kInteger) {
+      item->SetDouble("value", static_cast<double>(values.GetInt(def.key)));
     } else {
       item->SetString("value", values.GetString(def.key));
     }
@@ -147,6 +155,19 @@ std::optional<SettingValue> ValueField(const CefRefPtr<CefDictionaryValue>& d,
       return std::nullopt;
     }
     return SettingValue(d->GetBool("value"));
+  }
+  if (def.type == SettingDef::Type::kInteger) {
+    // JSON numbers arrive as int or double; only whole numbers in a sane
+    // range (the schema checks the setting's own limits).
+    double number = d->GetType("value") == VTYPE_INT ? d->GetInt("value")
+                    : d->GetType("value") == VTYPE_DOUBLE
+                        ? d->GetDouble("value")
+                        : 0.5;
+    if (!(number >= -1e15 && number <= 1e15) ||
+        static_cast<double>(static_cast<std::int64_t>(number)) != number) {
+      return std::nullopt;
+    }
+    return SettingValue(static_cast<std::int64_t>(number));
   }
   std::optional<std::string> text = StringField(d, "value");
   if (!text) {

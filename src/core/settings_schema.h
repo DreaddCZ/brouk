@@ -2,6 +2,7 @@
 #define BROUK_CORE_SETTINGS_SCHEMA_H_
 
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <string_view>
 
@@ -16,7 +17,7 @@ enum class SettingScope { kGlobal, kProfile };
 // type, and mistakes (unknown keys, `yes` instead of `true`) are reported
 // instead of silently ignored.
 struct SettingDef {
-  enum class Type { kBool, kString, kChoice };
+  enum class Type { kBool, kString, kChoice, kInteger };
   // What a kString holds; checked when the value is set.
   enum class Format {
     kText,         // A single line of text.
@@ -36,6 +37,8 @@ struct SettingDef {
   std::span<const std::string_view> choice_labels = {};
   Format format = Format::kText;  // kString
   std::size_t max_length = 0;     // kString, in bytes
+  std::int64_t min_value = 0;     // kInteger
+  std::int64_t max_value = 0;     // kInteger
   bool requires_restart = false;
   // Only in the file, not on the settings page (004: "like about:config").
   bool advanced = false;

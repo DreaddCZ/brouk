@@ -13,7 +13,7 @@ section.group h3 { font-size: 14px; margin: 10px 0 2px; }
 .setting .description { grid-column: 1; color: var(--muted); font-size: 12px; margin: 0; }
 .setting .problem { grid-column: 1 / -1; color: var(--danger); font-size: 12px; margin: 0; }
 .setting .restart { color: var(--accent); font-size: 11px; font-weight: 600; margin-left: 6px; }
-.setting input[type=text], .setting select { font: inherit; padding: 5px 8px; border-radius: 7px;
+.setting input[type=text], .setting input[type=number], .setting select { font: inherit; padding: 5px 8px; border-radius: 7px;
   border: 1px solid var(--line); background: var(--bg); color: var(--text); width: 100%;
   box-sizing: border-box; }
 .setting input[type=checkbox] { width: 18px; height: 18px; }
