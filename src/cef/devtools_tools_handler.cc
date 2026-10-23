@@ -10,6 +10,7 @@
 #include "core/devtools_tools.h"
 #include "core/internal_pages.h"
 #include "core/request_log.h"
+#include "core/request_rules.h"
 #include "include/cef_parser.h"
 #include "include/wrapper/cef_helpers.h"
 
@@ -200,6 +201,76 @@ bool DevToolsToolsHandler::OnQuery(CefRefPtr<CefBrowser> /*browser*/,
                        answer->SetBool("saved", saved);
                        callback->Success(ToJson(answer));
                      });
+    return true;
+  }
+  if (type == "tools.rules" && host_) {
+    ToolsHost::Rules rules = host_->RequestRules();
+    CefRefPtr<CefDictionaryValue> answer = CefDictionaryValue::Create();
+    answer->SetBool("paused", rules.set.paused);
+    CefRefPtr<CefListValue> list = CefListValue::Create();
+    std::size_t index = 0;
+    for (const RequestRule& rule : rules.set.rules) {
+      CefRefPtr<CefDictionaryValue> item = CefDictionaryValue::Create();
+      item->SetString("pattern", rule.pattern);
+      item->SetString("action",
+                      std::string(RequestRuleActionName(rule.action)));
+      item->SetString("header", rule.header);
+      item->SetString("value", rule.value);
+      item->SetBool("enabled", rule.enabled);
+      list->SetDictionary(index++, item);
+    }
+    answer->SetList("rules", list);
+    CefRefPtr<CefListValue> problems = CefListValue::Create();
+    index = 0;
+    for (const std::string& problem : rules.problems) {
+      problems->SetString(index++, problem);
+    }
+    answer->SetList("problems", problems);
+    answer->SetString("profile", rules.profile_name);
+    callback->Success(ToJson(answer));
+    return true;
+  }
+  if (type == "tools.setRules" && host_) {
+    RequestRuleSet set;
+    set.paused =
+        message->GetType("paused") == VTYPE_BOOL && message->GetBool("paused");
+    CefRefPtr<CefListValue> list = message->GetType("rules") == VTYPE_LIST
+                                       ? message->GetList("rules")
+                                       : nullptr;
+    if (!list || list->GetSize() > 500) {
+      callback->Failure(kBadRequest, "Invalid request.");
+      return true;
+    }
+    for (std::size_t i = 0; i < list->GetSize(); ++i) {
+      CefRefPtr<CefDictionaryValue> item = list->GetType(i) == VTYPE_DICTIONARY
+                                               ? list->GetDictionary(i)
+                                               : nullptr;
+      auto field = [&item](const char* key) {
+        return item && item->GetType(key) == VTYPE_STRING
+                   ? item->GetString(key).ToString()
+                   : std::string();
+      };
+      std::optional<RequestRule::Action> action =
+          RequestRuleActionFromName(field("action"));
+      if (!item || !action) {
+        callback->Failure(kBadRequest, "Invalid request.");
+        return true;
+      }
+      RequestRule rule{
+          field("pattern"), *action, field("header"), field("value"),
+          item->GetType("enabled") != VTYPE_BOOL || item->GetBool("enabled")};
+      if (std::optional<std::string> problem = ValidateRequestRule(rule)) {
+        callback->Failure(kFailed,
+                          "Rule " + std::to_string(i + 1) + ": " + *problem);
+        return true;
+      }
+      set.rules.push_back(std::move(rule));
+    }
+    if (std::optional<Error> error = host_->SetRequestRules(std::move(set))) {
+      callback->Failure(kFailed, error->message);
+    } else {
+      callback->Success("");
+    }
     return true;
   }
   callback->Failure(kBadRequest, "Invalid request.");

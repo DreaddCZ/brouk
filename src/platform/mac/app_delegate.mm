@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
 #include <map>
 #include <memory>
 #include <optional>
@@ -28,6 +29,7 @@
 #include "core/download_paths.h"
 #include "core/profile_export.h"
 #include "core/profile_registry.h"
+#include "core/request_rules.h"
 #include "core/search_engines.h"
 #include "core/settings_export.h"
 #include "include/cef_app.h"
@@ -383,6 +385,7 @@ class AppSettingsPage : public SettingsPageDelegate {
   _profiles->Load();
   [self reportProfileProblems];
   [self applySettings];
+  [self reloadRequestRules];
   for (BRBrowserWindowController* controller in _windows) {
     [controller profilesDidChange];
   }
@@ -644,6 +647,56 @@ class AppSettingsPage : public SettingsPageDelegate {
 // The DevTools frontend runs with the internal pages (in memory).
 - (CefRefPtr<CefRequestContext>)devToolsContext {
   return [self internalContext];
+}
+
+// Request rules (006), per profile, in profiles/<id>/request-rules.yaml.
+- (std::filesystem::path)requestRulesPathForProfile:
+    (const brouk::ProfileId&)profile {
+  return std::filesystem::path(brouk::mac::ProfileDirectory(@(profile.c_str()))
+                                   .fileSystemRepresentation) /
+         "request-rules.yaml";
+}
+
+- (brouk::ToolsHost::Rules)requestRulesForProfile:
+    (const brouk::ProfileId&)profile {
+  brouk::ToolsHost::Rules rules;
+  const brouk::ProfileInfo* info = _profiles->Find(profile);
+  if (!info || !brouk::IsValidProfileId(profile)) {
+    return rules;
+  }
+  rules.profile_name = info->name;
+  rules.set = brouk::LoadRequestRules([self requestRulesPathForProfile:profile],
+                                      rules.problems);
+  return rules;
+}
+
+- (std::optional<brouk::Error>)setRequestRules:(brouk::RequestRuleSet)rules
+                                    forProfile:
+                                        (const brouk::ProfileId&)profile {
+  if (!_profiles->Find(profile) || !brouk::IsValidProfileId(profile)) {
+    return brouk::Error{"There is no such profile."};
+  }
+  if (std::optional<brouk::Error> error = brouk::SaveRequestRules(
+          [self requestRulesPathForProfile:profile], rules)) {
+    return error;
+  }
+  for (BRBrowserWindowController* controller in _windows) {
+    [controller requestRulesChanged:rules forProfile:profile];
+  }
+  return std::nullopt;
+}
+
+// A rules file changed by hand: apply every profile's rules again.
+- (void)reloadRequestRules {
+  for (const brouk::ProfileInfo& profile : _profiles->profiles()) {
+    brouk::ToolsHost::Rules rules = [self requestRulesForProfile:profile.id];
+    for (const std::string& problem : rules.problems) {
+      NSLog(@"Request rules of %s: %s", profile.name.c_str(), problem.c_str());
+    }
+    for (BRBrowserWindowController* controller in _windows) {
+      [controller requestRulesChanged:rules.set forProfile:profile.id];
+    }
+  }
 }
 
 - (NSString*)secretHeaderNames {

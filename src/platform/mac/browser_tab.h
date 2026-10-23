@@ -54,6 +54,11 @@ NS_ASSUME_NONNULL_BEGIN
 - (brouk::DevToolsPreferences*)devToolsPreferences;
 - (id<BRBrowserCounter>)browserCounter;
 - (NSString*)secretHeaderNames;
+// Request rules of a profile (006).
+- (brouk::ToolsHost::Rules)requestRulesForProfile:
+    (const brouk::ProfileId&)profile;
+- (std::optional<brouk::Error>)setRequestRules:(brouk::RequestRuleSet)rules
+                                    forProfile:(const brouk::ProfileId&)profile;
 @end
 
 @interface BRTab : NSObject
@@ -77,6 +82,11 @@ NS_ASSUME_NONNULL_BEGIN
 // Turns dev tools on and shows the console / starts picking an element.
 - (void)showDevToolsConsole;
 - (void)startDevToolsElementPicker;
+// A request rule changed something on the current page (006); shown on
+// the dev tools toggle. Reset when a new page starts loading.
+@property(nonatomic, readonly) BOOL rulesAffectedPage;
+// The profile's rules changed: apply them to this tab's dock.
+- (void)requestRulesChanged:(const brouk::RequestRuleSet&)rules;
 // Sends changed settings to the page's renderer (JSON viewer, 006).
 - (void)sendRendererConfigWithJsonViewer:(BOOL)jsonViewer;
 // The shared dock position ("bottom", "right", "left", "window") and size.

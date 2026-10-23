@@ -9,7 +9,9 @@
 #include <utility>
 
 #include "cef/json_util.h"
+#include "include/base/cef_callback.h"
 #include "include/cef_parser.h"
+#include "include/wrapper/cef_closure_task.h"
 #include "include/wrapper/cef_helpers.h"
 
 namespace brouk {
@@ -31,6 +33,17 @@ DevToolsChannel::DevToolsChannel(CefRefPtr<CefBrowser> tab)
 
 void DevToolsChannel::Close() {
   CEF_REQUIRE_UI_THREAD();
+  if (tab_ && fetch_enabled_) {
+    // Never leave the tab intercepted: its requests would hang. Sent at
+    // once, as nothing waits for the answer.
+    CefRefPtr<CefDictionaryValue> message = CefDictionaryValue::Create();
+    message->SetInt("id", next_id_++);
+    message->SetString("method", "Fetch.disable");
+    std::string json = ToJson(message);
+    tab_->GetHost()->SendDevToolsMessage(json.data(), json.size());
+  }
+  fetch_enabled_ = false;
+  rules_affected_ = nullptr;
   registration_ = nullptr;
   tab_ = nullptr;
   pending_.clear();
@@ -59,11 +72,136 @@ void DevToolsChannel::Send(const std::string& method,
   message->SetDictionary(
       "params", params ? params->Copy(false) : CefDictionaryValue::Create());
   pending_[id] = std::move(done);
-  std::string json = ToJson(message);
-  if (!tab_->GetHost()->SendDevToolsMessage(json.data(), json.size())) {
-    Done failed = std::move(pending_[id]);
-    pending_.erase(id);
+  if (dispatching_) {
+    CefPostTask(TID_UI, base::BindOnce(&DevToolsChannel::SendNow,
+                                       CefRefPtr<DevToolsChannel>(this), id,
+                                       ToJson(message)));
+    return;
+  }
+  SendNow(id, ToJson(message));
+}
+
+void DevToolsChannel::SendNow(int id, const std::string& json) {
+  CEF_REQUIRE_UI_THREAD();
+  auto it = pending_.find(id);
+  if (it == pending_.end()) {
+    return;  // Closed meanwhile.
+  }
+  if (!tab_ ||
+      !tab_->GetHost()->SendDevToolsMessage(json.data(), json.size())) {
+    Done failed = std::move(it->second);
+    pending_.erase(it);
     failed(nullptr, "The command could not be sent.");
+  }
+}
+
+void DevToolsChannel::SetRules(RequestRuleSet rules,
+                               std::function<void()> affected) {
+  CEF_REQUIRE_UI_THREAD();
+  rules_ = std::move(rules);
+  rules_affected_ = std::move(affected);
+  UpdateFetch();
+}
+
+void DevToolsChannel::UpdateFetch() {
+  // Only the request stage: CEF 154 replaces the response headers that reach
+  // the page with the ones it got from the network, so changes made with
+  // Fetch.continueResponse are lost (see the notes of spec 006).
+  bool enable = HasActiveRules(rules_);
+  if (enable == fetch_enabled_ || !tab_) {
+    return;
+  }
+  fetch_enabled_ = enable;
+  auto ignore = [](const CefRefPtr<CefDictionaryValue>&, const std::string&) {};
+  if (!enable) {
+    Send("Fetch.disable", nullptr, ignore);
+    return;
+  }
+  CefRefPtr<CefListValue> patterns = CefListValue::Create();
+  CefRefPtr<CefDictionaryValue> request = CefDictionaryValue::Create();
+  request->SetString("urlPattern", "*");
+  request->SetString("requestStage", "Request");
+  patterns->SetDictionary(0, request);
+  CefRefPtr<CefDictionaryValue> params = CefDictionaryValue::Create();
+  params->SetList("patterns", patterns);
+  Send("Fetch.enable", params, ignore);
+}
+
+namespace {
+
+CefRefPtr<CefListValue> HeaderEntryList(const Headers& headers) {
+  CefRefPtr<CefListValue> list = CefListValue::Create();
+  std::size_t index = 0;
+  for (const auto& [name, value] : headers) {
+    CefRefPtr<CefDictionaryValue> entry = CefDictionaryValue::Create();
+    entry->SetString("name", name);
+    entry->SetString("value", value);
+    list->SetDictionary(index++, entry);
+  }
+  return list;
+}
+
+}  // namespace
+
+void DevToolsChannel::HandleRequestPaused(std::string_view message) {
+  auto ignore = [](const CefRefPtr<CefDictionaryValue>&, const std::string&) {};
+  CefRefPtr<CefValue> parsed = ParseJson(message);
+  CefRefPtr<CefDictionaryValue> event =
+      parsed && parsed->GetType() == VTYPE_DICTIONARY ? parsed->GetDictionary()
+                                                      : nullptr;
+  CefRefPtr<CefDictionaryValue> params =
+      event && event->GetType("params") == VTYPE_DICTIONARY
+          ? event->GetDictionary("params")
+          : nullptr;
+  if (!params || params->GetType("requestId") != VTYPE_STRING) {
+    return;  // Nothing to continue.
+  }
+  std::string id = params->GetString("requestId").ToString();
+  CefRefPtr<CefDictionaryValue> reply = CefDictionaryValue::Create();
+  reply->SetString("requestId", id);
+  CefRefPtr<CefDictionaryValue> request =
+      params->GetType("request") == VTYPE_DICTIONARY
+          ? params->GetDictionary("request")
+          : nullptr;
+  std::string url = request && request->GetType("url") == VTYPE_STRING
+                        ? request->GetString("url").ToString()
+                        : std::string();
+  if (params->HasKey("responseStatusCode") ||
+      params->HasKey("responseErrorReason")) {
+    Send("Fetch.continueRequest", reply, ignore);  // Not paused by us.
+    return;
+  }
+  RequestRuleDecision decision = DecideRequest(rules_, url);
+  if (decision.block) {
+    reply->SetString("errorReason", "BlockedByClient");
+    Send("Fetch.failRequest", reply, ignore);
+  } else if (decision.redirect) {
+    Headers location = {{"Location", *decision.redirect}};
+    reply->SetInt("responseCode", 307);
+    reply->SetList("responseHeaders", HeaderEntryList(location));
+    Send("Fetch.fulfillRequest", reply, ignore);
+  } else if (decision.changes_request_headers && request &&
+             request->GetType("headers") == VTYPE_DICTIONARY) {
+    Headers headers;
+    CefRefPtr<CefDictionaryValue> object = request->GetDictionary("headers");
+    CefDictionaryValue::KeyList names;
+    object->GetKeys(names);
+    for (const CefString& name : names) {
+      if (object->GetType(name) == VTYPE_STRING) {
+        headers.emplace_back(name.ToString(),
+                             object->GetString(name).ToString());
+      }
+    }
+    reply->SetList("headers", HeaderEntryList(ApplyRequestHeaderRules(
+                                  rules_, url, std::move(headers))));
+    Send("Fetch.continueRequest", reply, ignore);
+  } else {
+    Send("Fetch.continueRequest", reply, ignore);
+  }
+  if ((decision.block || decision.redirect ||
+       decision.changes_request_headers) &&
+      rules_affected_) {
+    rules_affected_();
   }
 }
 
@@ -170,7 +308,20 @@ bool DevToolsChannel::OnDevToolsMessage(CefRefPtr<CefBrowser> /*browser*/,
                                         const void* message,
                                         size_t message_size) {
   CEF_REQUIRE_UI_THREAD();
-  std::string_view text(static_cast<const char*>(message), message_size);
+  dispatching_ = true;
+  bool handled = Dispatch(
+      std::string_view(static_cast<const char*>(message), message_size));
+  dispatching_ = false;
+  return handled;
+}
+
+bool DevToolsChannel::Dispatch(std::string_view text) {
+  constexpr std::string_view kRequestPaused =
+      R"({"method":"Fetch.requestPaused")";
+  if (text.starts_with(kRequestPaused)) {
+    HandleRequestPaused(text);
+    return true;
+  }
   constexpr std::string_view kNetworkEvent = R"({"method":"Network.)";
   if (recording_ && text.starts_with(kNetworkEvent)) {
     HandleNetworkEvent(text);

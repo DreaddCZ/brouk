@@ -7,6 +7,7 @@
 #include <string_view>
 
 #include "core/request_log.h"
+#include "core/request_rules.h"
 #include "include/cef_browser.h"
 #include "include/cef_devtools_message_observer.h"
 #include "include/cef_registration.h"
@@ -41,19 +42,38 @@ class DevToolsChannel : public CefDevToolsMessageObserver {
   const RequestLog& requests() const { return requests_; }
   void ClearRequests() { requests_.Clear(); }
 
+  // The profile's request rules (006), applied to this tab's requests
+  // through the protocol's Fetch domain while any rule is active.
+  // `affected` is called when a rule changed a request.
+  void SetRules(RequestRuleSet rules, std::function<void()> affected);
+
   // CefDevToolsMessageObserver:
   bool OnDevToolsMessage(CefRefPtr<CefBrowser> browser,
                          const void* message,
                          size_t message_size) override;
 
  private:
+  void SendNow(int id, const std::string& json);
+  // Handles one message of OnDevToolsMessage; true if it was only for us.
+  bool Dispatch(std::string_view text);
+
   CefRefPtr<CefBrowser> tab_;
   CefRefPtr<CefRegistration> registration_;
   // Above the frontend's ids and those of DevToolsFrontendClient.
   int next_id_ = 1'500'000'000;
   std::map<int, Done> pending_;
+  // True while OnDevToolsMessage runs: commands sent then are posted, as
+  // sending from inside CEF's observer callback re-enters its observer list.
+  bool dispatching_ = false;
   RequestLog requests_;
   bool recording_ = false;
+  RequestRuleSet rules_;
+  std::function<void()> rules_affected_;
+  // Whether Fetch.enable is on (requests are paused for the rules).
+  bool fetch_enabled_ = false;
+
+  void UpdateFetch();
+  void HandleRequestPaused(std::string_view message);
 
   void HandleNetworkEvent(std::string_view message);
 

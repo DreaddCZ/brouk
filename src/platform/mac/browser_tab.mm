@@ -731,6 +731,11 @@ class TabDelegateBridge : public TabClientDelegate {
 }
 
 - (void)handleLoading:(BOOL)loading back:(BOOL)back forward:(BOOL)forward {
+  if (loading && !_isLoading && _rulesAffectedPage) {
+    // A new page: the rule indicator starts over.
+    _rulesAffectedPage = NO;
+    [_delegate tabDevToolsChanged:self];
+  }
   if (loading && _sadTab) {
     // A new load (e.g. Reload) replaces the crash page.
     [_sadTab removeFromSuperview];
@@ -907,6 +912,7 @@ class TabDelegateBridge : public TabClientDelegate {
                       delegate:self];
   _dock.position = _dockPosition;
   _dock.secretHeaderNames = [_delegate secretHeaderNames] ?: @"";
+  [_dock setRequestRules:[_delegate requestRulesForProfile:_profileId].set];
   [self placeDock];
 }
 
@@ -1065,6 +1071,32 @@ class TabDelegateBridge : public TabClientDelegate {
 
 - (BOOL)devToolsDockHandleKeyEvent:(NSEvent*)event {
   return [_delegate tab:self handleUnhandledKeyEvent:event];
+}
+
+- (brouk::ToolsHost::Rules)devToolsDockRequestRules:(BRDevToolsDock*)dock {
+  id<BRTabDelegate> delegate = _delegate;
+  return delegate ? [delegate requestRulesForProfile:_profileId]
+                  : brouk::ToolsHost::Rules{};
+}
+
+- (std::optional<brouk::Error>)devToolsDock:(BRDevToolsDock*)dock
+                            setRequestRules:(brouk::RequestRuleSet)rules {
+  id<BRTabDelegate> delegate = _delegate;
+  if (!delegate) {
+    return brouk::Error{"The tab has closed."};
+  }
+  return [delegate setRequestRules:std::move(rules) forProfile:_profileId];
+}
+
+- (void)devToolsDockRulesAffectedPage:(BRDevToolsDock*)dock {
+  if (!_rulesAffectedPage) {
+    _rulesAffectedPage = YES;
+    [_delegate tabDevToolsChanged:self];
+  }
+}
+
+- (void)requestRulesChanged:(const brouk::RequestRuleSet&)rules {
+  [_dock setRequestRules:rules];
 }
 
 - (void)devToolsDock:(BRDevToolsDock*)dock openURL:(NSString*)url {

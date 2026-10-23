@@ -9,6 +9,7 @@
 #import "platform/mac/devtools_dock.h"
 
 #include "cef/devtools_preferences.h"
+#include "cef/devtools_tools_handler.h"
 #include "cef/tab_client.h"
 #include "core/profile_registry.h"
 #include "include/cef_request_context.h"
@@ -48,6 +49,10 @@ NS_ASSUME_NONNULL_BEGIN
 - (CefRefPtr<CefRequestContext>)devToolsContext;
 - (brouk::DevToolsPreferences*)devToolsPreferences;
 - (NSString*)secretHeaderNames;
+- (brouk::ToolsHost::Rules)requestRulesForProfile:
+    (const brouk::ProfileId&)profile;
+- (std::optional<brouk::Error>)setRequestRules:(brouk::RequestRuleSet)rules
+                                    forProfile:(const brouk::ProfileId&)profile;
 // Downloads (app-wide, so concurrent downloads never share a file name).
 - (std::string)reserveDownloadPath:(const std::string&)suggested;
 - (void)releaseDownloadPath:(const std::string&)path;
@@ -76,6 +81,9 @@ NS_ASSUME_NONNULL_BEGIN
 // Developer tools (006): toggle side (setting), the remote debugging port
 // (0: off; shows the indicator), and the shared dock position and size.
 - (void)setDevToolsToggleOnLeft:(BOOL)left;
+// A profile's request rules changed: apply them to its tabs.
+- (void)requestRulesChanged:(const brouk::RequestRuleSet&)rules
+                 forProfile:(const brouk::ProfileId&)profile;
 // Settings the pages' renderers follow changed (JSON viewer).
 - (void)sendRendererConfigWithJsonViewer:(BOOL)jsonViewer;
 @property(nonatomic) int remoteDebuggingPort;
