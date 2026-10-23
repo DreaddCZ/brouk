@@ -31,7 +31,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 004 | [Configuration system](004-configuration.md) | in-progress | P1 |
 | 005 | [Profiles](005-profiles.md) | in-progress | P1 |
 | 006 | [Developer tools](006-developer-tools.md) | ready | P1 |
-| 007 | [Ad and tracker blocking](007-adblock.md) | draft | P1 |
+| 007 | [Ad and tracker blocking](007-adblock.md) | ready | P1 |
 | 008 | [Password manager](008-password-manager.md) | ready | P1 |
 | 009 | [Form autofill](009-autofill.md) | ready | P1 |
 | 010 | [Link routing and window picker](010-link-routing.md) | ready | P1 |

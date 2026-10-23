@@ -43,6 +43,7 @@ Platform-native webviews (e.g. WKWebView on macOS) are excluded because they are
   - **Objective-C++ (AppKit)** for the native macOS UI. It mixes directly with C++ (no bridging layer), AppKit's Objective-C API is stable and well documented, and Chrome's and CEF's own Mac code is written this way. Small Swift files are allowed only when a macOS API is not available from Objective-C.
   - **TypeScript** for the HTML pages, plain or with at most one long-established library, with pinned versions. No fast-changing frameworks.
   - Windows UI language/toolkit: decided when Windows work starts (core stays shared C++).
+  - **Exception (2026-10-23):** Brave's `adblock-rust` (MPL-2.0) is used as a library through a C interface for ad blocking (007). The Rust toolchain is pinned and used only to build that library; at most a thin wrapper crate is written by us.
 
 - **Build system and tests** (decided 2026-10-21):
   - **CMake + Ninja** (CEF's binary distribution and samples use CMake; Ninja keeps incremental builds fast).
