@@ -8,6 +8,7 @@
 #include <system_error>
 #include <utility>
 
+#include "cef/json_util.h"
 #include "include/cef_parser.h"
 #include "include/wrapper/cef_helpers.h"
 
@@ -36,7 +37,7 @@ void DevToolsPreferences::Load() {
   std::ifstream file(path_, std::ios::binary);
   std::string text((std::istreambuf_iterator<char>(file)),
                    std::istreambuf_iterator<char>());
-  CefRefPtr<CefValue> parsed = CefParseJSON(text, JSON_PARSER_RFC);
+  CefRefPtr<CefValue> parsed = ParseJson(text);
   if (!parsed || parsed->GetType() != VTYPE_DICTIONARY) {
     return;
   }

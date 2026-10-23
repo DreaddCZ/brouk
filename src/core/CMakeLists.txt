@@ -9,6 +9,8 @@ set(BROUK_CORE_SOURCES
   crash_error_code.cc
   crash_error_code.h
   devtools_frontend.h
+  devtools_tools.cc
+  devtools_tools.h
   dialog_spam_guard.cc
   dialog_spam_guard.h
   download_paths.cc

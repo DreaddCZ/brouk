@@ -1,10 +1,14 @@
 #import "platform/mac/devtools_dock.h"
 
+#include <iterator>
 #include <memory>
 #include <set>
 #include <string>
 
+#include "cef/devtools_channel.h"
 #include "cef/devtools_frontend_client.h"
+#include "cef/devtools_tools_handler.h"
+#include "cef/internal_page_client.h"
 #include "core/devtools_frontend.h"
 #include "include/wrapper/cef_helpers.h"
 
@@ -15,6 +19,9 @@
 - (BOOL)handleKeyEvent:(NSEvent*)event;
 - (void)handleWantsClose;
 - (void)handleOpenURL:(NSString*)url;
+- (void)handleToolsCreated:(CefRefPtr<CefBrowser>)tools;
+- (void)handleToolsCloseReady;
+- (void)handleToolsClosed;
 @end
 
 namespace brouk {
@@ -49,9 +56,41 @@ class DevToolsDockBridge : public DevToolsFrontendDelegate {
   __weak BRDevToolsDock* dock_;
 };
 
+// Our own tools' page (brouk://tools) in the dock.
+class DockToolsBridge : public InternalPageDelegate {
+ public:
+  explicit DockToolsBridge(BRDevToolsDock* dock) : dock_(dock) {}
+  void OnBrowserCreated(CefRefPtr<CefBrowser> browser) override {
+    [dock_ handleToolsCreated:browser];
+  }
+  void OnCloseReady() override { [dock_ handleToolsCloseReady]; }
+  void OnBrowserClosed() override { [dock_ handleToolsClosed]; }
+  void OnTitleChanged(const std::string& /*title*/) override {}
+  bool OnUnhandledKeyEvent(const CefKeyEvent& event,
+                           CefEventHandle os_event) override {
+    NSEvent* ns_event = (__bridge NSEvent*)os_event;
+    return ns_event && event.type == KEYEVENT_RAWKEYDOWN &&
+           ns_event.type == NSEventTypeKeyDown &&
+           [dock_ handleKeyEvent:ns_event];
+  }
+
+ private:
+  __weak BRDevToolsDock* dock_;
+};
+
 }  // namespace brouk
 
 namespace {
+
+// The dock's tabs: Chromium DevTools, then our own tools (brouk://tools/#id).
+struct DockTool {
+  NSString* id;
+  NSString* title;
+};
+const DockTool kDockTools[] = {
+    {@"devtools", @"DevTools"},
+    {@"site-data", @"Site data"},
+};
 
 constexpr CGFloat kHeaderHeight = 28;
 
@@ -110,6 +149,19 @@ NSButton* HeaderButton(NSString* symbol,
   BOOL _counted;
   NSView* _content;
   NSDictionary<NSString*, NSButton*>* _positionButtons;
+  // Our own tools (006): their page, shown instead of DevTools.
+  CefRefPtr<CefRequestContext> _context;
+  CefRefPtr<brouk::DevToolsChannel> _channel;
+  std::unique_ptr<brouk::DockToolsBridge> _toolsBridge;
+  CefRefPtr<brouk::InternalPageClient> _toolsClient;
+  CefRefPtr<CefBrowser> _tools;
+  BOOL _toolsCounted;
+  BOOL _toolsCreating;
+  NSView* _toolsContent;
+  NSSegmentedControl* _tabs;
+  NSString* _pendingTool;
+  BOOL _closing;
+  BOOL _frontendCreating;
 }
 
 - (instancetype)initWithInspectedBrowser:(CefRefPtr<CefBrowser>)inspected
@@ -124,6 +176,9 @@ NSButton* HeaderButton(NSString* symbol,
     _delegate = delegate;
     _counter = counter;
     _position = @"bottom";
+    _context = context;
+    _channel = new brouk::DevToolsChannel(inspected);
+    _frontendCreating = YES;
     [self buildViews];
     _bridge = std::make_unique<brouk::DevToolsDockBridge>(self);
     _client = new brouk::DevToolsFrontendClient(_bridge.get(), inspected,
@@ -152,11 +207,23 @@ NSButton* HeaderButton(NSString* symbol,
   header.autoresizingMask = NSViewWidthSizable | NSViewMinYMargin;
   header.frame = NSMakeRect(0, 300 - kHeaderHeight, 600, kHeaderHeight);
 
-  // Tool tabs (our own tools join here, 006).
-  NSTextField* tool = [NSTextField labelWithString:@"DevTools"];
-  tool.font = [NSFont systemFontOfSize:12 weight:NSFontWeightSemibold];
-  tool.frame = NSMakeRect(10, 6, 120, 16);
-  [header addSubview:tool];
+  // Tool tabs: Chromium DevTools and our own tools (006).
+  NSMutableArray<NSString*>* titles = [NSMutableArray array];
+  for (const DockTool& tool : kDockTools) {
+    [titles addObject:tool.title];
+  }
+  _tabs = [NSSegmentedControl
+      segmentedControlWithLabels:titles
+                    trackingMode:NSSegmentSwitchTrackingSelectOne
+                          target:self
+                          action:@selector(toolClicked:)];
+  _tabs.controlSize = NSControlSizeSmall;
+  _tabs.font = [NSFont systemFontOfSize:11];
+  _tabs.selectedSegment = 0;
+  _tabs.accessibilityLabel = @"Developer tools";
+  [_tabs sizeToFit];
+  _tabs.frame = NSMakeRect(8, 3, _tabs.frame.size.width, 22);
+  [header addSubview:_tabs];
 
   NSMutableDictionary* buttons = [NSMutableDictionary dictionary];
   NSArray* positions = @[
@@ -189,6 +256,11 @@ NSButton* HeaderButton(NSString* symbol,
       [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 600, 300 - kHeaderHeight)];
   _content.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
   [_view addSubview:_content];
+  _toolsContent =
+      [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 600, 300 - kHeaderHeight)];
+  _toolsContent.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+  _toolsContent.hidden = YES;
+  [_view addSubview:_toolsContent];
   [self setPosition:_position];
 }
 
@@ -221,30 +293,118 @@ NSButton* HeaderButton(NSString* symbol,
 }
 
 - (void)close {
-  if (!_client) {
+  if (_closing) {
     return;
+  }
+  _closing = YES;
+  _channel->Close();
+  if (_tools) {
+    _tools->GetHost()->CloseBrowser(true);
   }
   if (_frontend) {
     _client->Close();
-  } else {
-    // Not created yet: nothing to close; tell the tab now.
-    [self detach];
-    [_delegate devToolsDockDidClose:self];
   }
+  [self finishClosingIfDone];
 }
 
 - (void)detach {
   _delegate = nil;
-  if (_frontend) {
-    // Stay alive until CEF reports the browser closed (handleClosed).
+  if (_frontend || _frontendCreating || _tools || _toolsCreating) {
+    // Stay alive until CEF reports the browsers closed.
     ClosingDocks().insert(self);
-    _frontend->GetHost()->CloseBrowser(true);
+  }
+  [self close];
+}
+
+// Both browsers are gone (or were never created): the dock is closed.
+- (void)finishClosingIfDone {
+  if (!_closing || _frontend || _frontendCreating || _tools || _toolsCreating) {
     return;
   }
   if (_client) {
     _client->DetachDelegate();
   }
   _client = nullptr;
+  _toolsClient = nullptr;
+  _channel = nullptr;
+  id<BRDevToolsDockDelegate> delegate = _delegate;
+  _delegate = nil;
+  [delegate devToolsDockDidClose:self];
+  ClosingDocks().erase(self);
+}
+
+#pragma mark - Our own tools
+
+- (void)toolClicked:(NSSegmentedControl*)sender {
+  NSInteger index = sender.selectedSegment;
+  if (index < 0 || index >= static_cast<NSInteger>(std::size(kDockTools))) {
+    return;
+  }
+  [self showTool:kDockTools[index].id];
+}
+
+- (void)showTool:(NSString*)tool {
+  BOOL devtools = [tool isEqualToString:@"devtools"];
+  _content.hidden = !devtools;
+  _toolsContent.hidden = devtools;
+  if (devtools || _closing) {
+    return;
+  }
+  std::string url = std::string("brouk://tools/#") + tool.UTF8String;
+  if (_tools) {
+    _tools->GetMainFrame()->LoadURL(url);
+    return;
+  }
+  _pendingTool = tool;
+  if (_toolsCreating) {
+    return;
+  }
+  _toolsCreating = YES;
+  _toolsBridge = std::make_unique<brouk::DockToolsBridge>(self);
+  _toolsClient = new brouk::InternalPageClient(
+      _toolsBridge.get(),
+      std::make_unique<brouk::DevToolsToolsHandler>(_channel));
+  NSRect bounds = _toolsContent.bounds;
+  CefWindowInfo info;
+  info.SetAsChild((__bridge void*)_toolsContent,
+                  CefRect(0, 0, static_cast<int>(bounds.size.width),
+                          static_cast<int>(bounds.size.height)));
+  info.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
+  CefBrowserHost::CreateBrowser(info, _toolsClient, url, CefBrowserSettings(),
+                                nullptr, _context);
+}
+
+- (void)handleToolsCreated:(CefRefPtr<CefBrowser>)tools {
+  _toolsCreating = NO;
+  _tools = tools;
+  NSView* view = (__bridge NSView*)tools->GetHost()->GetWindowHandle();
+  view.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+  view.frame = _toolsContent.bounds;
+  _toolsCounted = YES;
+  [_counter browserWindowDidCreateBrowser];
+  if (_closing) {
+    tools->GetHost()->CloseBrowser(true);
+  }
+}
+
+- (void)handleToolsCloseReady {
+  if (_tools) {
+    NSView* view = (__bridge NSView*)_tools->GetHost()->GetWindowHandle();
+    [view removeFromSuperview];
+  }
+}
+
+- (void)handleToolsClosed {
+  _tools = nullptr;
+  _toolsCreating = NO;
+  if (_toolsClient) {
+    _toolsClient->DetachDelegate();
+  }
+  if (_toolsCounted) {
+    _toolsCounted = NO;
+    [_counter browserWindowDidCloseBrowser];
+  }
+  [self finishClosingIfDone];
 }
 
 #pragma mark - Header buttons
@@ -260,12 +420,16 @@ NSButton* HeaderButton(NSString* symbol,
 #pragma mark - DevTools browser events (UI thread)
 
 - (void)handleCreated:(CefRefPtr<CefBrowser>)frontend {
+  _frontendCreating = NO;
   _frontend = frontend;
   NSView* view = (__bridge NSView*)frontend->GetHost()->GetWindowHandle();
   view.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
   view.frame = _content.bounds;
   _counted = YES;
   [_counter browserWindowDidCreateBrowser];
+  if (_closing) {
+    _client->Close();
+  }
 }
 
 - (void)handleCloseReady {
@@ -277,16 +441,13 @@ NSButton* HeaderButton(NSString* symbol,
 
 - (void)handleClosed {
   _frontend = nullptr;
-  if (_client) {
-    _client->DetachDelegate();
-  }
-  _client = nullptr;
   if (_counted) {
     _counted = NO;
     [_counter browserWindowDidCloseBrowser];
   }
-  [_delegate devToolsDockDidClose:self];
-  ClosingDocks().erase(self);
+  // DevTools closing (its own close button or the tab) closes the dock.
+  [self close];
+  [self finishClosingIfDone];
 }
 
 - (BOOL)handleKeyEvent:(NSEvent*)event {

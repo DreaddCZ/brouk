@@ -1,0 +1,21 @@
+/* Our developer tools in the dock (006). Colours and controls: shared/base.css. */
+:root { font-size: 12px; }
+main { max-width: none; margin: 0; padding: 8px 12px 24px; }
+.toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.toolbar .origin { font-weight: 600; margin-right: auto; overflow-wrap: anywhere; }
+.toolbar .note { color: var(--muted); }
+h2 { font-size: 12px; margin: 14px 0 4px; display: flex; gap: 8px; align-items: center; }
+h2 .count { color: var(--muted); font-weight: normal; }
+table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+th, td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; }
+td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: ui-monospace, Menlo, monospace; }
+th:last-child, td.actions { width: 130px; white-space: nowrap; text-align: right; font-family: inherit; }
+td input[type=text] { width: 100%; box-sizing: border-box; font: inherit; padding: 2px 4px;
+  border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--text); }
+button.small { padding: 1px 6px; font-size: 11px; }
+.empty { color: var(--muted); padding: 4px 6px; }
+.confirm { border: 1px solid var(--danger); border-radius: 8px; padding: 8px 12px; margin-bottom: 8px; }
+.confirm p { margin: 0 0 6px; }
+.flags { color: var(--muted); }

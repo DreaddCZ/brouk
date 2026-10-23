@@ -21,6 +21,7 @@ add_executable(brouk_core_tests
   core/address_input_test.cc
   core/context_menu_test.cc
   core/crash_error_code_test.cc
+  core/devtools_tools_test.cc
   core/dialog_spam_guard_test.cc
   core/download_paths_test.cc
   core/external_protocol_test.cc
