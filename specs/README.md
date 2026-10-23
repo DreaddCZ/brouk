@@ -27,7 +27,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 |---|---|---|---|
 | 001 | [Technology stack](001-technology-stack.md) | in-progress | P1 |
 | 002 | [Platform support](002-platform-support.md) | ready (macOS) | P1 |
-| 003 | [Browser UI](003-browser-ui.md) | ready | P1 |
+| 003 | [Browser UI](003-browser-ui.md) | in-progress | P1 |
 | 004 | [Configuration system](004-configuration.md) | in-progress | P1 |
 | 005 | [Profiles](005-profiles.md) | in-progress | P1 |
 | 006 | [Developer tools](006-developer-tools.md) | in-progress | P1 |
@@ -54,5 +54,7 @@ Build order. Each milestone ends with a build the user tests on their Macs.
 | **Later** | In an order to be agreed: | 010, 007, 008, 009, 011, 013, 014 |
 
 2026-10-22 (user's decision): the rest of 012 (folder upload and file drop, pinch zoom, Picture-in-Picture, permissions in settings) is postponed; profiles (005) come next, on top of the configuration foundation from 004 that they need (settings files, typed settings, live reload). The settings page of 004 follows later.
+
+2026-10-23 (user's decision): next come 003 (M4), then 013, then 011. Full acceptance testing of 004 and 005 is done later, together with the UI of these specs.
 
 Rules: a milestone uses only `ready` specs; later milestones may be re-ordered by the user. Unspecified standard browser behaviour follows Chrome (see `CLAUDE.md`).

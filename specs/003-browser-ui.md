@@ -1,6 +1,6 @@
 # 003 – Browser UI
 
-- **Status:** ready
+- **Status:** in-progress
 - **Priority:** P1
 - **Depends on:** 001, 004, 005
 
@@ -72,3 +72,4 @@ None.
 
 - 2026-10-21 (decision in 001): hybrid UI shell. Windows, tabs, toolbar, address bar and menus are native (Objective-C++/AppKit on macOS); settings, history, bookmarks, downloads and other internal pages are HTML/TypeScript pages rendered in CEF. This answers "native look or custom cross-platform look" for the main window chrome; internal pages follow the same theme.
 - 2026-10-21 (UI and profiles review): horizontal tabs first, vertical later. Tab groups are profile groups (one group per profile per window, see 005), collapsible like in Chrome. Separate workspaces are not needed for now.
+- 2026-10-23 (user's decision): 003 is built next, then 013, then 011. The command palette opens with ⌘K (Chrome has no comparable shortcut on macOS). History for suggestions is stored in SQLite (013), approved as a library by the user. Built in several pull requests: pinned tabs and tab overflow; remappable shortcuts; command palette; history storage and address bar suggestions.
