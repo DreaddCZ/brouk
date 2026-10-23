@@ -20,6 +20,9 @@ include(GoogleTest)
 add_executable(brouk_core_tests
   core/address_input_test.cc
   core/address_suggestions_test.cc
+  core/bookmark_file_test.cc
+  core/bookmark_html_test.cc
+  core/bookmark_model_test.cc
   core/closed_tabs_test.cc
   core/command_palette_test.cc
   core/context_menu_test.cc
@@ -32,6 +35,7 @@ add_executable(brouk_core_tests
   core/history_sql_test.cc
   core/history_store_test.cc
   core/internal_pages_test.cc
+  core/json_test.cc
   core/launch_args_test.cc
   core/page_events_test.cc
   core/request_log_test.cc

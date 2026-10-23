@@ -7,6 +7,12 @@ set(BROUK_CORE_SOURCES
   address_input.h
   address_suggestions.cc
   address_suggestions.h
+  bookmark_file.cc
+  bookmark_file.h
+  bookmark_html.cc
+  bookmark_html.h
+  bookmark_model.cc
+  bookmark_model.h
   closed_tabs.cc
   closed_tabs.h
   command_palette.cc
@@ -32,6 +38,8 @@ set(BROUK_CORE_SOURCES
   history_store.h
   internal_pages.cc
   internal_pages.h
+  json.cc
+  json.h
   launch_args.cc
   launch_args.h
   page_events.cc
