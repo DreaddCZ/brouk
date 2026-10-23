@@ -51,7 +51,12 @@ constexpr std::array<std::string_view, 2> kHistoryViews = {"site", "day"};
 constexpr std::array<std::string_view, 2> kHistoryViewLabels = {"By site",
                                                                 "By day"};
 
-constexpr std::array<SettingDef, 24> kSettings = {{
+constexpr std::array<std::string_view, 2> kBookmarksBar = {"new_tab_page",
+                                                           "always"};
+constexpr std::array<std::string_view, 2> kBookmarksBarLabels = {
+    "On the new tab page only", "Always"};
+
+constexpr std::array<SettingDef, 25> kSettings = {{
     // Global.
     {.key = "appearance.theme",
      .scope = SettingScope::kGlobal,
@@ -140,6 +145,16 @@ constexpr std::array<SettingDef, 24> kSettings = {{
      .description = "Comma-separated, e.g. login.microsoftonline.com, "
                     "*.okta.com. Their pages already in the history are "
                     "removed too."},
+    // Bookmarks (011).
+    {.key = "bookmarks.bar",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kChoice,
+     .default_value = "new_tab_page",
+     .choices = kBookmarksBar,
+     .choice_labels = kBookmarksBarLabels,
+     .section = "Bookmarks",
+     .label = "Show the bookmarks bar",
+     .description = "View > Always Show Bookmarks Bar switches it too."},
     {.key = "downloads.folder",
      .scope = SettingScope::kGlobal,
      .type = SettingDef::Type::kString,

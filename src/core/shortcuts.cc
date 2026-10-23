@@ -19,7 +19,7 @@ namespace {
 // Chrome's macOS shortcuts (menus and its accelerator table). Standard
 // macOS items (Quit, Hide, Minimize, Undo, Copy, Paste…) are not listed:
 // they are not browser actions and macOS can remap them already.
-constexpr std::array<ShortcutAction, 47> kActions = {{
+constexpr std::array<ShortcutAction, 51> kActions = {{
     // File.
     {"new_tab", "shortcuts.new_tab", "New tab", "cmd+t", true},
     {"new_window", "shortcuts.new_window", "New window", "cmd+n", true},
@@ -61,6 +61,14 @@ constexpr std::array<ShortcutAction, 47> kActions = {{
     {"show_history", "shortcuts.show_history", "Show full history", "cmd+y"},
     {"clear_browsing_data", "shortcuts.clear_browsing_data",
      "Clear browsing data", "shift+cmd+delete"},
+    // Bookmarks (011).
+    {"bookmark_page", "shortcuts.bookmark_page", "Bookmark this tab", "cmd+d"},
+    {"bookmark_all_tabs", "shortcuts.bookmark_all_tabs", "Bookmark all tabs",
+     "shift+cmd+d"},
+    {"bookmark_manager", "shortcuts.bookmark_manager", "Bookmark manager",
+     "opt+cmd+b"},
+    {"toggle_bookmarks_bar", "shortcuts.toggle_bookmarks_bar",
+     "Always show bookmarks bar", "shift+cmd+b"},
     // Tab.
     {"next_tab", "shortcuts.next_tab", "Next tab",
      "opt+cmd+right, cmd+}, ctrl+tab", true},

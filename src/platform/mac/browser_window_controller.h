@@ -6,6 +6,7 @@
 
 #include <string>
 
+#import "platform/mac/bookmark_store.h"
 #import "platform/mac/command_palette_panel.h"
 #import "platform/mac/devtools_dock.h"
 
@@ -22,6 +23,15 @@
 NS_ASSUME_NONNULL_BEGIN
 
 @class BRBrowserWindowController;
+
+// Where a bookmark opens (011): click, ⌘-click or middle-click, ⇧⌘-click,
+// "Open in New Window".
+typedef NS_ENUM(NSInteger, BRBookmarkOpenDisposition) {
+  BRBookmarkOpenCurrentTab,
+  BRBookmarkOpenBackgroundTab,
+  BRBookmarkOpenForegroundTab,
+  BRBookmarkOpenNewWindow,
+};
 
 // Implemented by the app delegate: app-wide bookkeeping of windows and
 // browsers (needed to quit CEF only after every browser has closed).
@@ -93,6 +103,9 @@ NS_ASSUME_NONNULL_BEGIN
 // "" when search suggestions are off or the engine has none.
 - (std::string)searchSuggestTemplate;
 - (void)openSettingsAtKey:(NSString*)key profile:(nullable NSString*)profileId;
+// Bookmarks (011): the app's one tree, and the profiles for its dialogs.
+- (BRBookmarkStore*)bookmarkStore;
+- (std::vector<brouk::ProfileInfo>)profileList;
 @end
 
 @interface BRBrowserWindowController : NSWindowController <NSWindowDelegate>
@@ -168,6 +181,11 @@ NS_ASSUME_NONNULL_BEGIN
          profile:(const brouk::ProfileId&)profile
           newTab:(BOOL)newTab
      fromHistory:(brouk::TabId)historyTab;
+// Opens a bookmark (011): a general one in the active tab's profile, a
+// linked one always in its profile (in a new tab when the active tab is in
+// another profile).
+- (void)openBookmark:(brouk::BookmarkId)bookmarkId
+         disposition:(BRBookmarkOpenDisposition)disposition;
 // Only one tab, never used (a new tab page): replaced by a restored session.
 - (BOOL)hasOnlyNewTab;
 

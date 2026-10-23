@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#import "platform/mac/bookmark_store.h"
 #import "platform/mac/browser_window_controller.h"
 #import "platform/mac/data_paths.h"
 #import "platform/mac/internal_page_window.h"
@@ -346,6 +347,11 @@ class AppSettingsPage : public SettingsPageDelegate {
   BOOL _sessionFrozen;
   NSMenu* _recentlyClosedMenu;
   NSMenu* _recentlyVisitedMenu;
+  // Bookmarks (011): the one tree of the app, and the Bookmarks menu, whose
+  // first items are fixed and the rest filled when it opens.
+  BRBookmarkStore* _bookmarks;
+  NSMenu* _bookmarksMenu;
+  NSInteger _bookmarksMenuFixedItems;
   // Each profile's request context (its isolated web data), created when the
   // profile is first used.
   std::map<brouk::ProfileId, CefRefPtr<CefRequestContext>> _requestContexts;
@@ -376,6 +382,9 @@ class AppSettingsPage : public SettingsPageDelegate {
     // Web data of profiles deleted earlier; Chromium is not running yet.
     _profiles->RemoveWebDataOfDeletedProfiles(
         brouk::mac::WebDataRootDirectory().fileSystemRepresentation);
+    _bookmarks = [[BRBookmarkStore alloc]
+        initWithFile:[brouk::mac::AppDataDirectory()
+                         stringByAppendingPathComponent:@"bookmarks.json"]];
     _profileManagerDelegate = std::make_unique<brouk::AppProfileManager>(self);
     _settingsPageDelegate =
         std::make_unique<brouk::AppSettingsPage>(self, *_profiles);
@@ -755,6 +764,7 @@ class AppSettingsPage : public SettingsPageDelegate {
   _sessionTimer = nil;
   [self saveSessionWithCleanExit:YES];
   _sessionFrozen = YES;
+  [_bookmarks saveNow];
   [_profileManager closePage];
   [_settingsWindow closePage];
   for (BRBrowserWindowController* controller in [_windows copy]) {
@@ -764,6 +774,7 @@ class AppSettingsPage : public SettingsPageDelegate {
 }
 
 - (void)releaseBrowserObjects {
+  [_bookmarks saveNow];
   _history.reset();  // Finishes queued history work, closes the databases.
   _settingsWatcher = nil;
   _profileManager = nil;
@@ -804,6 +815,10 @@ class AppSettingsPage : public SettingsPageDelegate {
   }
   if (menu == _recentlyVisitedMenu) {
     [self fillRecentlyVisitedMenu:menu];
+    return;
+  }
+  if (menu == _bookmarksMenu) {
+    [self fillBookmarksMenu:menu];
     return;
   }
   [menu removeAllItems];
@@ -1542,6 +1557,96 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
   [front showWindow:nil];
 }
 
+#pragma mark - Bookmarks (011)
+
+- (BRBookmarkStore*)bookmarkStore {
+  return _bookmarks;
+}
+
+- (std::vector<brouk::ProfileInfo>)profileList {
+  return _profiles->profiles();
+}
+
+// The bar's bookmarks, then Other bookmarks as a submenu; only what is
+// visible in the front window's active profile.
+- (void)fillBookmarksMenu:(NSMenu*)menu {
+  while (menu.numberOfItems > _bookmarksMenuFixedItems) {
+    [menu removeItemAtIndex:menu.numberOfItems - 1];
+  }
+  BRBrowserWindowController* front = [self frontController];
+  brouk::ProfileId profile =
+      front ? [front activeProfileId] : _profiles->default_profile().id;
+  [self addBookmarksOf:brouk::BookmarkModel::kBarId
+                toMenu:menu
+               profile:profile];
+  const brouk::BookmarkModel& model = [_bookmarks model];
+  if (!model.Find(brouk::BookmarkModel::kOtherId)->children.empty()) {
+    [menu addItem:NSMenuItem.separatorItem];
+    NSMenu* other = [[NSMenu alloc] initWithTitle:@"Other Bookmarks"];
+    [self addBookmarksOf:brouk::BookmarkModel::kOtherId
+                  toMenu:other
+                 profile:profile];
+    NSMenuItem* item = [menu addItemWithTitle:@"Other Bookmarks"
+                                       action:nil
+                                keyEquivalent:@""];
+    item.submenu = other;
+    item.image = [NSImage imageWithSystemSymbolName:@"folder"
+                           accessibilityDescription:nil];
+  }
+}
+
+- (void)addBookmarksOf:(brouk::BookmarkId)folderId
+                toMenu:(NSMenu*)menu
+               profile:(const brouk::ProfileId&)profile {
+  const brouk::BookmarkModel& model = [_bookmarks model];
+  const brouk::BookmarkItem* folder = model.Find(folderId);
+  bool any = false;
+  for (brouk::BookmarkId id : folder->children) {
+    const brouk::BookmarkItem* item = model.Find(id);
+    if (item == nullptr || !model.IsVisibleIn(id, profile)) {
+      continue;
+    }
+    any = true;
+    NSString* title = @(item->name.c_str()) ?: @"";
+    if (item->folder) {
+      NSMenu* submenu = [[NSMenu alloc] initWithTitle:title];
+      [self addBookmarksOf:id toMenu:submenu profile:profile];
+      NSMenuItem* entry = [menu addItemWithTitle:title
+                                          action:nil
+                                   keyEquivalent:@""];
+      entry.submenu = submenu;
+      entry.image = [NSImage imageWithSystemSymbolName:@"folder"
+                              accessibilityDescription:nil];
+    } else {
+      NSString* url = @(item->url.c_str()) ?: @"";
+      NSMenuItem* entry =
+          [menu addItemWithTitle:title.length ? title : url
+                          action:@selector(openBookmarkFromMenu:)
+                   keyEquivalent:@""];
+      entry.target = self;
+      entry.tag = static_cast<NSInteger>(id);
+      entry.toolTip = url;
+    }
+  }
+  if (!any && folderId != brouk::BookmarkModel::kBarId) {
+    [menu addItemWithTitle:@"(Empty)" action:nil keyEquivalent:@""].enabled =
+        NO;
+  }
+}
+
+// In the current tab, as Chrome opens Bookmarks menu items; with ⌘, in a
+// new tab.
+- (void)openBookmarkFromMenu:(NSMenuItem*)sender {
+  BRBrowserWindowController* front =
+      [self frontController] ?: [self openWindow];
+  BOOL newTab =
+      (NSApp.currentEvent.modifierFlags & NSEventModifierFlagCommand) != 0;
+  [front openBookmark:static_cast<brouk::BookmarkId>(sender.tag)
+          disposition:newTab ? BRBookmarkOpenBackgroundTab
+                             : BRBookmarkOpenCurrentTab];
+  [front showWindow:nil];
+}
+
 - (BOOL)validateMenuItem:(NSMenuItem*)item {
   if (item.action == @selector(reopenClosedTab:)) {
     return !_closedTabs.empty();
@@ -2246,6 +2351,21 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
   _recentlyClosedMenu.delegate = self;
   _recentlyVisitedMenu = [self submenu:@"Recently Visited" in:history];
   _recentlyVisitedMenu.delegate = self;
+
+  // Bookmarks (011), as in Chrome; the bookmarks are added when it opens.
+  NSMenu* bookmarks = [self submenu:@"Bookmarks" in:bar];
+  [self addItem:bookmarks
+          title:@"Bookmark This Tab…"
+         action:@selector(bookmarkPage:)
+       shortcut:@"bookmark_page"];
+  [self addItem:bookmarks
+          title:@"Bookmark All Tabs…"
+         action:@selector(bookmarkAllTabs:)
+       shortcut:@"bookmark_all_tabs"];
+  [bookmarks addItem:NSMenuItem.separatorItem];
+  _bookmarksMenu = bookmarks;
+  _bookmarksMenuFixedItems = bookmarks.numberOfItems;
+  bookmarks.delegate = self;
 
   // Profiles (005), like Chrome's Profiles menu; filled when opened.
   NSMenu* profiles = [self submenu:@"Profiles" in:bar];
