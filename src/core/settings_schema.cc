@@ -56,7 +56,7 @@ constexpr std::array<std::string_view, 2> kBookmarksBar = {"new_tab_page",
 constexpr std::array<std::string_view, 2> kBookmarksBarLabels = {
     "On the new tab page only", "Always"};
 
-constexpr std::array<SettingDef, 25> kSettings = {{
+constexpr std::array<SettingDef, 26> kSettings = {{
     // Global.
     {.key = "appearance.theme",
      .scope = SettingScope::kGlobal,
@@ -98,7 +98,7 @@ constexpr std::array<SettingDef, 25> kSettings = {{
      .description = "For \"Custom\": the search page's address with %s "
                     "where the search text goes, e.g. "
                     "https://example.com/search?q=%s"},
-    // Address bar suggestions (003); bookmarks join with 011.
+    // Address bar suggestions (003, 011).
     {.key = "suggestions.history",
      .scope = SettingScope::kGlobal,
      .type = SettingDef::Type::kBool,
@@ -106,6 +106,14 @@ constexpr std::array<SettingDef, 25> kSettings = {{
      .section = "Search",
      .label = "Suggest pages from your history",
      .description = "In the address bar, from the history of the tab's "
+                    "profile."},
+    {.key = "suggestions.bookmarks",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kBool,
+     .default_value = "true",
+     .section = "Search",
+     .label = "Suggest bookmarks",
+     .description = "In the address bar, bookmarks shown in the tab's "
                     "profile."},
     {.key = "suggestions.search",
      .scope = SettingScope::kGlobal,

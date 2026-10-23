@@ -97,6 +97,7 @@ NS_ASSUME_NONNULL_BEGIN
 // Bookmarks (011): the app's one tree, and the profiles for its dialogs.
 - (BRBookmarkStore*)bookmarkStore;
 - (std::vector<brouk::ProfileInfo>)profileList;
+- (BOOL)bookmarkSuggestionsEnabled;
 // ⇧⌘B: the bookmarks bar on every tab, or on the new tab page only.
 - (IBAction)toggleBookmarksBar:(nullable id)sender;
 @end

@@ -23,6 +23,7 @@ add_executable(brouk_core_tests
   core/bookmark_file_test.cc
   core/bookmark_html_test.cc
   core/bookmark_model_test.cc
+  core/bookmark_profile_test.cc
   core/closed_tabs_test.cc
   core/command_palette_test.cc
   core/context_menu_test.cc

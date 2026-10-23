@@ -1857,12 +1857,23 @@ NSButton* ToolbarButton(NSString* symbol,
   }
   brouk::TabClientDelegate::SearchEngine engine = [self searchEngine];
   std::string typed = _suggestText.UTF8String ?: "";
-  _suggestionRows = brouk::BuildAddressSuggestions(
-      {.text = typed,
-       .search_template = engine.url_template,
-       .search_engine_name = engine.name,
-       .history = _historyMatches,
-       .search_suggestions = _searchSuggestions});
+  // Bookmarks visible in the tab's profile (011).
+  std::vector<brouk::BookmarkMatch> bookmarks;
+  if ([_owner bookmarkSuggestionsEnabled]) {
+    const brouk::BookmarkModel& model = [_owner bookmarkStore].model;
+    for (brouk::BookmarkId id :
+         model.Search(typed, [self activeProfileId], 10)) {
+      const brouk::BookmarkItem* item = model.Find(id);
+      bookmarks.push_back({.name = item->name, .url = item->url});
+    }
+  }
+  _suggestionRows =
+      brouk::BuildAddressSuggestions({.text = typed,
+                                      .search_template = engine.url_template,
+                                      .search_engine_name = engine.name,
+                                      .history = _historyMatches,
+                                      .search_suggestions = _searchSuggestions,
+                                      .bookmarks = bookmarks});
   if (!_suggestions) {
     _suggestions = [[BRSuggestionsPopup alloc] init];
     _suggestions.delegate = self;
@@ -1882,6 +1893,7 @@ NSButton* ToolbarButton(NSString* symbol,
       _suggestionRows[static_cast<std::size_t>(row)];
   switch (suggestion.kind) {
     case brouk::AddressSuggestion::Kind::kHistory:
+    case brouk::AddressSuggestion::Kind::kBookmark:
       return @(suggestion.url.c_str());
     case brouk::AddressSuggestion::Kind::kSearch:
       return @(suggestion.text.c_str());
@@ -1950,6 +1962,11 @@ NSButton* ToolbarButton(NSString* symbol,
       _suggestionRows[static_cast<std::size_t>(row)];
   [self closeSuggestions];
   tab.pendingAddressText = nil;
+  if (suggestion.kind == brouk::AddressSuggestion::Kind::kBookmark) {
+    tab.nextVisitBookmark = YES;
+    [self navigateTab:tab toURL:@(suggestion.url.c_str()) typed:NO];
+    return;
+  }
   // Addresses and history pages count as typed (Chrome); searches do not.
   [self
       navigateTab:tab
@@ -2111,6 +2128,7 @@ NSButton* ToolbarButton(NSString* symbol,
     [entries addObjectsFromArray:[controller paletteTabEntries]];
   }
   [entries addObjectsFromArray:[self paletteActionEntries]];
+  [entries addObjectsFromArray:[self paletteBookmarkEntries]];
   [entries addObjectsFromArray:[self paletteSettingEntries]];
   [_palette showInWindow:self.window entries:entries];
 }
@@ -2182,6 +2200,42 @@ NSButton* ToolbarButton(NSString* symbol,
     }
     entry.run = ^{
       [NSApp sendAction:selector to:nil from:item];
+    };
+    [entries addObject:entry];
+  }
+  return entries;
+}
+
+// The bookmarks visible in the active tab's profile (011); choosing one
+// opens it in the current tab, as the Bookmarks menu does.
+- (NSArray<BRPaletteEntry*>*)paletteBookmarkEntries {
+  NSMutableArray<BRPaletteEntry*>* entries = [NSMutableArray array];
+  NSImage* icon = [NSImage imageWithSystemSymbolName:@"star"
+                            accessibilityDescription:nil];
+  const brouk::BookmarkModel& model = [_owner bookmarkStore].model;
+  brouk::ProfileId profile = [self activeProfileId];
+  __weak BRBrowserWindowController* weakSelf = self;
+  std::vector<brouk::BookmarkId> stack = {brouk::BookmarkModel::kOtherId,
+                                          brouk::BookmarkModel::kBarId};
+  while (!stack.empty()) {
+    brouk::BookmarkId id = stack.back();
+    stack.pop_back();
+    const brouk::BookmarkItem* item = model.Find(id);
+    if (!item || !model.IsVisibleIn(id, profile)) {
+      continue;
+    }
+    if (item->folder) {
+      stack.insert(stack.end(), item->children.rbegin(), item->children.rend());
+      continue;
+    }
+    BRPaletteEntry* entry = [[BRPaletteEntry alloc] init];
+    entry.kind = brouk::PaletteItem::Kind::kBookmark;
+    std::string address = brouk::FormatUrlForDisplay(item->url);
+    entry.title = @((item->name.empty() ? address : item->name).c_str()) ?: @"";
+    entry.detail = @(address.c_str()) ?: @"";
+    entry.image = icon;
+    entry.run = ^{
+      [weakSelf openBookmark:id disposition:BRBookmarkOpenCurrentTab];
     };
     [entries addObject:entry];
   }

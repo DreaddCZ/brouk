@@ -14,6 +14,8 @@ NSString* SymbolFor(brouk::AddressSuggestion::Kind kind) {
       return @"globe";
     case brouk::AddressSuggestion::Kind::kHistory:
       return @"clock";
+    case brouk::AddressSuggestion::Kind::kBookmark:
+      return @"star";
     case brouk::AddressSuggestion::Kind::kTypedSearch:
     case brouk::AddressSuggestion::Kind::kSearch:
       return @"magnifyingglass";
@@ -27,6 +29,8 @@ NSString* KindLabel(brouk::AddressSuggestion::Kind kind) {
       return @"Address";
     case brouk::AddressSuggestion::Kind::kHistory:
       return @"History";
+    case brouk::AddressSuggestion::Kind::kBookmark:
+      return @"Bookmark";
     case brouk::AddressSuggestion::Kind::kTypedSearch:
     case brouk::AddressSuggestion::Kind::kSearch:
       return @"Search";

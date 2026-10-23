@@ -63,3 +63,12 @@ Use at least two profiles (e.g. "Work" and "Home") with tabs in the same window.
 45. While the page is open, add a bookmark with the star in another tab. Expected: the page shows it without reloading.
 46. Export…: save the file; open it in Chrome or Safari's import. Expected: the bookmarks are there (without profile links).
 47. Import… a bookmark file exported from Chrome. Expected: "Imported n bookmarks and m folders"; they are in "Imported" under Other bookmarks, as general items.
+
+## Address bar, command palette and profiles
+
+48. Type part of a bookmark's name or address in the address bar. Expected: after history rows, up to 3 bookmark rows with a star ("Bookmark"); pages already listed from history are not repeated. Choosing one opens it.
+49. In a tab of another profile, type the name of a bookmark linked to the first profile. Expected: it is not suggested.
+50. Settings → Search → Suggest bookmarks off. Expected: no bookmark rows.
+51. ⌘K and type a bookmark's name. Expected: it is listed with a star; choosing it opens it in the current tab. Bookmarks linked to another profile are not listed.
+52. Profiles → Manage Profiles → Delete a profile with linked bookmarks. Expected: the dialog says how many bookmarks and folders will become general; after deleting, they show in every profile (the manager page lists them as general).
+53. Export a profile with linked bookmarks (some in general folders, one linked folder), import the file. Expected: the new profile's bookmarks are recreated in the same folders (missing folders created as general ones), linked to the new profile.

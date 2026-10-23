@@ -109,6 +109,26 @@ std::vector<AddressSuggestion> BuildAddressSuggestions(
     rows.front().inline_completion = history[0].inline_completion;
     rows.push_back(typed);
   }
+  std::size_t bookmarks = 0;
+  for (const BookmarkMatch& match : input.bookmarks) {
+    if (bookmarks >= kMaxBookmarkSuggestions) {
+      break;
+    }
+    bool listed = std::ranges::any_of(rows, [&](const AddressSuggestion& row) {
+      return !row.url.empty() && SameAddress(row.url, match.url);
+    });
+    if (listed) {
+      continue;
+    }
+    AddressSuggestion row;
+    row.kind = AddressSuggestion::Kind::kBookmark;
+    std::string address = FormatUrlForDisplay(match.url);
+    row.text = match.name.empty() ? address : match.name;
+    row.detail = match.name.empty() ? std::string() : address;
+    row.url = match.url;
+    rows.push_back(std::move(row));
+    ++bookmarks;
+  }
   for (const std::string& suggestion : CleanSearchSuggestions(
            input.text, input.search_suggestions, kMaxSearchSuggestions)) {
     AddressSuggestion row;

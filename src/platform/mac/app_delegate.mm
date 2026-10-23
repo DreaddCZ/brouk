@@ -32,6 +32,7 @@
 #include "cef/profile_manager_handler.h"
 #include "cef/settings_handler.h"
 #include "core/address_input.h"
+#include "core/bookmark_profile.h"
 #include "core/download_paths.h"
 #include "core/profile_export.h"
 #include "core/profile_registry.h"
@@ -1819,6 +1820,10 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
   return YES;
 }
 
+- (BOOL)bookmarkSuggestionsEnabled {
+  return _profiles->global_settings().GetBool("suggestions.bookmarks");
+}
+
 - (BOOL)historySuggestionsEnabled {
   return _profiles->global_settings().GetBool("suggestions.history");
 }
@@ -2026,7 +2031,10 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
                 timeZone:NSTimeZone.localTimeZone
            formatOptions:NSISO8601DateFormatWithInternetDateTime]
           .UTF8String;
-  std::string text = brouk::ExportProfile(*settings, exportedAt);
+  // With its linked bookmarks (011).
+  std::string text = brouk::ExportProfile(
+      *settings, exportedAt,
+      brouk::ExportProfileBookmarks([_bookmarks model], profile));
   __block brouk::ProfileManagerDelegate::ExportDone answer = std::move(done);
   void (^completion)(NSModalResponse) = ^(NSModalResponse response) {
     if (response != NSModalResponseOK || !panel.URL) {
@@ -2096,9 +2104,21 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
       answer(created.error());
       return;
     }
+    std::vector<std::string> problems = parsed.value().problems;
+    if (parsed.value().bookmarks) {
+      const brouk::YamlNode& section = *parsed.value().bookmarks;
+      brouk::ProfileId newProfile = created.value();
+      [strongSelf->_bookmarks change:[&](brouk::BookmarkModel& model) {
+        brouk::ProfileBookmarksImport bookmarks = brouk::ImportProfileBookmarks(
+            model, section, newProfile,
+            static_cast<std::int64_t>(NSDate.date.timeIntervalSince1970));
+        problems.insert(problems.end(), bookmarks.problems.begin(),
+                        bookmarks.problems.end());
+      }];
+    }
     [strongSelf profilesChangedInApp];
-    answer(brouk::ProfileManagerDelegate::ImportResult{
-        created.value(), parsed.value().problems});
+    answer(
+        brouk::ProfileManagerDelegate::ImportResult{created.value(), problems});
   };
   NSWindow* parent = _profileManager.window;
   if (parent.visible) {
@@ -2135,10 +2155,20 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
                 : [NSString stringWithFormat:@" Its %lu open %@ will close.",
                                              static_cast<unsigned long>(tabs),
                                              tabs == 1 ? @"tab" : @"tabs"];
+  // Its bookmarks are kept as general ones (011).
+  int linked = [_bookmarks model].CountLinkedTo(profile);
+  NSString* bookmarksText =
+      linked == 0
+          ? @""
+          : [NSString stringWithFormat:@" %d %@ linked to it will become "
+                                       @"general (shown in every profile).",
+                                       linked,
+                                       linked == 1 ? @"bookmark or folder"
+                                                   : @"bookmarks and folders"];
   alert.informativeText = [NSString
       stringWithFormat:@"Its sign-ins, cookies, history and settings are "
-                       @"removed from this Mac. This cannot be undone.%@",
-                       tabsText];
+                       @"removed from this Mac. This cannot be undone.%@%@",
+                       tabsText, bookmarksText];
   [alert addButtonWithTitle:@"Delete"].hasDestructiveAction = YES;
   [alert addButtonWithTitle:@"Cancel"];
   __block brouk::ProfileManagerDelegate::DeleteDone answer = std::move(done);
@@ -2161,6 +2191,11 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
     strongSelf->_recentPages.erase(target);
     std::optional<brouk::Error> error =
         strongSelf->_profiles->DeleteProfile(target);
+    if (!error) {
+      [strongSelf->_bookmarks change:[&](brouk::BookmarkModel& model) {
+        model.UnlinkProfile(target);
+      }];
+    }
     [strongSelf profilesChangedInApp];
     answer(!error, error);
   };
