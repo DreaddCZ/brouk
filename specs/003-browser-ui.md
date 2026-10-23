@@ -1,6 +1,6 @@
 # 003 – Browser UI
 
-- **Status:** in-progress
+- **Status:** done
 - **Priority:** P1
 - **Depends on:** 001, 004, 005
 
@@ -33,21 +33,21 @@ Core UI elements:
 
 ## Acceptance criteria
 
-- [ ] Basic browsing: open, close, reorder and switch tabs; navigate; reload; back/forward.
-- [ ] All toolbar actions have a keyboard shortcut, and shortcuts can be changed in settings.
-- [ ] Command palette opens with a shortcut and can run actions and switch tabs.
-- [ ] Tabs are shown in a horizontal strip.
-- [ ] When tabs do not fit, they shrink down to their icon; if that is not enough, other groups collapse to make room for the group in use.
-- [ ] Every tab's close button is visible at every tab width and visually separated from the tab's drag area.
-- [ ] A tab group can be collapsed and expanded by clicking its label; the label shows the number of open tabs.
-- [ ] Every group has a "+" button that opens a new tab in that group's profile.
-- [ ] Every window always shows the default profile's group at the far right of the tab strip, also when it has no tabs.
-- [ ] Tabs can be pinned and unpinned; a pinned tab sits at the start of its profile group and shows a close button.
-- [ ] When tabs shrink, pinned tabs stay wider than other tabs while space allows (icon plus the start of the title vs. icon only).
-- [ ] Every tab shows which profile it belongs to (its group's name and colour), and the toolbar shows the active tab's profile colour.
-- [ ] Theme follows the OS light/dark setting, with manual override.
-- [ ] Typing text that is not a URL searches with the default search engine (Google unless changed); the engine can be changed in settings, including a custom URL template.
-- [ ] Address bar suggestions list history matches first, then bookmark matches (after 011), then search suggestions; each source can be turned off.
+- [x] Basic browsing: open, close, reorder and switch tabs; navigate; reload; back/forward.
+- [x] All toolbar actions have a keyboard shortcut, and shortcuts can be changed in settings.
+- [x] Command palette opens with a shortcut and can run actions and switch tabs.
+- [x] Tabs are shown in a horizontal strip.
+- [x] When tabs do not fit, they shrink down to their icon; if that is not enough, other groups collapse to make room for the group in use.
+- [x] Every tab's close button is visible at every tab width and visually separated from the tab's drag area.
+- [x] A tab group can be collapsed and expanded by clicking its label; the label shows the number of open tabs.
+- [x] Every group has a "+" button that opens a new tab in that group's profile.
+- [x] Every window always shows the default profile's group at the far right of the tab strip, also when it has no tabs.
+- [x] Tabs can be pinned and unpinned; a pinned tab sits at the start of its profile group and shows a close button.
+- [x] When tabs shrink, pinned tabs stay wider than other tabs while space allows (icon plus the start of the title vs. icon only).
+- [x] Every tab shows which profile it belongs to (its group's name and colour), and the toolbar shows the active tab's profile colour.
+- [x] Theme follows the OS light/dark setting, with manual override.
+- [x] Typing text that is not a URL searches with the default search engine (Google unless changed); the engine can be changed in settings, including a custom URL template.
+- [x] Address bar suggestions list history matches first, then bookmark matches (after 011), then search suggestions; each source can be turned off.
 
 ## Out of scope
 
@@ -79,4 +79,4 @@ None.
 - 2026-10-23 (user's decision): site information, pin, mute and manage profiles keep no default shortcut for now; the user may choose defaults after more testing.
 - 2026-10-23 (implementation, command palette): ⌘K (View → Command Palette…) opens a search panel at the top of the browser window. It finds the open tabs of all windows (front window first; shown with profile and address), the browser actions that can run now (with their shortcuts), and every setting on the settings page (opens the page at that setting, for the active tab's profile where the setting is per profile). Bookmarks follow with 011. Matching (`src/core/command_palette`) ignores case and accents; every typed word must match; a match at the start of the title or of a word counts most, then anywhere in the title, then in the detail (address or settings section), then the title's letters in order ("nt" → New tab). Equal matches list tabs, then actions, then settings. With an empty query, tabs come first. Up/Down move, Return runs, Escape or clicking elsewhere closes. New Tab to the Right, Duplicate Tab and Close Other Tabs / to the Left / to the Right are also in the Tab menu as remappable actions, for the active tab.
 - 2026-10-23 (implementation, suggestions): typing in the address bar opens a list under it. The first row is what Return does: the typed text as an address or a search ("… – Search Google"), or, when the text starts an address typed before, that page with the rest completed inline (selected, so typing replaces it). Then up to 5 pages from the active tab's profile history (013), the typed text again if a page was completed inline, and up to 4 search suggestions from the engine's suggestion service (Google, Bing, DuckDuckGo, Startpage and Ecosia; none for a custom engine). Up/Down move through the list and show the row in the field, Return or a click opens it, the first Escape closes the list and the second restores the page address, ⇧⌫ removes a history row from the profile's history. Settings: `suggestions.history` and `suggestions.search` (Search section, both on); the bookmarks source follows with 011. Search suggestions are not requested for text with a scheme (`https://…`, `file:`), as in Chrome, and use the tab's profile (its cookies), as Chrome's do.
-
+- 2026-10-23 (user's testing): all acceptance criteria verified by the user; spec set to `done`. The bookmark part of the suggestions criterion (bookmark matches and their on/off setting) waits for 011, as marked.

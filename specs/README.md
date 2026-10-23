@@ -27,7 +27,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 |---|---|---|---|
 | 001 | [Technology stack](001-technology-stack.md) | in-progress | P1 |
 | 002 | [Platform support](002-platform-support.md) | ready (macOS) | P1 |
-| 003 | [Browser UI](003-browser-ui.md) | in-progress — all four parts built (PRs #16–#19), awaiting testing; bookmark suggestions wait for 011 | P1 |
+| 003 | [Browser UI](003-browser-ui.md) | done — bookmark suggestions follow with 011 | P1 |
 | 004 | [Configuration system](004-configuration.md) | in-progress | P1 |
 | 005 | [Profiles](005-profiles.md) | in-progress | P1 |
 | 006 | [Developer tools](006-developer-tools.md) | in-progress | P1 |
