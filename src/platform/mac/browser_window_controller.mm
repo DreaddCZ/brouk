@@ -1085,6 +1085,39 @@ NSButton* ToolbarButton(NSString* symbol,
   [_tabs[@(tabId)] reload];
 }
 
+- (void)tabStripDidRequestNewTabAfter:(brouk::TabId)tabId {
+  [self openTabAfter:_tabs[@(tabId)] withURL:nil];
+}
+
+// Like Chrome's Duplicate, but only the address: CEF cannot copy the
+// back/forward history into a new browser.
+- (void)tabStripDidDuplicateTab:(brouk::TabId)tabId {
+  BRTab* tab = _tabs[@(tabId)];
+  [self openTabAfter:tab withURL:tab.url.length ? tab.url : nil];
+}
+
+- (void)tabStripDidCloseTabs:(brouk::TabStripModel::CloseScope)scope
+                     fromTab:(brouk::TabId)tabId {
+  for (brouk::TabId other : _model->TabsToClose(tabId, scope)) {
+    [self closeTab:_tabs[@(other)]];
+  }
+}
+
+// A new active tab right after `after`, in its profile.
+- (void)openTabAfter:(nullable BRTab*)after withURL:(nullable NSString*)url {
+  if (!after) {
+    return;
+  }
+  BRTab* tab = [self makeTabInProfile:after.profileId];
+  _model->InsertAfter(tab.tabId, after.tabId, true);
+  [tab createBrowserWithURL:url ?: @"about:blank"
+             requestContext:[_owner requestContextForProfile:after.profileId]];
+  [self modelDidChange];
+  if (!url) {
+    [_addressField focusAndSelectAll];
+  }
+}
+
 - (void)tabStripDidDropTab:(brouk::TabId)tabId onProfile:(NSString*)profileId {
   [self moveTab:_tabs[@(tabId)] toProfile:profileId.UTF8String];
 }

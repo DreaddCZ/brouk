@@ -376,5 +376,41 @@ TEST(TabStripModelPinnedTest, LastActiveTabOfAGroup) {
   EXPECT_EQ(model.LastActiveTabOf(kWork), 1);
 }
 
+TEST(TabStripModelPinnedTest, CloseOthersAndSidesStayInTheGroupAndKeepPinned) {
+  TabStripModel model(kMain);
+  model.AppendTab(1, kWork, true);
+  for (TabId id = 2; id <= 6; ++id) {
+    model.AppendTab(id, true);
+  }
+  model.SetPinned(2, true);
+  // Default group: 2 (pinned), 3, 4, 5, 6.
+  using Scope = TabStripModel::CloseScope;
+  EXPECT_EQ(model.TabsToClose(4, Scope::kOthers),
+            (std::vector<TabId>{3, 5, 6}));
+  EXPECT_EQ(model.TabsToClose(4, Scope::kRight), (std::vector<TabId>{5, 6}));
+  EXPECT_EQ(model.TabsToClose(4, Scope::kLeft), (std::vector<TabId>{3}));
+  EXPECT_EQ(model.TabsToClose(2, Scope::kOthers),
+            (std::vector<TabId>{3, 4, 5, 6}));
+  EXPECT_TRUE(model.TabsToClose(1, Scope::kOthers).empty());  // Alone.
+  EXPECT_TRUE(model.TabsToClose(99, Scope::kOthers).empty());
+}
+
+TEST(TabStripModelPinnedTest, InsertAfterGoesNextToTheTabInItsGroup) {
+  TabStripModel model(kMain);
+  model.AppendTab(1, kWork, true);
+  model.AppendTab(2, kWork, true);
+  model.AppendTab(3, true);
+  model.InsertAfter(10, 1, true);
+  EXPECT_EQ(Order(model), (std::vector<TabId>{1, 10, 2, 3}));
+  EXPECT_EQ(*model.ProfileOf(10), kWork);
+  EXPECT_EQ(model.active_id(), 10);
+  EXPECT_FALSE(model.OpenerOf(10));
+  // After a pinned tab: after all the pinned tabs.
+  model.SetPinned(2, true);
+  model.SetPinned(1, true);
+  model.InsertAfter(11, 2, false);
+  EXPECT_EQ(Order(model), (std::vector<TabId>{2, 1, 11, 10, 3}));
+}
+
 }  // namespace
 }  // namespace brouk

@@ -11,12 +11,19 @@ build/debug-x86_64/Brouk.app/Contents/MacOS/brouk $(for i in $(seq 1 30); do ech
 
 ## Pinned tabs
 
-1. Right-click a tab → **Pin Tab**. Expected: it moves to the start of its profile group and keeps its close button.
+1. Right-click a tab → **Pin Tab**. Expected: it moves to the start of its profile group, keeps its close button, and shows a small pin on its icon and a faint background; its tooltip ends with "(pinned)".
 2. Pin a second tab. Expected: it goes right after the first pinned tab.
 3. Tab menu → **Unpin Tab** on the active pinned tab. Expected: it moves to the first place after the remaining pinned tabs. The menu item says "Pin Tab" again.
 4. Drag a normal tab to the left of a pinned tab. Expected: it stops after the pinned tabs. Drag a pinned tab to the right past normal tabs: it stays among the pinned tabs.
 5. Click a link with ⌘ in a pinned tab. Expected: the new tab opens after the pinned tabs, not pinned.
 6. Pin a tab in a second profile's group. Expected: it sits at the start of that group, not of the strip.
+
+## Tab menu
+
+14. Right-click a tab → **New Tab to the Right**. Expected: an empty tab opens right after it, in the same profile, with the address bar focused.
+15. **Duplicate**. Expected: the same address opens in a new tab right after it, same profile.
+16. In a group with a pinned tab and five other tabs, right-click the third normal tab → **Close Tabs to the Right**, then **Close Tabs to the Left**, then **Close Other Tabs**. Expected: only tabs of that group close, the pinned tab always stays, and tabs of other profiles' groups are untouched. Items with nothing to close are greyed out.
+17. A page with a "Leave site?" prompt among the closed tabs. Expected: the prompt appears for that tab; the others close.
 
 ## Tabs that do not fit
 

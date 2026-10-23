@@ -44,6 +44,16 @@ std::size_t TabStripModel::InsertFromOpener(TabId id,
   return InsertAt(index, {id, profile, opener}, activate);
 }
 
+std::size_t TabStripModel::InsertAfter(TabId id, TabId after, bool activate) {
+  std::optional<std::size_t> after_index = IndexOf(after);
+  if (!after_index) {
+    return AppendTab(id, activate);
+  }
+  const ProfileId& profile = tabs_[*after_index].profile;
+  std::size_t index = std::max(*after_index + 1, PinnedEnd(profile));
+  return InsertAt(index, {id, profile, std::nullopt}, activate);
+}
+
 std::size_t TabStripModel::InsertAt(std::size_t index,
                                     Entry entry,
                                     bool activate) {
@@ -238,6 +248,25 @@ bool TabStripModel::SetPinned(TabId id, bool pinned) {
 bool TabStripModel::IsPinned(TabId id) const {
   std::optional<std::size_t> index = IndexOf(id);
   return index && tabs_[*index].pinned;
+}
+
+std::vector<TabId> TabStripModel::TabsToClose(TabId id,
+                                              CloseScope scope) const {
+  std::vector<TabId> result;
+  std::optional<std::size_t> index = IndexOf(id);
+  if (!index) {
+    return result;
+  }
+  const ProfileId& profile = tabs_[*index].profile;
+  for (std::size_t i = GroupStart(profile); i < GroupEnd(profile); ++i) {
+    bool wanted = scope == CloseScope::kOthers  ? i != *index
+                  : scope == CloseScope::kRight ? i > *index
+                                                : i < *index;
+    if (wanted && !tabs_[i].pinned) {
+      result.push_back(tabs_[i].id);
+    }
+  }
+  return result;
 }
 
 std::optional<TabId> TabStripModel::LastActiveTabOf(

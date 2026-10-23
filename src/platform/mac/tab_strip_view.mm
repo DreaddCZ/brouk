@@ -57,6 +57,8 @@ NSColor* ActiveTabColor() {
 @interface BRTabView : NSView
 @property(nonatomic) brouk::TabId tabId;
 @property(nonatomic) BOOL active;
+// Pinned tabs carry a pin badge on their icon.
+@property(nonatomic) BOOL pinned;
 @property(nonatomic, weak) BRTabStripView* strip;
 - (void)updateFromTab:(BRTab*)tab;
 @end
@@ -67,6 +69,8 @@ NSColor* ActiveTabColor() {
   NSTextField* _label;
   NSButton* _close;
   NSButton* _audio;  // Speaker: shown while playing or muted; click mutes.
+  NSImageView* _pin;
+  NSString* _title;
   BOOL _hovered;
   NSTrackingArea* _tracking;
 }
@@ -115,9 +119,36 @@ NSColor* ActiveTabColor() {
     _audio.hidden = YES;
     [self addSubview:_audio];
 
+    _pin = [NSImageView
+        imageViewWithImage:[NSImage imageWithSystemSymbolName:@"pin.fill"
+                                     accessibilityDescription:nil]];
+    _pin.symbolConfiguration = [NSImageSymbolConfiguration
+        configurationWithPointSize:8
+                            weight:NSFontWeightBold];
+    _pin.contentTintColor = NSColor.controlAccentColor;
+    _pin.hidden = YES;
+    [self addSubview:_pin];
+
     self.accessibilityRole = NSAccessibilityRadioButtonRole;
   }
   return self;
+}
+
+- (void)setPinned:(BOOL)pinned {
+  if (_pinned != pinned) {
+    _pinned = pinned;
+    _pin.hidden = !pinned;
+    [self updateDescriptions];
+    self.needsDisplay = YES;
+  }
+}
+
+- (void)updateDescriptions {
+  NSString* title = _title ?: @"";
+  self.toolTip =
+      _pinned ? [NSString stringWithFormat:@"%@ (pinned)", title] : title;
+  self.accessibilityLabel =
+      _pinned ? [NSString stringWithFormat:@"Pinned, %@", title] : title;
 }
 
 - (BOOL)isFlipped {
@@ -165,8 +196,8 @@ NSColor* ActiveTabColor() {
     title = @"New Tab";
   }
   _label.stringValue = title;
-  self.toolTip = title;
-  self.accessibilityLabel = title;
+  _title = title;
+  [self updateDescriptions];
   _icon.image = tab.favicon
                     ?: [NSImage imageWithSystemSymbolName:@"globe"
                                  accessibilityDescription:nil];
@@ -206,6 +237,8 @@ NSColor* ActiveTabColor() {
   _icon.frame = iconRect;
   _spinner.frame = iconRect;
   _icon.alphaValue = showIcon ? 1 : 0;
+  // The pin sits on the icon's top-right corner, so it shows at any width.
+  _pin.frame = NSMakeRect(NSMaxX(iconRect) - 5, NSMinY(iconRect) - 4, 10, 10);
   CGFloat labelX = NSMaxX(iconRect) + 6;
   CGFloat labelEnd = closeX - 6;
   if (!_audio.hidden) {
@@ -220,9 +253,12 @@ NSColor* ActiveTabColor() {
 
 - (void)drawRect:(NSRect)dirtyRect {
   NSRect b = NSInsetRect(self.bounds, 0, 0);
-  if (_active || _hovered) {
+  if (_active || _hovered || _pinned) {
+    // Pinned tabs keep a faint background, so they stand out from the rest.
     NSColor* fill = _active ? ActiveTabColor()
-                            : [ActiveTabColor() colorWithAlphaComponent:0.5];
+                    : _hovered
+                        ? [ActiveTabColor() colorWithAlphaComponent:0.5]
+                        : [ActiveTabColor() colorWithAlphaComponent:0.25];
     NSRect r =
         NSMakeRect(b.origin.x, b.origin.y + 4, b.size.width, b.size.height - 4);
     NSBezierPath* path = [NSBezierPath bezierPathWithRoundedRect:r
@@ -521,9 +557,11 @@ NSColor* ActiveTabColor() {
     if (group.collapsed) {
       continue;
     }
-    for (BRTab* tab in group.tabs) {
+    for (NSUInteger i = 0; i < group.tabs.count; ++i) {
+      BRTab* tab = group.tabs[i];
       BRTabView* view = [self tabViewForTab:tab];
       view.active = tab.tabId == activeTabId;
+      view.pinned = i < group.pinnedCount;
       [view updateFromTab:tab];
       [views addObject:view];
     }
@@ -736,21 +774,66 @@ NSColor* ActiveTabColor() {
   if (!tab) {
     return nil;
   }
+  // How many tabs each "Close …" item would close (its group, unpinned).
+  NSUInteger left = 0;
+  NSUInteger right = 0;
+  BRTabGroupInfo* group = [self groupOfTab:tabView.tabId];
+  BOOL seen = NO;
+  for (NSUInteger i = 0; i < group.tabs.count; ++i) {
+    if (group.tabs[i].tabId == tabView.tabId) {
+      seen = YES;
+    } else if (i >= group.pinnedCount) {
+      ++(seen ? right : left);
+    }
+  }
   NSMenu* menu = [[NSMenu alloc] initWithTitle:@""];
-  auto add = ^(NSString* title, SEL action) {
+  menu.autoenablesItems = NO;
+  auto add = ^(NSString* title, SEL action, BOOL enabled) {
     NSMenuItem* item = [menu addItemWithTitle:title
                                        action:action
                                 keyEquivalent:@""];
     item.target = self;
     item.tag = static_cast<NSInteger>(tabView.tabId);
+    item.enabled = enabled;
   };
-  add(@"Reload", @selector(menuReload:));
-  add([self isPinned:tabView.tabId] ? @"Unpin Tab" : @"Pin Tab",
-      @selector(menuTogglePin:));
-  add(tab.isMuted ? @"Unmute Tab" : @"Mute Tab", @selector(menuToggleMute:));
+  // Chrome's tab menu; "Close …" items act inside the tab's profile group.
+  add(@"New Tab to the Right", @selector(menuNewTabToTheRight:), YES);
   [menu addItem:NSMenuItem.separatorItem];
-  add(@"Close Tab", @selector(menuClose:));
+  add(@"Reload", @selector(menuReload:), YES);
+  add(@"Duplicate", @selector(menuDuplicate:), YES);
+  add([self isPinned:tabView.tabId] ? @"Unpin Tab" : @"Pin Tab",
+      @selector(menuTogglePin:), YES);
+  add(tab.isMuted ? @"Unmute Tab" : @"Mute Tab", @selector(menuToggleMute:),
+      YES);
+  [menu addItem:NSMenuItem.separatorItem];
+  add(@"Close Tab", @selector(menuClose:), YES);
+  add(@"Close Other Tabs", @selector(menuCloseOthers:), left + right > 0);
+  add(@"Close Tabs to the Left", @selector(menuCloseLeft:), left > 0);
+  add(@"Close Tabs to the Right", @selector(menuCloseRight:), right > 0);
   return menu;
+}
+
+- (void)menuNewTabToTheRight:(NSMenuItem*)item {
+  [_delegate tabStripDidRequestNewTabAfter:static_cast<brouk::TabId>(item.tag)];
+}
+
+- (void)menuDuplicate:(NSMenuItem*)item {
+  [_delegate tabStripDidDuplicateTab:static_cast<brouk::TabId>(item.tag)];
+}
+
+- (void)menuCloseOthers:(NSMenuItem*)item {
+  [_delegate tabStripDidCloseTabs:brouk::TabStripModel::CloseScope::kOthers
+                          fromTab:static_cast<brouk::TabId>(item.tag)];
+}
+
+- (void)menuCloseLeft:(NSMenuItem*)item {
+  [_delegate tabStripDidCloseTabs:brouk::TabStripModel::CloseScope::kLeft
+                          fromTab:static_cast<brouk::TabId>(item.tag)];
+}
+
+- (void)menuCloseRight:(NSMenuItem*)item {
+  [_delegate tabStripDidCloseTabs:brouk::TabStripModel::CloseScope::kRight
+                          fromTab:static_cast<brouk::TabId>(item.tag)];
 }
 
 - (void)menuReload:(NSMenuItem*)item {

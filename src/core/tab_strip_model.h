@@ -53,6 +53,12 @@ class TabStripModel {
   // Returns its index.
   std::size_t InsertFromOpener(TabId id, TabId opener, bool activate);
 
+  // Inserts a tab in `after`'s profile right after it (never among the
+  // pinned tabs), without an opener relation: "New Tab to the Right" and
+  // "Duplicate". Falls back to appending in the default profile if `after`
+  // is not in this strip. Returns its index.
+  std::size_t InsertAfter(TabId id, TabId after, bool activate);
+
   // Removes a tab. If it was active, picks the next active tab: another tab
   // opened by the same opener, then the opener, then the tab to the right,
   // then the one to the left; tabs in collapsed groups only if there is no
@@ -81,6 +87,12 @@ class TabStripModel {
   // whether anything changed.
   bool SetPinned(TabId id, bool pinned);
   bool IsPinned(TabId id) const;
+
+  // The tabs that "Close Other Tabs", "Close Tabs to the Right" and "Close
+  // Tabs to the Left" of `id` close: only in its own profile group, and
+  // never pinned ones (as Chrome keeps pinned tabs). Left to right.
+  enum class CloseScope { kOthers, kRight, kLeft };
+  std::vector<TabId> TabsToClose(TabId id, CloseScope scope) const;
 
   // Collapses or expands a group (clicking its label). Collapsing the group
   // of the active tab activates the nearest tab outside it; if there is none,

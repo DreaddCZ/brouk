@@ -43,6 +43,11 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)tabStripDidActivateGroup:(NSString*)profileId;
 - (void)tabStripDidSetPinned:(BOOL)pinned tab:(brouk::TabId)tabId;
 - (void)tabStripDidReloadTab:(brouk::TabId)tabId;
+- (void)tabStripDidRequestNewTabAfter:(brouk::TabId)tabId;
+- (void)tabStripDidDuplicateTab:(brouk::TabId)tabId;
+// Close Other Tabs / to the Right / to the Left (in the tab's group).
+- (void)tabStripDidCloseTabs:(brouk::TabStripModel::CloseScope)scope
+                     fromTab:(brouk::TabId)tabId;
 - (void)tabStripDidToggleMute:(brouk::TabId)tabId;
 @end
 
