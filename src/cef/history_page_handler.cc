@@ -1,8 +1,10 @@
 #include "cef/history_page_handler.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <optional>
 #include <string>
@@ -10,6 +12,7 @@
 #include <vector>
 
 #include "cef/json_util.h"
+#include "core/history_query.h"
 #include "core/history_store.h"
 #include "core/internal_pages.h"
 #include "core/profile_registry.h"
@@ -81,6 +84,57 @@ std::string_view TransitionName(VisitTransition transition) {
   return "other";
 }
 
+std::int64_t Now() {
+  return std::chrono::duration_cast<std::chrono::seconds>(
+             std::chrono::system_clock::now().time_since_epoch())
+      .count();
+}
+
+// The page's search text, parsed; empty if there is none.
+std::shared_ptr<const HistoryQuery> QueryOf(
+    const CefRefPtr<CefDictionaryValue>& message,
+    std::string* text) {
+  std::optional<std::string> query = StringField(message, "query");
+  *text = query.value_or("");
+  return std::make_shared<const HistoryQuery>(
+      HistoryQuery::Parse(*text, Now()));
+}
+
+// UTF-16 length of the first `bytes` bytes of UTF-8 `text` (the page's
+// string indices).
+std::size_t Utf16Index(std::string_view text, std::size_t bytes) {
+  std::size_t units = 0;
+  for (std::size_t i = 0; i < bytes && i < text.size(); ++i) {
+    auto c = static_cast<unsigned char>(text[i]);
+    if ((c & 0xC0) == 0x80) {
+      continue;  // Continuation byte.
+    }
+    units += c >= 0xF0 ? 2 : 1;  // Four-byte sequences are surrogate pairs.
+  }
+  return units;
+}
+
+CefRefPtr<CefListValue> ProblemsJson(const HistoryQuery& query,
+                                     std::string_view text) {
+  CefRefPtr<CefListValue> list = CefListValue::Create();
+  for (const QueryProblem& problem : query.problems()) {
+    CefRefPtr<CefDictionaryValue> row = CefDictionaryValue::Create();
+    row->SetInt("start", static_cast<int>(Utf16Index(text, problem.start)));
+    row->SetInt("end", static_cast<int>(Utf16Index(text, problem.end)));
+    row->SetString("message", problem.message);
+    list->SetDictionary(list->GetSize(), row);
+  }
+  return list;
+}
+
+std::map<ProfileId, std::string> ProfileNames(HistoryPageDelegate& delegate) {
+  std::map<ProfileId, std::string> names;
+  for (const ProfileInfo& info : delegate.Profiles()) {
+    names[info.id] = info.name;
+  }
+  return names;
+}
+
 // The profiles a request covers: one (if it exists) or all (no "profile").
 std::optional<std::vector<ProfileId>> ProfilesOf(
     const CefRefPtr<CefDictionaryValue>& message,
@@ -106,7 +160,8 @@ template <typename Row>
 void ForEachProfile(
     HistoryService& history,
     const std::vector<ProfileId>& profiles,
-    const std::function<std::vector<Row>(HistoryStore&)>& work,
+    const std::function<std::vector<Row>(HistoryStore&, const ProfileId&)>&
+        work,
     const std::function<
         void(std::vector<std::pair<ProfileId, std::vector<Row>>>)>& finish) {
   struct Shared {
@@ -126,7 +181,7 @@ void ForEachProfile(
     history.Run(
         profiles[i],
         [shared, i, work](HistoryStore& store) {
-          shared->results[i].second = work(store);
+          shared->results[i].second = work(store, shared->results[i].first);
         },
         [shared, finish] {
           if (--shared->pending == 0) {
@@ -136,12 +191,25 @@ void ForEachProfile(
   }
 }
 
+struct Search {
+  std::shared_ptr<const HistoryQuery> query;
+  std::string text;
+  std::map<ProfileId, std::string> names;
+};
+
 void AnswerSites(HistoryService& history,
                  const std::vector<ProfileId>& profiles,
+                 const std::shared_ptr<const Search>& search,
                  const CefRefPtr<Callback>& callback) {
   ForEachProfile<HistorySite>(
-      history, profiles, [](HistoryStore& store) { return store.Sites(); },
-      [callback](const auto& results) {
+      history, profiles,
+      [search](HistoryStore& store, const ProfileId& profile) {
+        if (search->query->empty()) {
+          return store.Sites();
+        }
+        return store.SearchSites(*search->query, search->names.at(profile));
+      },
+      [callback, search](const auto& results) {
         CefRefPtr<CefListValue> list = CefListValue::Create();
         for (const auto& [profile, sites] : results) {
           for (const HistorySite& site : sites) {
@@ -156,6 +224,7 @@ void AnswerSites(HistoryService& history,
         }
         CefRefPtr<CefDictionaryValue> answer = CefDictionaryValue::Create();
         answer->SetList("sites", list);
+        answer->SetList("problems", ProblemsJson(*search->query, search->text));
         callback->Success(ToJson(answer));
       });
 }
@@ -163,10 +232,16 @@ void AnswerSites(HistoryService& history,
 void AnswerPages(HistoryService& history,
                  const ProfileId& profile,
                  const std::string& host,
+                 const std::shared_ptr<const Search>& search,
                  const CefRefPtr<Callback>& callback) {
+  std::string name = search->names.at(profile);
   ForEachProfile<HistoryMatch>(
       history, {profile},
-      [host](HistoryStore& store) { return store.PagesOfHost(host); },
+      [host, search, name](HistoryStore& store, const ProfileId& /*profile*/) {
+        return search->query->empty()
+                   ? store.PagesOfHost(host)
+                   : store.SearchPagesOfHost(host, *search->query, name);
+      },
       [callback](const auto& results) {
         CefRefPtr<CefListValue> list = CefListValue::Create();
         for (const HistoryMatch& page : results.front().second) {
@@ -187,13 +262,19 @@ void AnswerVisits(HistoryService& history,
                   const std::vector<ProfileId>& profiles,
                   std::int64_t before,
                   int limit,
+                  const std::shared_ptr<const Search>& search,
                   const CefRefPtr<Callback>& callback) {
   ForEachProfile<HistoryVisit>(
       history, profiles,
-      [before, limit](HistoryStore& store) {
-        return store.Visits(before, static_cast<std::size_t>(limit));
+      [before, limit, search](HistoryStore& store, const ProfileId& profile) {
+        auto count = static_cast<std::size_t>(limit);
+        if (search->query->empty()) {
+          return store.Visits(before, count);
+        }
+        return store.SearchVisits(*search->query, search->names.at(profile),
+                                  before, count);
       },
-      [callback, limit](const auto& results) {
+      [callback, limit, search](const auto& results) {
         // Newest first across profiles, at most `limit`.
         std::vector<std::pair<const ProfileId*, const HistoryVisit*>> merged;
         for (const auto& [profile, visits] : results) {
@@ -222,6 +303,7 @@ void AnswerVisits(HistoryService& history,
         }
         CefRefPtr<CefDictionaryValue> answer = CefDictionaryValue::Create();
         answer->SetList("visits", list);
+        answer->SetList("problems", ProblemsJson(*search->query, search->text));
         callback->Success(ToJson(answer));
       });
 }
@@ -401,6 +483,10 @@ bool HistoryPageHandler::OnQuery(CefRefPtr<CefBrowser> /*browser*/,
     callback->Failure(kFailed, "The history is not available yet.");
     return true;
   }
+  auto search = std::make_shared<Search>();
+  search->query = QueryOf(message, &search->text);
+  search->names = ProfileNames(delegate);
+  std::shared_ptr<const Search> shared_search = search;
   if (*type == "history.sites") {
     std::optional<std::vector<ProfileId>> profiles =
         ProfilesOf(message, delegate);
@@ -408,7 +494,7 @@ bool HistoryPageHandler::OnQuery(CefRefPtr<CefBrowser> /*browser*/,
       callback->Failure(kBadRequest, "Invalid request.");
       return true;
     }
-    AnswerSites(*history, *profiles, callback);
+    AnswerSites(*history, *profiles, shared_search, callback);
   } else if (*type == "history.pages") {
     std::optional<std::vector<ProfileId>> profiles =
         ProfilesOf(message, delegate);
@@ -418,7 +504,7 @@ bool HistoryPageHandler::OnQuery(CefRefPtr<CefBrowser> /*browser*/,
       callback->Failure(kBadRequest, "Invalid request.");
       return true;
     }
-    AnswerPages(*history, profiles->front(), *host, callback);
+    AnswerPages(*history, profiles->front(), *host, shared_search, callback);
   } else if (*type == "history.visits") {
     std::optional<std::vector<ProfileId>> profiles =
         ProfilesOf(message, delegate);
@@ -429,7 +515,7 @@ bool HistoryPageHandler::OnQuery(CefRefPtr<CefBrowser> /*browser*/,
       return true;
     }
     AnswerVisits(*history, *profiles, *before, static_cast<int>(*limit),
-                 callback);
+                 shared_search, callback);
   } else if (*type == "history.delete") {
     std::optional<std::vector<DeleteItem>> items =
         DeleteItems(message, delegate.Profiles());

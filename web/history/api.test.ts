@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { BridgeError } from '../shared/bridge.js';
-import { HistoryApi, parsePages, parseSites, parseState, parseVisits } from './api.js';
+import { HistoryApi, parsePages, parseProblems, parseSites, parseState, parseVisits } from './api.js';
 
 test('state, sites, pages and visits are checked', () => {
   const state = parseState({ profiles: [{ id: 'default', name: 'Main', color: 'blue' }], view: 'day' });
@@ -29,11 +29,21 @@ test('requests carry the profile only when one is chosen', async () => {
   await api.sites(null);
   await api.sites('p-work');
   await api.visits(null, 0, 200);
+  await api.sites(null, 'site:a.com');
+  await api.sites(null, '   ');
   await api.remove([{ profile: 'default', kind: 'visit', id: 3 }]);
   assert.deepEqual(sent, [
     { type: 'history.sites' },
     { type: 'history.sites', profile: 'p-work' },
     { type: 'history.visits', before: 0, limit: 200 },
+    { type: 'history.sites', query: 'site:a.com' },
+    { type: 'history.sites' },
     { type: 'history.delete', items: [{ profile: 'default', kind: 'visit', id: 3 }] },
   ]);
+});
+
+test('problems of a search are read when present', () => {
+  assert.deepEqual(parseProblems({ sites: [] }), []);
+  assert.deepEqual(parseProblems({ problems: [{ start: 1, end: 4, message: 'x' }] }), [{ start: 1, end: 4, message: 'x' }]);
+  assert.throws(() => parseProblems({ problems: [{ start: 1 }] }), BridgeError);
 });

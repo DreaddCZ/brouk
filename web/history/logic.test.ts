@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { dayLabel, groupByDay, hostLabel, lastVisitLabel, pathOf, sortSites, updateSelection, type Site, type Visit } from './logic.js';
+import { addFilter, dayLabel, filterText, groupByDay, hostLabel, lastVisitLabel, pathOf, querySegments, sortSites, updateSelection, type Site, type Visit } from './logic.js';
 
 function site(host: string, visits: number, lastVisit: number): Site {
   return { profile: 'default', host, visits, pages: 1, lastVisit };
@@ -57,4 +57,20 @@ test('checkbox selection with shift ranges', () => {
   assert.deepEqual([...selected].sort(), ['b']);
   selected = updateSelection(selected, order, 'c', 'b', false);
   assert.deepEqual([...selected], []);
+});
+
+test('chips write filters as the box takes them', () => {
+  assert.equal(filterText('site', 'atlassian.net'), 'site:atlassian.net');
+  assert.equal(filterText('profile', 'My Work'), 'profile:"My Work"');
+  assert.equal(addFilter('', 'type:typed'), 'type:typed');
+  assert.equal(addFilter(' sprint  ', 'after:7d'), 'sprint after:7d');
+});
+
+test('parts not understood are marked', () => {
+  assert.deepEqual(querySegments('sprint after:x visits', [{ start: 7, end: 14, message: 'not a date' }]), [
+    { text: 'sprint ' },
+    { text: 'after:x', problem: 'not a date' },
+    { text: ' visits' },
+  ]);
+  assert.deepEqual(querySegments('ok', []), [{ text: 'ok' }]);
 });

@@ -126,3 +126,36 @@ export function updateSelection(
   }
   return next;
 }
+
+/** A filter as the search box writes it: field:value, quoted if needed. */
+export function filterText(field: string, value: string): string {
+  const clean = value.replaceAll('"', '').trim();
+  return /\s/.test(clean) ? `${field}:"${clean}"` : `${field}:${clean}`;
+}
+
+/** The search with `filter` added at the end (a chip was used). */
+export function addFilter(query: string, filter: string): string {
+  const trimmed = query.trim();
+  return trimmed === '' ? filter : `${trimmed} ${filter}`;
+}
+
+export interface Segment {
+  readonly text: string;
+  /** The hint for a part that was not understood. */
+  readonly problem?: string;
+}
+
+/** The search split into parts, those not understood marked (underlined). */
+export function querySegments(query: string, problems: readonly { start: number; end: number; message: string }[]): Segment[] {
+  const sorted = [...problems].filter((p) => p.end > p.start).sort((a, b) => a.start - b.start);
+  const segments: Segment[] = [];
+  let at = 0;
+  for (const problem of sorted) {
+    if (problem.start < at) continue;
+    if (problem.start > at) segments.push({ text: query.slice(at, problem.start) });
+    segments.push({ text: query.slice(problem.start, problem.end), problem: problem.message });
+    at = problem.end;
+  }
+  if (at < query.length) segments.push({ text: query.slice(at) });
+  return segments;
+}

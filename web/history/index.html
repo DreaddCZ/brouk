@@ -13,6 +13,19 @@
   <header>
     <h1>History</h1>
   </header>
+  <div class="search">
+    <input type="search" id="query" placeholder="Search history — words, &quot;phrases&quot;, site:, after:7d, visits:&gt;3, -word, a OR b"
+      aria-label="Search history" aria-describedby="query-hint" spellcheck="false" autocomplete="off">
+    <p id="query-hint" class="hint" aria-live="polite" hidden></p>
+    <div class="chips" role="group" aria-label="Add a filter">
+      <button type="button" class="chip" data-chip="site">Site</button>
+      <button type="button" class="chip" data-chip="date">Date</button>
+      <button type="button" class="chip" data-chip="profile">Profile</button>
+      <button type="button" class="chip" data-chip="visits">Visits</button>
+      <button type="button" class="chip" data-chip="type">Type</button>
+    </div>
+    <div id="chip-menu" class="chip-menu" role="dialog" hidden></div>
+  </div>
   <div class="toolbar" role="toolbar" aria-label="History view">
     <label>Profile <select id="profile"></select></label>
     <div class="segmented" role="group" aria-label="View">
@@ -32,6 +45,7 @@
   <p id="error" class="error" role="alert" hidden></p>
   <div id="list" class="list"></div>
   <p id="empty" class="empty" hidden>No history yet.</p>
+  <p id="no-match" class="empty" hidden>Nothing matches the search.</p>
   <button type="button" id="more" hidden>Show more</button>
 </main>
 </body>

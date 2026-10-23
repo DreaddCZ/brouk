@@ -5,14 +5,18 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
+#include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
 #include "core/command_palette.h"
+#include "core/history_query.h"
 
 namespace brouk {
 
@@ -573,6 +577,131 @@ std::vector<HistoryVisit> HistoryStore::Visits(std::int64_t before,
                            ? static_cast<VisitTransition>(transition)
                            : VisitTransition::kOther});
   }
+  return visits;
+}
+
+void HistoryStore::ForEachVisit(
+    std::optional<std::string_view> host,
+    std::int64_t before,
+    const std::function<bool(const HistoryVisit&, std::int64_t)>& visit) {
+  Error error;
+  std::optional<SqliteStatement> query = db_->Prepare(
+      "SELECT visits.id, urls.url, urls.title, urls.host, visits.visit_time, "
+      "visits.transition, urls.visit_count FROM visits "
+      "JOIN urls ON urls.id = visits.url_id "
+      "WHERE (?1 = 0 OR visits.visit_time < ?1) AND (?2 = 0 OR urls.host = ?3) "
+      "ORDER BY visits.visit_time DESC, visits.id DESC",
+      error);
+  if (!query) {
+    return;
+  }
+  query->Bind(1, before);
+  query->Bind(2, std::int64_t{host ? 1 : 0});
+  query->Bind(3, host.value_or(""));
+  while (query->Step()) {
+    std::int64_t transition = query->ColumnInt(5);
+    HistoryVisit row{
+        .id = query->ColumnInt(0),
+        .url = query->ColumnText(1),
+        .title = query->ColumnText(2),
+        .host = query->ColumnText(3),
+        .time = query->ColumnInt(4),
+        .transition = transition >= 0 && transition <= 4
+                          ? static_cast<VisitTransition>(transition)
+                          : VisitTransition::kOther};
+    if (!visit(row, query->ColumnInt(6))) {
+      return;
+    }
+  }
+}
+
+namespace {
+
+QueryItem ItemOf(const HistoryVisit& visit,
+                 std::int64_t page_visits,
+                 std::string_view profile_name) {
+  return {.url = visit.url,
+          .title = visit.title,
+          .host = visit.host,
+          .time = visit.time,
+          .transition = visit.transition,
+          .page_visits = page_visits,
+          .profile_name = profile_name};
+}
+
+}  // namespace
+
+std::vector<HistorySite> HistoryStore::SearchSites(
+    const HistoryQuery& query,
+    std::string_view profile_name) {
+  std::vector<HistorySite> sites;
+  std::map<std::string, std::size_t, std::less<>> index;  // host -> sites
+  std::map<std::string, std::set<std::string>, std::less<>> pages;
+  ForEachVisit(std::nullopt, 0,
+               [&](const HistoryVisit& visit, std::int64_t page_visits) {
+                 if (!query.Matches(ItemOf(visit, page_visits, profile_name))) {
+                   return true;
+                 }
+                 auto [it, added] = index.emplace(visit.host, sites.size());
+                 if (added) {
+                   // Visits come newest first: the first is the last visit.
+                   sites.push_back({.host = visit.host,
+                                    .visit_count = 0,
+                                    .page_count = 0,
+                                    .last_visit = visit.time});
+                 }
+                 HistorySite& site = sites[it->second];
+                 ++site.visit_count;
+                 if (pages[visit.host].insert(visit.url).second) {
+                   ++site.page_count;
+                 }
+                 return true;
+               });
+  return sites;
+}
+
+std::vector<HistoryMatch> HistoryStore::SearchPagesOfHost(
+    std::string_view host,
+    const HistoryQuery& query,
+    std::string_view profile_name) {
+  std::vector<HistoryMatch> pages;
+  std::map<std::string, std::size_t, std::less<>> index;
+  ForEachVisit(host, 0,
+               [&](const HistoryVisit& visit, std::int64_t page_visits) {
+                 if (!query.Matches(ItemOf(visit, page_visits, profile_name))) {
+                   return true;
+                 }
+                 auto [it, added] = index.emplace(visit.url, pages.size());
+                 if (added) {
+                   pages.push_back({.url = visit.url,
+                                    .title = visit.title,
+                                    .visit_count = 0,
+                                    .typed_count = 0,
+                                    .last_visit = visit.time,
+                                    .inline_completion = {}});
+                 }
+                 ++pages[it->second].visit_count;
+                 return true;
+               });
+  return pages;
+}
+
+std::vector<HistoryVisit> HistoryStore::SearchVisits(
+    const HistoryQuery& query,
+    std::string_view profile_name,
+    std::int64_t before,
+    std::size_t limit) {
+  std::vector<HistoryVisit> visits;
+  if (limit == 0) {
+    return visits;
+  }
+  ForEachVisit(std::nullopt, before,
+               [&](const HistoryVisit& visit, std::int64_t page_visits) {
+                 if (query.Matches(ItemOf(visit, page_visits, profile_name))) {
+                   visits.push_back(visit);
+                 }
+                 return visits.size() < limit;
+               });
   return visits;
 }
 

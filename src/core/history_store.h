@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
@@ -67,6 +68,8 @@ struct HistoryVisit {
   VisitTransition transition = VisitTransition::kOther;
 };
 
+class HistoryQuery;
+
 // One profile's history database (013): pages and their visits, in
 // profiles/<id>/history.db. Not thread-safe: the browser uses it from one
 // thread only.
@@ -118,6 +121,19 @@ class HistoryStore {
   std::vector<HistorySite> Sites();
   std::vector<HistoryMatch> PagesOfHost(std::string_view host);
   std::vector<HistoryVisit> Visits(std::int64_t before, std::size_t limit);
+  // The same, limited to what `query` matches (013 search). A visit is
+  // tested as a whole (its page, time and type); a site or page counts only
+  // its matching visits. `profile_name` is what profile: compares with.
+  std::vector<HistorySite> SearchSites(const HistoryQuery& query,
+                                       std::string_view profile_name);
+  std::vector<HistoryMatch> SearchPagesOfHost(std::string_view host,
+                                              const HistoryQuery& query,
+                                              std::string_view profile_name);
+  std::vector<HistoryVisit> SearchVisits(const HistoryQuery& query,
+                                         std::string_view profile_name,
+                                         std::int64_t before,
+                                         std::size_t limit);
+
   // Removes all pages of a host. Returns the number removed.
   int DeleteHost(std::string_view host);
   // Removes single visits, and pages left without visits.
@@ -128,6 +144,13 @@ class HistoryStore {
 
  private:
   std::optional<Error> CreateSchema();
+  // Calls `visit` for each visit (newest first) of `host` ("" for all
+  // hosts) before `before` (0 for any), with its page's visit count, until
+  // it returns false.
+  void ForEachVisit(std::optional<std::string_view> host,
+                    std::int64_t before,
+                    const std::function<bool(const HistoryVisit&,
+                                             std::int64_t page_visits)>& visit);
 
   std::unique_ptr<SqliteDatabase> db_;
 };

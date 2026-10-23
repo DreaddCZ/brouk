@@ -24,6 +24,8 @@ set(BROUK_CORE_SOURCES
   download_paths.h
   external_protocol.cc
   external_protocol.h
+  history_query.cc
+  history_query.h
   history_store.cc
   history_store.h
   internal_pages.cc

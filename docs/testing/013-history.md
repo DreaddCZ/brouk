@@ -38,3 +38,16 @@ Address bar suggestions and recording are in `003-browser-ui.md` (steps 37–48)
 25. In the history tab, type a web address in the address bar. Expected: the tab is replaced by a normal tab with that page (no Back to the history page). Type `brouk://history` in a normal tab: it becomes the history page. `brouk://settings` opens the Settings window.
 26. Close the history tab and press ⇧⌘T; quit and start again with "Continue where you left off". Expected: the history tab comes back as the history page.
 
+## Search
+
+27. Type two words from a page title. Expected: only pages containing both (in title or address); accents and case do not matter. Clear the box: everything again.
+28. `"exact phrase"`, `-word`, `jira OR confluence`: phrase only, word excluded, either word.
+29. `site:atlassian.net` shows all its subdomains; `host:companya.atlassian.net` only that one; `-site:atlassian.net` everything else.
+30. `title:sprint`, `url:/browse/`: only in the title / only in the address.
+31. `after:7d`, `before:2026-10-01`, `on:yesterday`: in "By day" only visits in that time; in "By site" the counts show only matching visits.
+32. `visits:>3`, `profile:Work` (a profile name), `type:typed`: pages visited more than 3 times, that profile, visits typed in the address bar.
+33. Combine several, e.g. `site:github.com after:30d -type:reload`.
+34. Type `after:yesterdayy`. Expected: it is underlined with a short reason under the box, and the rest of the search still applies.
+35. Use each chip (Site, Date, Profile, Visits, Type). Expected: it adds the same filter text to the box and the list updates.
+36. With a search active, expand a site: only its matching pages are listed. Search for something that does not exist: "Nothing matches the search."
+
