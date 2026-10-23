@@ -127,6 +127,7 @@ TEST(SettingsTest, FileFormat) {
             "  ask_where_to_save: false\n"
             "content:\n"
             "  spellcheck: true\n"
+            "  json_viewer: true\n"
             "devtools:\n"
             "  toggle_position: right\n"
             "  dock_position: bottom\n"

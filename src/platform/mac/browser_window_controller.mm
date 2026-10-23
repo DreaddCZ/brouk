@@ -879,6 +879,12 @@ NSButton* ToolbarButton(NSString* symbol,
   return [_owner askWhereToSaveDownloads];
 }
 
+- (void)sendRendererConfigWithJsonViewer:(BOOL)jsonViewer {
+  for (BRTab* tab in _tabs.allValues) {
+    [tab sendRendererConfigWithJsonViewer:jsonViewer];
+  }
+}
+
 - (std::string)tab:(BRTab*)tab
     reserveDownloadPath:(const std::string&)suggested {
   return [_owner reserveDownloadPath:suggested];

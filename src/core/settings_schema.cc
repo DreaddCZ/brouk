@@ -34,7 +34,7 @@ constexpr std::array<std::string_view, 4> kDockPositions = {"bottom", "right",
 constexpr std::array<std::string_view, 4> kDockPositionLabels = {
     "Bottom", "Right", "Left", "Separate window"};
 
-constexpr std::array<SettingDef, 15> kSettings = {{
+constexpr std::array<SettingDef, 16> kSettings = {{
     // Global.
     {.key = "appearance.theme",
      .scope = SettingScope::kGlobal,
@@ -89,6 +89,14 @@ constexpr std::array<SettingDef, 15> kSettings = {{
      .section = "Pages",
      .label = "Check spelling in text fields",
      .description = "Uses the macOS spelling dictionaries."},
+    {.key = "content.json_viewer",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kBool,
+     .default_value = "true",
+     .section = "Pages",
+     .label = "Show JSON documents as a tree",
+     .description = "With search, collapsing, and copying of values and "
+                    "paths."},
     // Developer tools (006).
     {.key = "devtools.toggle_position",
      .scope = SettingScope::kGlobal,

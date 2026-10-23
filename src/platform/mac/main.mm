@@ -59,6 +59,10 @@ int main(int argc, char* argv[]) {
     callbacks.on_context_initialized = [weak_delegate] {
       [weak_delegate cefContextInitialized];
     };
+    callbacks.json_viewer_enabled = [weak_delegate] {
+      BRAppDelegate* app = weak_delegate;
+      return !app || [app jsonViewerEnabled];
+    };
     callbacks.on_relaunch = [weak_delegate](brouk::LaunchRequest request) {
       [weak_delegate relaunchedWithRequest:request];
     };

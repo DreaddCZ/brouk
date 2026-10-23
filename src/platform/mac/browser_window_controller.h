@@ -39,6 +39,7 @@ NS_ASSUME_NONNULL_BEGIN
 // Settings (004) tabs and the address bar follow.
 - (brouk::TabClientDelegate::SearchEngine)searchEngine;
 - (BOOL)askWhereToSaveDownloads;
+- (BOOL)jsonViewerEnabled;
 // The developer tools dock's shared position and size (006).
 - (NSString*)dockPosition;
 - (CGFloat)dockSize;
@@ -74,6 +75,8 @@ NS_ASSUME_NONNULL_BEGIN
 // Developer tools (006): toggle side (setting), the remote debugging port
 // (0: off; shows the indicator), and the shared dock position and size.
 - (void)setDevToolsToggleOnLeft:(BOOL)left;
+// Settings the pages' renderers follow changed (JSON viewer).
+- (void)sendRendererConfigWithJsonViewer:(BOOL)jsonViewer;
 @property(nonatomic) int remoteDebuggingPort;
 - (void)setDockPosition:(NSString*)position size:(CGFloat)size;
 

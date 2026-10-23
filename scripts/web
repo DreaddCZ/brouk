@@ -22,6 +22,8 @@ TSC=node_modules/.bin/tsc
 compile() {  # compile <dir>
   rm -rf "$1"
   "$TSC" -p tsconfig.json --outDir "$1"
+  # The JSON viewer is a plain script, compiled on its own (see its file).
+  "$TSC" -p jsonview/tsconfig.json --outDir "$1"
   # Pages and styles next to their scripts.
   find shared profiles settings -name '*.html' -o -name '*.css' | while read -r f; do
     mkdir -p "$1/$(dirname "$f")"
@@ -42,8 +44,17 @@ case "${1:-}" in
     echo '{"type": "module"}' > "$out/package.json"
     find "$out" -name '*.test.js' -print0 | xargs -0 node --test
     ;;
+  jsonview)
+    # The JSON viewer script alone, for embedding into the renderer.
+    out="${2:?usage: scripts/web jsonview <out-file>}"
+    tmp="$(mktemp -d)"
+    "$TSC" -p jsonview/tsconfig.json --outDir "$tmp"
+    mkdir -p "$(dirname "$out")"
+    cp "$tmp/jsonview/viewer.js" "$out"
+    rm -rf "$tmp"
+    ;;
   *)
-    echo "usage: scripts/web build <out-dir> | scripts/web test" >&2
+    echo "usage: scripts/web build <out-dir> | scripts/web test | scripts/web jsonview <out-file>" >&2
     exit 2
     ;;
 esac

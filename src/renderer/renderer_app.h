@@ -30,6 +30,7 @@ class RendererApp : public CefApp, public CefRenderProcessHandler {
       CefRawPtr<CefSchemeRegistrar> registrar) override;
 
   // CefRenderProcessHandler:
+  void OnWebKitInitialized() override;
   void OnContextCreated(CefRefPtr<CefBrowser> browser,
                         CefRefPtr<CefFrame> frame,
                         CefRefPtr<CefV8Context> context) override;
@@ -56,6 +57,10 @@ class RendererApp : public CefApp, public CefRenderProcessHandler {
   // The bridge of internal pages (window.cefQuery), added to brouk:// pages
   // only.
   CefRefPtr<CefMessageRouterRendererSide> router_;
+  // Settings from the browser (kRendererConfigMessage); the same for all
+  // tabs, so one value per renderer process.
+  bool json_viewer_ = true;
+  void ApplyConfig(const CefRefPtr<CefDictionaryValue>& config);
 
   IMPLEMENT_REFCOUNTING(RendererApp);
 };

@@ -68,6 +68,23 @@ class ImageCallback : public CefDownloadImageCallback {
 
 }  // namespace
 
+// static
+CefRefPtr<CefDictionaryValue> TabClient::RendererConfig(bool json_viewer) {
+  CefRefPtr<CefDictionaryValue> config = CefDictionaryValue::Create();
+  config->SetBool(std::string(kRendererConfigJsonViewer), json_viewer);
+  return config;
+}
+
+// static
+void TabClient::SendRendererConfig(const CefRefPtr<CefBrowser>& browser,
+                                   bool json_viewer) {
+  CEF_REQUIRE_UI_THREAD();
+  CefRefPtr<CefProcessMessage> message =
+      CefProcessMessage::Create(std::string(kRendererConfigMessage));
+  message->GetArgumentList()->SetDictionary(0, RendererConfig(json_viewer));
+  browser->GetMainFrame()->SendProcessMessage(PID_RENDERER, message);
+}
+
 void TabClient::DetachDelegate() {
   CEF_REQUIRE_UI_THREAD();
   delegate_ = nullptr;

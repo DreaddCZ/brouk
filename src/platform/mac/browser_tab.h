@@ -76,6 +76,8 @@ NS_ASSUME_NONNULL_BEGIN
 // Turns dev tools on and shows the console / starts picking an element.
 - (void)showDevToolsConsole;
 - (void)startDevToolsElementPicker;
+// Sends changed settings to the page's renderer (JSON viewer, 006).
+- (void)sendRendererConfigWithJsonViewer:(BOOL)jsonViewer;
 // The shared dock position ("bottom", "right", "left", "window") and size.
 - (void)setDockPosition:(NSString*)position size:(CGFloat)size;
 
