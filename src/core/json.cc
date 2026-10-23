@@ -487,11 +487,11 @@ std::int64_t JsonValue::IntegerOr(std::string_view key,
   return value->integer;
 }
 
-Result<JsonValue> ParseJson(std::string_view text) {
+Result<JsonValue> ParseJsonDocument(std::string_view text) {
   return Parser(text).ParseDocument();
 }
 
-std::string WriteJson(const JsonValue& value) {
+std::string WriteJsonDocument(const JsonValue& value) {
   std::string out;
   WriteValue(out, value, 0);
   out += '\n';

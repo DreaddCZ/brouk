@@ -22,6 +22,7 @@
 #import "platform/mac/settings_watcher.h"
 
 #include "brouk/app_info.h"
+#include "cef/bookmarks_page_handler.h"
 #include "cef/browser_app.h"
 #include "cef/browsing_data.h"
 #include "cef/devtools_preferences.h"
@@ -274,6 +275,148 @@ class AppHistoryPage : public HistoryPageDelegate {
   __weak BRAppDelegate* app_;
   __weak BRBrowserWindowController* controller_;
   TabId tab_;
+};
+
+// Answers one bookmark manager tab's page (011): the app's bookmarks, and
+// opening and file panels through the window holding the tab.
+class AppBookmarksPage : public BookmarksPageDelegate {
+ public:
+  AppBookmarksPage(BRAppDelegate* app,
+                   BRBookmarkStore* store,
+                   BRBrowserWindowController* controller,
+                   TabId tab)
+      : app_(app), store_(store), controller_(controller), tab_(tab) {}
+  ~AppBookmarksPage() override {
+    if (observer_) {
+      [NSNotificationCenter.defaultCenter removeObserver:observer_];
+    }
+  }
+  AppBookmarksPage(const AppBookmarksPage&) = delete;
+  AppBookmarksPage& operator=(const AppBookmarksPage&) = delete;
+
+  std::vector<ProfileInfo> Profiles() override {
+    BRAppDelegate* app = app_;
+    return app ? [app allProfiles] : std::vector<ProfileInfo>{};
+  }
+  ProfileId CurrentProfile() override {
+    return [controller_ profileOfTab:tab_];
+  }
+  const BookmarkModel& Model() override { return [store_ model]; }
+  void Change(const std::function<void(BookmarkModel&)>& change) override {
+    [store_ change:change];
+  }
+  void Remove(const std::vector<BookmarkId>& ids) override {
+    [store_ removeItems:ids];
+  }
+  bool Undo() override {
+    if (![store_ canUndoRemove]) {
+      return false;
+    }
+    [store_ undoRemove];
+    return true;
+  }
+  // A general bookmark opens in the manager tab's profile, a linked one in
+  // its own (a new tab when the manager tab is in another profile).
+  void Open(BookmarkId id, bool new_tab) override {
+    const BookmarkItem* item = [store_ model].Find(id);
+    if (item == nullptr || item->folder) {
+      return;
+    }
+    ProfileId profile = [store_ model].EffectiveProfile(id);
+    [controller_ openPage:@(item->url.c_str())
+                  profile:profile
+                   newTab:new_tab
+                  fromTab:tab_
+                 bookmark:YES];
+  }
+  void Watch(std::function<void()> changed) override {
+    if (observer_) {
+      [NSNotificationCenter.defaultCenter removeObserver:observer_];
+    }
+    observer_ = [NSNotificationCenter.defaultCenter
+        addObserverForName:BRBookmarksDidChangeNotification
+                    object:nil
+                     queue:nil
+                usingBlock:^(NSNotification*) {
+                  changed();
+                }];
+  }
+  void SaveHtml(std::string html, SaveDone done) override {
+    NSWindow* window = controller_.window;
+    if (!window) {
+      done(false, std::nullopt);
+      return;
+    }
+    NSSavePanel* panel = [NSSavePanel savePanel];
+    panel.title = @"Export Bookmarks";
+    panel.nameFieldStringValue = @"Bookmarks.html";
+    panel.allowedContentTypes = @[ UTTypeHTML ];
+    __block SaveDone answer = std::move(done);
+    __block std::string text = std::move(html);
+    [panel
+        beginSheetModalForWindow:window
+               completionHandler:^(NSModalResponse response) {
+                 if (response != NSModalResponseOK || !panel.URL) {
+                   answer(false, std::nullopt);
+                   return;
+                 }
+                 NSData* data = [NSData dataWithBytes:text.data()
+                                               length:text.size()];
+                 NSError* error = nil;
+                 if (![data writeToURL:panel.URL
+                               options:NSDataWritingAtomic
+                                 error:&error]) {
+                   answer(false,
+                          Error{std::string("The file could not be saved: ") +
+                                error.localizedDescription.UTF8String});
+                   return;
+                 }
+                 answer(true, std::nullopt);
+               }];
+  }
+  void OpenHtml(OpenDone done) override {
+    NSWindow* window = controller_.window;
+    if (!window) {
+      done(std::nullopt, std::nullopt);
+      return;
+    }
+    NSOpenPanel* panel = [NSOpenPanel openPanel];
+    panel.title = @"Import Bookmarks";
+    panel.message = @"An HTML bookmark file, as exported by Chrome, Firefox "
+                    @"or Safari. The bookmarks go into \"Imported\" under "
+                    @"Other bookmarks.";
+    panel.allowedContentTypes = @[ UTTypeHTML ];
+    panel.canChooseDirectories = NO;
+    panel.allowsMultipleSelection = NO;
+    __block OpenDone answer = std::move(done);
+    [panel beginSheetModalForWindow:window
+                  completionHandler:^(NSModalResponse response) {
+                    if (response != NSModalResponseOK || !panel.URL) {
+                      answer(std::nullopt, std::nullopt);
+                      return;
+                    }
+                    NSError* error = nil;
+                    NSData* data = [NSData dataWithContentsOfURL:panel.URL
+                                                         options:0
+                                                           error:&error];
+                    if (!data) {
+                      answer(std::nullopt,
+                             Error{std::string("The file could not be read: ") +
+                                   error.localizedDescription.UTF8String});
+                      return;
+                    }
+                    answer(std::string(static_cast<const char*>(data.bytes),
+                                       data.length),
+                           std::nullopt);
+                  }];
+  }
+
+ private:
+  __weak BRAppDelegate* app_;
+  BRBookmarkStore* store_;
+  __weak BRBrowserWindowController* controller_;
+  TabId tab_;
+  id observer_;
 };
 
 // Answers the settings page. The registry outlives the page; actions go to
@@ -1410,6 +1553,11 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
     return std::make_unique<brouk::HistoryPageHandler>(
         std::make_unique<brouk::AppHistoryPage>(self, controller, tabId));
   }
+  if ([page isEqualToString:@"bookmarks"]) {
+    return std::make_unique<brouk::BookmarksPageHandler>(
+        std::make_unique<brouk::AppBookmarksPage>(self, _bookmarks, controller,
+                                                  tabId));
+  }
   return nullptr;
 }
 
@@ -2383,6 +2531,14 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
           title:@"Bookmark All Tabs…"
          action:@selector(bookmarkAllTabs:)
        shortcut:@"bookmark_all_tabs"];
+  [self addItem:bookmarks
+          title:@"Bookmark Manager"
+         action:@selector(showBookmarkManager:)
+       shortcut:@"bookmark_manager"];
+  [self addItem:bookmarks
+          title:@"Always Show Bookmarks Bar"
+         action:@selector(toggleBookmarksBar:)
+       shortcut:@"toggle_bookmarks_bar"];
   [bookmarks addItem:NSMenuItem.separatorItem];
   _bookmarksMenu = bookmarks;
   _bookmarksMenuFixedItems = bookmarks.numberOfItems;

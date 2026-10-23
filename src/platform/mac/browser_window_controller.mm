@@ -505,10 +505,14 @@ NSButton* ToolbarButton(NSString* symbol,
       page ? [_owner internalPageHandler:page tabId:tab.tabId controller:self]
            : nullptr;
   if (handler) {
+    BOOL bookmarks = [page isEqualToString:@"bookmarks"];
     [tab createInternalPageWithURL:url
-                             title:@"History"
-                              icon:[NSImage imageWithSystemSymbolName:@"clock"
-                                             accessibilityDescription:nil]
+                             title:bookmarks ? @"Bookmarks" : @"History"
+                              icon:[NSImage
+                                       imageWithSystemSymbolName:bookmarks
+                                                                     ? @"star"
+                                                                     : @"clock"
+                                        accessibilityDescription:nil]
                            handler:std::move(handler)
                     requestContext:[_owner internalPagesContext]];
     return;
@@ -535,7 +539,7 @@ NSButton* ToolbarButton(NSString* symbol,
 // web content never runs in the internal context and the other way round.
 - (void)navigateTab:(BRTab*)tab toURL:(NSString*)url typed:(BOOL)typed {
   NSString* page = [self internalPageOf:url];
-  if (page && ![page isEqualToString:@"history"]) {
+  if (page && ![self opensInTab:page]) {
     [self openInternalPageWindow:page];
     [self updateToolbar];
     return;
@@ -550,7 +554,13 @@ NSButton* ToolbarButton(NSString* symbol,
   [tab focusContent];
 }
 
-- (void)replaceTab:(BRTab*)old withURL:(NSString*)url typed:(BOOL)typed {
+// Internal pages shown in tabs (013, 011); the others have their windows.
+- (BOOL)opensInTab:(NSString*)page {
+  return
+      [page isEqualToString:@"history"] || [page isEqualToString:@"bookmarks"];
+}
+
+- (BRTab*)replaceTab:(BRTab*)old withURL:(NSString*)url typed:(BOOL)typed {
   BRTab* tab = [self makeTabInProfile:old.profileId];
   _model->InsertAfter(tab.tabId, old.tabId, true);
   if (_model->IsPinned(old.tabId)) {
@@ -562,6 +572,7 @@ NSButton* ToolbarButton(NSString* symbol,
   [old forceClose];
   [self modelDidChange];
   [self focusActiveTab];
+  return tab;
 }
 
 // ⌘Y: the history page as a tab in the current tab's profile group, in
@@ -571,12 +582,23 @@ NSButton* ToolbarButton(NSString* symbol,
 }
 
 - (void)showHistoryWithFragment:(NSString*)fragment {
-  NSString* url = fragment.length
-                      ? [@"brouk://history/#" stringByAppendingString:fragment]
-                      : @"brouk://history/";
+  [self showInternalPage:@"history" fragment:fragment];
+}
+
+// ⌥⌘B: the bookmark manager as a tab, like the history page (011).
+- (IBAction)showBookmarkManager:(id)sender {
+  [self showInternalPage:@"bookmarks" fragment:@""];
+}
+
+// An internal page as a tab in the current tab's profile group, in place of
+// an unused new tab; an active tab already showing it is reused.
+- (void)showInternalPage:(NSString*)page fragment:(NSString*)fragment {
+  NSString* base = [NSString stringWithFormat:@"brouk://%@/", page];
+  NSString* url =
+      fragment.length ? [base stringByAppendingFormat:@"#%@", fragment] : base;
   BRTab* active = [self activeTab];
   if (active.isInternalPage &&
-      [[self internalPageOf:active.url] isEqualToString:@"history"]) {
+      [[self internalPageOf:active.url] isEqualToString:page]) {
     CefRefPtr<CefBrowser> browser = [active browser];
     if (fragment.length && browser) {
       // Same page: only the fragment changes (the page opens the dialog).
@@ -619,18 +641,35 @@ NSButton* ToolbarButton(NSString* symbol,
          profile:(const brouk::ProfileId&)profile
           newTab:(BOOL)newTab
      fromHistory:(brouk::TabId)historyTab {
+  [self openPage:url
+         profile:profile
+          newTab:newTab
+         fromTab:historyTab
+        bookmark:NO];
+}
+
+- (void)openPage:(NSString*)url
+         profile:(const brouk::ProfileId&)profile
+          newTab:(BOOL)newTab
+         fromTab:(brouk::TabId)historyTab
+        bookmark:(BOOL)bookmark {
   BRTab* history = _tabs[@(historyTab)];
-  if (profile.empty()) {
+  if (profile.empty() || ![_owner profileExists:profile]) {
     brouk::ProfileId own = history ? history.profileId : [self activeProfileId];
-    [self openPage:url profile:own newTab:newTab fromHistory:historyTab];
+    [self openPage:url
+           profile:own
+            newTab:newTab
+           fromTab:historyTab
+          bookmark:bookmark];
     return;
   }
   if (!newTab && history && history.profileId == profile) {
-    [self replaceTab:history withURL:url typed:NO];
+    [self replaceTab:history withURL:url typed:NO].nextVisitBookmark = bookmark;
     return;
   }
   // ⌘-click opens in the background, as Chrome does.
   BRTab* tab = [self makeTabInProfile:profile];
+  tab.nextVisitBookmark = bookmark;
   if (history && history.profileId == profile) {
     _model->InsertAfter(tab.tabId, historyTab, !newTab);
   } else {
@@ -2634,6 +2673,9 @@ static std::int64_t Now() {
   }
   if (action == @selector(bookmarkAllTabs:)) {
     return tab != nil && !_isPopup;
+  }
+  if (action == @selector(showBookmarkManager:)) {
+    return !_isPopup;
   }
   if (action == @selector(goBack:)) {
     return tab.canGoBack;

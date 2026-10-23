@@ -50,6 +50,7 @@ TEST(InternalPagesTest, MimeTypes) {
 
 TEST(InternalPagesTest, HistoryPageExists) {
   EXPECT_TRUE(IsInternalPageUrl("brouk://history/"));
+  EXPECT_EQ(InternalPageOf("brouk://bookmarks/#folder=5"), "bookmarks");
   EXPECT_EQ(InternalPageOf("brouk://history/"), "history");
   EXPECT_EQ(InternalResourcePath("brouk://history/"), "history/index.html");
 }

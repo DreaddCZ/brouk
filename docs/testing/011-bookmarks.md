@@ -47,3 +47,19 @@ Use at least two profiles (e.g. "Work" and "Home") with tabs in the same window.
 32. Right-click a folder: Open All (n) opens its bookmarks in new tabs (more than 15 asks first); Edit… shows name and profile.
 33. Delete a bookmark from the right-click menu. Expected: "Bookmark deleted" with Undo; Undo puts it back.
 34. Right-click the empty part of the bar → Add Bookmark… Expected: the dialog is filled with the current page; Save adds it at the end of the bar. Add Folder… adds a folder.
+
+## Manager page
+
+35. Press ⌥⌘B (or Bookmarks → Bookmark Manager, or Bookmark Manager in the bar's right-click menu). Expected: a "Bookmarks" tab with a star icon opens next to the current tab (an unused new tab is replaced); ⌥⌘B on it does nothing.
+36. Expected: folders on the left (Bookmarks bar, its folders, Other bookmarks), the chosen folder's items on the right; bookmarks linked to a profile show its colour dot and name; items inside a linked folder show it lighter ("Linked through its folder").
+37. Profile filter: All / General / each profile. Expected: only items of that kind; folders containing such items stay listed.
+38. Type in the search box. Expected: bookmarks and folders of all folders whose name or address contain every word, each with its folder path.
+39. Add bookmark: enter a name and `example.org`. Expected: saved as https://example.org/ in the shown folder, linked to the tab's profile unless General is chosen. An address like `not an address` is refused with a message.
+40. Add folder, then Edit (✎) an item: change name, URL, folder and profile. Choosing a folder linked to a profile locks the profile to it.
+41. Click rows to select; ⌘-click toggles, ⇧-click selects a range, ⌘A selects all. Expected: "n items selected", Edit… (one item) and Delete.
+42. Delete (button, ✕, or the Delete key). Expected: "Deleted n items" with Undo for a few seconds; Undo or ⌘Z puts them back where they were.
+43. Drag rows onto a folder on the left or onto a folder row (its middle): they move into it. Drag between rows: they move there. Several selected rows move together.
+44. Double-click a bookmark (or Return). Expected: a general one opens in this tab's profile (in this tab), a linked one in its profile (a new tab when this tab is in another profile). ⌘-double-click: a new background tab. Double-click a folder: it opens.
+45. While the page is open, add a bookmark with the star in another tab. Expected: the page shows it without reloading.
+46. Export…: save the file; open it in Chrome or Safari's import. Expected: the bookmarks are there (without profile links).
+47. Import… a bookmark file exported from Chrome. Expected: "Imported n bookmarks and m folders"; they are in "Imported" under Other bookmarks, as general items.

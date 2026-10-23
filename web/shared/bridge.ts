@@ -60,6 +60,29 @@ export async function send(
   }
 }
 
+/**
+ * Starts a lasting request: `onMessage` gets each message the browser sends
+ * for it (e.g. "something changed"), until the page goes away.
+ */
+export type Subscriber = (request: string, onMessage: (message: string) => void) => void;
+
+/** The subscriber of a page shown by Brouk; null elsewhere. */
+export function cefSubscriber(): Subscriber | null {
+  const query: unknown = Reflect.get(globalThis, 'cefQuery');
+  if (typeof query !== 'function') {
+    return null;
+  }
+  const call = query as (options: CefQueryOptions) => number;
+  return (request, onMessage) => {
+    call({ request, persistent: true, onSuccess: onMessage, onFailure: () => {} });
+  };
+}
+
+/** Subscribes to messages of `type`; does nothing outside Brouk. */
+export function subscribe(type: string, onMessage: () => void, subscriber: Subscriber | null): void {
+  subscriber?.(JSON.stringify({ type }), () => onMessage());
+}
+
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
