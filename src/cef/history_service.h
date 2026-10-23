@@ -52,6 +52,13 @@ class HistoryService {
   // Closes a profile's database before its folder is deleted (005).
   void CloseProfile(const ProfileId& profile);
 
+  // Runs `work` with `profile`'s history on the history thread (not if it
+  // cannot be opened), then `done` on the UI thread. `work` must not keep
+  // the store; results go through state both functions share.
+  void Run(const ProfileId& profile,
+           std::function<void(HistoryStore&)> work,
+           std::function<void()> done);
+
   using SuggestDone = std::function<void(std::vector<HistoryMatch>)>;
   // The most recently visited pages of `profile` (History → Recently
   // Visited); `done` runs on the UI thread.

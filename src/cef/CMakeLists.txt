@@ -12,6 +12,8 @@ add_library(brouk_cef STATIC
   devtools_preferences.h
   devtools_tools_handler.cc
   devtools_tools_handler.h
+  history_page_handler.cc
+  history_page_handler.h
   history_service.cc
   history_service.h
   internal_page_client.cc

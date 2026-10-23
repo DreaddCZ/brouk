@@ -24,6 +24,7 @@
 #include "cef/search_suggest_request.h"
 #include "core/address_input.h"
 #include "core/address_suggestions.h"
+#include "core/internal_pages.h"
 #include "core/settings_schema.h"
 #include "core/shortcuts.h"
 #include "core/tab_strip_model.h"
@@ -170,6 +171,9 @@ NSButton* ToolbarButton(NSString* symbol,
   // and the profiles being deleted, whose tabs are not kept.
   std::vector<brouk::ClosedTab> _windowSnapshot;
   NSArray* _restoreBarTargets;  // Of the "Restore pages?" bar (015).
+  // Tabs replaced by another tab (internal page <-> web page): closed
+  // without being kept for Reopen Closed Tab.
+  std::set<brouk::TabId> _replacedTabs;
   std::set<brouk::ProfileId, std::less<>> _discardedProfiles;
   // Address bar suggestions (003) for the text in `_suggestText`. Answers
   // carry `_suggestGeneration`, so late answers for older text are dropped.
@@ -430,10 +434,131 @@ NSButton* ToolbarButton(NSString* symbol,
   if (closed.pinned) {
     _model->SetPinned(tab.tabId, true);
   }
-  [tab createBrowserWithURL:@(closed.url.c_str())
-             requestContext:[_owner requestContextForProfile:closed.profile]];
+  [self startTab:tab url:@(closed.url.c_str())];
   [self modelDidChange];
   if (activate) {
+    [self focusActiveTab];
+  }
+}
+
+#pragma mark - Loading pages into tabs
+
+// The internal page a URL shows, if any ("history").
+- (nullable NSString*)internalPageOf:(NSString*)url {
+  std::optional<std::string> page = brouk::InternalPageOf(url.UTF8String ?: "");
+  return page ? @(page->c_str()) : nil;
+}
+
+// Gives a new tab its first page: an internal page in the internal context
+// with its bridge, a web page in the tab's profile.
+- (void)startTab:(BRTab*)tab url:(NSString*)url {
+  NSString* page = [self internalPageOf:url];
+  std::unique_ptr<CefMessageRouterBrowserSide::Handler> handler =
+      page ? [_owner internalPageHandler:page tabId:tab.tabId controller:self]
+           : nullptr;
+  if (handler) {
+    [tab createInternalPageWithURL:url
+                             title:@"History"
+                              icon:[NSImage imageWithSystemSymbolName:@"clock"
+                                             accessibilityDescription:nil]
+                           handler:std::move(handler)
+                    requestContext:[_owner internalPagesContext]];
+    return;
+  }
+  if (page) {
+    [self openInternalPageWindow:page];
+    url = @"about:blank";
+  }
+  [tab createBrowserWithURL:url
+             requestContext:[_owner requestContextForProfile:tab.profileId]];
+}
+
+// Settings and the profile manager have their own windows.
+- (void)openInternalPageWindow:(NSString*)page {
+  if ([page isEqualToString:@"settings"]) {
+    [_owner openSettings:nil];
+  } else if ([page isEqualToString:@"profiles"]) {
+    [_owner manageProfiles:nil];
+  }
+}
+
+// What the address bar does with an address: web pages load in the tab;
+// an internal page or a web page in an internal tab replaces the tab, so
+// web content never runs in the internal context and the other way round.
+- (void)navigateTab:(BRTab*)tab toURL:(NSString*)url typed:(BOOL)typed {
+  NSString* page = [self internalPageOf:url];
+  if (page && ![page isEqualToString:@"history"]) {
+    [self openInternalPageWindow:page];
+    [self updateToolbar];
+    return;
+  }
+  if (page || tab.isInternalPage) {
+    [self replaceTab:tab withURL:url typed:typed];
+    return;
+  }
+  tab.nextVisitTyped = typed;
+  [tab loadURL:url];
+  [self updateToolbar];
+  [tab focusContent];
+}
+
+- (void)replaceTab:(BRTab*)old withURL:(NSString*)url typed:(BOOL)typed {
+  BRTab* tab = [self makeTabInProfile:old.profileId];
+  _model->InsertAfter(tab.tabId, old.tabId, true);
+  if (_model->IsPinned(old.tabId)) {
+    _model->SetPinned(tab.tabId, true);
+  }
+  tab.nextVisitTyped = typed;
+  [self startTab:tab url:url];
+  _replacedTabs.insert(old.tabId);
+  [old forceClose];
+  [self modelDidChange];
+  [self focusActiveTab];
+}
+
+// ⌘Y: the history page as a tab in the current tab's profile group, in
+// place of an unused new tab.
+- (IBAction)showHistory:(id)sender {
+  BRTab* active = [self activeTab];
+  if (active.isInternalPage &&
+      [[self internalPageOf:active.url] isEqualToString:@"history"]) {
+    return;
+  }
+  if (active &&
+      (active.url.length == 0 || [active.url isEqualToString:@"about:blank"])) {
+    [self replaceTab:active withURL:@"brouk://history/" typed:NO];
+    return;
+  }
+  brouk::ProfileId profile = [self activeProfileId];
+  BRTab* tab = [self makeTabInProfile:profile];
+  if (active) {
+    _model->InsertAfter(tab.tabId, active.tabId, true);
+  } else {
+    _model->AppendTab(tab.tabId, profile, true);
+  }
+  [self startTab:tab url:@"brouk://history/"];
+  [self modelDidChange];
+}
+
+- (void)openPage:(NSString*)url
+         profile:(const brouk::ProfileId&)profile
+          newTab:(BOOL)newTab
+     fromHistory:(brouk::TabId)historyTab {
+  BRTab* history = _tabs[@(historyTab)];
+  if (!newTab && history && history.profileId == profile) {
+    [self replaceTab:history withURL:url typed:NO];
+    return;
+  }
+  // ⌘-click opens in the background, as Chrome does.
+  BRTab* tab = [self makeTabInProfile:profile];
+  if (history && history.profileId == profile) {
+    _model->InsertAfter(tab.tabId, historyTab, !newTab);
+  } else {
+    _model->AppendTab(tab.tabId, profile, !newTab);
+  }
+  [self startTab:tab url:url];
+  [self modelDidChange];
+  if (!newTab) {
     [self focusActiveTab];
   }
 }
@@ -497,9 +622,11 @@ NSButton* ToolbarButton(NSString* symbol,
     NSString* url = @(saved.url.c_str()) ?: @"about:blank";
     CefRefPtr<CefRequestContext> context =
         [_owner requestContextForProfile:profile];
-    if (i == window.active) {
-      active = tab.tabId;
-      [tab createBrowserWithURL:url requestContext:context];
+    if (i == window.active || [self internalPageOf:url]) {
+      if (i == window.active) {
+        active = tab.tabId;
+      }
+      [self startTab:tab url:url];
     } else {
       [tab deferBrowserWithURL:url
                          title:@(saved.title.c_str()) ?: @""
@@ -577,8 +704,7 @@ NSButton* ToolbarButton(NSString* symbol,
   if (!tab) {
     return;
   }
-  [tab loadURL:@"about:blank"];
-  [self updateToolbar];
+  [self navigateTab:tab toURL:@"about:blank" typed:NO];
   [_addressField focusAndSelectAll];
 }
 
@@ -591,8 +717,7 @@ NSButton* ToolbarButton(NSString* symbol,
               activate:(BOOL)activate {
   BRTab* tab = [self makeTabInProfile:profile];
   _model->AppendTab(tab.tabId, profile, activate);
-  [tab createBrowserWithURL:url ?: @"about:blank"
-             requestContext:[_owner requestContextForProfile:profile]];
+  [self startTab:tab url:url ?: @"about:blank"];
   [self modelDidChange];
   if (activate && !url) {
     [_addressField focusAndSelectAll];
@@ -1037,7 +1162,9 @@ NSButton* ToolbarButton(NSString* symbol,
   // A tab closed on its own can be reopened; a window closing as a whole is
   // kept as one entry (windowWillClose:).
   std::optional<std::size_t> index = _model->IndexOf(tab.tabId);
-  if (index && !_closingWindow && !_discardedProfiles.contains(tab.profileId)) {
+  bool replaced = _replacedTabs.erase(tab.tabId) > 0;
+  if (index && !replaced && !_closingWindow &&
+      !_discardedProfiles.contains(tab.profileId)) {
     [_owner browserWindow:self
                 closedTab:[self closedTabFor:tab atIndex:*index]];
   }
@@ -1397,8 +1524,7 @@ NSButton* ToolbarButton(NSString* symbol,
   }
   BRTab* tab = [self makeTabInProfile:after.profileId];
   _model->InsertAfter(tab.tabId, after.tabId, true);
-  [tab createBrowserWithURL:url ?: @"about:blank"
-             requestContext:[_owner requestContextForProfile:after.profileId]];
+  [self startTab:tab url:url ?: @"about:blank"];
   [self modelDidChange];
   if (!url) {
     [_addressField focusAndSelectAll];
@@ -1471,10 +1597,9 @@ NSButton* ToolbarButton(NSString* symbol,
   }
   NSString* url = [NSString stringWithUTF8String:result.url.c_str()];
   // Typed addresses count for history ranking; searches do not (Chrome).
-  tab.nextVisitTyped = result.kind == brouk::AddressInputResult::Kind::kUrl;
-  [tab loadURL:url];
-  [self updateToolbar];
-  [tab focusContent];
+  [self navigateTab:tab
+              toURL:url
+              typed:result.kind == brouk::AddressInputResult::Kind::kUrl];
 }
 
 - (void)addressFieldDidCancel:(BRAddressField*)field {
@@ -1669,12 +1794,12 @@ NSButton* ToolbarButton(NSString* symbol,
   [self closeSuggestions];
   tab.pendingAddressText = nil;
   // Addresses and history pages count as typed (Chrome); searches do not.
-  tab.nextVisitTyped =
-      suggestion.kind == brouk::AddressSuggestion::Kind::kTypedUrl ||
-      suggestion.kind == brouk::AddressSuggestion::Kind::kHistory;
-  [tab loadURL:@(suggestion.url.c_str())];
-  [self updateToolbar];
-  [tab focusContent];
+  [self
+      navigateTab:tab
+            toURL:@(suggestion.url.c_str())
+            typed:suggestion.kind ==
+                      brouk::AddressSuggestion::Kind::kTypedUrl ||
+                  suggestion.kind == brouk::AddressSuggestion::Kind::kHistory];
 }
 
 #pragma mark - Menu and toolbar actions

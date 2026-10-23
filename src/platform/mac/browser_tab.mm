@@ -14,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include "cef/internal_page_client.h"
 #include "core/address_input.h"
 #include "include/cef_browser.h"
 #include "include/wrapper/cef_helpers.h"
@@ -46,6 +47,7 @@ NSString* StripFragment(NSString* url) {
 - (void)handleFavicon:(NSImage*)image;
 - (void)handleCloseReady;
 - (void)handleBrowserClosed;
+- (void)openDockInspecting:(NSPoint)point;
 - (void)handlePopupBlocked:(NSString*)url;
 - (void)handleAudible:(BOOL)audible;
 - (void)chooseDesktopSource:(brouk::TabClientDelegate::DesktopSourceDone)done;
@@ -216,6 +218,35 @@ class TabDelegateBridge : public TabClientDelegate {
   __weak BRTab* tab_;
 };
 
+// Forwards an internal page's client (brouk://history…, 013) to the BRTab.
+class TabInternalPageBridge : public InternalPageDelegate {
+ public:
+  explicit TabInternalPageBridge(BRTab* tab) : tab_(tab) {}
+
+  void OnBrowserCreated(CefRefPtr<CefBrowser> browser) override {
+    [tab_ handleBrowserCreated:browser];
+  }
+  void OnCloseReady() override { [tab_ handleCloseReady]; }
+  void OnBrowserClosed() override { [tab_ handleBrowserClosed]; }
+  void OnTitleChanged(const std::string& title) override {
+    [tab_ handleTitle:ToNSString(title)];
+  }
+  bool OnUnhandledKeyEvent(const CefKeyEvent& event,
+                           CefEventHandle os_event) override {
+    BRTab* tab = tab_;
+    NSEvent* ns_event = (__bridge NSEvent*)os_event;
+    return ns_event && event.type == KEYEVENT_RAWKEYDOWN &&
+           ns_event.type == NSEventTypeKeyDown &&
+           [tab.delegate tab:tab handleUnhandledKeyEvent:ns_event];
+  }
+  void OnInspectElement(int x, int y) override {
+    [tab_ openDockInspecting:NSMakePoint(x, y)];
+  }
+
+ private:
+  __weak BRTab* tab_;
+};
+
 }  // namespace brouk
 
 // Calls `layoutHandler` whenever its size changes (window resizes).
@@ -291,6 +322,9 @@ class TabDelegateBridge : public TabClientDelegate {
   BOOL _devToolsWhenCreated;
   NSPoint _inspectWhenCreated;
   std::unique_ptr<brouk::TabDelegateBridge> _bridge;
+  // An internal page (013): its client instead of the web client.
+  std::unique_ptr<brouk::TabInternalPageBridge> _internalBridge;
+  CefRefPtr<brouk::InternalPageClient> _internalClient;
   CefRefPtr<brouk::TabClient> _client;
   CefRefPtr<CefBrowser> _browser;
   // Set when closing was requested before the browser existed.
@@ -356,6 +390,9 @@ class TabDelegateBridge : public TabClientDelegate {
   if (_client && !_clientDetached) {
     _client->DetachDelegate();
   }
+  if (_internalClient) {
+    _internalClient->DetachDelegate();
+  }
 }
 
 - (const brouk::ProfileId&)profileId {
@@ -383,6 +420,38 @@ class TabDelegateBridge : public TabClientDelegate {
   _url = [url copy];
   CefBrowserHost::CreateBrowser(windowInfo, _client, url.UTF8String, settings,
                                 nullptr, requestContext);
+}
+
+- (void)createInternalPageWithURL:(NSString*)url
+                            title:(NSString*)title
+                             icon:(NSImage*)icon
+                          handler:
+                              (std::unique_ptr<
+                                  CefMessageRouterBrowserSide::Handler>)handler
+                   requestContext:(CefRefPtr<CefRequestContext>)requestContext {
+  CEF_REQUIRE_UI_THREAD();
+  // The web client is not used: detach it so it never calls back.
+  if (_client && !_clientDetached) {
+    _client->DetachDelegate();
+    _clientDetached = YES;
+  }
+  _client = nullptr;
+  _internalBridge = std::make_unique<brouk::TabInternalPageBridge>(self);
+  _internalClient =
+      new brouk::InternalPageClient(_internalBridge.get(), std::move(handler));
+  _isInternalPage = YES;
+  _url = [url copy];
+  _title = [title copy];
+  _favicon = icon;
+  NSRect bounds = _containerView.bounds;
+  CefWindowInfo windowInfo;
+  windowInfo.SetAsChild((__bridge void*)_containerView,
+                        CefRect(0, 0, static_cast<int>(bounds.size.width),
+                                static_cast<int>(bounds.size.height)));
+  windowInfo.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
+  CefBrowserSettings settings;
+  CefBrowserHost::CreateBrowser(windowInfo, _internalClient, url.UTF8String,
+                                settings, nullptr, requestContext);
 }
 
 - (void)deferBrowserWithURL:(NSString*)url
@@ -572,7 +641,7 @@ class TabDelegateBridge : public TabClientDelegate {
 - (void)handleTitle:(NSString*)title {
   _title = [title copy];
   [_delegate tabDidChangeState:self];
-  if (_url.length) {
+  if (_url.length && !_isInternalPage) {
     [_delegate tab:self titleChanged:_title forURL:_url];
   }
 }
@@ -1218,11 +1287,17 @@ class TabDelegateBridge : public TabClientDelegate {
   _dockWindow = nil;
   [self cancelPendingUnresponsive];  // Holds a CEF callback.
   _pendingDesktopSource.reset();
-  _client->DetachDelegate();
+  if (_client && !_clientDetached) {
+    _client->DetachDelegate();
+  }
   _clientDetached = YES;
+  if (_internalClient) {
+    _internalClient->DetachDelegate();
+  }
   // Release CEF objects while CEF is still running: releasing them after
   // CefShutdown is an error (CEF asserts in debug builds).
   _client = nullptr;
+  _internalClient = nullptr;
   [_delegate tabDidClose:self];
 }
 

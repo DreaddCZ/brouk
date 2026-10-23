@@ -15,6 +15,7 @@
 #include "core/tab_strip_model.h"
 #include "include/cef_browser.h"
 #include "include/cef_request_context.h"
+#include "include/wrapper/cef_message_router.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -150,6 +151,18 @@ NS_ASSUME_NONNULL_BEGIN
                       title:(NSString*)title
              requestContext:(CefRefPtr<CefRequestContext>)requestContext;
 - (void)createDeferredBrowser;
+// Shows an internal page (brouk://history…, 013) in this tab: a browser in
+// the internal pages' context with its own client and bridge `handler`,
+// never in the profile's context. Web addresses typed into such a tab open
+// in a new web tab instead (the window controller replaces it).
+- (void)createInternalPageWithURL:(NSString*)url
+                            title:(NSString*)title
+                             icon:(NSImage*)icon
+                          handler:
+                              (std::unique_ptr<
+                                  CefMessageRouterBrowserSide::Handler>)handler
+                   requestContext:(CefRefPtr<CefRequestContext>)requestContext;
+@property(nonatomic, readonly) BOOL isInternalPage;
 @property(nonatomic, readonly) BOOL hasDeferredBrowser;
 // Whether a browser was ever created (the app counts open browsers).
 @property(nonatomic, readonly) BOOL hasCreatedBrowser;

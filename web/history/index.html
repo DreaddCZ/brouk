@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="light dark">
+<title>History</title>
+<link rel="stylesheet" href="shared/base.css">
+<link rel="stylesheet" href="history.css">
+<script type="module" src="history.js"></script>
+</head>
+<body>
+<main>
+  <header>
+    <h1>History</h1>
+  </header>
+  <div class="toolbar" role="toolbar" aria-label="History view">
+    <label>Profile <select id="profile"></select></label>
+    <div class="segmented" role="group" aria-label="View">
+      <button type="button" id="view-site" aria-pressed="true">By site</button>
+      <button type="button" id="view-day" aria-pressed="false">By day</button>
+    </div>
+    <label id="sort-label">Sort <select id="sort">
+      <option value="lastVisit">Last visit</option>
+      <option value="visits">Visits</option>
+      <option value="host">Site</option>
+    </select></label>
+    <span class="spacer"></span>
+    <span id="selection" class="selection" hidden></span>
+    <button type="button" id="delete" class="danger" hidden>Delete</button>
+  </div>
+  <div id="confirm" class="confirm" role="alertdialog" hidden></div>
+  <p id="error" class="error" role="alert" hidden></p>
+  <div id="list" class="list"></div>
+  <p id="empty" class="empty" hidden>No history yet.</p>
+  <button type="button" id="more" hidden>Show more</button>
+</main>
+</body>
+</html>

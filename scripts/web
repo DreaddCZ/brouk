@@ -27,7 +27,7 @@ compile() {  # compile <dir>
   # The Requests tool shows response bodies with it too.
   cp "$1/jsonview/viewer.js" "$1/shared/json_viewer.js"
   # Pages and styles next to their scripts.
-  find shared profiles settings tools -name '*.html' -o -name '*.css' | while read -r f; do
+  find shared history profiles settings tools -name '*.html' -o -name '*.css' | while read -r f; do
     mkdir -p "$1/$(dirname "$f")"
     cp "$f" "$1/$f"
   done

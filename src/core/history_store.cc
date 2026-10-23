@@ -505,6 +505,118 @@ std::vector<HistoryMatch> HistoryStore::RecentPages(std::size_t limit) {
   return pages;
 }
 
+std::vector<HistorySite> HistoryStore::Sites() {
+  std::vector<HistorySite> sites;
+  Error error;
+  std::optional<SqliteStatement> query = db_->Prepare(
+      "SELECT host, sum(visit_count), count(*), max(last_visit) FROM urls "
+      "GROUP BY host ORDER BY max(last_visit) DESC",
+      error);
+  if (!query) {
+    return sites;
+  }
+  while (query->Step()) {
+    sites.push_back({.host = query->ColumnText(0),
+                     .visit_count = query->ColumnInt(1),
+                     .page_count = query->ColumnInt(2),
+                     .last_visit = query->ColumnInt(3)});
+  }
+  return sites;
+}
+
+std::vector<HistoryMatch> HistoryStore::PagesOfHost(std::string_view host) {
+  std::vector<HistoryMatch> pages;
+  Error error;
+  std::optional<SqliteStatement> query = db_->Prepare(
+      "SELECT url, title, visit_count, typed_count, last_visit FROM urls "
+      "WHERE host = ?1 ORDER BY last_visit DESC",
+      error);
+  if (!query) {
+    return pages;
+  }
+  query->Bind(1, host);
+  while (query->Step()) {
+    pages.push_back({.url = query->ColumnText(0),
+                     .title = query->ColumnText(1),
+                     .visit_count = query->ColumnInt(2),
+                     .typed_count = query->ColumnInt(3),
+                     .last_visit = query->ColumnInt(4),
+                     .inline_completion = {}});
+  }
+  return pages;
+}
+
+std::vector<HistoryVisit> HistoryStore::Visits(std::int64_t before,
+                                               std::size_t limit) {
+  std::vector<HistoryVisit> visits;
+  Error error;
+  std::optional<SqliteStatement> query = db_->Prepare(
+      "SELECT visits.id, urls.url, urls.title, urls.host, visits.visit_time, "
+      "visits.transition FROM visits JOIN urls ON urls.id = visits.url_id "
+      "WHERE ?1 = 0 OR visits.visit_time < ?1 "
+      "ORDER BY visits.visit_time DESC, visits.id DESC LIMIT ?2",
+      error);
+  if (!query) {
+    return visits;
+  }
+  query->Bind(1, before);
+  query->Bind(2, static_cast<std::int64_t>(limit));
+  while (query->Step()) {
+    std::int64_t transition = query->ColumnInt(5);
+    visits.push_back(
+        {.id = query->ColumnInt(0),
+         .url = query->ColumnText(1),
+         .title = query->ColumnText(2),
+         .host = query->ColumnText(3),
+         .time = query->ColumnInt(4),
+         .transition = transition >= 0 && transition <= 4
+                           ? static_cast<VisitTransition>(transition)
+                           : VisitTransition::kOther});
+  }
+  return visits;
+}
+
+int HistoryStore::DeleteHost(std::string_view host) {
+  Error error;
+  std::optional<SqliteStatement> remove =
+      db_->Prepare("DELETE FROM urls WHERE host = ?1", error);
+  if (!remove) {
+    return 0;
+  }
+  remove->Bind(1, host);
+  return remove->Run() ? db_->changes() : 0;
+}
+
+int HistoryStore::DeleteVisits(std::span<const std::int64_t> ids) {
+  Error error;
+  std::optional<SqliteStatement> remove =
+      db_->Prepare("DELETE FROM visits WHERE id = ?1", error);
+  if (!remove) {
+    return 0;
+  }
+  int removed = 0;
+  for (std::int64_t id : ids) {
+    remove->Reset();
+    remove->Bind(1, id);
+    if (remove->Run()) {
+      removed += db_->changes();
+    }
+  }
+  if (removed > 0) {
+    db_->Execute(
+        "BEGIN;"
+        "DELETE FROM urls WHERE id NOT IN (SELECT url_id FROM visits);"
+        "UPDATE urls SET"
+        "  visit_count = (SELECT count(*) FROM visits WHERE url_id = urls.id),"
+        "  typed_count = (SELECT count(*) FROM visits"
+        "    WHERE url_id = urls.id AND transition = 1),"
+        "  last_visit = (SELECT max(visit_time) FROM visits"
+        "    WHERE url_id = urls.id);"
+        "COMMIT;");
+  }
+  return removed;
+}
+
 std::optional<HistoryMatch> HistoryStore::FindPage(std::string_view url) {
   Error error;
   std::optional<SqliteStatement> query = db_->Prepare(

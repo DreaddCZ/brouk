@@ -23,6 +23,7 @@
 #include "brouk/app_info.h"
 #include "cef/browser_app.h"
 #include "cef/devtools_preferences.h"
+#include "cef/history_page_handler.h"
 #include "cef/history_service.h"
 #include "cef/internal_scheme.h"
 #include "cef/profile_manager_handler.h"
@@ -93,6 +94,8 @@
 - (void)revealSettingsFolder;
 - (void)exportSettingsWithDone:(brouk::SettingsPageDelegate::FileDone)done;
 - (void)importSettingsWithDone:(brouk::SettingsPageDelegate::FileDone)done;
+- (std::vector<brouk::ProfileInfo>)allProfiles;
+- (std::string)historyView;
 @end
 
 namespace brouk {
@@ -170,6 +173,42 @@ class AppProfileManager : public ProfileManagerDelegate {
  private:
   static constexpr char kClosing[] = "Brouk is closing.";
   __weak BRAppDelegate* app_;
+};
+
+// Answers one history tab's page (013). Actions go to the (weak) app
+// delegate and the window holding the tab.
+class AppHistoryPage : public HistoryPageDelegate {
+ public:
+  AppHistoryPage(BRAppDelegate* app,
+                 BRBrowserWindowController* controller,
+                 TabId tab)
+      : app_(app), controller_(controller), tab_(tab) {}
+
+  std::vector<ProfileInfo> Profiles() override {
+    BRAppDelegate* app = app_;
+    return app ? [app allProfiles] : std::vector<ProfileInfo>{};
+  }
+  HistoryService* History() override { return [app_ historyService]; }
+  void OpenPage(const ProfileId& profile,
+                const std::string& url,
+                bool new_tab) override {
+    [controller_ openPage:@(url.c_str())
+                  profile:profile
+                   newTab:new_tab
+              fromHistory:tab_];
+  }
+  std::string View() override {
+    BRAppDelegate* app = app_;
+    return app ? [app historyView] : "site";
+  }
+  void SetView(const std::string& view) override {
+    [app_ setGlobalSetting:"history.view" value:SettingValue(view)];
+  }
+
+ private:
+  __weak BRAppDelegate* app_;
+  __weak BRBrowserWindowController* controller_;
+  TabId tab_;
 };
 
 // Answers the settings page. The registry outlives the page; actions go to
@@ -1098,6 +1137,29 @@ class AppSettingsPage : public SettingsPageDelegate {
   return _history.get();
 }
 
+- (std::vector<brouk::ProfileInfo>)allProfiles {
+  return _profiles->profiles();
+}
+
+- (std::string)historyView {
+  return _profiles->global_settings().GetString("history.view");
+}
+
+- (CefRefPtr<CefRequestContext>)internalPagesContext {
+  return [self internalContext];
+}
+
+- (std::unique_ptr<CefMessageRouterBrowserSide::Handler>)
+    internalPageHandler:(NSString*)page
+                  tabId:(brouk::TabId)tabId
+             controller:(BRBrowserWindowController*)controller {
+  if ([page isEqualToString:@"history"]) {
+    return std::make_unique<brouk::HistoryPageHandler>(
+        std::make_unique<brouk::AppHistoryPage>(self, controller, tabId));
+  }
+  return nullptr;
+}
+
 #pragma mark - History menu (013)
 
 - (void)historyChangedForProfile:(const brouk::ProfileId&)profile {
@@ -1931,6 +1993,10 @@ class AppSettingsPage : public SettingsPageDelegate {
          action:@selector(goHome:)
        shortcut:@"home"];
   [history addItem:NSMenuItem.separatorItem];
+  [self addItem:history
+          title:@"Show Full History"
+         action:@selector(showHistory:)
+       shortcut:@"show_history"];
   [self addItem:history
           title:@"Reopen Closed Tab"
          action:@selector(reopenClosedTab:)

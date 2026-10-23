@@ -48,5 +48,11 @@ TEST(InternalPagesTest, MimeTypes) {
   EXPECT_EQ(InternalResourceMimeType("a/x.svg"), "image/svg+xml");
 }
 
+TEST(InternalPagesTest, HistoryPageExists) {
+  EXPECT_TRUE(IsInternalPageUrl("brouk://history/"));
+  EXPECT_EQ(InternalPageOf("brouk://history/"), "history");
+  EXPECT_EQ(InternalResourcePath("brouk://history/"), "history/index.html");
+}
+
 }  // namespace
 }  // namespace brouk
