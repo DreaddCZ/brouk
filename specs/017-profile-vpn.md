@@ -22,6 +22,7 @@ Reach a client's internal sites over the client's VPN **from one profile only**,
 ### VPN connections
 
 - A **VPN connection** is a named, global definition: name, type, server or config file, username, routing and the start/stop behaviour.
+- **One profile, one VPN:** a connection is used by at most one profile, and a profile uses at most one connection. Choosing a connection that another profile already uses is not allowed; the user duplicates the connection instead.
 - Connections are managed on a "VPN connections" page in settings: add, edit, duplicate, delete, test, connect, disconnect, show log.
 - A connection can be **imported** from the file the client gives: `.ovpn` (OpenVPN) or a WireGuard `.conf`. For OpenConnect types, the user enters the server address and the protocol.
 - Supported types, each run by an external tool in **user space** (no network extension, no TUN device, no admin password, the OS routing table never changes):
@@ -41,7 +42,7 @@ Reach a client's internal sites over the client's VPN **from one profile only**,
 ### Connecting and disconnecting
 
 - By default a connection starts **when the profile first needs the network** (the first tab or request of that profile). It can be set to start when Brouk starts instead.
-- By default it stops when the last tab of every profile using it closes. It can also stop after a set idle time, or stay connected until Brouk quits.
+- By default it stops when the last tab of its profile closes. It can also stop after a set idle time, or stay connected until Brouk quits.
 - It can always be connected, disconnected and reconnected by hand: from the profile group's menu in the tab strip, from the Profiles menu, and from the VPN connections page.
 - When the helper exits unexpectedly, Brouk reconnects automatically: up to 3 tries, with increasing delays, then it stops and shows the failure.
 - Quitting Brouk stops all helpers; no helper keeps running after Brouk ends, also after a crash (helpers are started so that they end with Brouk).
@@ -80,6 +81,7 @@ Reach a client's internal sites over the client's VPN **from one profile only**,
 ## Acceptance criteria
 
 - [ ] A profile's network route can be set to Direct, a VPN connection or a proxy; Direct is the default.
+- [ ] A connection already used by one profile cannot be chosen for another profile.
 - [ ] With a VPN profile connected, the OS routing table, DNS settings and network interfaces are unchanged, and no admin password is asked for.
 - [ ] Sites opened in a VPN profile are reached through the tunnel (the "what is my IP" check shows the VPN's address); at the same time, sites opened in another profile, in the same window, show the normal address.
 - [ ] Other apps on the Mac (for example `curl` in Terminal) are not affected by the connection.
@@ -126,8 +128,6 @@ Per profile (`profiles/<id>/settings.yaml`):
 ## Open questions
 
 1. **OpenVPN backend and tool installation (to investigate later):** OpenVPN has no user-space proxy mode on macOS. The first idea was to run it in a container (Docker Desktop, OrbStack or Colima) with a small SOCKS server, but most colleagues have no admin rights, so they may not be able to install a container runtime, and possibly not Homebrew tools either. The user will find out what colleagues have on their computers. Depending on that: a container, bundling the tools inside Brouk in phase 2 (licences and signing to check), or an own OpenVPN client (OpenVPN 3 core plus a user-space network stack, much more work). Until then, OpenVPN is specified but not built.
-2. **One connection, several profiles:** may two profiles use the same connection at once (sharing one tunnel), or should each profile get its own?
-3. **Priority and place in the roadmap.**
 
 ## Notes
 
@@ -142,4 +142,5 @@ Per profile (`profiles/<id>/settings.yaml`):
 - The tools are separate programs run by Brouk, not linked into it, so their licences (`openconnect` is LGPL-2.1, `wireproxy` ISC, `ocproxy` BSD) do not conflict with the library licence rule in `CLAUDE.md`, as with the Bitwarden CLI (008).
 - 2026-10-24 (user's answers): clients mostly use FortiClient, OpenVPN and Cisco, so these come first. The local proxy port on `127.0.0.1` is acceptable: other programs of the same user could use the tunnel while it is up (Chromium cannot authenticate to a SOCKS5 proxy), mitigated by a random port and stopping when unused. Single sign-on happens in a Brouk window of the VPN profile. OpenVPN, and how colleagues without admin rights get the tools, is left for investigation.
 - FortiClient: `openconnect --protocol=fortinet` covers FortiGate **SSL VPN** only. If a client's FortiGate offers only IPsec (IKE), it is not supported; check which one each client uses. `openfortivpn` is not an option, as it needs `pppd` with root.
+- 2026-10-24 (user's decision): one profile, one VPN; a connection is never shared by two profiles. The spec goes to the later part of the roadmap, after the user has checked what is possible on company computers (open question 1).
 - Help text for this feature will be needed (rule 7 in `CLAUDE.md`).
