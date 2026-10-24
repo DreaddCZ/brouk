@@ -742,7 +742,8 @@ class AppSettingsPage : public SettingsPageDelegate {
       [profilesDir](const brouk::ProfileId& profile) {
         return profilesDir / profile / "passwords.db";
       },
-      brouk::mac::CreateKeychain(brouk::mac::KeychainServiceName()));
+      brouk::mac::CreateDevKeychainIfRequested()
+          ?: brouk::mac::CreateKeychain(brouk::mac::KeychainServiceName()));
   __weak BRAppDelegate* weakApp = self;
   _passwords->SetOfferToSave([weakApp](const brouk::ProfileId& profile) {
     BRAppDelegate* app = weakApp;

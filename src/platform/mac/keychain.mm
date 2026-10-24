@@ -8,6 +8,8 @@
 #include <string_view>
 
 #include "brouk/app_info.h"
+#include "core/json.h"
+#include "include/cef_command_line.h"
 
 namespace brouk::mac {
 
@@ -94,7 +96,78 @@ class Keychain : public SecretStore {
   NSString* service_;
 };
 
+// Keys as JSON in a file; for test runs only (see the header).
+class DevKeychain : public SecretStore {
+ public:
+  explicit DevKeychain(NSString* path) : path_([path copy]) {}
+
+  Result<std::optional<std::string>> Read(std::string_view account) override {
+    JsonValue items = Load();
+    if (const JsonValue* item = items.Find(account)) {
+      return std::optional<std::string>(item->string);
+    }
+    return std::optional<std::string>();
+  }
+  std::optional<Error> Write(std::string_view account,
+                             std::string_view secret) override {
+    JsonValue items = Load();
+    JsonValue updated = JsonValue::Object();
+    for (const JsonMember& member : items.members) {
+      if (member.key != account) {
+        updated.Add(member.key, member.value);
+      }
+    }
+    updated.Add(std::string(account), JsonValue::String(std::string(secret)));
+    return Save(updated);
+  }
+  std::optional<Error> Remove(std::string_view account) override {
+    JsonValue items = Load();
+    JsonValue updated = JsonValue::Object();
+    for (const JsonMember& member : items.members) {
+      if (member.key != account) {
+        updated.Add(member.key, member.value);
+      }
+    }
+    return Save(updated);
+  }
+
+ private:
+  JsonValue Load() {
+    NSData* data = [NSData dataWithContentsOfFile:path_];
+    if (!data) {
+      return JsonValue::Object();
+    }
+    Result<JsonValue> parsed = ParseJsonDocument(
+        std::string_view(static_cast<const char*>(data.bytes), data.length));
+    return parsed && parsed.value().kind == JsonValue::Kind::kObject
+               ? parsed.value()
+               : JsonValue::Object();
+  }
+  std::optional<Error> Save(const JsonValue& items) {
+    std::string text = WriteJsonDocument(items);
+    NSData* data = [NSData dataWithBytes:text.data() length:text.size()];
+    if (![data writeToFile:path_ atomically:YES]) {
+      return Error{"The test keychain file could not be written."};
+    }
+    return std::nullopt;
+  }
+
+  NSString* path_;
+};
+
 }  // namespace
+
+std::shared_ptr<SecretStore> CreateDevKeychainIfRequested() {
+  const char* dev_dir = std::getenv("BROUK_DEV_DATA_DIR");
+  CefRefPtr<CefCommandLine> command_line =
+      CefCommandLine::GetGlobalCommandLine();
+  if (!dev_dir || dev_dir[0] != '/' || !command_line ||
+      !command_line->HasSwitch("use-mock-keychain")) {
+    return nullptr;
+  }
+  return std::make_shared<DevKeychain>(
+      [@(dev_dir) stringByAppendingPathComponent:@"dev-keychain.json"]);
+}
 
 NSString* KeychainServiceName() {
   NSString* service = [NSString stringWithFormat:@"%s Keys", kAppName];

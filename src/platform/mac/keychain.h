@@ -20,6 +20,12 @@ NSString* KeychainServiceName();
 
 std::shared_ptr<SecretStore> CreateKeychain(NSString* service);
 
+// For developer test runs only (BROUK_DEV_DATA_DIR together with Chromium's
+// --use-mock-keychain): keys in a file in the test data folder, so a test
+// copy never waits for a keychain prompt after a rebuild. nullptr when not
+// such a run.
+std::shared_ptr<SecretStore> CreateDevKeychainIfRequested();
+
 }  // namespace brouk::mac
 
 NS_ASSUME_NONNULL_END
