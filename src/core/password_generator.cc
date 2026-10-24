@@ -21,6 +21,30 @@ char RandomFrom(std::string_view alphabet) {
 
 }  // namespace
 
+PasswordRules PasswordRulesFromSettings(int length,
+                                        std::string_view characters) {
+  PasswordRules rules{length, false, false, false, false};
+  while (!characters.empty()) {
+    std::size_t comma = characters.find(',');
+    std::string_view word = characters.substr(0, comma);
+    while (!word.empty() && word.front() == ' ') {
+      word.remove_prefix(1);
+    }
+    while (!word.empty() && word.back() == ' ') {
+      word.remove_suffix(1);
+    }
+    rules.upper = rules.upper || word == "upper";
+    rules.lower = rules.lower || word == "lower";
+    rules.digits = rules.digits || word == "digits";
+    rules.symbols = rules.symbols || word == "symbols";
+    if (comma == std::string_view::npos) {
+      break;
+    }
+    characters.remove_prefix(comma + 1);
+  }
+  return rules;
+}
+
 std::string GeneratePassword(const PasswordRules& rules) {
   std::vector<std::string_view> kinds;
   if (rules.upper) {

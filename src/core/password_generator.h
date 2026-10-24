@@ -2,6 +2,7 @@
 #define BROUK_CORE_PASSWORD_GENERATOR_H_
 
 #include <string>
+#include <string_view>
 
 namespace brouk {
 
@@ -13,6 +14,12 @@ struct PasswordRules {
   bool digits = true;
   bool symbols = true;
 };
+
+// The rules from the settings passwords.generated_length and
+// passwords.generated_characters ("upper, lower, digits, symbols"; unknown
+// words are ignored).
+PasswordRules PasswordRulesFromSettings(int length,
+                                        std::string_view characters);
 
 // A random password with at least one character of every enabled kind.
 // Like Chrome, it leaves out characters that are easy to confuse (l, I, O,

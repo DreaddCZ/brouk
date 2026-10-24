@@ -48,5 +48,17 @@ TEST(PasswordGeneratorTest, FollowsRules) {
   }));
 }
 
+TEST(PasswordGeneratorTest, RulesFromSettings) {
+  PasswordRules rules = PasswordRulesFromSettings(16, " lower,digits , bogus");
+  EXPECT_EQ(rules.length, 16);
+  EXPECT_FALSE(rules.upper);
+  EXPECT_TRUE(rules.lower);
+  EXPECT_TRUE(rules.digits);
+  EXPECT_FALSE(rules.symbols);
+  PasswordRules all =
+      PasswordRulesFromSettings(20, "upper, lower, digits, symbols");
+  EXPECT_TRUE(all.upper && all.lower && all.digits && all.symbols);
+}
+
 }  // namespace
 }  // namespace brouk

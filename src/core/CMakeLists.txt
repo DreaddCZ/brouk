@@ -61,6 +61,8 @@ set(BROUK_CORE_SOURCES
   password_checkup.h
   password_csv.cc
   password_csv.h
+  password_forms.cc
+  password_forms.h
   password_generator.cc
   password_generator.h
   password_profile.cc

@@ -46,6 +46,7 @@ add_executable(brouk_core_tests
   core/page_events_test.cc
   core/password_checkup_test.cc
   core/password_csv_test.cc
+  core/password_forms_test.cc
   core/password_generator_test.cc
   core/password_profile_test.cc
   core/password_store_test.cc
