@@ -41,6 +41,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 014 | [Downloads](014-downloads.md) | ready | P2 |
 | 015 | [Session restore](015-session-restore.md) | done | P1 |
 | 016 | [Help](016-help.md) | ready | P2 |
+| 017 | [VPN per profile](017-profile-vpn.md) | draft | P2 |
 
 ## Roadmap
 
