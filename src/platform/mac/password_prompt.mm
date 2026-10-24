@@ -124,7 +124,7 @@ std::string ToString(NSString* s) {
   controller.view = content;
   _popover = [[NSPopover alloc] init];
   _popover.contentViewController = controller;
-  _popover.behavior = NSPopoverBehaviorTransient;
+  _popover.behavior = NSPopoverBehaviorSemitransient;
   _popover.delegate = self;
   [_popover showRelativeToRect:anchor.bounds
                         ofView:anchor
