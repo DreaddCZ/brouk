@@ -3,6 +3,8 @@
 #import "platform/mac/bookmark_dialogs.h"
 #import "platform/mac/bookmarks_bar.h"
 
+#include "core/adblock_policy.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -2525,6 +2527,35 @@ static std::int64_t Now() {
                            }
                          }];
                        }];
+}
+
+#pragma mark - Ad blocking (007)
+
+- (nullable const brouk::AdblockService*)adblockService {
+  return [_owner adblockService];
+}
+
+- (void)tabAdblockChanged:(BRTab*)tab {
+  if (tab == [self activeTab]) {
+    [self updateToolbar];
+  }
+}
+
+- (NSString*)adblockListName:(const std::string&)listId {
+  brouk::AdblockService* service = [_owner adblockService];
+  std::string name = service ? service->ListName(listId) : listId;
+  return @(name.c_str()) ?: @"";
+}
+
+// "Allow this site" on the blocked page: off for the site in the tab's
+// profile, then the page loads.
+- (void)tab:(BRTab*)tab allowSiteOf:(NSString*)url {
+  std::string host = brouk::HostOfUrl(url.UTF8String ?: "");
+  if (host.empty()) {
+    return;
+  }
+  [_owner allowAdblockSite:host inProfile:tab.profileId];
+  [self navigateTab:tab toURL:url typed:NO];
 }
 
 #pragma mark - BRBookmarksBarDelegate

@@ -9,6 +9,8 @@ set(APP_BUNDLE "${CMAKE_BINARY_DIR}/${APP_NAME}.app")
 set(HELPER_NAME_BASE "${APP_NAME} Helper")
 
 add_executable(brouk_app
+  adblock_blocked_view.h
+  adblock_blocked_view.mm
   address_field.h
   address_field.mm
   bookmark_dialogs.h

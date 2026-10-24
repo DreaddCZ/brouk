@@ -14,6 +14,7 @@
 #include <utility>
 #include <vector>
 
+#include "cef/function_task.h"
 #include "include/cef_request_context.h"
 #include "include/cef_task.h"
 #include "include/wrapper/cef_helpers.h"
@@ -30,17 +31,6 @@ constexpr std::string_view kResourcesUrl =
 // lists are checked hourly; each is downloaded when due (007).
 constexpr int64_t kFirstCheckMs = int64_t{15} * 1000;
 constexpr int64_t kCheckEveryMs = int64_t{60} * 60 * 1000;
-
-class FunctionTask : public CefTask {
- public:
-  explicit FunctionTask(std::function<void()> function)
-      : function_(std::move(function)) {}
-  void Execute() override { function_(); }
-
- private:
-  std::function<void()> function_;
-  IMPLEMENT_REFCOUNTING(FunctionTask);
-};
 
 std::int64_t Now() {
   return std::chrono::duration_cast<std::chrono::seconds>(
@@ -204,11 +194,53 @@ void AdblockService::SetChangedCallback(std::function<void()> changed) {
   changed_ = std::move(changed);
 }
 
+void AdblockService::SetPolicies(
+    std::map<ProfileId, ProfileAdblockPolicy> policies,
+    std::vector<std::string> protected_hosts) {
+  CEF_REQUIRE_UI_THREAD();
+  std::scoped_lock lock(policies_mutex_);
+  policies_.clear();
+  for (auto& [profile, policy] : policies) {
+    policies_[profile] =
+        std::make_shared<const ProfileAdblockPolicy>(std::move(policy));
+  }
+  protected_hosts_ = std::make_shared<const std::vector<std::string>>(
+      std::move(protected_hosts));
+}
+
+std::shared_ptr<const ProfileAdblockPolicy> AdblockService::PolicyFor(
+    const ProfileId& profile) const {
+  std::scoped_lock lock(policies_mutex_);
+  auto it = policies_.find(profile);
+  return it == policies_.end() ? nullptr : it->second;
+}
+
+std::shared_ptr<const std::vector<std::string>> AdblockService::ProtectedHosts()
+    const {
+  std::scoped_lock lock(policies_mutex_);
+  return protected_hosts_;
+}
+
+std::string AdblockService::ListName(const std::string& id) const {
+  if (id == kMyFiltersId) {
+    return "My filters";
+  }
+  std::scoped_lock lock(policies_mutex_);
+  auto it = list_names_.find(id);
+  return it == list_names_.end() ? id : it->second;
+}
+
 void AdblockService::Configure(
     std::vector<FilterListDef> lists,
     std::vector<std::set<FilterCategory>> category_sets) {
   CEF_REQUIRE_UI_THREAD();
   lists_ = lists;
+  {
+    std::scoped_lock lock(policies_mutex_);
+    for (const FilterListDef& list : lists) {
+      list_names_[list.id] = list.name;
+    }
+  }
   std::shared_ptr<bool> alive = alive_;
   Post([this, alive, lists = std::move(lists),
         sets = std::move(category_sets)](State& state) {

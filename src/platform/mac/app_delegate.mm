@@ -1953,6 +1953,28 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
   [self configureAdblock];
 }
 
+// Each profile's blocking switch, categories and allowlist, for the
+// requests checked on the IO thread.
+- (void)updateAdblockPolicies {
+  std::map<brouk::ProfileId, brouk::ProfileAdblockPolicy> policies;
+  for (const brouk::ProfileInfo& profile : _profiles->profiles()) {
+    std::optional<brouk::Settings> settings =
+        _profiles->ProfileSettings(profile.id);
+    if (!settings) {
+      continue;
+    }
+    policies[profile.id] = {
+        .enabled = settings->GetBool("adblock.enabled"),
+        .categories = brouk::ParseFilterCategories(
+            settings->GetString("adblock.categories")),
+        .allowlist =
+            brouk::ParseUrlPatternList(settings->GetString("adblock.allowlist"))
+                .value_or(std::vector<brouk::UrlPattern>{})};
+  }
+  // Hosts of routing rules join with 010.
+  _adblock->SetPolicies(std::move(policies), {});
+}
+
 // The lists in use (global settings, the system language) and the category
 // sets of the profiles that block (007).
 - (void)configureAdblock {
@@ -1999,6 +2021,7 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
     signature += "|" + brouk::FormatFilterCategories(categories);
     sets.push_back(std::move(categories));
   }
+  [self updateAdblockPolicies];
   if (signature == _adblockConfiguration) {
     return;
   }
@@ -2008,6 +2031,26 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
 
 - (nullable brouk::AdblockService*)adblockService {
   return _adblock.get();
+}
+
+// Adds a site to a profile's allowlist (the shield popup, the blocked page).
+- (void)allowAdblockSite:(const std::string&)host
+               inProfile:(const brouk::ProfileId&)profile {
+  std::optional<brouk::Settings> settings = _profiles->ProfileSettings(profile);
+  if (!settings) {
+    return;
+  }
+  std::string list = settings->GetString("adblock.allowlist");
+  std::optional<std::vector<brouk::UrlPattern>> patterns =
+      brouk::ParseUrlPatternList(list);
+  if (patterns &&
+      brouk::MatchesAnyPattern(*patterns, "https://" + host + "/")) {
+    return;
+  }
+  list += list.empty() ? host : ", " + host;
+  [self setProfileSetting:"adblock.allowlist"
+                  profile:profile
+                    value:brouk::SettingValue(list)];
 }
 
 - (std::vector<brouk::ProfileManagerDelegate::Summary>)profileSummaries {

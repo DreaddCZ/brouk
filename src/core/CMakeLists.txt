@@ -7,6 +7,8 @@ set(BROUK_CORE_SOURCES
   adblock_engine.h
   adblock_lists.cc
   adblock_lists.h
+  adblock_policy.cc
+  adblock_policy.h
   adblock_store.cc
   adblock_store.h
   address_input.cc

@@ -13,7 +13,9 @@
 
 #include "core/adblock_engine.h"
 #include "core/adblock_lists.h"
+#include "core/adblock_policy.h"
 #include "core/adblock_store.h"
+#include "core/profile_id.h"
 #include "include/cef_thread.h"
 #include "include/cef_urlrequest.h"
 
@@ -49,6 +51,17 @@ class AdblockService {
   // Any thread (requests are checked on the IO thread).
   std::shared_ptr<const ActiveAdblockEngine> EngineFor(
       const std::set<FilterCategory>& categories) const;
+
+  // How each profile blocks, and hosts never blocked by broad rules (the
+  // hosts of routing rules, 010). UI thread.
+  void SetPolicies(std::map<ProfileId, ProfileAdblockPolicy> policies,
+                   std::vector<std::string> protected_hosts);
+  // Any thread. Null for a profile without a policy (not blocking).
+  std::shared_ptr<const ProfileAdblockPolicy> PolicyFor(
+      const ProfileId& profile) const;
+  std::shared_ptr<const std::vector<std::string>> ProtectedHosts() const;
+  // Which list an id is, for messages ("EasyList"). Any thread.
+  std::string ListName(const std::string& id) const;
 
   // Downloads every list now ("Update now" in settings).
   void UpdateNow();
@@ -86,6 +99,13 @@ class AdblockService {
     std::map<std::string, std::shared_ptr<const ActiveAdblockEngine>> by_key;
   };
   std::shared_ptr<Engines> engines_;
+
+  // Read on any thread.
+  mutable std::mutex policies_mutex_;  // Guards the three below.
+  std::map<ProfileId, std::shared_ptr<const ProfileAdblockPolicy>> policies_;
+  std::shared_ptr<const std::vector<std::string>> protected_hosts_ =
+      std::make_shared<const std::vector<std::string>>();
+  std::map<std::string, std::string> list_names_;
 
   // UI thread.
   std::vector<FilterListDef> lists_;

@@ -20,6 +20,7 @@ include(GoogleTest)
 add_executable(brouk_core_tests
   core/adblock_engine_test.cc
   core/adblock_lists_test.cc
+  core/adblock_policy_test.cc
   core/adblock_store_test.cc
   core/address_input_test.cc
   core/address_suggestions_test.cc
