@@ -24,6 +24,7 @@ compile() {  # compile <dir>
   "$TSC" -p tsconfig.json --outDir "$1"
   # The JSON viewer is a plain script, compiled on its own (see its file).
   "$TSC" -p jsonview/tsconfig.json --outDir "$1"
+  "$TSC" -p adblock/tsconfig.json --outDir "$1"
   # The Requests tool shows response bodies with it too.
   cp "$1/jsonview/viewer.js" "$1/shared/json_viewer.js"
   # Pages and styles next to their scripts.
@@ -45,6 +46,15 @@ case "${1:-}" in
     # Node runs the compiled ES modules as modules.
     echo '{"type": "module"}' > "$out/package.json"
     find "$out" -name '*.test.js' -print0 | xargs -0 node --test
+    ;;
+  adblock)
+    # The cosmetic filtering script alone, for embedding into the renderer.
+    out="${2:?usage: scripts/web adblock <out-file>}"
+    tmp="$(mktemp -d)"
+    "$TSC" -p adblock/tsconfig.json --outDir "$tmp"
+    mkdir -p "$(dirname "$out")"
+    cp "$tmp/adblock/cosmetic.js" "$out"
+    rm -rf "$tmp"
     ;;
   jsonview)
     # The JSON viewer script alone, for embedding into the renderer.

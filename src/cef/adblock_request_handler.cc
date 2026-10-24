@@ -8,6 +8,7 @@
 
 #include "core/adblock_policy.h"
 #include "core/url_pattern.h"
+#include "include/cef_parser.h"
 #include "include/cef_stream.h"
 #include "include/wrapper/cef_helpers.h"
 #include "include/wrapper/cef_stream_resource_handler.h"
@@ -166,6 +167,119 @@ CefRefPtr<CefResourceRequestHandler> CheckAdblockRequest(
                                              decision.rewritten_url);
   }
   return nullptr;
+}
+
+namespace {
+
+// The engine applying to a page in a profile: blocking on, the site not
+// allowlisted, the lists there.
+std::shared_ptr<const ActiveAdblockEngine> EngineForPage(
+    const AdblockService& service,
+    const ProfileId& profile,
+    const std::string& page_url) {
+  if (!page_url.starts_with("http://") && !page_url.starts_with("https://")) {
+    return nullptr;
+  }
+  std::shared_ptr<const ProfileAdblockPolicy> policy =
+      service.PolicyFor(profile);
+  if (!policy || !policy->enabled ||
+      MatchesAnyPattern(policy->allowlist, page_url)) {
+    return nullptr;
+  }
+  return service.EngineFor(policy->categories);
+}
+
+CefRefPtr<CefListValue> StringList(const CefRefPtr<CefDictionaryValue>& from,
+                                   const char* key) {
+  CefRefPtr<CefListValue> list = CefListValue::Create();
+  if (from && from->GetType(key) == VTYPE_LIST) {
+    CefRefPtr<CefListValue> source = from->GetList(key);
+    for (std::size_t i = 0; i < source->GetSize(); ++i) {
+      if (source->GetType(i) == VTYPE_STRING) {
+        list->SetString(list->GetSize(), source->GetString(i));
+      }
+    }
+  }
+  return list;
+}
+
+std::string WriteJson(const CefRefPtr<CefDictionaryValue>& dictionary) {
+  CefRefPtr<CefValue> value = CefValue::Create();
+  value->SetDictionary(dictionary);
+  return CefWriteJSON(value, JSON_WRITER_DEFAULT).ToString();
+}
+
+}  // namespace
+
+std::optional<AdblockCosmeticAnswer> AdblockCosmeticFor(
+    const AdblockService& service,
+    const ProfileId& profile,
+    const std::string& frame_url,
+    const std::string& page_url) {
+  std::shared_ptr<const ActiveAdblockEngine> engine =
+      EngineForPage(service, profile, page_url);
+  if (!engine || (!frame_url.starts_with("http://") &&
+                  !frame_url.starts_with("https://"))) {
+    return std::nullopt;
+  }
+  std::string text = engine->engine->CosmeticResourcesJson(frame_url);
+  CefRefPtr<CefValue> parsed =
+      text.empty() ? nullptr : CefParseJSON(text, JSON_PARSER_RFC);
+  CefRefPtr<CefDictionaryValue> resources =
+      parsed && parsed->GetType() == VTYPE_DICTIONARY ? parsed->GetDictionary()
+                                                      : nullptr;
+  if (!resources) {
+    return std::nullopt;
+  }
+  CefRefPtr<CefDictionaryValue> answer = CefDictionaryValue::Create();
+  answer->SetList("hide", StringList(resources, "hide_selectors"));
+  answer->SetList("procedural", StringList(resources, "procedural_actions"));
+  answer->SetList("exceptions", StringList(resources, "exceptions"));
+  answer->SetBool("generichide",
+                  resources->GetType("generichide") == VTYPE_BOOL &&
+                      resources->GetBool("generichide"));
+  AdblockCosmeticAnswer result;
+  result.json = WriteJson(answer);
+  if (resources->GetType("injected_script") == VTYPE_STRING) {
+    result.scriptlets = resources->GetString("injected_script").ToString();
+  }
+  return result;
+}
+
+std::optional<std::string> AdblockGenericSelectorsFor(
+    const AdblockService& service,
+    const ProfileId& profile,
+    const std::string& page_url,
+    const std::string& request_json) {
+  std::shared_ptr<const ActiveAdblockEngine> engine =
+      EngineForPage(service, profile, page_url);
+  if (!engine) {
+    return std::nullopt;
+  }
+  // Rebuilt from the page's (untrusted) request: strings only.
+  CefRefPtr<CefValue> parsed =
+      request_json.empty() ? nullptr
+                           : CefParseJSON(request_json, JSON_PARSER_RFC);
+  CefRefPtr<CefDictionaryValue> request =
+      parsed && parsed->GetType() == VTYPE_DICTIONARY ? parsed->GetDictionary()
+                                                      : nullptr;
+  if (!request) {
+    return std::nullopt;
+  }
+  CefRefPtr<CefDictionaryValue> clean = CefDictionaryValue::Create();
+  clean->SetList("classes", StringList(request, "classes"));
+  clean->SetList("ids", StringList(request, "ids"));
+  clean->SetList("exceptions", StringList(request, "exceptions"));
+  std::string selectors = engine->engine->HiddenSelectorsJson(WriteJson(clean));
+  CefRefPtr<CefValue> list =
+      selectors.empty() ? nullptr : CefParseJSON(selectors, JSON_PARSER_RFC);
+  if (!list || list->GetType() != VTYPE_LIST ||
+      list->GetList()->GetSize() == 0) {
+    return std::nullopt;
+  }
+  CefRefPtr<CefDictionaryValue> answer = CefDictionaryValue::Create();
+  answer->SetList("generic", list->GetList());
+  return WriteJson(answer);
 }
 
 }  // namespace brouk

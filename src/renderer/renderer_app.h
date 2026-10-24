@@ -46,6 +46,10 @@ class RendererApp : public CefApp, public CefRenderProcessHandler {
   // of the page's reach, so a page cannot fake an answer.
   void SetDisplayMediaHandler(CefRefPtr<CefV8Context> context,
                               CefRefPtr<CefV8Value> function);
+  // Cosmetic filtering (007): the page script's receiver for the browser's
+  // answers, kept out of the page's reach.
+  void SetAdblockReceiver(CefRefPtr<CefV8Context> context,
+                          CefRefPtr<CefV8Value> function);
 
  private:
   struct DisplayMediaHandler {
@@ -54,6 +58,10 @@ class RendererApp : public CefApp, public CefRenderProcessHandler {
   };
   // By frame identifier.
   std::map<std::string, DisplayMediaHandler> display_media_handlers_;
+  std::map<std::string, DisplayMediaHandler> adblock_receivers_;
+  void DeliverAdblockAnswer(const CefRefPtr<CefFrame>& frame,
+                            const std::string& json,
+                            const std::string& script);
   // The bridge of internal pages (window.cefQuery), added to brouk:// pages
   // only.
   CefRefPtr<CefMessageRouterRendererSide> router_;

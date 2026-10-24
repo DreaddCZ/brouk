@@ -92,13 +92,18 @@ void TabClient::DetachDelegate() {
   delegate_ = nullptr;
 }
 
-bool TabClient::OnProcessMessageReceived(CefRefPtr<CefBrowser> /*browser*/,
+bool TabClient::OnProcessMessageReceived(CefRefPtr<CefBrowser> browser,
                                          CefRefPtr<CefFrame> frame,
                                          CefProcessId source_process,
                                          CefRefPtr<CefProcessMessage> message) {
   CEF_REQUIRE_UI_THREAD();
-  if (source_process != PID_RENDERER ||
-      message->GetName().ToString() != kPageEventMessage) {
+  std::string name = message->GetName().ToString();
+  if (source_process == PID_RENDERER && frame && adblock_ &&
+      (name == kAdblockCosmeticRequest || name == kAdblockClassesRequest)) {
+    HandleAdblockMessage(browser, frame, name, message->GetArgumentList());
+    return true;
+  }
+  if (source_process != PID_RENDERER || name != kPageEventMessage) {
     return false;
   }
   // From a web page: untrusted, validated before use.
@@ -1042,6 +1047,46 @@ CefRefPtr<CefResourceRequestHandler> TabClient::GetResourceRequestHandler(
                 }));
   }
   return handler;
+}
+
+// A frame's page script asks for its cosmetic filters, or for generic
+// selectors (007). The frame's URL comes from the browser's own view of the
+// frame, never from the message. UI thread.
+void TabClient::HandleAdblockMessage(const CefRefPtr<CefBrowser>& browser,
+                                     const CefRefPtr<CefFrame>& frame,
+                                     const std::string& name,
+                                     const CefRefPtr<CefListValue>& args) {
+  CefRefPtr<CefFrame> main = browser ? browser->GetMainFrame() : nullptr;
+  std::string page_url = main ? main->GetURL().ToString() : "";
+  if (name == kAdblockCosmeticRequest) {
+    std::optional<AdblockCosmeticAnswer> answer = AdblockCosmeticFor(
+        *adblock_, adblock_profile_, frame->GetURL().ToString(), page_url);
+    if (!answer) {
+      return;
+    }
+    CefRefPtr<CefProcessMessage> reply =
+        CefProcessMessage::Create(std::string(kAdblockCosmeticAnswer));
+    reply->GetArgumentList()->SetString(0, answer->json);
+    reply->GetArgumentList()->SetString(1, answer->scriptlets);
+    frame->SendProcessMessage(PID_RENDERER, reply);
+    return;
+  }
+  if (!args || args->GetSize() != 1 || args->GetType(0) != VTYPE_STRING) {
+    return;
+  }
+  std::string request = args->GetString(0).ToString();
+  if (request.size() > kMaxAdblockClassesBytes) {
+    return;
+  }
+  std::optional<std::string> answer = AdblockGenericSelectorsFor(
+      *adblock_, adblock_profile_, page_url, request);
+  if (!answer) {
+    return;
+  }
+  CefRefPtr<CefProcessMessage> reply =
+      CefProcessMessage::Create(std::string(kAdblockClassesAnswer));
+  reply->GetArgumentList()->SetString(0, *answer);
+  frame->SendProcessMessage(PID_RENDERER, reply);
 }
 
 }  // namespace brouk

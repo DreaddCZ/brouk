@@ -1,0 +1,13 @@
+{
+  // The cosmetic filtering script is injected into web pages as a plain
+  // script (no imports or exports), so it is compiled on its own.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "moduleDetection": "legacy",
+    "isolatedModules": false,
+    "verbatimModuleSyntax": false,
+    "rootDir": "..",
+    "outDir": "../../build/web"
+  },
+  "include": ["cosmetic.ts"]
+}
