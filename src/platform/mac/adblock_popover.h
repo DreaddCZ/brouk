@@ -25,6 +25,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)addAdblockRule:(NSString*)rule;
 - (NSString*)adblockListName:(const std::string&)listId;
 - (void)reportBrokenSite;
+- (void)startElementPicker;
 - (void)openAdblockSettings;
 @end
 

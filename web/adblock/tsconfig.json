@@ -9,5 +9,5 @@
     "rootDir": "..",
     "outDir": "../../build/web"
   },
-  "include": ["cosmetic.ts"]
+  "include": ["cosmetic.ts", "picker.ts"]
 }

@@ -205,6 +205,10 @@ class TabClientDelegate {
   // third party; and a page load it blocked (the tab explains it).
   virtual void OnAdblockRequest(const AdblockRequestInfo& info) = 0;
   virtual void OnPageBlocked(const AdblockRequestInfo& info) = 0;
+  // The element picker picked `selector` on the page at `url`; the UI shows
+  // the rule for a last check before saving it.
+  virtual void OnElementPicked(const std::string& url,
+                               const std::string& selector) = 0;
 
   // A key event the page did not handle, with the native event (NSEvent* on
   // macOS). Return true if the UI handled it (e.g. as a menu shortcut).
@@ -236,6 +240,8 @@ class TabClient : public CefClient,
 
   // Ad blocking for the tab's requests (007), set before its browser is
   // created. `service` outlives every browser.
+  // The element picker (007), from the context menu or the shield popup.
+  void StartElementPicker(const CefRefPtr<CefBrowser>& browser);
   void SetAdblock(const AdblockService* service, ProfileId profile) {
     adblock_ = service;
     adblock_profile_ = std::move(profile);
@@ -419,6 +425,7 @@ class TabClient : public CefClient,
                             const CefRefPtr<CefListValue>& args);
 
   const AdblockService* adblock_ = nullptr;  // Read on the IO thread.
+  bool picker_active_ = false;               // UI thread.
   ProfileId adblock_profile_;
   // "Allow this time": a grant that ends when the tab leaves the site.
   struct OneTimeGrant {

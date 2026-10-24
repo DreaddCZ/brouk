@@ -48,6 +48,10 @@ inline constexpr std::string_view kAdblockClassesRequest =
     "brouk.adblock.classes";
 inline constexpr std::string_view kAdblockClassesAnswer =
     "brouk.adblock.classes-answer";
+// The element picker (007): browser -> renderer starts it in the main frame;
+// renderer -> browser carries the picked selector.
+inline constexpr std::string_view kAdblockPick = "brouk.adblock.pick";
+inline constexpr std::string_view kAdblockPicked = "brouk.adblock.picked";
 // The page script's classes request is cut off beyond this.
 inline constexpr std::size_t kMaxAdblockClassesBytes = std::size_t{256} * 1024;
 

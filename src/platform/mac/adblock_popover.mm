@@ -198,6 +198,10 @@ struct DomainStats {
   domainsTitle.font = [NSFont boldSystemFontOfSize:NSFont.smallSystemFontSize];
 
   // Links.
+  NSButton* pick = [NSButton buttonWithTitle:@"Block element…"
+                                      target:self
+                                      action:@selector(pick:)];
+  pick.enabled = toggle.state == NSControlStateValueOn && toggle.enabled;
   NSButton* list = [NSButton buttonWithTitle:@"Show blocked requests"
                                       target:self
                                       action:@selector(showRequests:)];
@@ -207,16 +211,17 @@ struct DomainStats {
   NSButton* settings = [NSButton buttonWithTitle:@"Blocker settings"
                                           target:self
                                           action:@selector(settings:)];
-  for (NSButton* button in @[ list, report, settings ]) {
+  for (NSButton* button in @[ pick, list, report, settings ]) {
     button.bezelStyle = NSBezelStyleInline;
     button.controlSize = NSControlSizeSmall;
   }
-  NSStackView* links =
-      [NSStackView stackViewWithViews:@[ list, report, settings ]];
+  NSStackView* links = [NSStackView stackViewWithViews:@[ pick, list ]];
   links.spacing = 6;
+  NSStackView* more = [NSStackView stackViewWithViews:@[ report, settings ]];
+  more.spacing = 6;
 
   NSStackView* stack = [NSStackView stackViewWithViews:@[
-    header, state, counts, domainsTitle, scroll, links
+    header, state, counts, domainsTitle, scroll, links, more
   ]];
   stack.orientation = NSUserInterfaceLayoutOrientationVertical;
   stack.alignment = NSLayoutAttributeLeading;
@@ -258,6 +263,11 @@ struct DomainStats {
   [BRAdblockRequestsWindow showRequests:[actions adblockPageRequests]
                                    host:[actions adblockPageHost]
                                 actions:actions];
+  [self.popover close];
+}
+
+- (void)pick:(id)sender {
+  [_actions startElementPicker];
   [self.popover close];
 }
 

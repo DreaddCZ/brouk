@@ -2677,6 +2677,53 @@ static std::int64_t Now() {
   [self openTabWithURL:url profile:tab.profileId activate:YES];
 }
 
+- (void)startElementPicker {
+  [[self activeTab] startElementPicker];
+}
+
+// The picked element's rule, shown for a last check (and editing) before
+// it goes to My filters (007).
+- (void)tab:(BRTab*)tab
+    pickedElement:(NSString*)selector
+           onPage:(NSString*)url {
+  std::string host = brouk::HostOfUrl(url.UTF8String ?: "");
+  if (host.empty()) {
+    return;
+  }
+  NSAlert* alert = [[NSAlert alloc] init];
+  alert.messageText = @"Block this element?";
+  alert.informativeText =
+      @"This rule goes to My filters (Settings > Ad blocking). You can "
+      @"change it first.";
+  NSTextField* field = [NSTextField
+      textFieldWithString:[NSString stringWithFormat:@"%s##%@", host.c_str(),
+                                                     selector]];
+  field.frame = NSMakeRect(0, 0, 380, 22);
+  field.font = [NSFont monospacedSystemFontOfSize:12
+                                           weight:NSFontWeightRegular];
+  alert.accessoryView = field;
+  [alert addButtonWithTitle:@"Block"];
+  [alert addButtonWithTitle:@"Cancel"];
+  alert.window.initialFirstResponder = field;
+  __weak BRTab* weakTab = tab;
+  __weak id<BRBrowserWindowOwner> owner = _owner;
+  [alert
+      beginSheetModalForWindow:self.window
+             completionHandler:^(NSModalResponse response) {
+               NSString* rule = [field.stringValue
+                   stringByTrimmingCharactersInSet:
+                       NSCharacterSet.whitespaceAndNewlineCharacterSet];
+               if (response != NSAlertFirstButtonReturn || rule.length == 0 ||
+                   [rule rangeOfString:@"\n"].location != NSNotFound) {
+                 return;
+               }
+               [owner addAdblockRule:rule.UTF8String ?: ""
+                                done:^{
+                                  [weakTab reload];
+                                }];
+             }];
+}
+
 - (void)openAdblockSettings {
   [_owner openSettingsAtKey:@"adblock.enabled"
                     profile:@([self activeProfileId].c_str())];

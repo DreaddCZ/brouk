@@ -77,6 +77,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (nullable const brouk::AdblockService*)adblockService;
 - (NSString*)adblockListName:(const std::string&)listId;
 - (void)tab:(BRTab*)tab allowSiteOf:(NSString*)url;
+// The element picker picked `selector` on the page at `url`.
+- (void)tab:(BRTab*)tab pickedElement:(NSString*)selector onPage:(NSString*)url;
 @end
 
 @interface BRTab : NSObject
@@ -86,6 +88,8 @@ NS_ASSUME_NONNULL_BEGIN
 // few thousand).
 @property(nonatomic, readonly) NSUInteger adblockBlockedCount;
 - (const std::vector<brouk::AdblockRequestInfo>&)adblockRequests;
+// Starts the ad blocker's element picker in the page (007).
+- (void)startElementPicker;
 
 @property(nonatomic, readonly) brouk::TabId tabId;
 @property(nonatomic, weak) id<BRTabDelegate> delegate;
