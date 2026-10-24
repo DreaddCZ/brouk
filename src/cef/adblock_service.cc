@@ -392,9 +392,14 @@ void AdblockService::Finished(bool rebuild) {
 
 void AdblockService::ReadMyFilters(std::function<void(std::string)> done) {
   CEF_REQUIRE_UI_THREAD();
-  Post([done = std::move(done)](State& state) {
+  std::shared_ptr<bool> alive = alive_;
+  Post([alive, done = std::move(done)](State& state) {
     std::string text = state.store->ReadMyFilters();
-    CefPostTask(TID_UI, new FunctionTask([done, text] { done(text); }));
+    CefPostTask(TID_UI, new FunctionTask([alive, done, text] {
+                  if (*alive) {
+                    done(text);
+                  }
+                }));
   });
 }
 
@@ -409,7 +414,10 @@ void AdblockService::SaveMyFilters(std::string text,
       state.Rebuild();
     }
     CefPostTask(TID_UI, new FunctionTask([this, alive, done, saved] {
-                  if (*alive && changed_) {
+                  if (!*alive) {
+                    return;
+                  }
+                  if (changed_) {
                     changed_();
                   }
                   done(saved);

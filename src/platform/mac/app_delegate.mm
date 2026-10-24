@@ -2033,24 +2033,57 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
   return _adblock.get();
 }
 
-// Adds a site to a profile's allowlist (the shield popup, the blocked page).
-- (void)allowAdblockSite:(const std::string&)host
-               inProfile:(const brouk::ProfileId&)profile {
+// Adds a site to a profile's allowlist, or takes it (and patterns
+// matching it) off (the shield popup, the blocked page).
+- (void)setAdblockSite:(const std::string&)host
+               allowed:(BOOL)allowed
+             inProfile:(const brouk::ProfileId&)profile {
   std::optional<brouk::Settings> settings = _profiles->ProfileSettings(profile);
-  if (!settings) {
+  if (!settings || host.empty()) {
     return;
   }
-  std::string list = settings->GetString("adblock.allowlist");
-  std::optional<std::vector<brouk::UrlPattern>> patterns =
-      brouk::ParseUrlPatternList(list);
-  if (patterns &&
-      brouk::MatchesAnyPattern(*patterns, "https://" + host + "/")) {
-    return;
+  std::vector<brouk::UrlPattern> patterns =
+      brouk::ParseUrlPatternList(settings->GetString("adblock.allowlist"))
+          .value_or(std::vector<brouk::UrlPattern>{});
+  std::string url = "https://" + host + "/";
+  if (allowed) {
+    if (brouk::MatchesAnyPattern(patterns, url)) {
+      return;
+    }
+    if (std::optional<brouk::UrlPattern> pattern =
+            brouk::UrlPattern::Parse(host)) {
+      patterns.push_back(*pattern);
+    }
+  } else {
+    std::erase_if(patterns, [&](const brouk::UrlPattern& pattern) {
+      return pattern.Matches(url);
+    });
   }
-  list += list.empty() ? host : ", " + host;
+  std::string list;
+  for (const brouk::UrlPattern& pattern : patterns) {
+    list += (list.empty() ? "" : ", ") + pattern.ToString();
+  }
   [self setProfileSetting:"adblock.allowlist"
                   profile:profile
                     value:brouk::SettingValue(list)];
+}
+
+- (void)addAdblockRule:(const std::string&)rule done:(void (^)(void))done {
+  if (!_adblock) {
+    return;
+  }
+  brouk::AdblockService* service = _adblock.get();
+  service->ReadMyFilters([service, rule, done](std::string text) {
+    if (!text.empty() && !text.ends_with('\n')) {
+      text += '\n';
+    }
+    text += rule + "\n";
+    service->SaveMyFilters(std::move(text), [done](bool) {
+      if (done) {
+        done();
+      }
+    });
+  });
 }
 
 - (std::vector<brouk::ProfileManagerDelegate::Summary>)profileSummaries {

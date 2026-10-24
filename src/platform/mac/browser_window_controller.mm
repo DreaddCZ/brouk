@@ -1,8 +1,10 @@
 #import "platform/mac/browser_window_controller.h"
 
+#import "platform/mac/adblock_popover.h"
 #import "platform/mac/bookmark_dialogs.h"
 #import "platform/mac/bookmarks_bar.h"
 
+#include "core/adblock_lists.h"
 #include "core/adblock_policy.h"
 
 #include <algorithm>
@@ -131,6 +133,7 @@ NSButton* ToolbarButton(NSString* symbol,
                                          BRAddressFieldDelegate,
                                          BRFindBarDelegate,
                                          BRBookmarksBarDelegate,
+                                         BRAdblockPopoverActions,
                                          BRSuggestionsPopupDelegate>
 @end
 
@@ -153,7 +156,8 @@ NSButton* ToolbarButton(NSString* symbol,
   BRAddressField* _addressField;
   NSButton* _siteInfoButton;
   NSButton* _zoomButton;
-  NSButton* _starButton;  // Bookmark this tab (011).
+  NSButton* _starButton;    // Bookmark this tab (011).
+  NSButton* _shieldButton;  // Ad blocking (007): count and popup.
   BRBookmarksBar* _bookmarksBar;
   BOOL _browserUIHidden;  // Page full screen.
   NSView* _contentArea;
@@ -433,6 +437,18 @@ NSButton* ToolbarButton(NSString* symbol,
                           weight:NSFontWeightMedium];
   _starButton.hidden = YES;
   [_toolbar addSubview:_starButton];
+
+  // The ad blocker's shield with the page's blocked count (007).
+  _shieldButton = ToolbarButton(@"shield", @"Ad blocking", @"", self,
+                                @selector(showAdblockPopover:));
+  _shieldButton.imagePosition = NSImageLeading;
+  _shieldButton.font =
+      [NSFont monospacedDigitSystemFontOfSize:11 weight:NSFontWeightMedium];
+  _shieldButton.symbolConfiguration = [NSImageSymbolConfiguration
+      configurationWithPointSize:12
+                          weight:NSFontWeightMedium];
+  _shieldButton.hidden = YES;
+  [_toolbar addSubview:_shieldButton];
   [self layoutAddressArea];
 
   _findBar = [[BRFindBar alloc]
@@ -939,16 +955,17 @@ NSButton* ToolbarButton(NSString* symbol,
   _addressField.frame = NSMakeRect(left, 8, right - left, 24);
   CGFloat end = NSMaxX(_addressField.frame);
   _starButton.frame = NSMakeRect(end - 28, 8, 26, 24);
-  _zoomButton.frame = NSMakeRect(end - 86, 10, 54, 20);
-  _popupBlockedButton.frame = NSMakeRect(end - 116, 8, 26, 24);
-  _settingsProblemButton.frame = NSMakeRect(end - 146, 8, 26, 24);
+  _shieldButton.frame = NSMakeRect(end - 78, 8, 48, 24);
+  _zoomButton.frame = NSMakeRect(end - 136, 10, 54, 20);
+  _popupBlockedButton.frame = NSMakeRect(end - 166, 8, 26, 24);
+  _settingsProblemButton.frame = NSMakeRect(end - 196, 8, 26, 24);
   [_remoteDebuggingButton sizeToFit];
   NSSize size = _remoteDebuggingButton.frame.size;
   _remoteDebuggingButton.frame =
-      NSMakeRect(end - 150 - size.width, 10, size.width, 20);
+      NSMakeRect(end - 200 - size.width, 10, size.width, 20);
   for (NSView* view in @[
-         _starButton, _zoomButton, _popupBlockedButton, _settingsProblemButton,
-         _remoteDebuggingButton
+         _starButton, _shieldButton, _zoomButton, _popupBlockedButton,
+         _settingsProblemButton, _remoteDebuggingButton
        ]) {
     view.autoresizingMask = NSViewMinXMargin;
   }
@@ -1079,6 +1096,8 @@ NSButton* ToolbarButton(NSString* symbol,
   _siteInfoButton.contentTintColor = [BRSiteInfoPopover tintForBrowser:browser];
 
   _popupBlockedButton.hidden = tab.blockedPopupURLs.count == 0;
+
+  [self updateShield];
 
   BOOL bookmarkable = [self canBookmarkTab:tab];
   _starButton.hidden = !bookmarkable;
@@ -2537,8 +2556,130 @@ static std::int64_t Now() {
 
 - (void)tabAdblockChanged:(BRTab*)tab {
   if (tab == [self activeTab]) {
-    [self updateToolbar];
+    [self updateShield];
   }
+}
+
+// The shield shows the page's blocked count, dimmed when blocking is off
+// for the site; hidden where there is nothing to block.
+- (void)updateShield {
+  BRTab* tab = [self activeTab];
+  BOOL shown = [_owner adblockService] && [self canBookmarkTab:tab];
+  _shieldButton.hidden = !shown;
+  if (!shown) {
+    return;
+  }
+  BOOL on = [self adblockSiteEnabled];
+  NSUInteger count = tab.adblockBlockedCount;
+  _shieldButton.title =
+      on && count > 0
+          ? [NSString
+                stringWithFormat:@"%lu", static_cast<unsigned long>(count)]
+          : @"";
+  _shieldButton.image = [NSImage
+      imageWithSystemSymbolName:on ? @"shield.lefthalf.filled" : @"shield.slash"
+       accessibilityDescription:@"Ad blocking"];
+  _shieldButton.contentTintColor =
+      on ? NSColor.controlAccentColor : NSColor.tertiaryLabelColor;
+  _shieldButton.toolTip =
+      on ? [NSString stringWithFormat:@"%lu blocked on this page",
+                                      static_cast<unsigned long>(count)]
+         : @"Ad blocking is off for this site";
+  _shieldButton.accessibilityValue = _shieldButton.toolTip;
+}
+
+- (IBAction)showAdblockPopover:(id)sender {
+  if ([self canBookmarkTab:[self activeTab]]) {
+    [BRAdblockPopover showRelativeTo:_shieldButton actions:self];
+  }
+}
+
+#pragma mark - BRAdblockPopoverActions
+
+- (NSString*)adblockPageHost {
+  return @(brouk::HostOfUrl([self activeTab].url.UTF8String ?: "").c_str());
+}
+
+- (const std::vector<brouk::AdblockRequestInfo>&)adblockPageRequests {
+  static const std::vector<brouk::AdblockRequestInfo> kNone;
+  BRTab* tab = [self activeTab];
+  return tab ? [tab adblockRequests] : kNone;
+}
+
+- (BOOL)adblockProfileEnabled {
+  brouk::AdblockService* service = [_owner adblockService];
+  if (!service) {
+    return NO;
+  }
+  std::shared_ptr<const brouk::ProfileAdblockPolicy> policy =
+      service->PolicyFor([self activeProfileId]);
+  return policy && policy->enabled;
+}
+
+- (BOOL)adblockSiteEnabled {
+  brouk::AdblockService* service = [_owner adblockService];
+  BRTab* tab = [self activeTab];
+  if (!service || !tab) {
+    return NO;
+  }
+  std::shared_ptr<const brouk::ProfileAdblockPolicy> policy =
+      service->PolicyFor(tab.profileId);
+  return policy && policy->enabled &&
+         !brouk::MatchesAnyPattern(policy->allowlist, tab.url.UTF8String ?: "");
+}
+
+- (void)setAdblockSiteEnabled:(BOOL)enabled {
+  BRTab* tab = [self activeTab];
+  std::string host = brouk::HostOfUrl(tab.url.UTF8String ?: "");
+  if (!tab || host.empty()) {
+    return;
+  }
+  [_owner setAdblockSite:host allowed:!enabled inProfile:tab.profileId];
+  [tab reload];
+  [self updateShield];
+}
+
+- (void)addAdblockRule:(NSString*)rule {
+  __weak BRTab* tab = [self activeTab];
+  [_owner addAdblockRule:rule.UTF8String ?: ""
+                    done:^{
+                      [tab reload];
+                    }];
+}
+
+// The issue page of the first list that blocked something here (uBlock's
+// form when none did), with the page's address filled in.
+- (void)reportBrokenSite {
+  BRTab* tab = [self activeTab];
+  if (!tab) {
+    return;
+  }
+  std::string issues;
+  for (const brouk::AdblockRequestInfo& info : [tab adblockRequests]) {
+    const brouk::FilterListDef* list =
+        brouk::FindBuiltinFilterList(info.list_id);
+    if (info.blocked && list && !list->issues_url.empty()) {
+      issues = list->issues_url;
+      break;
+    }
+  }
+  if (issues.empty()) {
+    issues = brouk::FindBuiltinFilterList("ublock-filters")->issues_url;
+  }
+  NSString* encoded = [tab.url
+      stringByAddingPercentEncodingWithAllowedCharacters:
+          [NSCharacterSet characterSetWithCharactersInString:
+                              @"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRST"
+                              @"UVWXYZ0123456789-._~"]];
+  NSString* url =
+      [@(issues.c_str()) stringByReplacingOccurrencesOfString:@"{url}"
+                                                   withString:encoded ?: @""];
+  [self openTabWithURL:url profile:tab.profileId activate:YES];
+}
+
+- (void)openAdblockSettings {
+  [_owner openSettingsAtKey:@"adblock.enabled"
+                    profile:@([self activeProfileId].c_str())];
 }
 
 - (NSString*)adblockListName:(const std::string&)listId {
@@ -2554,7 +2695,7 @@ static std::int64_t Now() {
   if (host.empty()) {
     return;
   }
-  [_owner allowAdblockSite:host inProfile:tab.profileId];
+  [_owner setAdblockSite:host allowed:YES inProfile:tab.profileId];
   [self navigateTab:tab toURL:url typed:NO];
 }
 
