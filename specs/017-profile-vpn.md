@@ -26,15 +26,17 @@ Reach a client's internal sites over the client's VPN **from one profile only**,
 - A connection can be **imported** from the file the client gives: `.ovpn` (OpenVPN) or a WireGuard `.conf`. For OpenConnect types, the user enters the server address and the protocol.
 - Supported types, each run by an external tool in **user space** (no network extension, no TUN device, no admin password, the OS routing table never changes):
 
-  | Type | Covers | Tool |
-  |---|---|---|
-  | WireGuard | WireGuard servers | `wireproxy` |
-  | OpenConnect | Cisco AnyConnect / Secure Client, Palo Alto GlobalProtect, Fortinet SSL VPN, Pulse / Ivanti, F5, Array, ocserv | `openconnect` with `ocproxy` |
-  | OpenVPN | OpenVPN servers (`.ovpn`) | `openvpn` in a container with a small SOCKS server (see Notes) |
-  | SSH tunnel | Jump hosts, bastions | `ssh -D` |
+  | Type | Covers | Tool | Order |
+  |---|---|---|---|
+  | OpenConnect | Fortinet SSL VPN (FortiClient servers), Cisco AnyConnect / Secure Client; also Palo Alto GlobalProtect, Pulse / Ivanti, F5, Array, ocserv | `openconnect` with `ocproxy` | first |
+  | OpenVPN | OpenVPN servers (`.ovpn`) | to be decided (open question 1) | second |
+  | WireGuard | WireGuard servers | `wireproxy` | later |
+  | SSH tunnel | Jump hosts, bastions | `ssh -D` | later |
+
+- The user's clients mostly use **FortiClient, OpenVPN and Cisco**, so Fortinet and Cisco (both through OpenConnect) and OpenVPN come first.
 
 - Each tool runs as a **helper process** started by Brouk. It opens a proxy on `127.0.0.1` at a port Brouk chooses, and the profile's request context is pointed at that proxy.
-- Like the Bitwarden CLI (008), the tools are **installed by the user** (Homebrew, or Docker/OrbStack/Colima for OpenVPN). Brouk does not bundle them. Brouk finds them automatically, the path can be set in settings, and when a tool is missing Brouk shows how to install it.
+- Like the Bitwarden CLI (008), the tools are **installed by the user** (for example with Homebrew). Brouk does not bundle them. Brouk finds them automatically, the path can be set in settings, and when a tool is missing Brouk shows how to install it.
 
 ### Connecting and disconnecting
 
@@ -67,7 +69,9 @@ Reach a client's internal sites over the client's VPN **from one profile only**,
 - Passwords, private keys and other secrets of a connection are stored only in the macOS Keychain (as for 008), never in YAML files or helper command lines.
 - When the VPN asks for something interactive (password, one-time code, "approve on your phone", choosing a group), Brouk shows a native dialog anchored to the profile's window and passes the answer to the helper.
 - A connection can be linked to a TOTP entry of the built-in password manager (008), so the one-time code is filled in automatically.
-- Single sign-on logins (SAML, for example GlobalProtect or AnyConnect with Microsoft Entra ID) are opened in a Brouk window in the VPN profile, so the user signs in with the profile's existing session (see Open questions).
+- **Single sign-on** logins (SAML, for example Fortinet or Cisco with Microsoft Entra ID) open in a **Brouk window in the VPN profile**, so the user signs in with the profile's existing session (for example the client's Microsoft account already signed in there).
+  - The sign-in page is public, so while the user signs in, only that window's requests go out directly. The profile's other tabs wait with a "Connecting to VPN <name>…" page and load once the tunnel is up.
+  - The window closes by itself when the sign-in is done and the VPN connects.
 
 ### With link routing (010)
 
@@ -81,8 +85,9 @@ Reach a client's internal sites over the client's VPN **from one profile only**,
 - [ ] Other apps on the Mac (for example `curl` in Terminal) are not affected by the connection.
 - [ ] An internal host name that only the VPN's DNS knows opens in the VPN profile and does not resolve in other profiles.
 - [ ] A WireGuard connection can be imported from a `.conf` file and connected.
-- [ ] An OpenConnect connection (at least one of AnyConnect, GlobalProtect, Fortinet) can be set up and connected, including a password and a one-time code asked for in a native dialog.
-- [ ] An OpenVPN connection can be imported from a `.ovpn` file and connected. (Depends on the open question about the OpenVPN backend.)
+- [ ] A Fortinet SSL VPN connection and a Cisco AnyConnect connection can each be set up and connected, including a password and a one-time code asked for in a native dialog.
+- [ ] A connection that uses single sign-on opens its sign-in page in a Brouk window of the VPN profile, reusing that profile's existing sign-in; while it is open, the profile's other tabs wait, and the window closes once the VPN is connected.
+- [ ] An OpenVPN connection can be imported from a `.ovpn` file and connected. (after the OpenVPN backend is decided)
 - [ ] A proxy route with a SOCKS5 or HTTP proxy given by host and port works without any helper.
 - [ ] With "connect on first use", opening the first tab of a VPN profile starts the connection, and the page loads once it is up.
 - [ ] While the connection is down or failing, every request of the profile fails with the "VPN is not connected" page; no request of the profile reaches the network directly (verified with a packet capture or a firewall log).
@@ -120,12 +125,9 @@ Per profile (`profiles/<id>/settings.yaml`):
 
 ## Open questions
 
-1. **Which VPN types are needed first?** Which products do the user's clients use (OpenVPN, WireGuard, AnyConnect, GlobalProtect, Fortinet, …)? This decides the order and whether all four types are needed.
-2. **OpenVPN backend:** OpenVPN has no user-space proxy mode on macOS. The proposal is to run it in a container (Docker Desktop, OrbStack or Colima) together with a small SOCKS server. Is a container runtime acceptable? Alternatives: skip OpenVPN until there is a client that needs it, or a much larger own implementation (OpenVPN 3 core plus a user-space network stack).
-3. **Local proxy port:** while a connection is up, its proxy listens on `127.0.0.1`, so other programs of the same user could use the tunnel too (Chromium cannot authenticate to a SOCKS5 proxy). Is that acceptable for phase 1, given a random port and a stop when unused? The stricter alternative is that Brouk puts an HTTP proxy with random credentials in front of each helper (more code, the helper's port would still be local).
-4. **Single sign-on:** for SAML/SSO VPN logins, is a Brouk window in the VPN profile the wanted flow (so the profile's Microsoft session is reused), or should the system browser be used?
-5. **One connection, several profiles:** may two profiles use the same connection at once (sharing one tunnel), or should each profile get its own?
-6. **Priority and place in the roadmap.**
+1. **OpenVPN backend and tool installation (to investigate later):** OpenVPN has no user-space proxy mode on macOS. The first idea was to run it in a container (Docker Desktop, OrbStack or Colima) with a small SOCKS server, but most colleagues have no admin rights, so they may not be able to install a container runtime, and possibly not Homebrew tools either. The user will find out what colleagues have on their computers. Depending on that: a container, bundling the tools inside Brouk in phase 2 (licences and signing to check), or an own OpenVPN client (OpenVPN 3 core plus a user-space network stack, much more work). Until then, OpenVPN is specified but not built.
+2. **One connection, several profiles:** may two profiles use the same connection at once (sharing one tunnel), or should each profile get its own?
+3. **Priority and place in the roadmap.**
 
 ## Notes
 
@@ -133,9 +135,11 @@ Per profile (`profiles/<id>/settings.yaml`):
 - Implementation hints, to be verified against the CEF headers before use (`CLAUDE.md`):
   - Proxy per profile: Chromium's `proxy` preference belongs to the profile, so it should be settable per request context with `CefRequestContext::SetPreference("proxy", …)` (mode `fixed_servers`, or `pac_script` for split routing) on the UI thread. Brouk must not pass the global `--proxy-server` switch, which would override all profiles. Check that this works for Alloy-style browsers with the Chrome bootstrap in CEF 154.
   - WebRTC: preference `webrtc.ip_handling_policy` = `disable_non_proxied_udp` on the request context.
-  - HTTP proxy authentication, if used (open question 3): `CefRequestHandler::GetAuthCredentials` with `isProxy`.
+  - Single sign-on while the tunnel is down: the proxy is set per request context, not per window, so during sign-in the profile's context stays without the proxy and Brouk cancels requests of every other browser of that profile (in its resource request handler) until the tunnel is up and the proxy is set. Check that no request slips through when the proxy preference changes.
   - SOCKS5 resolves host names on the proxy side in Chromium, which gives the remote DNS needed here. QUIC is not used through a SOCKS proxy, so HTTP/3 falls back to HTTP/2 in VPN profiles.
   - Requests Brouk makes itself for a profile (006's own request loader, favicons, downloads) use the profile's request context and so follow the route automatically. Requests not tied to a profile (update checks, the Bitwarden CLI, 010's neutral throwaway context for link wrappers) go direct.
 - The helper supervision (start, health check by connecting to the proxy port, restart with back-off, stop, log with secrets removed) is portable core code in `src/core/`, tested on Linux with a fake helper. Starting processes goes through a platform interface.
 - The tools are separate programs run by Brouk, not linked into it, so their licences (`openconnect` is LGPL-2.1, `wireproxy` ISC, `ocproxy` BSD) do not conflict with the library licence rule in `CLAUDE.md`, as with the Bitwarden CLI (008).
+- 2026-10-24 (user's answers): clients mostly use FortiClient, OpenVPN and Cisco, so these come first. The local proxy port on `127.0.0.1` is acceptable: other programs of the same user could use the tunnel while it is up (Chromium cannot authenticate to a SOCKS5 proxy), mitigated by a random port and stopping when unused. Single sign-on happens in a Brouk window of the VPN profile. OpenVPN, and how colleagues without admin rights get the tools, is left for investigation.
+- FortiClient: `openconnect --protocol=fortinet` covers FortiGate **SSL VPN** only. If a client's FortiGate offers only IPsec (IKE), it is not supported; check which one each client uses. `openfortivpn` is not an option, as it needs `pppd` with root.
 - Help text for this feature will be needed (rule 7 in `CLAUDE.md`).
