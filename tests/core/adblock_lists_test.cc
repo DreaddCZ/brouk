@@ -1,5 +1,6 @@
 #include "core/adblock_lists.h"
 
+#include <algorithm>
 #include <set>
 #include <string>
 #include <vector>
