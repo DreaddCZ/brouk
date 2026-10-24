@@ -156,9 +156,10 @@ Dev tools are switched **per tab** with an always-visible toggle — rules never
 | Area | Status |
 |---|---|
 | Browsing, tabs, profiles side by side, session restore | ✅ in use |
-| History, bookmarks | ✅ mostly built |
+| History, bookmarks, ad blocking | ✅ in use |
 | Developer tools | 🔧 being built |
-| Link routing, ad blocking, passwords, autofill, downloads | 📋 specified, next |
+| Passwords (built-in manager) | 🔧 built, in testing; Bitwarden next |
+| Link routing, autofill, downloads | 📋 specified, next |
 | VPN per profile | 🔍 being investigated |
 
 <!-- Update this slide before each presentation. -->
