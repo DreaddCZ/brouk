@@ -1,6 +1,7 @@
 #ifndef BROUK_CORE_PAGE_EVENTS_H_
 #define BROUK_CORE_PAGE_EVENTS_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -48,7 +49,7 @@ inline constexpr std::string_view kAdblockClassesRequest =
 inline constexpr std::string_view kAdblockClassesAnswer =
     "brouk.adblock.classes-answer";
 // The page script's classes request is cut off beyond this.
-inline constexpr std::size_t kMaxAdblockClassesBytes = 256 * 1024;
+inline constexpr std::size_t kMaxAdblockClassesBytes = std::size_t{256} * 1024;
 
 struct PageEvent {
   enum class Type { kPopupBlocked, kAudible, kInaudible, kDisplayMedia };
