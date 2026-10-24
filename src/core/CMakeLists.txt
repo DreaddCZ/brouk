@@ -17,6 +17,8 @@ set(BROUK_CORE_SOURCES
   address_suggestions.cc
   address_suggestions.h
   autofill_entry.cc
+  autofill_forms.cc
+  autofill_forms.h
   autofill_entry.h
   autofill_rules.cc
   autofill_rules.h

@@ -111,6 +111,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)addAdblockRule:(const std::string&)rule done:(void (^)(void))done;
 // Password manager (008): null before CEF is ready.
 - (nullable brouk::PasswordManager*)passwordManager;
+// Form autofill (009): null before CEF is ready.
+- (nullable brouk::AutofillManager*)autofillManager;
 @end
 
 @interface BRBrowserWindowController : NSWindowController <NSWindowDelegate>

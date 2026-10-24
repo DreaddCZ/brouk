@@ -72,6 +72,11 @@ AutofillValues ToStoredValues(const AutofillValues& form_values);
 // recognised fields, one of them a name, email, phone or street.
 bool WorthSaving(const AutofillValues& stored_values);
 
+// Whether a custom field suits a form field whose label, placeholder and
+// name are `hint`: one of its label words (or its name) appears in it,
+// compared as normalised text.
+bool CustomFieldMatches(const CustomField& field, std::string_view hint);
+
 // Validation: nullopt when the value is valid (or empty), else the problem
 // for the user. IČO checksum (mod 11), Czech DIČ (CZ + 8-10 digits), EU VAT
 // ID formats by country, IBAN checksum (mod 97).

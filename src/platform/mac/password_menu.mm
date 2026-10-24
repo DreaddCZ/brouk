@@ -28,6 +28,14 @@ NSString* SymbolFor(brouk::PasswordMenuItem::Kind kind) {
       return @"lock.rotation";
     case Kind::kReadQrCode:
       return @"qrcode.viewfinder";
+    case Kind::kAutofillEntry:
+      return @"person.text.rectangle";
+    case Kind::kCustomField:
+      return @"text.badge.plus";
+    case Kind::kClearFilled:
+      return @"eraser";
+    case Kind::kManageAutofill:
+      return @"gearshape";
     case Kind::kManage:
       return @"gearshape";
     case Kind::kWarning:

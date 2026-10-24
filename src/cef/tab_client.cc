@@ -93,6 +93,17 @@ void TabClient::DetachDelegate() {
   if (passwords_) {
     passwords_->Detach();
   }
+  if (autofill_) {
+    autofill_->Detach();
+  }
+}
+
+void TabClient::SetAutofill(AutofillManager* manager) {
+  CEF_REQUIRE_UI_THREAD();
+  autofill_manager_ = manager;
+  autofill_ = manager && delegate_
+                  ? std::make_shared<AutofillTab>(manager, delegate_, delegate_)
+                  : nullptr;
 }
 
 void TabClient::SetPasswords(PasswordManager* manager,
@@ -122,10 +133,18 @@ bool TabClient::OnProcessMessageReceived(CefRefPtr<CefBrowser> browser,
   if (source_process == PID_RENDERER && frame && name == kFormsMessage) {
     // Login forms (008): untrusted, validated by the password logic.
     CefRefPtr<CefListValue> args = message->GetArgumentList();
-    if (passwords_ && args && args->GetSize() == 2 &&
-        args->GetType(0) == VTYPE_STRING && args->GetType(1) == VTYPE_STRING) {
-      passwords_->HandleMessage(browser, frame, args->GetString(0).ToString(),
-                                args->GetString(1).ToString());
+    if (args && args->GetSize() == 2 && args->GetType(0) == VTYPE_STRING &&
+        args->GetType(1) == VTYPE_STRING) {
+      std::string kind = args->GetString(0).ToString();
+      std::string json = args->GetString(1).ToString();
+      // Autofill's kinds start with "af" (009); a blur closes either menu.
+      if (kind.starts_with("af")) {
+        if (autofill_) {
+          autofill_->HandleMessage(browser, frame, kind, json);
+        }
+      } else if (passwords_) {
+        passwords_->HandleMessage(browser, frame, kind, json);
+      }
     }
     return true;
   }
@@ -260,6 +279,56 @@ void TabClient::OnBeforeContextMenu(CefRefPtr<CefBrowser> browser,
         AdblockCosmeticFor(*adblock_, adblock_profile_, page, page).has_value();
   }
   FillMenuModel(model, BuildContextMenu(context));
+  AddAutofillMenu(params, model);
+}
+
+// Autofill → each entry's values and each custom field, on text fields of
+// web pages (009). Ids from MENU_ID_USER_FIRST + 1000 (ours below stay
+// under 1000).
+void TabClient::AddAutofillMenu(const CefRefPtr<CefContextMenuParams>& params,
+                                const CefRefPtr<CefMenuModel>& model) {
+  autofill_menu_values_.clear();
+  autofill_menu_manage_ = false;
+  if (!autofill_manager_ || !params->IsEditable() ||
+      !autofill_manager_->options().enabled || !autofill_manager_->loaded()) {
+    return;
+  }
+  constexpr int kFirst = MENU_ID_USER_FIRST + 1000;
+  constexpr int kLast = MENU_ID_USER_LAST - 1;
+  int next = kFirst + 1;
+  const AutofillOptions& options = autofill_manager_->options();
+  model->AddSeparator();
+  CefRefPtr<CefMenuModel> menu = model->AddSubMenu(kFirst, "Autofill");
+  if (options.entries) {
+    for (const AutofillEntry& entry : autofill_manager_->entries()) {
+      std::string title = entry.label.empty() ? entry.Preview() : entry.label;
+      CefRefPtr<CefMenuModel> values = menu->AddSubMenu(next++, title);
+      for (std::size_t i = 0; i < kAutofillStoredFields && next < kLast; ++i) {
+        auto field = static_cast<AutofillField>(i);
+        std::string value = entry.ValueFor(field);
+        if (value.empty()) {
+          continue;
+        }
+        values->AddItem(
+            next, std::string(AutofillFieldLabel(field)) + ": " +
+                      (value.size() > 50 ? value.substr(0, 47) + "…" : value));
+        autofill_menu_values_[next++] = value;
+      }
+    }
+  }
+  if (options.custom_fields && !autofill_manager_->custom_fields().empty()) {
+    menu->AddSeparator();
+    for (const CustomField& field : autofill_manager_->custom_fields()) {
+      if (next >= kLast) {
+        break;
+      }
+      menu->AddItem(next, field.name);
+      autofill_menu_values_[next++] = field.value;
+    }
+  }
+  menu->AddSeparator();
+  menu->AddItem(kLast, "Manage autofill…");
+  autofill_menu_manage_ = true;
 }
 
 bool TabClient::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
@@ -268,6 +337,25 @@ bool TabClient::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
                                      int command_id,
                                      EventFlags /*event_flags*/) {
   CEF_REQUIRE_UI_THREAD();
+  if (command_id == MENU_ID_USER_LAST - 1 && autofill_menu_manage_) {
+    if (delegate_) {
+      delegate_->OpenAutofillSettings();
+    }
+    return true;
+  }
+  if (auto value = autofill_menu_values_.find(command_id);
+      value != autofill_menu_values_.end()) {
+    // Into the focused field of the frame that was right-clicked.
+    CefRefPtr<CefFrame> target = browser->GetFocusedFrame();
+    if (target) {
+      CefRefPtr<CefProcessMessage> fill =
+          CefProcessMessage::Create(std::string(kFormsFillMessage));
+      fill->GetArgumentList()->SetString(0,
+                                         AutofillFocusedMessage(value->second));
+      target->SendProcessMessage(PID_RENDERER, fill);
+    }
+    return true;
+  }
   std::optional<MenuCommand> command = CustomCommandForId(command_id);
   if (!command || !delegate_) {
     return false;  // Chromium's own command (back, copy, ...).
@@ -693,6 +781,9 @@ void TabClient::OnLoadStart(CefRefPtr<CefBrowser> /*browser*/,
     main_load_failed_ = false;
     if (passwords_) {
       passwords_->OnMainFrameLoadStart();
+    }
+    if (autofill_) {
+      autofill_->OnMainFrameLoadStart();
     }
   }
   // A new document in the main frame starts silent: the old page and its

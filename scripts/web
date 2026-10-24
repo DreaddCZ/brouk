@@ -68,7 +68,7 @@ case "${1:-}" in
     tmp="$(mktemp -d)"
     "$TSC" -p forms/tsconfig.json --outDir "$tmp"
     mkdir -p "$(dirname "$out")"
-    cat "$tmp/forms/field_rules.js" "$tmp/forms/login.js" |
+    cat "$tmp/forms/field_rules.js" "$tmp/forms/address_rules.js" "$tmp/forms/login.js" |
       grep -v '^import ' | sed -e 's/^export //' > "$out"
     rm -rf "$tmp"
     ;;

@@ -6,5 +6,5 @@
     "rootDir": "..",
     "outDir": "../../build/web"
   },
-  "include": ["field_rules.ts", "login.ts"]
+  "include": ["field_rules.ts", "address_rules.ts", "login.ts"]
 }

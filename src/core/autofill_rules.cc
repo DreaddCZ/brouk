@@ -561,6 +561,20 @@ bool WorthSaving(const AutofillValues& stored_values) {
   return count >= 3 && key;
 }
 
+bool CustomFieldMatches(const CustomField& field, std::string_view hint) {
+  std::string text = " " + NormalizeText(hint) + " ";
+  if (text.size() <= 2) {
+    return false;
+  }
+  std::vector<std::string> words = field.label_words;
+  words.push_back(field.name);
+  return std::ranges::any_of(words, [&](const std::string& word) {
+    std::string normal = NormalizeText(word);
+    return !normal.empty() &&
+           text.find(" " + normal + " ") != std::string::npos;
+  });
+}
+
 std::optional<std::string> ValidateAutofillValue(AutofillField field,
                                                  std::string_view value) {
   std::string compact = NormalizeCompact(value);

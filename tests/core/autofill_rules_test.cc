@@ -155,6 +155,16 @@ TEST(AutofillRulesTest, ValidatesCompanyIdentifiers) {
   EXPECT_FALSE(ValidateAutofillValue(F::kCity, "anything"));
 }
 
+TEST(AutofillRulesTest, CustomFieldsMatchLabelWords) {
+  CustomField field{
+      0, "Contract number", "SML-1", {"číslo smlouvy", "contract no"}, 0};
+  EXPECT_TRUE(CustomFieldMatches(field, "Číslo smlouvy *"));
+  EXPECT_TRUE(CustomFieldMatches(field, "Your contract number"));
+  EXPECT_TRUE(CustomFieldMatches(field, "contract_no"));
+  EXPECT_FALSE(CustomFieldMatches(field, "Číslo objednávky"));
+  EXPECT_FALSE(CustomFieldMatches(field, ""));
+}
+
 TEST(AutofillRulesTest, EntryValuesForFormFields) {
   AutofillEntry entry = Entry({{F::kFirstName, "Radek"},
                                {F::kLastName, "Ševčík"},

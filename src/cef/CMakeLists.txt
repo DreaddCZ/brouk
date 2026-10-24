@@ -6,6 +6,12 @@ add_library(brouk_cef STATIC
   adblock_settings.cc
   adblock_settings.h
   adblock_service.h
+  autofill_manager.cc
+  autofill_manager.h
+  autofill_settings.cc
+  autofill_settings.h
+  autofill_tab.cc
+  autofill_tab.h
   browser_app.cc
   browser_app.h
   bookmarks_page_handler.cc

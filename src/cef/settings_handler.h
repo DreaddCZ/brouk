@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "cef/adblock_service.h"
+#include "cef/autofill_manager.h"
 #include "core/profile_registry.h"
 #include "core/result.h"
 #include "core/settings.h"
@@ -42,6 +43,16 @@ class SettingsPageDelegate {
   // language (for the regional list).
   virtual AdblockService* Adblock() = 0;
   virtual std::string Language() = 0;
+  // Form autofill (009): null before the browser is ready; asking where to
+  // save the JSON export, and for a file to import.
+  virtual AutofillManager* Autofill() = 0;
+  using TextSaveDone =
+      std::function<void(bool saved, const std::optional<Error>& error)>;
+  virtual void SaveAutofillFile(std::string json, TextSaveDone done) = 0;
+  using TextOpenDone =
+      std::function<void(const std::optional<std::string>& text,
+                         const std::optional<Error>& error)>;
+  virtual void OpenAutofillFile(TextOpenDone done) = 0;
   virtual void ExportSettings(FileDone done) = 0;
   virtual void ImportSettings(FileDone done) = 0;
 };

@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "cef/adblock_request_handler.h"
+#include "cef/autofill_tab.h"
 #include "cef/password_tab.h"
 #include "core/dialog_spam_guard.h"
 #include "core/permissions.h"
@@ -98,8 +99,10 @@ struct PopupHost {
 
 // Implemented by the platform UI for one tab. Every method is called on the
 // CEF UI thread (the main thread on macOS). The password manager's UI (008)
-// comes from PasswordTabDelegate.
-class TabClientDelegate : public PasswordTabDelegate {
+// comes from PasswordTabDelegate, autofill's (009) from
+// AutofillTabDelegate.
+class TabClientDelegate : public PasswordTabDelegate,
+                          public AutofillTabDelegate {
  public:
   ~TabClientDelegate() override = default;
 
@@ -253,6 +256,8 @@ class TabClient : public CefClient,
   void SetPasswords(PasswordManager* manager, const ProfileId& profile);
   // The key icon in the address bar was clicked. UI thread.
   void OnPasswordKeyIconClicked();
+  // Form autofill (009), set before the browser is created. UI thread.
+  void SetAutofill(AutofillManager* manager);
 
   // The settings a tab's renderer follows (kRendererConfigMessage), sent
   // when they change.
@@ -426,12 +431,19 @@ class TabClient : public CefClient,
       bool& disable_default_handling) override;
 
  private:
+  void AddAutofillMenu(const CefRefPtr<CefContextMenuParams>& params,
+                       const CefRefPtr<CefMenuModel>& model);
   void HandleAdblockMessage(const CefRefPtr<CefBrowser>& browser,
                             const CefRefPtr<CefFrame>& frame,
                             const std::string& name,
                             const CefRefPtr<CefListValue>& args);
 
-  std::shared_ptr<PasswordTab> passwords_;   // UI thread.
+  std::shared_ptr<PasswordTab> passwords_;  // UI thread.
+  std::shared_ptr<AutofillTab> autofill_;   // UI thread.
+  AutofillManager* autofill_manager_ = nullptr;
+  // The right-click Autofill menu's values, by menu id (009).
+  std::map<int, std::string> autofill_menu_values_;
+  bool autofill_menu_manage_ = false;
   const AdblockService* adblock_ = nullptr;  // Read on the IO thread.
   bool picker_active_ = false;               // UI thread.
   ProfileId adblock_profile_;
