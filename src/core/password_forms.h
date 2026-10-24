@@ -21,7 +21,7 @@ namespace brouk {
 // strings). Browser -> renderer: what to fill (JSON, see FillMessage).
 inline constexpr std::string_view kFormsMessage = "brouk.forms";
 inline constexpr std::string_view kFormsFillMessage = "brouk.forms.fill";
-inline constexpr std::size_t kMaxFormsMessageBytes = 64 * 1024;
+inline constexpr std::size_t kMaxFormsMessageBytes = std::size_t{64} * 1024;
 
 // Kinds of messages from the page script.
 inline constexpr std::string_view kFormsKindForms = "forms";
