@@ -281,8 +281,7 @@ bool HandleAdblockSettingsMessage(const std::string& type,
       callback->Failure(kFailed, "Ad blocking is still starting.");
       return true;
     }
-    CefRefPtr<Callback> answer_to = callback;
-    service->ReadMyFilters([answer_to](std::string text) {
+    service->ReadMyFilters([answer_to = callback](const std::string& text) {
       CefRefPtr<CefDictionaryValue> answer = CefDictionaryValue::Create();
       answer->SetString("text", text);
       answer->SetList("problems", Problems(text));
@@ -299,8 +298,7 @@ bool HandleAdblockSettingsMessage(const std::string& type,
       return true;
     }
     CefRefPtr<CefListValue> problems = Problems(*text);
-    CefRefPtr<Callback> answer_to = callback;
-    service->SaveMyFilters(*text, [answer_to, problems](bool saved) {
+    service->SaveMyFilters(*text, [answer_to = callback, problems](bool saved) {
       if (!saved) {
         answer_to->Failure(kFailed, "My filters could not be saved.");
         return;
