@@ -24,7 +24,8 @@ constexpr std::string_view kHeader =
 
 std::string ExportProfile(const Settings& profile_settings,
                           std::string_view exported_at,
-                          const YamlNode& bookmarks) {
+                          const YamlNode& bookmarks,
+                          const YamlNode& passwords) {
   YamlNode root = YamlNode::Map();
   root.GetOrAdd("format") = YamlNode::Scalar(std::string(kFormat), true);
   root.GetOrAdd("version") =
@@ -34,6 +35,9 @@ std::string ExportProfile(const Settings& profile_settings,
   root.GetOrAdd("settings") = profile_settings.ToYaml();
   if (bookmarks.kind == YamlNode::Kind::kSequence && !bookmarks.items.empty()) {
     root.GetOrAdd("bookmarks") = bookmarks;
+  }
+  if (passwords.kind == YamlNode::Kind::kMap) {
+    root.GetOrAdd("passwords") = passwords;
   }
   return std::string(kHeader) + EmitYaml(root);
 }
@@ -68,7 +72,8 @@ Result<ImportedProfile> ParseProfileExport(std::string_view text) {
         "Brouk to import it."};
   }
 
-  ImportedProfile imported{Settings(SettingScope::kProfile), std::nullopt, {}};
+  ImportedProfile imported{
+      Settings(SettingScope::kProfile), std::nullopt, std::nullopt, {}};
   const YamlNode* settings = root.Find("settings");
   if (!settings) {
     imported.problems.emplace_back("The file contains no settings.");
@@ -83,10 +88,13 @@ Result<ImportedProfile> ParseProfileExport(std::string_view text) {
   if (const YamlNode* bookmarks = root.Find("bookmarks")) {
     imported.bookmarks = *bookmarks;
   }
+  if (const YamlNode* passwords = root.Find("passwords")) {
+    imported.passwords = *passwords;
+  }
   for (const YamlEntry& entry : root.entries) {
     if (entry.key != "format" && entry.key != "version" &&
         entry.key != "exported_at" && entry.key != "settings" &&
-        entry.key != "bookmarks") {
+        entry.key != "bookmarks" && entry.key != "passwords") {
       imported.problems.push_back("\"" + entry.key +
                                   "\" is not imported by this version of "
                                   "Brouk.");

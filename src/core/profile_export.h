@@ -23,6 +23,8 @@ namespace brouk {
 //       color: green
 //   bookmarks:           the profile's linked bookmarks (011, see
 //     - ...              bookmark_profile.h)
+//   passwords:           built-in passwords, encrypted with the export
+//     ...                password (008, see password_profile.h)
 //
 // Never contains cookies, sign-ins, sessions or cache. Later versions add
 // sections (bookmarks after 011, encrypted passwords after 008, history
@@ -32,16 +34,20 @@ inline constexpr std::string_view kProfileExportExtension = "brouk-profile";
 inline constexpr int kProfileExportVersion = 1;
 
 // `exported_at` is an ISO 8601 time, for the user's information.
-// `bookmarks` is the bookmarks section (ExportProfileBookmarks), left out
-// when it is empty.
+// `bookmarks` is the bookmarks section (ExportProfileBookmarks) and
+// `passwords` the passwords section (ExportProfilePasswords); each is left
+// out when it is empty.
 std::string ExportProfile(const Settings& profile_settings,
                           std::string_view exported_at,
-                          const YamlNode& bookmarks = YamlNode());
+                          const YamlNode& bookmarks = YamlNode(),
+                          const YamlNode& passwords = YamlNode());
 
 struct ImportedProfile {
   Settings settings;
   // The bookmarks section, if the file has one (ImportProfileBookmarks).
   std::optional<YamlNode> bookmarks;
+  // The encrypted passwords section, if any (ImportProfilePasswords).
+  std::optional<YamlNode> passwords;
   // Things in the file that were not imported (invalid values, sections
   // this version cannot read), for the user.
   std::vector<std::string> problems;
