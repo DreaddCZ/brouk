@@ -69,6 +69,8 @@ set(BROUK_CORE_SOURCES
   screen_share.cc
   search_engines.cc
   search_engines.h
+  secure_dns.cc
+  secure_dns.h
   screen_share.h
   security_state.cc
   security_state.h

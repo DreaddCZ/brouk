@@ -40,12 +40,14 @@
 #include "core/profile_registry.h"
 #include "core/request_rules.h"
 #include "core/search_engines.h"
+#include "core/secure_dns.h"
 #include "core/session.h"
 #include "core/settings_export.h"
 #include "core/shortcuts.h"
 #include "core/url_pattern.h"
 #include "include/cef_app.h"
 #include "include/cef_command_line.h"
+#include "include/cef_preference.h"
 #include "include/cef_request_context.h"
 #include "include/wrapper/cef_helpers.h"
 
@@ -1200,10 +1202,38 @@ class AppSettingsPage : public SettingsPageDelegate {
     [controller sendRendererConfigWithJsonViewer:jsonViewer];
   }
   [self configureAdblock];
+  [self applySecureDns];
   NSUInteger problems = _profiles->problems().size();
   for (BRBrowserWindowController* controller in _windows) {
     controller.settingsProblemCount = problems;
     [self applyDevToolsSettingsTo:controller];
+  }
+}
+
+// UI thread. Secure DNS (007) through Chromium's own local state
+// preferences, which apply to the whole network service (all profiles).
+- (void)applySecureDns {
+  if (!_profilesLoaded) {
+    return;  // CEF is not ready yet; applied again from cefContextInitialized.
+  }
+  CEF_REQUIRE_UI_THREAD();
+  const brouk::Settings& global = _profiles->global_settings();
+  std::optional<std::string> templ = brouk::SecureDnsTemplate(
+      global.GetString("dns.secure"), global.GetString("dns.custom_template"));
+  CefRefPtr<CefPreferenceManager> prefs =
+      CefPreferenceManager::GetGlobalPreferenceManager();
+  if (!prefs || !prefs->CanSetPreference("dns_over_https.mode")) {
+    NSLog(@"Secure DNS cannot be set in this CEF build.");
+    return;
+  }
+  CefRefPtr<CefValue> mode = CefValue::Create();
+  mode->SetString(templ ? "secure" : "off");
+  CefRefPtr<CefValue> templates = CefValue::Create();
+  templates->SetString(templ.value_or(""));
+  CefString error;
+  prefs->SetPreference("dns_over_https.templates", templates, error);
+  if (!prefs->SetPreference("dns_over_https.mode", mode, error)) {
+    NSLog(@"Secure DNS not applied: %s", error.ToString().c_str());
   }
 }
 

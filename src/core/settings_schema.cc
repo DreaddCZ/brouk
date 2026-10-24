@@ -56,7 +56,13 @@ constexpr std::array<std::string_view, 2> kBookmarksBar = {"new_tab_page",
 constexpr std::array<std::string_view, 2> kBookmarksBarLabels = {
     "On the new tab page only", "Always"};
 
-constexpr std::array<SettingDef, 32> kSettings = {{
+constexpr std::array<std::string_view, 7> kSecureDns = {
+    "off", "cloudflare", "quad9", "adguard", "nextdns", "controld", "custom"};
+constexpr std::array<std::string_view, 7> kSecureDnsLabels = {
+    "Off (system DNS)", "Cloudflare", "Quad9", "AdGuard DNS (blocks ads)",
+    "NextDNS",          "Control D",  "Custom"};
+
+constexpr std::array<SettingDef, 34> kSettings = {{
     // Global.
     {.key = "appearance.theme",
      .scope = SettingScope::kGlobal,
@@ -192,6 +198,29 @@ constexpr std::array<SettingDef, 32> kSettings = {{
      .section = "Ad blocking",
      .label = "Lists added by URL",
      .description = "category=URL entries separated by spaces."},
+    // Secure DNS (007): app-wide, as Chromium configures DNS for the whole
+    // network service.
+    {.key = "dns.secure",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kChoice,
+     .default_value = "off",
+     .choices = kSecureDns,
+     .choice_labels = kSecureDnsLabels,
+     .section = "Secure DNS",
+     .label = "Look up addresses with DNS over HTTPS",
+     .description = "For all profiles. Company VPN and intranet names often "
+                    "resolve only through the company's DNS and may stop "
+                    "working."},
+    {.key = "dns.custom_template",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kString,
+     .default_value = "",
+     .max_length = 1024,
+     .section = "Secure DNS",
+     .label = "Custom DNS over HTTPS address",
+     .description = "For \"Custom\": the service's address, e.g. "
+                    "https://dns.nextdns.io/abc123 for your own NextDNS "
+                    "configuration."},
     {.key = "downloads.folder",
      .scope = SettingScope::kGlobal,
      .type = SettingDef::Type::kString,
