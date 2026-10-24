@@ -26,6 +26,8 @@ NSString* SymbolFor(brouk::PasswordMenuItem::Kind kind) {
       return @"wand.and.stars";
     case Kind::kCode:
       return @"lock.rotation";
+    case Kind::kReadQrCode:
+      return @"qrcode.viewfinder";
     case Kind::kManage:
       return @"gearshape";
     case Kind::kWarning:

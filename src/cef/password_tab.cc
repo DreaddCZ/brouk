@@ -5,6 +5,8 @@
 #include <cmath>
 #include <utility>
 
+#include "cef/breach_check.h"
+#include "cef/devtools_channel.h"
 #include "core/crypto.h"
 #include "core/totp.h"
 #include "core/web_origin.h"
@@ -463,6 +465,7 @@ void PasswordTab::ShowPrompt() {
       entry.username = answer.username;
       entry.password = answer.password;
       self->manager_->Update(self->profile_, entry, nullptr);
+      self->WarnIfBreached(prompt.prompt.host, entry.password);
       Wipe(entry.password);
       Wipe(answer.password);
     } else {
@@ -471,6 +474,7 @@ void PasswordTab::ShowPrompt() {
       entry.username = answer.username;
       entry.password = answer.password;
       self->manager_->Add(self->profile_, entry, nullptr);
+      self->WarnIfBreached(prompt.prompt.host, entry.password);
       Wipe(entry.password);
       Wipe(answer.password);
     }
@@ -512,6 +516,20 @@ void PasswordTab::OnKeyIconClicked() {
       }
     });
   }
+  std::vector<PasswordEntry> exact;
+  if (main->second.lookup) {
+    exact = main->second.lookup->matches.exact;
+  }
+  if (!exact.empty()) {
+    menu.items.push_back({PasswordMenuItem::Kind::kReadQrCode,
+                          "Read 2FA QR code from this page", "", 0});
+    actions.emplace_back([weak, exact] {
+      std::shared_ptr<PasswordTab> self = weak.lock();
+      if (self && self->delegate_) {
+        self->ReadQrCode(exact);
+      }
+    });
+  }
   menu.items.push_back(
       {PasswordMenuItem::Kind::kManage, "Manage passwords…", "", 0});
   actions.emplace_back([weak] {
@@ -524,6 +542,129 @@ void PasswordTab::OnKeyIconClicked() {
     if (index >= 0 && static_cast<std::size_t>(index) < actions.size()) {
       actions[static_cast<std::size_t>(index)]();
     }
+  });
+}
+
+void PasswordTab::ReadQrCode(std::vector<PasswordEntry> entries) {
+  if (!browser_ || !delegate_) {
+    return;
+  }
+  // Brouk's own rendering of the page (no screen recording permission),
+  // through a short-lived DevTools session of the tab.
+  auto channel = std::make_shared<CefRefPtr<DevToolsChannel>>(
+      new DevToolsChannel(browser_));
+  CefRefPtr<CefDictionaryValue> params = CefDictionaryValue::Create();
+  params->SetString("format", "png");
+  std::weak_ptr<PasswordTab> weak = weak_from_this();
+  auto shared =
+      std::make_shared<std::vector<PasswordEntry>>(std::move(entries));
+  (*channel)->Send(
+      "Page.captureScreenshot", params,
+      [weak, channel, shared](const CefRefPtr<CefDictionaryValue>& result,
+                              const std::string& /*error*/) {
+        (*channel)->Close();
+        std::shared_ptr<PasswordTab> self = weak.lock();
+        if (!self || !self->delegate_) {
+          return;
+        }
+        std::optional<std::string> png =
+            result && result->GetType("data") == VTYPE_STRING
+                ? Base64Decode(result->GetString("data").ToString())
+                : std::nullopt;
+        if (!png) {
+          self->delegate_->ShowPasswordMessage(
+              "No QR code found", "The page could not be captured.");
+          return;
+        }
+        std::vector<std::uint8_t> bytes(png->begin(), png->end());
+        self->delegate_->DecodeQrCodes(
+            std::move(bytes),
+            [weak, shared](const std::vector<std::string>& texts) {
+              std::shared_ptr<PasswordTab> tab = weak.lock();
+              if (tab && tab->delegate_) {
+                tab->OnQrCodes(*shared, texts);
+              }
+            });
+      });
+}
+
+void PasswordTab::OnQrCodes(const std::vector<PasswordEntry>& entries,
+                            const std::vector<std::string>& texts) {
+  std::optional<TotpSecret> secret;
+  for (const std::string& text : texts) {
+    secret = ParseTotpSecret(text);
+    if (secret) {
+      break;
+    }
+  }
+  if (!secret) {
+    delegate_->ShowPasswordMessage(
+        "No 2FA QR code found",
+        "Show the site's 2FA setup QR code (\"scan this code with your "
+        "authenticator app\") on the page, then try again.");
+    return;
+  }
+  std::string totp = TotpSecretToUri(*secret);
+  if (entries.size() == 1) {
+    AddTotp(entries.front(), totp);
+    return;
+  }
+  // Several logins for the site: which one?
+  PasswordMenu menu;
+  menu.at_key_icon = true;
+  for (const PasswordEntry& entry : entries) {
+    menu.items.push_back(
+        {PasswordMenuItem::Kind::kLogin,
+         "Add 2FA code to " + (entry.username.empty()
+                                   ? std::string("(no user name)")
+                                   : entry.username),
+         "", 0});
+  }
+  std::weak_ptr<PasswordTab> weak = weak_from_this();
+  delegate_->ShowPasswordMenu(menu, [weak, entries, totp](int index) {
+    std::shared_ptr<PasswordTab> self = weak.lock();
+    if (self && index >= 0 &&
+        static_cast<std::size_t>(index) < entries.size()) {
+      self->AddTotp(entries[static_cast<std::size_t>(index)], totp);
+    }
+  });
+}
+
+void PasswordTab::AddTotp(PasswordEntry entry, const std::string& totp) {
+  std::string user = entry.username.empty() ? "the login" : entry.username;
+  entry.totp = totp;
+  std::weak_ptr<PasswordTab> weak = weak_from_this();
+  manager_->Update(
+      profile_, entry, [weak, user](const std::optional<Error>& error) {
+        std::shared_ptr<PasswordTab> self = weak.lock();
+        if (!self || !self->delegate_) {
+          return;
+        }
+        self->delegate_->ShowPasswordMessage(
+            error ? "The 2FA code was not saved" : "2FA code added",
+            error ? error->message
+                  : "Brouk now offers the codes for " + user +
+                        " on this site's code fields.");
+      });
+  Wipe(entry.password);
+}
+
+void PasswordTab::WarnIfBreached(const std::string& host,
+                                 const std::string& password) {
+  if (!manager_->options().breach_check || password.empty()) {
+    return;
+  }
+  std::weak_ptr<PasswordTab> weak = weak_from_this();
+  CheckBreaches({password}, [weak, host](std::vector<std::int64_t> counts) {
+    std::shared_ptr<PasswordTab> self = weak.lock();
+    if (!self || !self->delegate_ || counts.empty() || counts.front() == 0) {
+      return;
+    }
+    self->delegate_->ShowPasswordMessage(
+        "This password was found in a data breach",
+        "It is on lists that attackers use to break into accounts. Change "
+        "it on " +
+            host + " and wherever else you use it.");
   });
 }
 

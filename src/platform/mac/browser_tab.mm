@@ -1,5 +1,7 @@
 #import "platform/mac/browser_tab.h"
 
+#import <Vision/Vision.h>
+
 #import "platform/mac/adblock_blocked_view.h"
 #import "platform/mac/devtools_dock.h"
 #import "platform/mac/password_menu.h"
@@ -183,6 +185,40 @@ class TabDelegateBridge : public TabClientDelegate {
   }
   void OnPasswordIconChanged(PasswordIcon icon) override {
     [tab_ handlePasswordIcon:icon];
+  }
+  void DecodeQrCodes(std::vector<std::uint8_t> png, QrDone done) override {
+    NSData* data = [NSData dataWithBytes:png.data() length:png.size()];
+    __block QrDone answer = std::move(done);
+    // Off the main thread: Vision may take a moment on a large page.
+    dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
+      std::vector<std::string> texts;
+      VNDetectBarcodesRequest* request = [[VNDetectBarcodesRequest alloc] init];
+      request.symbologies = @[ VNBarcodeSymbologyQR ];
+      VNImageRequestHandler* handler =
+          [[VNImageRequestHandler alloc] initWithData:data options:@{}];
+      if ([handler performRequests:@[ request ] error:nil]) {
+        for (VNBarcodeObservation* code in request.results) {
+          if (code.payloadStringValue.length > 0) {
+            texts.emplace_back(code.payloadStringValue.UTF8String);
+          }
+        }
+      }
+      dispatch_async(dispatch_get_main_queue(), ^{
+        answer(std::move(texts));
+      });
+    });
+  }
+  void ShowPasswordMessage(const std::string& title,
+                           const std::string& text) override {
+    NSWindow* window = tab_.tabView.window;
+    NSAlert* alert = [[NSAlert alloc] init];
+    alert.messageText = ToNSString(title);
+    alert.informativeText = ToNSString(text);
+    if (window) {
+      [alert beginSheetModalForWindow:window completionHandler:nil];
+    } else {
+      [alert runModal];
+    }
   }
   void OpenPasswordsPage() override {
     BRTab* tab = tab_;

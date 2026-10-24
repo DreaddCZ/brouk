@@ -18,7 +18,14 @@ namespace brouk {
 
 // One entry of the password drop-down (008).
 struct PasswordMenuItem {
-  enum class Kind { kLogin, kGeneratedPassword, kCode, kManage, kWarning };
+  enum class Kind {
+    kLogin,
+    kGeneratedPassword,
+    kCode,
+    kReadQrCode,
+    kManage,
+    kWarning
+  };
   Kind kind = Kind::kLogin;
   std::string title;     // User name, "Use a strong password", …
   std::string detail;    // The host for other hosts; the generated password;
@@ -75,6 +82,12 @@ class PasswordTabDelegate {
   // Return or Escape move through and choose from an open menu. Returns
   // whether the menu used the key.
   virtual bool HandlePasswordMenuKey(int windows_key_code) = 0;
+  // The texts of the QR codes in a PNG image of the page (2FA setup, 008).
+  using QrDone = std::function<void(std::vector<std::string> texts)>;
+  virtual void DecodeQrCodes(std::vector<std::uint8_t> png, QrDone done) = 0;
+  // A short message about a password action, e.g. "2FA code added".
+  virtual void ShowPasswordMessage(const std::string& title,
+                                   const std::string& text) = 0;
 };
 
 // The password manager's work in one tab (008): looks up the logins of the
@@ -130,6 +143,15 @@ class PasswordTab : public std::enable_shared_from_this<PasswordTab> {
   void EvaluateSubmitted();
   void ShowPrompt();
   void UpdateIcon();
+  // Reads a 2FA setup QR code from the page's rendering and adds its secret
+  // to one of `entries` (asking which when there are several).
+  void ReadQrCode(std::vector<PasswordEntry> entries);
+  void OnQrCodes(const std::vector<PasswordEntry>& entries,
+                 const std::vector<std::string>& texts);
+  void AddTotp(PasswordEntry entry, const std::string& totp);
+  // The breach check when a password is saved (008): a warning if it is
+  // known from breaches.
+  void WarnIfBreached(const std::string& host, const std::string& password);
   // The user name of the previous step of a multi-step login on the same
   // site, if recent.
   std::string RememberedUsername(const std::string& origin) const;
