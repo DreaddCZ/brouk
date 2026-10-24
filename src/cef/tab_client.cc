@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "cef/context_menu_model.h"
+#include "cef/function_task.h"
 #include "cef/permission_mapping.h"
 #include "cef/profile_prefs.h"
 #include "core/address_input.h"
@@ -995,6 +996,52 @@ void TabClient::OnRenderProcessResponsive(CefRefPtr<CefBrowser> /*browser*/) {
   if (delegate_) {
     delegate_->OnRendererResponsive();
   }
+}
+
+CefRefPtr<CefResourceRequestHandler> TabClient::GetResourceRequestHandler(
+    CefRefPtr<CefBrowser> browser,
+    CefRefPtr<CefFrame> frame,
+    CefRefPtr<CefRequest> request,
+    bool /*is_navigation*/,
+    bool is_download,
+    const CefString& request_initiator,
+    bool& /*disable_default_handling*/) {
+  CEF_REQUIRE_IO_THREAD();
+  if (!adblock_ || is_download) {
+    return nullptr;
+  }
+  cef_resource_type_t type = request->GetResourceType();
+  std::string url = request->GetURL().ToString();
+  // The page the request belongs to: a page load is its own page.
+  std::string page_url;
+  if (type == RT_MAIN_FRAME) {
+    page_url = url;
+  } else if (CefRefPtr<CefFrame> main =
+                 browser ? browser->GetMainFrame() : nullptr) {
+    page_url = main->GetURL().ToString();
+  }
+  if (page_url.empty()) {
+    page_url = request_initiator.ToString();
+  }
+  (void)frame;
+  AdblockRequestInfo info;
+  CefRefPtr<CefResourceRequestHandler> handler = CheckAdblockRequest(
+      *adblock_, adblock_profile_, url, page_url, type, &info);
+  // Reported when it matters to the shield and the popup.
+  if (!info.url.empty() &&
+      (info.blocked || info.excepted || info.third_party || info.main_frame)) {
+    CefRefPtr<TabClient> self(this);
+    CefPostTask(TID_UI, new FunctionTask([self, info] {
+                  if (!self->delegate_) {
+                    return;
+                  }
+                  if (info.main_frame && info.blocked) {
+                    self->delegate_->OnPageBlocked(info);
+                  }
+                  self->delegate_->OnAdblockRequest(info);
+                }));
+  }
+  return handler;
 }
 
 }  // namespace brouk

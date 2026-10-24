@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "cef/adblock_request_handler.h"
 #include "core/dialog_spam_guard.h"
 #include "core/permissions.h"
 #include "core/screen_share.h"
@@ -200,6 +201,11 @@ class TabClientDelegate {
   virtual void ReleaseDownloadPath(const std::string& path) = 0;
   virtual void OnDownloadUpdated(const DownloadInfo& info) = 0;
 
+  // Ad blocking (007): a request the ad blocker matched or that went to a
+  // third party; and a page load it blocked (the tab explains it).
+  virtual void OnAdblockRequest(const AdblockRequestInfo& info) = 0;
+  virtual void OnPageBlocked(const AdblockRequestInfo& info) = 0;
+
   // A key event the page did not handle, with the native event (NSEvent* on
   // macOS). Return true if the UI handled it (e.g. as a menu shortcut).
   virtual bool OnUnhandledKeyEvent(const CefKeyEvent& event,
@@ -227,6 +233,13 @@ class TabClient : public CefClient,
 
   // UI thread. Stops all further callbacks to the delegate.
   void DetachDelegate();
+
+  // Ad blocking for the tab's requests (007), set before its browser is
+  // created. `service` outlives every browser.
+  void SetAdblock(const AdblockService* service, ProfileId profile) {
+    adblock_ = service;
+    adblock_profile_ = std::move(profile);
+  }
 
   // The settings a tab's renderer follows (kRendererConfigMessage), sent
   // when they change.
@@ -390,8 +403,18 @@ class TabClient : public CefClient,
       CefRefPtr<CefBrowser> browser,
       CefRefPtr<CefUnresponsiveProcessCallback> callback) override;
   void OnRenderProcessResponsive(CefRefPtr<CefBrowser> browser) override;
+  CefRefPtr<CefResourceRequestHandler> GetResourceRequestHandler(
+      CefRefPtr<CefBrowser> browser,
+      CefRefPtr<CefFrame> frame,
+      CefRefPtr<CefRequest> request,
+      bool is_navigation,
+      bool is_download,
+      const CefString& request_initiator,
+      bool& disable_default_handling) override;
 
  private:
+  const AdblockService* adblock_ = nullptr;  // Read on the IO thread.
+  ProfileId adblock_profile_;
   // "Allow this time": a grant that ends when the tab leaves the site.
   struct OneTimeGrant {
     std::string origin;

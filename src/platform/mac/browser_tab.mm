@@ -1,5 +1,6 @@
 #import "platform/mac/browser_tab.h"
 
+#import "platform/mac/adblock_blocked_view.h"
 #import "platform/mac/devtools_dock.h"
 #import "platform/mac/permission_prompt_view.h"
 #import "platform/mac/sad_tab_view.h"
@@ -49,6 +50,9 @@ NSString* StripFragment(NSString* url) {
 - (void)handleBrowserClosed;
 - (void)openDockInspecting:(NSPoint)point;
 - (void)handlePopupBlocked:(NSString*)url;
+- (void)handleAdblockRequest:(const brouk::AdblockRequestInfo&)info;
+- (void)handlePageBlocked:(const brouk::AdblockRequestInfo&)info;
+- (void)removeBlockedView;
 - (void)handleAudible:(BOOL)audible;
 - (void)chooseDesktopSource:(brouk::TabClientDelegate::DesktopSourceDone)done;
 - (void)showJsDialog:(const brouk::JsDialogRequest&)request
@@ -112,6 +116,12 @@ class TabDelegateBridge : public TabClientDelegate {
   }
   void OnPopupBlocked(const std::string& target_url) override {
     [tab_ handlePopupBlocked:ToNSString(target_url)];
+  }
+  void OnAdblockRequest(const AdblockRequestInfo& info) override {
+    [tab_ handleAdblockRequest:info];
+  }
+  void OnPageBlocked(const AdblockRequestInfo& info) override {
+    [tab_ handlePageBlocked:info];
   }
   void OnPopupAborted(int popup_id) override {
     BRTab* tab = tab_;
@@ -346,6 +356,8 @@ class TabInternalPageBridge : public InternalPageDelegate {
       _pendingDesktopSource;
   BRTabDialogView* _externalProtocolDialog;
   BRSadTabView* _sadTab;
+  BRAdblockBlockedView* _blockedView;
+  std::vector<brouk::AdblockRequestInfo> _adblockRequests;
   BOOL _clientDetached;
   NSMutableArray<NSString*>* _blockedPopupURLs;
   // Permission prompts of this tab; the first one is shown.
@@ -379,6 +391,10 @@ class TabInternalPageBridge : public InternalPageDelegate {
     _inspectWhenCreated = NSMakePoint(NSNotFound, NSNotFound);
     _bridge = std::make_unique<brouk::TabDelegateBridge>(self);
     _client = new brouk::TabClient(_bridge.get());
+    // Ad blocking (007) for the tab's requests; internal pages have none.
+    if (const brouk::AdblockService* adblock = [delegate adblockService]) {
+      _client->SetAdblock(adblock, profileId);
+    }
   }
   return self;
 }
@@ -490,6 +506,7 @@ class TabInternalPageBridge : public InternalPageDelegate {
 }
 
 - (void)loadURL:(NSString*)url {
+  [self removeBlockedView];
   if (_deferred) {
     _url = [url copy];
     [self createDeferredBrowser];
@@ -651,6 +668,7 @@ class TabInternalPageBridge : public InternalPageDelegate {
 - (void)handleVisit:(const std::string&)url
               title:(const std::string&)title
          transition:(cef_transition_type_t)transition {
+  [self removeBlockedView];  // Another page is shown.
   brouk::VisitTransition kind = brouk::VisitTransition::kOther;
   int source = transition & TT_SOURCE_MASK;
   if (_nextVisitTyped) {
@@ -981,6 +999,57 @@ class TabInternalPageBridge : public InternalPageDelegate {
     _browser->GetHost()->SetAudioMuted(!_browser->GetHost()->IsAudioMuted());
     [_delegate tabDidChangeState:self];
   }
+}
+
+#pragma mark - Ad blocking (007)
+
+- (const std::vector<brouk::AdblockRequestInfo>&)adblockRequests {
+  return _adblockRequests;
+}
+
+- (void)handleAdblockRequest:(const brouk::AdblockRequestInfo&)info {
+  constexpr std::size_t kMaxRequests = 5000;
+  if (info.main_frame) {
+    // A new page: its count starts over.
+    _adblockRequests.clear();
+    _adblockBlockedCount = 0;
+  }
+  if (_adblockRequests.size() < kMaxRequests) {
+    _adblockRequests.push_back(info);
+  }
+  if (info.blocked) {
+    ++_adblockBlockedCount;
+  }
+  [_delegate tabAdblockChanged:self];
+}
+
+- (void)handlePageBlocked:(const brouk::AdblockRequestInfo&)info {
+  [_blockedView removeFromSuperview];
+  __weak BRTab* weakSelf = self;
+  NSString* url = ToNSString(info.url);
+  _blockedView =
+      [[BRAdblockBlockedView alloc] initWithHost:ToNSString(info.host)
+          listName:[_delegate adblockListName:info.list_id]
+          rule:ToNSString(info.rule)
+          allow:^{
+            BRTab* tab = weakSelf;
+            [tab removeBlockedView];
+            [tab.delegate tab:tab allowSiteOf:url];
+          }
+          goBack:^{
+            BRTab* tab = weakSelf;
+            [tab removeBlockedView];
+            if (tab.url.length == 0 && tab.canGoBack) {
+              [tab goBack];
+            }
+          }];
+  _blockedView.frame = _containerView.bounds;
+  [_containerView addSubview:_blockedView];
+}
+
+- (void)removeBlockedView {
+  [_blockedView removeFromSuperview];
+  _blockedView = nil;
 }
 
 - (void)handlePopupBlocked:(NSString*)url {

@@ -9,6 +9,8 @@ set(APP_BUNDLE "${CMAKE_BINARY_DIR}/${APP_NAME}.app")
 set(HELPER_NAME_BASE "${APP_NAME} Helper")
 
 add_executable(brouk_app
+  adblock_blocked_view.h
+  adblock_blocked_view.mm
   address_field.h
   address_field.mm
   bookmark_dialogs.h
@@ -118,6 +120,11 @@ list(APPEND _bundle_commands
           "${_framework}/Chromium Embedded Framework"
   COMMAND ln -sfn Versions/Current/Libraries "${_framework}/Libraries"
   COMMAND ln -sfn Versions/Current/Resources "${_framework}/Resources")
+
+# Ad blocking resources (007), the first copy (see BroukAdblock.cmake).
+list(APPEND _bundle_commands
+  COMMAND ${CMAKE_COMMAND} -E copy "${BROUK_ADBLOCK_RESOURCES}"
+          "${APP_BUNDLE}/Contents/Resources/adblock-resources.json")
 
 set(_signed_helpers "")
 foreach(_suffix_list ${CEF_HELPER_APP_SUFFIXES})

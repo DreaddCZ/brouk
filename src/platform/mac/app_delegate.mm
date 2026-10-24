@@ -22,6 +22,7 @@
 #import "platform/mac/settings_watcher.h"
 
 #include "brouk/app_info.h"
+#include "cef/adblock_service.h"
 #include "cef/bookmarks_page_handler.h"
 #include "cef/browser_app.h"
 #include "cef/browsing_data.h"
@@ -31,6 +32,7 @@
 #include "cef/internal_scheme.h"
 #include "cef/profile_manager_handler.h"
 #include "cef/settings_handler.h"
+#include "core/adblock_lists.h"
 #include "core/address_input.h"
 #include "core/bookmark_profile.h"
 #include "core/download_paths.h"
@@ -477,6 +479,10 @@ class AppSettingsPage : public SettingsPageDelegate {
   std::unique_ptr<brouk::ProfileRegistry> _profiles;
   // History databases (013); from cefContextInitialized to shutdown.
   std::unique_ptr<brouk::HistoryService> _history;
+  // Ad and tracker blocking (007), same lifetime; reconfigured only when
+  // the lists or the profiles' categories change.
+  std::unique_ptr<brouk::AdblockService> _adblock;
+  std::string _adblockConfiguration;
   // History menu (013): tabs and windows closed in this run, and each
   // profile's recently visited pages (fetched from its history).
   brouk::ClosedTabList _closedTabs;
@@ -559,6 +565,17 @@ class AppSettingsPage : public SettingsPageDelegate {
       [profilesDir](const brouk::ProfileId& profile) {
         return profilesDir / profile / "history.db";
       });
+  NSString* resources = [NSString
+      stringWithContentsOfFile:[NSBundle.mainBundle
+                                   pathForResource:@"adblock-resources"
+                                            ofType:@"json"]
+                      encoding:NSUTF8StringEncoding
+                         error:nil];
+  _adblock = std::make_unique<brouk::AdblockService>(
+      std::filesystem::path(brouk::mac::AppDataDirectory().UTF8String) /
+          "adblock",
+      resources.UTF8String ?: "");
+  [self configureAdblock];
   // Remote debugging (006) is fixed for this run: from the setting (passed
   // to CefInitialize) or the --remote-debugging-port switch.
   CefRefPtr<CefCommandLine> commandLine =
@@ -919,6 +936,7 @@ class AppSettingsPage : public SettingsPageDelegate {
 
 - (void)releaseBrowserObjects {
   [_bookmarks saveNow];
+  _adblock.reset();
   _history.reset();  // Finishes queued history work, closes the databases.
   _settingsWatcher = nil;
   _profileManager = nil;
@@ -1176,6 +1194,7 @@ class AppSettingsPage : public SettingsPageDelegate {
   for (BRBrowserWindowController* controller in _windows) {
     [controller sendRendererConfigWithJsonViewer:jsonViewer];
   }
+  [self configureAdblock];
   NSUInteger problems = _profiles->problems().size();
   for (BRBrowserWindowController* controller in _windows) {
     controller.settingsProblemCount = problems;
@@ -1931,6 +1950,107 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
   for (BRBrowserWindowController* controller in _windows) {
     [controller profilesDidChange];
   }
+  [self configureAdblock];
+}
+
+// Each profile's blocking switch, categories and allowlist, for the
+// requests checked on the IO thread.
+- (void)updateAdblockPolicies {
+  std::map<brouk::ProfileId, brouk::ProfileAdblockPolicy> policies;
+  for (const brouk::ProfileInfo& profile : _profiles->profiles()) {
+    std::optional<brouk::Settings> settings =
+        _profiles->ProfileSettings(profile.id);
+    if (!settings) {
+      continue;
+    }
+    policies[profile.id] = {
+        .enabled = settings->GetBool("adblock.enabled"),
+        .categories = brouk::ParseFilterCategories(
+            settings->GetString("adblock.categories")),
+        .allowlist =
+            brouk::ParseUrlPatternList(settings->GetString("adblock.allowlist"))
+                .value_or(std::vector<brouk::UrlPattern>{})};
+  }
+  // Hosts of routing rules join with 010.
+  _adblock->SetPolicies(std::move(policies), {});
+}
+
+// The lists in use (global settings, the system language) and the category
+// sets of the profiles that block (007).
+- (void)configureAdblock {
+  if (!_adblock) {
+    return;
+  }
+  const brouk::Settings& global = _profiles->global_settings();
+  auto ids = [](const std::string& text) {
+    std::vector<std::string> result;
+    std::string current;
+    for (char c : text + ",") {
+      if (c == ',' || c == ' ') {
+        if (!current.empty()) {
+          result.push_back(current);
+        }
+        current.clear();
+      } else {
+        current += c;
+      }
+    }
+    return result;
+  };
+  brouk::FilterListChoice choice{
+      .turned_on = ids(global.GetString("adblock.lists_on")),
+      .turned_off = ids(global.GetString("adblock.lists_off")),
+      .custom = brouk::ParseCustomFilterLists(
+          global.GetString("adblock.custom_lists"))};
+  NSString* language = NSLocale.preferredLanguages.firstObject ?: @"en";
+  std::vector<brouk::FilterListDef> lists =
+      brouk::ActiveFilterLists(choice, language.UTF8String);
+  std::vector<std::set<brouk::FilterCategory>> sets;
+  std::string signature;
+  for (const brouk::FilterListDef& list : lists) {
+    signature += list.id + "\n";
+  }
+  for (const brouk::ProfileInfo& profile : _profiles->profiles()) {
+    std::optional<brouk::Settings> settings =
+        _profiles->ProfileSettings(profile.id);
+    if (!settings || !settings->GetBool("adblock.enabled")) {
+      continue;
+    }
+    std::set<brouk::FilterCategory> categories =
+        brouk::ParseFilterCategories(settings->GetString("adblock.categories"));
+    signature += "|" + brouk::FormatFilterCategories(categories);
+    sets.push_back(std::move(categories));
+  }
+  [self updateAdblockPolicies];
+  if (signature == _adblockConfiguration) {
+    return;
+  }
+  _adblockConfiguration = signature;
+  _adblock->Configure(std::move(lists), std::move(sets));
+}
+
+- (nullable brouk::AdblockService*)adblockService {
+  return _adblock.get();
+}
+
+// Adds a site to a profile's allowlist (the shield popup, the blocked page).
+- (void)allowAdblockSite:(const std::string&)host
+               inProfile:(const brouk::ProfileId&)profile {
+  std::optional<brouk::Settings> settings = _profiles->ProfileSettings(profile);
+  if (!settings) {
+    return;
+  }
+  std::string list = settings->GetString("adblock.allowlist");
+  std::optional<std::vector<brouk::UrlPattern>> patterns =
+      brouk::ParseUrlPatternList(list);
+  if (patterns &&
+      brouk::MatchesAnyPattern(*patterns, "https://" + host + "/")) {
+    return;
+  }
+  list += list.empty() ? host : ", " + host;
+  [self setProfileSetting:"adblock.allowlist"
+                  profile:profile
+                    value:brouk::SettingValue(list)];
 }
 
 - (std::vector<brouk::ProfileManagerDelegate::Summary>)profileSummaries {

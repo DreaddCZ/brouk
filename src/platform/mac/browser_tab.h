@@ -5,6 +5,7 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 
 #import "platform/mac/devtools_dock.h"
 
@@ -69,9 +70,22 @@ NS_ASSUME_NONNULL_BEGIN
     (const brouk::ProfileId&)profile;
 - (std::optional<brouk::Error>)setRequestRules:(brouk::RequestRuleSet)rules
                                     forProfile:(const brouk::ProfileId&)profile;
+// Ad blocking (007): the page's blocked count or requests changed; a list's
+// name for messages; "Allow this site" on the blocked page.
+- (void)tabAdblockChanged:(BRTab*)tab;
+// Null before CEF is ready.
+- (nullable const brouk::AdblockService*)adblockService;
+- (NSString*)adblockListName:(const std::string&)listId;
+- (void)tab:(BRTab*)tab allowSiteOf:(NSString*)url;
 @end
 
 @interface BRTab : NSObject
+
+// Ad blocking on the current page (007): requests blocked, and every
+// request the ad blocker matched or that went to a third party (at most a
+// few thousand).
+@property(nonatomic, readonly) NSUInteger adblockBlockedCount;
+- (const std::vector<brouk::AdblockRequestInfo>&)adblockRequests;
 
 @property(nonatomic, readonly) brouk::TabId tabId;
 @property(nonatomic, weak) id<BRTabDelegate> delegate;

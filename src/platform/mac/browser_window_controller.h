@@ -10,6 +10,7 @@
 #import "platform/mac/command_palette_panel.h"
 #import "platform/mac/devtools_dock.h"
 
+#include "cef/adblock_service.h"
 #include "cef/devtools_preferences.h"
 #include "cef/devtools_tools_handler.h"
 #include "cef/history_service.h"
@@ -100,6 +101,11 @@ NS_ASSUME_NONNULL_BEGIN
 - (BOOL)bookmarkSuggestionsEnabled;
 // ⇧⌘B: the bookmarks bar on every tab, or on the new tab page only.
 - (IBAction)toggleBookmarksBar:(nullable id)sender;
+// Ad blocking (007): null before CEF is ready; allowing a site adds it to
+// the profile's allowlist.
+- (nullable brouk::AdblockService*)adblockService;
+- (void)allowAdblockSite:(const std::string&)host
+               inProfile:(const brouk::ProfileId&)profile;
 @end
 
 @interface BRBrowserWindowController : NSWindowController <NSWindowDelegate>

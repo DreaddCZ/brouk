@@ -37,6 +37,9 @@ option(BROUK_WITH_CEF "Build the CEF integration and the app" ON)
 configure_file(src/app_info.h.in
                "${CMAKE_CURRENT_BINARY_DIR}/generated/brouk/app_info.h" @ONLY)
 
+# The ad blocking engine (Rust, 007), used by the core.
+include(BroukAdblock)
+
 add_subdirectory(src/core)
 
 if(BROUK_WITH_CEF)
