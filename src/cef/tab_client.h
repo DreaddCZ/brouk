@@ -413,6 +413,11 @@ class TabClient : public CefClient,
       bool& disable_default_handling) override;
 
  private:
+  void HandleAdblockMessage(const CefRefPtr<CefBrowser>& browser,
+                            const CefRefPtr<CefFrame>& frame,
+                            const std::string& name,
+                            const CefRefPtr<CefListValue>& args);
+
   const AdblockService* adblock_ = nullptr;  // Read on the IO thread.
   ProfileId adblock_profile_;
   // "Allow this time": a grant that ends when the tab leaves the site.

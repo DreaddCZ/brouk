@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <string>
 
+#include "brouk/adblock_cosmetic_script.h"
 #include "brouk/json_viewer_script.h"
 #include "cef/internal_scheme.h"
 #include "core/devtools_frontend.h"
@@ -198,6 +199,51 @@ constexpr char kPageScript[] = R"js(
 
 // The native function behind __broukReport(type, payload): forwards the
 // event to the browser process, which validates it.
+// The cosmetic filtering script's native function (007): ("start",
+// receiver) and ("classes", json).
+constexpr char kAdblockFunction[] = "__broukAdblock";
+
+class AdblockHandler : public CefV8Handler {
+ public:
+  explicit AdblockHandler(RendererApp* app) : app_(app) {}
+  AdblockHandler(const AdblockHandler&) = delete;
+  AdblockHandler& operator=(const AdblockHandler&) = delete;
+
+  bool Execute(const CefString& /*name*/,
+               CefRefPtr<CefV8Value> /*object*/,
+               const CefV8ValueList& arguments,
+               CefRefPtr<CefV8Value>& /*retval*/,
+               CefString& exception) override {
+    CefRefPtr<CefV8Context> context = CefV8Context::GetCurrentContext();
+    CefRefPtr<CefFrame> frame = context ? context->GetFrame() : nullptr;
+    if (!frame || arguments.size() != 2 || !arguments[0]->IsString()) {
+      exception = "invalid arguments";
+      return true;
+    }
+    std::string kind = arguments[0]->GetStringValue().ToString();
+    if (kind == "start" && arguments[1]->IsFunction()) {
+      app_->SetAdblockReceiver(context, arguments[1]);
+      frame->SendProcessMessage(
+          PID_BROWSER,
+          CefProcessMessage::Create(std::string(kAdblockCosmeticRequest)));
+    } else if (kind == "classes" && arguments[1]->IsString()) {
+      std::string json = arguments[1]->GetStringValue().ToString();
+      if (json.size() > kMaxAdblockClassesBytes) {
+        return true;
+      }
+      CefRefPtr<CefProcessMessage> message =
+          CefProcessMessage::Create(std::string(kAdblockClassesRequest));
+      message->GetArgumentList()->SetString(0, json);
+      frame->SendProcessMessage(PID_BROWSER, message);
+    }
+    return true;
+  }
+
+ private:
+  RendererApp* app_;  // Outlives every context.
+  IMPLEMENT_REFCOUNTING(AdblockHandler);
+};
+
 class ReportHandler : public CefV8Handler {
  public:
   ReportHandler() = default;
@@ -363,6 +409,17 @@ void RendererApp::OnContextCreated(CefRefPtr<CefBrowser> browser,
   CefRefPtr<CefV8Value> result;
   CefRefPtr<CefV8Exception> exception;
   context->Eval(kPageScript, frame->GetURL(), 0, result, exception);
+  // Cosmetic filtering for web pages (007); the browser decides whether
+  // anything applies. Before the page's scripts, in every frame.
+  std::string frame_url = frame->GetURL().ToString();
+  if (frame_url.starts_with("http://") || frame_url.starts_with("https://")) {
+    global->SetValue(
+        kAdblockFunction,
+        CefV8Value::CreateFunction(kAdblockFunction, new AdblockHandler(this)),
+        V8_PROPERTY_ATTRIBUTE_DONTENUM);
+    context->Eval(kAdblockCosmeticScript, "brouk://adblock-cosmetic.js", 0,
+                  result, exception);
+  }
   // The JSON viewer checks the document itself once it has loaded. Wrapped
   // in a function, so none of its names reach the page's global scope.
   if (json_viewer_ && frame->IsMain()) {
@@ -395,11 +452,45 @@ void RendererApp::OnContextReleased(CefRefPtr<CefBrowser> browser,
                                     CefRefPtr<CefV8Context> context) {
   CEF_REQUIRE_RENDERER_THREAD();
   router_->OnContextReleased(browser, frame, context);
+  auto receiver = adblock_receivers_.find(frame->GetIdentifier().ToString());
+  if (receiver != adblock_receivers_.end() &&
+      receiver->second.context->IsSame(context)) {
+    adblock_receivers_.erase(receiver);
+  }
   auto it = display_media_handlers_.find(frame->GetIdentifier().ToString());
   if (it != display_media_handlers_.end() &&
       it->second.context->IsSame(context)) {
     display_media_handlers_.erase(it);
   }
+}
+
+void RendererApp::SetAdblockReceiver(CefRefPtr<CefV8Context> context,
+                                     CefRefPtr<CefV8Value> function) {
+  CEF_REQUIRE_RENDERER_THREAD();
+  CefRefPtr<CefFrame> frame = context ? context->GetFrame() : nullptr;
+  if (frame) {
+    adblock_receivers_[frame->GetIdentifier().ToString()] = {context, function};
+  }
+}
+
+// Runs the page's scriptlets in its own world (as uBlock Origin injects
+// them) and hands the rest to the cosmetic filtering script.
+void RendererApp::DeliverAdblockAnswer(const CefRefPtr<CefFrame>& frame,
+                                       const std::string& json,
+                                       const std::string& script) {
+  auto it = adblock_receivers_.find(frame->GetIdentifier().ToString());
+  if (it == adblock_receivers_.end() || !it->second.context->Enter()) {
+    return;
+  }
+  if (!script.empty()) {
+    CefRefPtr<CefV8Value> result;
+    CefRefPtr<CefV8Exception> exception;
+    it->second.context->Eval(script, "brouk://adblock-scriptlets.js", 0, result,
+                             exception);
+  }
+  CefV8ValueList arguments = {CefV8Value::CreateString(json)};
+  it->second.function->ExecuteFunction(nullptr, arguments);
+  it->second.context->Exit();
 }
 
 void RendererApp::SetDisplayMediaHandler(CefRefPtr<CefV8Context> context,
@@ -433,8 +524,20 @@ bool RendererApp::OnProcessMessageReceived(
     }
     return true;
   }
-  if (source_process != PID_BROWSER ||
-      message->GetName().ToString() != kDisplayMediaChoiceMessage) {
+  std::string name = message->GetName().ToString();
+  if (source_process == PID_BROWSER && frame &&
+      (name == kAdblockCosmeticAnswer || name == kAdblockClassesAnswer)) {
+    CefRefPtr<CefListValue> args = message->GetArgumentList();
+    if (args && args->GetSize() >= 1 && args->GetType(0) == VTYPE_STRING) {
+      std::string script =
+          args->GetSize() >= 2 && args->GetType(1) == VTYPE_STRING
+              ? args->GetString(1).ToString()
+              : "";
+      DeliverAdblockAnswer(frame, args->GetString(0).ToString(), script);
+    }
+    return true;
+  }
+  if (source_process != PID_BROWSER || name != kDisplayMediaChoiceMessage) {
     return false;
   }
   CefRefPtr<CefListValue> args = message->GetArgumentList();

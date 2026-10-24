@@ -29,4 +29,20 @@ add_custom_command(OUTPUT "${_viewer_h}"
   COMMENT "Building the JSON viewer"
   VERBATIM)
 target_sources(brouk_renderer PRIVATE "${_viewer_h}")
+
+# Cosmetic filtering (web/adblock, TypeScript), embedded the same way (007).
+set(_cosmetic_js "${PROJECT_BINARY_DIR}/generated/brouk/adblock_cosmetic.js")
+set(_cosmetic_h "${PROJECT_BINARY_DIR}/generated/brouk/adblock_cosmetic_script.h")
+add_custom_command(OUTPUT "${_cosmetic_h}"
+  COMMAND "${PROJECT_SOURCE_DIR}/scripts/web" adblock "${_cosmetic_js}"
+  COMMAND ${CMAKE_COMMAND} -DINPUT=${_cosmetic_js} -DOUTPUT=${_cosmetic_h}
+          -DNAME=kAdblockCosmeticScript -P "${PROJECT_SOURCE_DIR}/cmake/EmbedText.cmake"
+  DEPENDS "${PROJECT_SOURCE_DIR}/web/adblock/cosmetic.ts"
+          "${PROJECT_SOURCE_DIR}/web/adblock/tsconfig.json"
+          "${PROJECT_SOURCE_DIR}/web/tsconfig.json"
+          "${PROJECT_SOURCE_DIR}/web/package-lock.json"
+          "${PROJECT_SOURCE_DIR}/cmake/EmbedText.cmake"
+  COMMENT "Building the cosmetic filtering script"
+  VERBATIM)
+target_sources(brouk_renderer PRIVATE "${_cosmetic_h}")
 target_include_directories(brouk_renderer PRIVATE "${PROJECT_BINARY_DIR}/generated")

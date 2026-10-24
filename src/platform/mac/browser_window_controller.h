@@ -104,8 +104,11 @@ NS_ASSUME_NONNULL_BEGIN
 // Ad blocking (007): null before CEF is ready; allowing a site adds it to
 // the profile's allowlist.
 - (nullable brouk::AdblockService*)adblockService;
-- (void)allowAdblockSite:(const std::string&)host
-               inProfile:(const brouk::ProfileId&)profile;
+- (void)setAdblockSite:(const std::string&)host
+               allowed:(BOOL)allowed
+             inProfile:(const brouk::ProfileId&)profile;
+// Appends a rule to My filters; `done` runs once the engines use it.
+- (void)addAdblockRule:(const std::string&)rule done:(void (^)(void))done;
 @end
 
 @interface BRBrowserWindowController : NSWindowController <NSWindowDelegate>

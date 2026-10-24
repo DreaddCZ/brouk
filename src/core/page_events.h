@@ -1,6 +1,7 @@
 #ifndef BROUK_CORE_PAGE_EVENTS_H_
 #define BROUK_CORE_PAGE_EVENTS_H_
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -34,6 +35,21 @@ inline constexpr std::string_view kRendererJsonViewerSwitch =
     "brouk-json-viewer";
 // Bool: add the JSON viewer to JSON documents (006).
 inline constexpr std::string_view kRendererConfigJsonViewer = "json_viewer";
+
+// Cosmetic filtering (007). Renderer -> browser: the frame's resources
+// (no arguments; the browser uses the frame's own URL), and generic
+// selectors for classes and ids (a JSON string). Browser -> renderer: the
+// answers (JSON for the page script, plus the scriptlets to run).
+inline constexpr std::string_view kAdblockCosmeticRequest =
+    "brouk.adblock.cosmetic";
+inline constexpr std::string_view kAdblockCosmeticAnswer =
+    "brouk.adblock.cosmetic-answer";
+inline constexpr std::string_view kAdblockClassesRequest =
+    "brouk.adblock.classes";
+inline constexpr std::string_view kAdblockClassesAnswer =
+    "brouk.adblock.classes-answer";
+// The page script's classes request is cut off beyond this.
+inline constexpr std::size_t kMaxAdblockClassesBytes = std::size_t{256} * 1024;
 
 struct PageEvent {
   enum class Type { kPopupBlocked, kAudible, kInaudible, kDisplayMedia };

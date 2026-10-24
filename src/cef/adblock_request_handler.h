@@ -1,6 +1,7 @@
 #ifndef BROUK_CEF_ADBLOCK_REQUEST_HANDLER_H_
 #define BROUK_CEF_ADBLOCK_REQUEST_HANDLER_H_
 
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -40,6 +41,26 @@ CefRefPtr<CefResourceRequestHandler> CheckAdblockRequest(
     const std::string& page_url,
     cef_resource_type_t type,
     AdblockRequestInfo* info);
+
+// Cosmetic filtering for a frame (007): what its page script needs (JSON:
+// hide, procedural, exceptions, generichide) and the scriptlets the
+// renderer runs. nullopt when blocking does not apply to the page.
+struct AdblockCosmeticAnswer {
+  std::string json;
+  std::string scriptlets;
+};
+std::optional<AdblockCosmeticAnswer> AdblockCosmeticFor(
+    const AdblockService& service,
+    const ProfileId& profile,
+    const std::string& frame_url,
+    const std::string& page_url);
+// Generic hiding selectors for the classes and ids a page script reported
+// (untrusted JSON): JSON {"generic": [...]}, or nullopt.
+std::optional<std::string> AdblockGenericSelectorsFor(
+    const AdblockService& service,
+    const ProfileId& profile,
+    const std::string& page_url,
+    const std::string& request_json);
 
 }  // namespace brouk
 

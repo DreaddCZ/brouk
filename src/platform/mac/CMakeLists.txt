@@ -11,6 +11,8 @@ set(HELPER_NAME_BASE "${APP_NAME} Helper")
 add_executable(brouk_app
   adblock_blocked_view.h
   adblock_blocked_view.mm
+  adblock_popover.h
+  adblock_popover.mm
   address_field.h
   address_field.mm
   bookmark_dialogs.h
