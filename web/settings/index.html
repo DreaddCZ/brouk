@@ -20,6 +20,29 @@
   <div id="notice" class="notice" role="status" hidden></div>
   <h2 class="scope">For all profiles</h2>
   <div id="global"></div>
+  <section class="group adblock" aria-labelledby="adblock-title">
+    <h3 id="adblock-title">Ad blocking: filter lists</h3>
+    <p class="hint">Lists are shared by all profiles; each profile chooses the
+      kinds it uses below. They update by themselves.</p>
+    <p id="adblock-error" class="error" role="alert" hidden></p>
+    <div id="adblock-lists"></div>
+    <form id="adblock-add" class="adblock-add">
+      <input type="url" id="adblock-new-url" placeholder="Add a list by address (https://…)"
+        aria-label="Address of a filter list" spellcheck="false">
+      <select id="adblock-new-category" aria-label="Kind of list"></select>
+      <button type="submit">Add</button>
+    </form>
+    <p><button type="button" id="adblock-update">Update now</button></p>
+    <h3>My filters</h3>
+    <p class="hint">Your own rules in Adblock Plus / uBlock Origin syntax, for
+      all profiles; they override the lists. E.g. <code>||ads.example.com^</code>
+      or <code>example.com##.banner</code>.</p>
+    <textarea id="adblock-filters" rows="8" spellcheck="false" aria-label="My filters"
+      aria-describedby="adblock-filter-problems"></textarea>
+    <ul id="adblock-filter-problems" class="problems" hidden></ul>
+    <p><button type="button" id="adblock-filters-save">Save My filters</button>
+      <span id="adblock-filters-saved" class="hint" role="status"></span></p>
+  </section>
   <h2 class="scope">For one profile</h2>
   <label class="profile-pick">Profile
     <select id="profile"></select>

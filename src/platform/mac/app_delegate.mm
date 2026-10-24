@@ -447,6 +447,11 @@ class AppSettingsPage : public SettingsPageDelegate {
                : std::optional<Error>(Error{kClosing});
   }
   void RevealSettingsFolder() override { [app_ revealSettingsFolder]; }
+  AdblockService* Adblock() override { return [app_ adblockService]; }
+  std::string Language() override {
+    NSString* language = NSLocale.preferredLanguages.firstObject ?: @"en";
+    return language.UTF8String ?: "en";
+  }
   void OpenClearBrowsingData() override { [app_ clearBrowsingData:nil]; }
   void ExportSettings(FileDone done) override {
     BRAppDelegate* app = app_;
