@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="light dark">
+<title>Passwords</title>
+<link rel="stylesheet" href="shared/base.css">
+<link rel="stylesheet" href="passwords.css">
+<script type="module" src="passwords.js"></script>
+</head>
+<body>
+<main>
+  <header class="top">
+    <h1>Passwords</h1>
+    <input type="search" id="query" placeholder="Search by site or user name" aria-label="Search passwords"
+      spellcheck="false" autocomplete="off">
+    <label>Profile <select id="profile-filter" aria-label="Show passwords of"></select></label>
+    <button type="button" id="lock">Unlock</button>
+  </header>
+  <nav class="tabs" role="tablist" aria-label="Sections">
+    <button type="button" role="tab" id="tab-list" aria-selected="true">Passwords</button>
+    <button type="button" role="tab" id="tab-checkup" aria-selected="false">Checkup</button>
+    <button type="button" role="tab" id="tab-never" aria-selected="false">Never saved</button>
+  </nav>
+  <p id="error" class="error" role="alert" hidden></p>
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <section id="view-list" role="tabpanel" aria-labelledby="tab-list">
+    <div class="toolbar">
+      <button type="button" id="add">Add password</button>
+      <span class="spacer"></span>
+      <button type="button" id="import">Import…</button>
+      <button type="button" id="export">Export…</button>
+    </div>
+    <div id="bitwarden" class="list"></div>
+    <div id="list" class="list" role="list"></div>
+    <p id="empty" class="empty" hidden></p>
+  </section>
+
+  <section id="view-checkup" role="tabpanel" aria-labelledby="tab-checkup" hidden>
+    <p class="intro">Finds weak and reused passwords, and passwords that appeared in data breaches (checked
+      with Have I Been Pwned: only the first 5 characters of each password's hash are sent). Built-in
+      passwords only; Bitwarden has its own reports.</p>
+    <div class="toolbar"><button type="button" id="run-checkup" class="primary">Check passwords</button>
+      <span id="checkup-status" class="selection"></span></div>
+    <div id="checkup"></div>
+  </section>
+
+  <section id="view-never" role="tabpanel" aria-labelledby="tab-never" hidden>
+    <p class="intro">Sites where Brouk does not offer to save passwords ("Never for this site").</p>
+    <div id="never" class="list" role="list"></div>
+    <p id="never-empty" class="empty" hidden>No sites.</p>
+  </section>
+</main>
+
+<div id="editor" class="modal" hidden>
+  <form class="dialog" id="editor-form" role="dialog" aria-modal="true" aria-labelledby="editor-title">
+    <h2 id="editor-title">Add password</h2>
+    <label class="field">Profile <select id="editor-profile"></select></label>
+    <label class="field">Site <input type="text" id="editor-site" spellcheck="false" autocomplete="off"
+      placeholder="https://example.com"></label>
+    <label class="field">Also on <input type="text" id="editor-others" spellcheck="false" autocomplete="off"
+      placeholder="Other sites, separated by commas"></label>
+    <label class="field">User name <input type="text" id="editor-username" spellcheck="false" autocomplete="off"></label>
+    <label class="field">Password <input type="text" id="editor-password" spellcheck="false" autocomplete="off"
+      class="secret"></label>
+    <label class="field">2FA secret <input type="text" id="editor-totp" spellcheck="false" autocomplete="off"
+      placeholder="otpauth://… or the secret key"></label>
+    <label class="field top-aligned">Note <textarea id="editor-note" rows="3" spellcheck="true"></textarea></label>
+    <p id="editor-error" class="error" role="alert" hidden></p>
+    <div class="dialog-buttons">
+      <button type="button" id="editor-cancel">Cancel</button>
+      <button type="submit" class="primary">Save</button>
+    </div>
+  </form>
+</div>
+
+<div id="chooser" class="modal" hidden>
+  <form class="dialog" id="chooser-form" role="dialog" aria-modal="true" aria-labelledby="chooser-title">
+    <h2 id="chooser-title"></h2>
+    <p id="chooser-text" class="hint"></p>
+    <label class="field">Profile <select id="chooser-profile"></select></label>
+    <div class="dialog-buttons">
+      <button type="button" id="chooser-cancel">Cancel</button>
+      <button type="submit" class="primary" id="chooser-ok"></button>
+    </div>
+  </form>
+</div>
+
+<div id="summary" class="modal" hidden>
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="summary-title">
+    <h2 id="summary-title">Import finished</h2>
+    <div id="summary-body"></div>
+    <div class="dialog-buttons"><button type="button" class="primary" id="summary-ok">OK</button></div>
+  </div>
+</div>
+</body>
+</html>

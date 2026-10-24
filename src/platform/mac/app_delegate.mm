@@ -1,5 +1,6 @@
 #import "platform/mac/app_delegate.h"
 
+#import <LocalAuthentication/LocalAuthentication.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
 #include <cmath>
@@ -32,11 +33,13 @@
 #include "cef/history_service.h"
 #include "cef/internal_scheme.h"
 #include "cef/password_manager.h"
+#include "cef/passwords_page_handler.h"
 #include "cef/profile_manager_handler.h"
 #include "cef/settings_handler.h"
 #include "core/adblock_lists.h"
 #include "core/address_input.h"
 #include "core/bookmark_profile.h"
+#include "core/crypto.h"
 #include "core/download_paths.h"
 #include "core/password_generator.h"
 #include "core/profile_export.h"
@@ -108,6 +111,9 @@
 - (void)exportSettingsWithDone:(brouk::SettingsPageDelegate::FileDone)done;
 - (void)importSettingsWithDone:(brouk::SettingsPageDelegate::FileDone)done;
 - (std::vector<brouk::ProfileInfo>)allProfiles;
+- (nullable brouk::PasswordManager*)passwordManager;
+- (BOOL)profileUsesBitwarden:(const brouk::ProfileId&)profile;
+- (BOOL)breachCheckEnabled;
 - (std::vector<std::string>)keepListOfProfile:(const brouk::ProfileId&)profile;
 - (void)previewDataOfProfile:(const brouk::ProfileId&)profile
                        since:(std::int64_t)since
@@ -425,6 +431,140 @@ class AppBookmarksPage : public BookmarksPageDelegate {
   __weak BRBrowserWindowController* controller_;
   TabId tab_;
   id observer_;
+};
+
+// Answers one passwords page tab (008): Touch ID, the clipboard and file
+// panels through the window holding the tab.
+class AppPasswordsPage : public PasswordsPageDelegate {
+ public:
+  AppPasswordsPage(BRAppDelegate* app,
+                   BRBrowserWindowController* controller,
+                   TabId tab)
+      : app_(app), controller_(controller), tab_(tab) {}
+
+  std::vector<PasswordsPageProfile> Profiles() override {
+    BRAppDelegate* app = app_;
+    std::vector<PasswordsPageProfile> profiles;
+    if (!app) {
+      return profiles;
+    }
+    for (const ProfileInfo& info : [app allProfiles]) {
+      profiles.push_back(
+          {info.id, info.name, info.color,
+           static_cast<bool>([app profileUsesBitwarden:info.id])});
+    }
+    return profiles;
+  }
+  ProfileId CurrentProfile() override {
+    return [controller_ profileOfTab:tab_];
+  }
+  PasswordManager* Manager() override { return [app_ passwordManager]; }
+  bool BreachCheckEnabled() override { return [app_ breachCheckEnabled]; }
+  void Authenticate(const std::string& reason,
+                    std::function<void(bool)> done) override {
+    LAContext* context = [[LAContext alloc] init];
+    NSError* error = nil;
+    // Touch ID, or the Mac's password when there is no Touch ID.
+    if (![context canEvaluatePolicy:LAPolicyDeviceOwnerAuthentication
+                              error:&error]) {
+      done(false);
+      return;
+    }
+    __block std::function<void(bool)> answer = std::move(done);
+    [context evaluatePolicy:LAPolicyDeviceOwnerAuthentication
+            localizedReason:@(reason.c_str())
+                      reply:^(BOOL success, NSError* _Nullable) {
+                        dispatch_async(dispatch_get_main_queue(), ^{
+                          answer(success);
+                        });
+                      }];
+  }
+  void CopyToClipboard(const std::string& text) override {
+    NSPasteboard* pasteboard = NSPasteboard.generalPasteboard;
+    [pasteboard clearContents];
+    NSString* value = [[NSString alloc] initWithBytes:text.data()
+                                               length:text.size()
+                                             encoding:NSUTF8StringEncoding];
+    [pasteboard setString:value ?: @"" forType:NSPasteboardTypeString];
+  }
+  void SaveCsv(std::string csv, SaveDone done) override {
+    NSWindow* window = controller_.window;
+    if (!window) {
+      Wipe(csv);
+      done(false, std::nullopt);
+      return;
+    }
+    NSSavePanel* panel = [NSSavePanel savePanel];
+    panel.title = @"Export Passwords";
+    panel.message = @"The file is not encrypted: anyone who can open it can "
+                    @"read your passwords.";
+    panel.nameFieldStringValue = @"Passwords.csv";
+    panel.allowedContentTypes = @[ UTTypeCommaSeparatedText ];
+    __block SaveDone answer = std::move(done);
+    __block std::string text = std::move(csv);
+    [panel
+        beginSheetModalForWindow:window
+               completionHandler:^(NSModalResponse response) {
+                 if (response != NSModalResponseOK || !panel.URL) {
+                   Wipe(text);
+                   answer(false, std::nullopt);
+                   return;
+                 }
+                 NSData* data = [NSData dataWithBytes:text.data()
+                                               length:text.size()];
+                 Wipe(text);
+                 NSError* error = nil;
+                 if (![data writeToURL:panel.URL
+                               options:NSDataWritingAtomic
+                                 error:&error]) {
+                   answer(false,
+                          Error{std::string("The file could not be saved: ") +
+                                error.localizedDescription.UTF8String});
+                   return;
+                 }
+                 answer(true, std::nullopt);
+               }];
+  }
+  void OpenCsv(OpenDone done) override {
+    NSWindow* window = controller_.window;
+    if (!window) {
+      done(std::nullopt, std::nullopt);
+      return;
+    }
+    NSOpenPanel* panel = [NSOpenPanel openPanel];
+    panel.title = @"Import Passwords";
+    panel.message = @"A CSV file exported from Chrome, Firefox, Safari or "
+                    @"Bitwarden.";
+    panel.allowedContentTypes = @[ UTTypeCommaSeparatedText ];
+    panel.canChooseDirectories = NO;
+    panel.allowsMultipleSelection = NO;
+    __block OpenDone answer = std::move(done);
+    [panel beginSheetModalForWindow:window
+                  completionHandler:^(NSModalResponse response) {
+                    if (response != NSModalResponseOK || !panel.URL) {
+                      answer(std::nullopt, std::nullopt);
+                      return;
+                    }
+                    NSError* error = nil;
+                    NSData* data = [NSData dataWithContentsOfURL:panel.URL
+                                                         options:0
+                                                           error:&error];
+                    if (!data) {
+                      answer(std::nullopt,
+                             Error{std::string("The file could not be read: ") +
+                                   error.localizedDescription.UTF8String});
+                      return;
+                    }
+                    answer(std::string(static_cast<const char*>(data.bytes),
+                                       data.length),
+                           std::nullopt);
+                  }];
+  }
+
+ private:
+  __weak BRAppDelegate* app_;
+  __weak BRBrowserWindowController* controller_;
+  TabId tab_;
 };
 
 // Answers the settings page. The registry outlives the page; actions go to
@@ -1638,6 +1778,10 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
     return std::make_unique<brouk::HistoryPageHandler>(
         std::make_unique<brouk::AppHistoryPage>(self, controller, tabId));
   }
+  if ([page isEqualToString:@"passwords"]) {
+    return std::make_unique<brouk::PasswordsPageHandler>(
+        std::make_unique<brouk::AppPasswordsPage>(self, controller, tabId));
+  }
   if ([page isEqualToString:@"bookmarks"]) {
     return std::make_unique<brouk::BookmarksPageHandler>(
         std::make_unique<brouk::AppBookmarksPage>(self, _bookmarks, controller,
@@ -2100,6 +2244,15 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
 
 - (nullable brouk::PasswordManager*)passwordManager {
   return _passwords.get();
+}
+
+- (BOOL)profileUsesBitwarden:(const brouk::ProfileId&)profile {
+  std::optional<brouk::Settings> settings = _profiles->ProfileSettings(profile);
+  return settings && settings->GetString("passwords.source") == "bitwarden";
+}
+
+- (BOOL)breachCheckEnabled {
+  return _profiles->global_settings().GetBool("passwords.breach_check");
 }
 
 // Adds a site to a profile's allowlist, or takes it (and patterns
@@ -2576,6 +2729,10 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
           title:@"Settings…"
          action:@selector(openSettings:)
        shortcut:@"settings"];
+  [self addItem:app
+          title:@"Passwords"
+         action:@selector(showPasswords:)
+       shortcut:@"passwords"];
   [app addItem:NSMenuItem.separatorItem];
   NSMenu* services = [[NSMenu alloc] initWithTitle:@"Services"];
   [app addItemWithTitle:@"Services" action:nil keyEquivalent:@""].submenu =

@@ -16,5 +16,5 @@
     "rootDir": ".",
     "outDir": "../build/web"
   },
-  "include": ["shared/**/*.ts", "bookmarks/**/*.ts", "history/**/*.ts", "profiles/**/*.ts", "settings/**/*.ts", "tools/**/*.ts", "forms/**/*.ts", "jsonview/**/*.test.ts"]
+  "include": ["shared/**/*.ts", "bookmarks/**/*.ts", "history/**/*.ts", "profiles/**/*.ts", "settings/**/*.ts", "tools/**/*.ts", "forms/**/*.ts", "passwords/**/*.ts", "jsonview/**/*.test.ts"]
 }

@@ -538,13 +538,15 @@ NSButton* ToolbarButton(NSString* symbol,
            : nullptr;
   if (handler) {
     BOOL bookmarks = [page isEqualToString:@"bookmarks"];
+    BOOL passwords = [page isEqualToString:@"passwords"];
+    NSString* title = bookmarks   ? @"Bookmarks"
+                      : passwords ? @"Passwords"
+                                  : @"History";
+    NSString* symbol = bookmarks ? @"star" : passwords ? @"key" : @"clock";
     [tab createInternalPageWithURL:url
-                             title:bookmarks ? @"Bookmarks" : @"History"
-                              icon:[NSImage
-                                       imageWithSystemSymbolName:bookmarks
-                                                                     ? @"star"
-                                                                     : @"clock"
-                                        accessibilityDescription:nil]
+                             title:title
+                              icon:[NSImage imageWithSystemSymbolName:symbol
+                                             accessibilityDescription:nil]
                            handler:std::move(handler)
                     requestContext:[_owner internalPagesContext]];
     return;
@@ -588,8 +590,9 @@ NSButton* ToolbarButton(NSString* symbol,
 
 // Internal pages shown in tabs (013, 011); the others have their windows.
 - (BOOL)opensInTab:(NSString*)page {
-  return
-      [page isEqualToString:@"history"] || [page isEqualToString:@"bookmarks"];
+  return [page isEqualToString:@"history"] ||
+         [page isEqualToString:@"bookmarks"] ||
+         [page isEqualToString:@"passwords"];
 }
 
 - (BRTab*)replaceTab:(BRTab*)old withURL:(NSString*)url typed:(BOOL)typed {
@@ -615,6 +618,11 @@ NSButton* ToolbarButton(NSString* symbol,
 
 - (void)showHistoryWithFragment:(NSString*)fragment {
   [self showInternalPage:@"history" fragment:fragment];
+}
+
+// ⌥⌘P: the passwords page as a tab, like the history page (008).
+- (IBAction)showPasswords:(id)sender {
+  [self showInternalPage:@"passwords" fragment:@""];
 }
 
 // ⌥⌘B: the bookmark manager as a tab, like the history page (011).

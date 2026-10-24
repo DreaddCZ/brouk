@@ -209,6 +209,7 @@ TEST(SettingsTest, FileFormat) {
             "  bookmark_all_tabs: \"shift+cmd+d\"\n"
             "  bookmark_manager: \"opt+cmd+b\"\n"
             "  toggle_bookmarks_bar: \"shift+cmd+b\"\n"
+            "  passwords: \"opt+cmd+p\"\n"
             "  next_tab: \"opt+cmd+right, cmd+}, ctrl+tab\"\n"
             "  previous_tab: \"opt+cmd+left, cmd+{, ctrl+shift+tab\"\n"
             "  select_tab_1: \"cmd+1\"\n"

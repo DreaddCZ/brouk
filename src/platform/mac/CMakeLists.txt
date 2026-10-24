@@ -102,6 +102,7 @@ set(_bundle_commands "")
 file(GLOB_RECURSE _web_sources CONFIGURE_DEPENDS
   "${PROJECT_SOURCE_DIR}/web/shared/*" "${PROJECT_SOURCE_DIR}/web/history/*"
   "${PROJECT_SOURCE_DIR}/web/bookmarks/*"
+  "${PROJECT_SOURCE_DIR}/web/forms/*" "${PROJECT_SOURCE_DIR}/web/passwords/*"
   "${PROJECT_SOURCE_DIR}/web/profiles/*"
   "${PROJECT_SOURCE_DIR}/web/settings/*" "${PROJECT_SOURCE_DIR}/web/tools/*"
   "${PROJECT_SOURCE_DIR}/web/jsonview/*")
@@ -112,6 +113,7 @@ add_custom_command(OUTPUT "${_web_stamp}"
   COMMAND ${CMAKE_COMMAND} -E touch "${_web_stamp}"
   DEPENDS ${_web_sources} "${PROJECT_SOURCE_DIR}/web/tsconfig.json"
           "${PROJECT_SOURCE_DIR}/web/package-lock.json"
+          "${PROJECT_SOURCE_DIR}/scripts/vendor_modules.mjs"
   COMMENT "Building internal pages"
   VERBATIM)
 
