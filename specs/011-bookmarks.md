@@ -1,6 +1,6 @@
 # 011 – Bookmark manager
 
-- **Status:** in-progress
+- **Status:** done
 - **Priority:** P1
 - **Depends on:** 001, 003, 005, 010
 
@@ -113,38 +113,38 @@ Per the hybrid UI decision in 001: the bar, the menu, the star and its dialog, a
 ## Acceptance criteria
 
 **Adding and editing**
-- [ ] Clicking the star or pressing ⌘D bookmarks the current page and opens a dialog to change its name, folder and profile; Remove deletes it again.
-- [ ] In that dialog, the profile is preselected to the active tab's profile and can be changed to General or any other profile.
-- [ ] The star is filled on a page bookmarked by an item visible in the active tab's profile, and clicking it then edits that bookmark.
-- [ ] Bookmarks and folders can be added, renamed, edited (name, URL, folder, profile) and deleted from the bar, the menu and the manager page.
-- [ ] Any deletion can be undone.
+- [x] Clicking the star or pressing ⌘D bookmarks the current page and opens a dialog to change its name, folder and profile; Remove deletes it again.
+- [x] In that dialog, the profile is preselected to the active tab's profile and can be changed to General or any other profile.
+- [x] The star is filled on a page bookmarked by an item visible in the active tab's profile, and clicking it then edits that bookmark.
+- [x] Bookmarks and folders can be added, renamed, edited (name, URL, folder, profile) and deleted from the bar, the menu and the manager page.
+- [x] Any deletion can be undone.
 
 **Structure and linking**
-- [ ] Folders can be nested and items reordered or moved by drag and drop, both on the bar and on the manager page.
-- [ ] A folder linked to profile A makes everything inside it linked to A; in the dialogs, such items show A and their profile cannot be changed.
-- [ ] Moving an item into a folder linked to A makes it linked to A; moving it out to a general folder makes it general.
+- [x] Folders can be nested and items reordered or moved by drag and drop, both on the bar and on the manager page.
+- [x] A folder linked to profile A makes everything inside it linked to A; in the dialogs, such items show A and their profile cannot be changed.
+- [x] Moving an item into a folder linked to A makes it linked to A; moving it out to a general folder makes it general.
 
 **Visibility and opening**
-- [ ] An item linked to profile A appears in the bar, the Bookmarks menu, address bar suggestions and the command palette only when the active tab belongs to A; general items appear in every profile.
-- [ ] A general bookmark opens in the profile of the tab it is opened from.
-- [ ] A linked bookmark opened from the manager page in another profile's tab opens in its own profile, in the window chosen by the rules of 010.
+- [x] An item linked to profile A appears in the bar, the Bookmarks menu, address bar suggestions and the command palette only when the active tab belongs to A; general items appear in every profile.
+- [x] A general bookmark opens in the profile of the tab it is opened from.
+- [ ] A linked bookmark opened from the manager page in another profile's tab opens in its own profile, in the window chosen by the rules of 010. (after 010)
 
 **Bookmarks bar and menu**
-- [ ] By default the bar is shown on the new tab page and hidden on tabs with a loaded page.
-- [ ] ⌘⇧B switches between "new tab page only" and "always shown"; the choice is kept after restart.
-- [ ] Click, ⌘-click, middle-click and ⌘⇧-click on the bar behave as described; items that do not fit are in the "»" menu.
-- [ ] Dropping a link or the address bar's site icon onto the bar creates a bookmark there.
-- [ ] The Bookmarks menu lists the bar's contents and Other bookmarks, with folders as submenus, and has Bookmark This Tab, Bookmark All Tabs, Bookmark Manager and Always Show Bookmarks Bar.
+- [x] By default the bar is shown on the new tab page and hidden on tabs with a loaded page.
+- [x] ⌘⇧B switches between "new tab page only" and "always shown"; the choice is kept after restart.
+- [x] Click, ⌘-click, middle-click and ⌘⇧-click on the bar behave as described; items that do not fit are in the "»" menu.
+- [x] Dropping a link or the address bar's site icon onto the bar creates a bookmark there.
+- [x] The Bookmarks menu lists the bar's contents and Other bookmarks, with folders as submenus, and has Bookmark This Tab, Bookmark All Tabs, Bookmark Manager and Always Show Bookmarks Bar.
 
 **Manager page**
-- [ ] The manager page shows all bookmarks of all profiles, marks linked items with their profile's colour and name, and can filter by profile and search by name and URL.
-- [ ] The manager page supports multi-select, and deleting or moving several items at once.
+- [x] The manager page shows all bookmarks of all profiles, marks linked items with their profile's colour and name, and can filter by profile and search by name and URL.
+- [x] The manager page supports multi-select, and deleting or moving several items at once.
 
 **Profiles, import and storage**
-- [ ] Deleting a profile turns its linked bookmarks and folders into general ones; the deletion dialog says how many there are.
-- [ ] All bookmarks can be exported to and imported from the standard HTML bookmark file; imported items land in "Imported" under Other bookmarks, as general items.
-- [ ] A profile export contains that profile's linked bookmarks; importing it recreates them in their folders, linked to the imported profile. (Extends the export from 005.)
-- [ ] Bookmarks survive a restart and a crash during saving (atomic write, previous version kept).
+- [x] Deleting a profile turns its linked bookmarks and folders into general ones; the deletion dialog says how many there are.
+- [x] All bookmarks can be exported to and imported from the standard HTML bookmark file; imported items land in "Imported" under Other bookmarks, as general items.
+- [x] A profile export contains that profile's linked bookmarks; importing it recreates them in their folders, linked to the imported profile. (Extends the export from 005.)
+- [x] Bookmarks survive a restart and a crash during saving (atomic write, previous version kept).
 
 ## Out of scope
 
@@ -178,3 +178,4 @@ None.
 - 2026-10-23 (implementation, bookmarks bar): 28 points high, below the toolbar. Shown on the new tab page (a tab without a page) and, with ⇧⌘B / View → Always Show Bookmarks Bar (setting `bookmarks.bar`), on every tab; never in popup windows or page full screen. Items show a generic globe or folder icon until favicons are stored (013 has none yet). Clicks as specified; ⇧-click opens a new window, as in Chrome; middle-click on a folder opens all of it. A folder opens as a menu; items in folder menus can be opened but not dragged or right-clicked (macOS menus do not allow it) — the manager page does that. Dragging: along the bar to reorder (a line shows the place), onto the middle half of a folder to move into it. Dropped links (http, https, file) and the site icon left of the address become bookmarks at the drop place, linked to the active tab's profile like other new bookmarks. Open All (n) opens the folder's own bookmarks (not those of subfolders) in new tabs, the first active, and asks first above 15, as Chrome does. Add Bookmark… from the bar is prefilled with the current page.
 - 2026-10-23 (implementation, manager page): `brouk://bookmarks` opens as a tab (⌥⌘B, Bookmarks → Bookmark Manager, the bar's menu), like the history page; ⌥⌘B reuses an unused new tab or the manager tab itself. Folder tree on the left; on the right the folder's items, or the search results across all folders with their folder path. The profile filter keeps folders that contain matching items, so they stay reachable. Selecting: click, ⌘-click, ⇧-click, ⌘A. Opening: double-click or Return — a general bookmark in the manager tab's profile, in that tab (as Chrome replaces its manager page); a linked one in its profile, in a new tab when the manager tab is in another profile (window choice of 010 follows with 010); ⌘ opens a new background tab. Drops on the middle of a folder (row or tree) move into it, at its end; above or below a row move to that place; in search results only folders take drops. Deleting (Delete key, button, ✕) shows Undo for 6 seconds; ⌘Z undoes the last deletion, also one made elsewhere (bar, bubble). Addresses typed on the page are read as the address bar reads them (example.org becomes https://example.org/); other text is refused. The page refreshes itself when bookmarks change anywhere (a lasting bridge request answered on every change). Import and Export use the macOS file dialogs as sheets of the window.
 - 2026-10-23 (implementation, search and profiles): address bar suggestions list up to 3 bookmarks after the history rows (setting `suggestions.bookmarks`, on), only those visible in the tab's profile and not already listed; choosing one counts as opened from a bookmark. The command palette lists every bookmark visible in the active tab's profile; choosing one opens it in the current tab. Deleting a profile makes its linked bookmarks and folders general; the deletion dialog says how many. Profile export adds a `bookmarks` section: each item linked to the profile with its contents and the names of the folders above it (format in `src/core/bookmark_profile.h`; the file version stays 1, as 005 planned for added sections). On import the items are recreated at the end of those folders, linked to the new profile; folders on the way are reused when a general folder of that name exists, else created as general folders.
+- 2026-10-24 (user's decision): tested and accepted; the criterion that needs the window choice of 010 is marked "(after 010)". Spec set to `done`.

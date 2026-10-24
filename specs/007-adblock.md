@@ -1,6 +1,6 @@
 # 007 – Ad and tracker blocking
 
-- **Status:** in-progress
+- **Status:** done
 - **Priority:** P1
 - **Depends on:** 001, 003, 004, 005
 
@@ -79,26 +79,26 @@ For example, a work profile can turn blocking off on its intranet hosts, or enti
 ## Acceptance criteria
 
 **Blocking**
-- [ ] With default lists, ads and trackers are blocked on common test pages (e.g. the EasyList and uBlock test pages, a news site); ad placeholders are hidden.
-- [ ] uBlock Origin syntax works: network rules, exceptions, `$important`, cosmetic and procedural cosmetic rules, scriptlets and redirect resources.
-- [ ] Domain lists (Hagezi, OISD, hosts files) can be enabled and block every request to listed domains and subdomains. A blocked page explains which list blocked it and offers "Allow this site".
-- [ ] Cookie banners are hidden by default; other annoyances are off by default; both can be switched per profile.
+- [x] With default lists, ads and trackers are blocked on common test pages (e.g. the EasyList and uBlock test pages, a news site); ad placeholders are hidden.
+- [x] uBlock Origin syntax works: network rules, exceptions, `$important`, cosmetic and procedural cosmetic rules, scriptlets and redirect resources.
+- [x] Domain lists (Hagezi, OISD, hosts files) can be enabled and block every request to listed domains and subdomains. A blocked page explains which list blocked it and offers "Allow this site".
+- [x] Cookie banners are hidden by default; other annoyances are off by default; both can be switched per profile.
 
 **Lists and own rules**
-- [ ] Lists can be enabled, disabled, added by URL and removed. They update by their `Expires` header (at most every 6 hours, default 4 days); a failed update keeps the previous version and shows the error.
-- [ ] My filters accepts rules in the same syntax, marks invalid ones and applies to all profiles.
-- [ ] The element picker creates a cosmetic rule for the picked element, editable before it is saved, with a preview.
-- [ ] From the popup, a third-party domain can be allowed or blocked for this site or everywhere.
+- [x] Lists can be enabled, disabled, added by URL and removed. They update by their `Expires` header (at most every 6 hours, default 4 days); a failed update keeps the previous version and shows the error.
+- [x] My filters accepts rules in the same syntax, marks invalid ones and applies to all profiles.
+- [x] The element picker creates a cosmetic rule for the picked element, editable before it is saved, with a preview.
+- [x] From the popup, a third-party domain can be allowed or blocked for this site or everywhere.
 
 **Popup and profiles**
-- [ ] The shield shows the blocked count of the current page; its popup turns blocking off for the site with one click, saved per profile.
-- [ ] The blocked requests list shows each blocked or excepted request with its rule and list.
-- [ ] Blocking can be turned off for a whole profile; profiles have separate allowlists and category choices.
-- [ ] Localhost, private network addresses and hosts in routing rules are not blocked by list rules that do not name them.
+- [x] The shield shows the blocked count of the current page; its popup turns blocking off for the site with one click, saved per profile.
+- [x] The blocked requests list shows each blocked or excepted request with its rule and list.
+- [x] Blocking can be turned off for a whole profile; profiles have separate allowlists and category choices.
+- [ ] Localhost, private network addresses and hosts in routing rules are not blocked by list rules that do not name them. (after 010)
 
 **Secure DNS and performance**
-- [ ] Secure DNS can be set to a listed provider or a custom template, is off by default, and warns about VPN and intranet names.
-- [ ] Blocking adds no noticeable page-load overhead: matching a request takes well under 1 ms. Starting with blocking ready takes no longer than without the engine plus 200 ms (cached engine).
+- [x] Secure DNS can be set to a listed provider or a custom template, is off by default, and warns about VPN and intranet names.
+- [x] Blocking adds no noticeable page-load overhead: matching a request takes well under 1 ms. Starting with blocking ready takes no longer than without the engine plus 200 ms (cached engine).
 
 ## Out of scope
 
@@ -143,3 +143,4 @@ None.
 - 2026-10-24 (implementation, lists and blocking): the lists of the 007 table are built in (`src/core/adblock_lists`), downloaded from their publishers into `adblock/lists/` (not bundled: the first start blocks once the downloads finish, about 15 seconds after launch), with their state in `adblock/lists.json`. Updates follow each list's `! Expires:` header, at most every 6 hours, otherwise every 4 days; checked 15 seconds after start and then hourly. A failed download keeps the previous version and records the error; an answer that is not a list (an HTML page) counts as failed. The regional list is on for Czech and Slovak system languages. Settings: `adblock.lists_on` / `adblock.lists_off` (changes from the defaults), `adblock.custom_lists` (category=URL entries), per profile `adblock.enabled`, `adblock.allowlist` (URL patterns as in 006) and `adblock.categories`. One engine is built per set of categories the profiles use (lists of those categories + My filters, which are "trusted" for scriptlets like uBlock's own lists), cached in `adblock/engines/`. Requests are checked on the IO thread in each tab's request handler; service workers and requests without a tab are not filtered yet. A blocked page load is cancelled and a native view explains it (list and rule) with "Allow this site" (adds the host to the profile's allowlist) and "Go back"; a web page cannot trigger the allowlisting. "Never blocked" hosts (localhost, private addresses, .local; routing hosts follow with 010) are blocked only by a rule whose text contains the host. Redirect resources come from Brave's adblock-resources, bundled at a pinned commit and updated with the lists; pages and frames are never replaced by a redirect.
 - 2026-10-24 (implementation, cosmetic filtering): each frame's page script asks the browser for its cosmetic resources when the frame's script context is created; the answer brings hiding selectors (injected as a style), procedural filters (has-text, matches-css(-before/-after), matches-attr, matches-path, min-text-length, upward, xpath; actions remove, style, remove-attr, remove-class) and the scriptlets, which the renderer evaluates in the page. CEF has no synchronous renderer-to-browser call, so this answer arrives shortly after the page's first scripts start: element hiding is in place before the page shows, but a scriptlet can come too late for code that runs at the very start of a page. Generic hiding by classes and ids works as in Brave: the page script reports classes and ids (also of later changes) and the browser answers with generic selectors, unless `$generichide` applies.
 - 2026-10-24 (implementation, shield, popup, picker, settings, DNS): the shield sits left of the star with the page's blocked count; dimmed with a slash when blocking is off for the site or the profile. The popup's domain rules are written to My filters in list syntax: `||domain^$important` (block everywhere), `||domain^$important,domain=site` (block on this site), `@@||domain^` and `@@||domain^$domain=site` (allow). "Report a broken site" opens the issue form of the first list that blocked something on the page (uBlock's form otherwise). Counts: ads = Ads and Regional lists, trackers = Privacy lists, other = the rest and My filters. The element picker runs in the page's main frame; a picked selector is accepted only during a picker the user started, and the rule (`site##selector`) is shown in a native dialog for a last edit before it is saved. Filter lists and My filters are managed in Settings (a panel above the per-profile settings); My filters lives in `adblock/my-filters.txt` rather than settings.yaml (it can be long); invalid lines are reported with their numbers while typing. Secure DNS (`dns.secure`, `dns.custom_template`) is app-wide: Chromium configures DNS over HTTPS for the whole network service (local state `dns_over_https.mode` = secure and its template), so CEF cannot set it per profile; per-profile DNS-style blocking is done with the domain lists. The setting says it applies to all profiles and warns about VPN and intranet names.
+- 2026-10-24 (user's decision): tested and accepted; the criterion that includes the hosts of routing rules is marked "(after 010)" (localhost and private addresses already work). Spec set to `done`.

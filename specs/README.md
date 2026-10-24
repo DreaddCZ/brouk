@@ -31,11 +31,11 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 004 | [Configuration system](004-configuration.md) | in-progress | P1 |
 | 005 | [Profiles](005-profiles.md) | in-progress | P1 |
 | 006 | [Developer tools](006-developer-tools.md) | in-progress | P1 |
-| 007 | [Ad and tracker blocking](007-adblock.md) | in-progress — engine (PR #33), lists and request blocking (PR #34), shield, popup and cosmetic filtering (PR #35), settings, element picker and Secure DNS (PR #36) built; waiting for testing | P1 |
+| 007 | [Ad and tracker blocking](007-adblock.md) | done — routing hosts after 010 | P1 |
 | 008 | [Password manager](008-password-manager.md) | ready | P1 |
 | 009 | [Form autofill](009-autofill.md) | ready | P1 |
 | 010 | [Link routing and window picker](010-link-routing.md) | ready | P1 |
-| 011 | [Bookmark manager](011-bookmarks.md) | in-progress — model, storage and HTML import/export (PR #28), star, bubble and Bookmarks menu (PR #29), bookmarks bar (PR #30), manager page (PR #31), suggestions, palette and profiles (PR #32) built; the window choice of 010 follows with 010 | P1 |
+| 011 | [Bookmark manager](011-bookmarks.md) | done — window choice after 010 | P1 |
 | 012 | [Web platform basics](012-web-platform-basics.md) | in-progress | P1 |
 | 013 | [History](013-history.md) | in-progress — storage, recording, retention, address bar suggestions, History menu with closed tabs, history limits, the history page as a tab with search, SQL editor, Clean up and Clear browsing data (merged); history in profile export postponed | P1 |
 | 014 | [Downloads](014-downloads.md) | ready | P2 |
