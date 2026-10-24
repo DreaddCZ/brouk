@@ -41,6 +41,8 @@ add_executable(brouk_app
   devtools_window.mm
   download_notice.h
   download_notice.mm
+  export_password_dialog.h
+  export_password_dialog.mm
   find_bar.h
   find_bar.mm
   internal_page_window.h

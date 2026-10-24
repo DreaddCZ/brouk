@@ -17,6 +17,7 @@
 #import "platform/mac/bookmark_store.h"
 #import "platform/mac/browser_window_controller.h"
 #import "platform/mac/data_paths.h"
+#import "platform/mac/export_password_dialog.h"
 #import "platform/mac/internal_page_window.h"
 #import "platform/mac/keychain.h"
 #import "platform/mac/menu_shortcuts.h"
@@ -42,6 +43,7 @@
 #include "core/crypto.h"
 #include "core/download_paths.h"
 #include "core/password_generator.h"
+#include "core/password_profile.h"
 #include "core/profile_export.h"
 #include "core/profile_registry.h"
 #include "core/request_rules.h"
@@ -100,6 +102,14 @@
                  done:(brouk::ProfileManagerDelegate::DeleteDone)done;
 - (void)exportProfile:(const brouk::ProfileId&)profile
                  done:(brouk::ProfileManagerDelegate::ExportDone)done;
+- (void)exportProfile:(const brouk::ProfileId&)profile
+            passwords:(const brouk::YamlNode&)passwords
+                 done:(brouk::ProfileManagerDelegate::ExportDone)done;
+- (void)importPasswords:(const brouk::YamlNode&)section
+              toProfile:(const brouk::ProfileId&)profile
+                message:(NSString*)message
+               problems:(std::vector<std::string>)problems
+                   done:(brouk::ProfileManagerDelegate::ImportDone)done;
 - (void)importProfileWithDone:(brouk::ProfileManagerDelegate::ImportDone)done;
 - (std::optional<brouk::Error>)setGlobalSetting:(std::string_view)key
                                           value:(brouk::SettingValue)value;
@@ -2372,7 +2382,102 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
 
 // Export (005): the user picks where to save; the file holds the profile's
 // settings only (see core/profile_export.h).
+// Export (005): the profile's built-in passwords go in encrypted with an
+// export password the user chooses (008), or are left out.
 - (void)exportProfile:(const brouk::ProfileId&)profile
+                 done:(brouk::ProfileManagerDelegate::ExportDone)done {
+  if (!_passwords || [self profileUsesBitwarden:profile]) {
+    [self exportProfile:profile
+              passwords:brouk::YamlNode()
+                   done:std::move(done)];
+    return;
+  }
+  auto count = std::make_shared<std::size_t>(0);
+  __weak BRAppDelegate* weakSelf = self;
+  brouk::ProfileId target = profile;
+  auto answer = std::make_shared<brouk::ProfileManagerDelegate::ExportDone>(
+      std::move(done));
+  _passwords->Run(
+      profile,
+      [count](brouk::PasswordStore& store) {
+        std::vector<brouk::PasswordEntry> entries = store.All();
+        *count = entries.size();
+        for (brouk::PasswordEntry& entry : entries) {
+          brouk::Wipe(entry.password);
+        }
+      },
+      [weakSelf, target, count, answer](const std::optional<std::string>&) {
+        BRAppDelegate* strongSelf = weakSelf;
+        if (!strongSelf) {
+          return;
+        }
+        if (*count == 0) {
+          [strongSelf exportProfile:target
+                          passwords:brouk::YamlNode()
+                               done:std::move(*answer)];
+          return;
+        }
+        brouk::mac::AskExportPassword(
+            strongSelf->_profileManager.window, true,
+            [NSString stringWithFormat:
+                          @"The profile has %zu saved passwords. They go into "
+                          @"the file encrypted with this password, and it is "
+                          @"needed to import them again. Brouk cannot recover "
+                          @"it.",
+                          *count],
+            [weakSelf, target,
+             answer](brouk::mac::ExportPasswordAnswer choice) {
+              BRAppDelegate* app = weakSelf;
+              if (!app) {
+                return;
+              }
+              using Choice = brouk::mac::ExportPasswordAnswer::Choice;
+              if (choice.choice == Choice::kCancel) {
+                (*answer)(false, std::nullopt);
+                return;
+              }
+              if (choice.choice == Choice::kWithoutPasswords) {
+                [app exportProfile:target
+                         passwords:brouk::YamlNode()
+                              done:std::move(*answer)];
+                return;
+              }
+              auto node = std::make_shared<brouk::YamlNode>();
+              auto password =
+                  std::make_shared<std::string>(std::move(choice.password));
+              // Encrypting (Argon2id) takes a moment: on the password thread.
+              app->_passwords->Run(
+                  target,
+                  [node, password](brouk::PasswordStore& store) {
+                    std::vector<brouk::PasswordEntry> entries = store.All();
+                    *node = brouk::ExportProfilePasswords(entries, *password);
+                    brouk::Wipe(*password);
+                    for (brouk::PasswordEntry& entry : entries) {
+                      brouk::Wipe(entry.password);
+                      brouk::Wipe(entry.note);
+                      brouk::Wipe(entry.totp);
+                    }
+                  },
+                  [weakSelf, target, node,
+                   answer](const std::optional<std::string>& failed) {
+                    BRAppDelegate* owner = weakSelf;
+                    if (!owner) {
+                      return;
+                    }
+                    if (failed) {
+                      (*answer)(false, brouk::Error{*failed});
+                      return;
+                    }
+                    [owner exportProfile:target
+                               passwords:*node
+                                    done:std::move(*answer)];
+                  });
+            });
+      });
+}
+
+- (void)exportProfile:(const brouk::ProfileId&)profile
+            passwords:(const brouk::YamlNode&)passwords
                  done:(brouk::ProfileManagerDelegate::ExportDone)done {
   std::optional<brouk::Settings> settings = _profiles->ProfileSettings(profile);
   const brouk::ProfileInfo* info = _profiles->Find(profile);
@@ -2391,8 +2496,13 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
                                                .c_str())];
   NSSavePanel* panel = [NSSavePanel savePanel];
   panel.title = [NSString stringWithFormat:@"Export “%@”", name];
-  panel.message = @"The file contains the profile's name, colour and "
-                  @"settings. It contains no sign-ins, cookies or cache.";
+  panel.message =
+      passwords.kind == brouk::YamlNode::Kind::kMap
+          ? @"The file contains the profile's name, colour, settings, "
+            @"bookmarks and its passwords (encrypted). It contains no "
+            @"sign-ins, cookies or cache."
+          : @"The file contains the profile's name, colour, settings and "
+            @"bookmarks. It contains no sign-ins, cookies or cache.";
   panel.nameFieldStringValue = fileName;
   UTType* type = [UTType
       typeWithFilenameExtension:@(std::string(brouk::kProfileExportExtension)
@@ -2409,7 +2519,7 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
   // With its linked bookmarks (011).
   std::string text = brouk::ExportProfile(
       *settings, exportedAt,
-      brouk::ExportProfileBookmarks([_bookmarks model], profile));
+      brouk::ExportProfileBookmarks([_bookmarks model], profile), passwords);
   __block brouk::ProfileManagerDelegate::ExportDone answer = std::move(done);
   void (^completion)(NSModalResponse) = ^(NSModalResponse response) {
     if (response != NSModalResponseOK || !panel.URL) {
@@ -2458,7 +2568,7 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
     // limit too).
     NSNumber* size = nil;
     [panel.URL getResourceValue:&size forKey:NSURLFileSizeKey error:nil];
-    if (size.unsignedLongLongValue > 1024 * 1024) {
+    if (size.unsignedLongLongValue > 16 * 1024 * 1024) {
       answer(brouk::Error{"This file is not a Brouk profile export."});
       return;
     }
@@ -2492,6 +2602,15 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
       }];
     }
     [strongSelf profilesChangedInApp];
+    if (parsed.value().passwords && strongSelf->_passwords) {
+      [strongSelf importPasswords:*parsed.value().passwords
+                        toProfile:created.value()
+                          message:@"Type the export password chosen when the "
+                                  @"profile was exported."
+                         problems:problems
+                             done:std::move(answer)];
+      return;
+    }
     answer(
         brouk::ProfileManagerDelegate::ImportResult{created.value(), problems});
   };
@@ -2501,6 +2620,69 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
   } else {
     completion([panel runModal]);
   }
+}
+
+// The encrypted passwords of an imported profile (008): asks for the
+// export password until it is right, or the user goes on without them.
+- (void)importPasswords:(const brouk::YamlNode&)section
+              toProfile:(const brouk::ProfileId&)profile
+                message:(NSString*)message
+               problems:(std::vector<std::string>)problems
+                   done:(brouk::ProfileManagerDelegate::ImportDone)done {
+  __weak BRAppDelegate* weakSelf = self;
+  brouk::YamlNode node = section;
+  brouk::ProfileId target = profile;
+  auto answer = std::make_shared<brouk::ProfileManagerDelegate::ImportDone>(
+      std::move(done));
+  auto notes = std::make_shared<std::vector<std::string>>(std::move(problems));
+  brouk::mac::AskExportPassword(
+      _profileManager.window, false, message,
+      [weakSelf, node, target, answer,
+       notes](brouk::mac::ExportPasswordAnswer choice) {
+        BRAppDelegate* strongSelf = weakSelf;
+        if (!strongSelf) {
+          return;
+        }
+        if (choice.choice !=
+            brouk::mac::ExportPasswordAnswer::Choice::kPassword) {
+          notes->emplace_back("The passwords were not imported.");
+          (*answer)(
+              brouk::ProfileManagerDelegate::ImportResult{target, *notes});
+          return;
+        }
+        brouk::Result<std::vector<brouk::PasswordEntry>> entries =
+            brouk::ImportProfilePasswords(node, choice.password);
+        brouk::Wipe(choice.password);
+        if (!entries) {
+          [strongSelf importPasswords:node
+                            toProfile:target
+                              message:@(entries.error().message.c_str())
+                             problems:*notes
+                                 done:std::move(*answer)];
+          return;
+        }
+        auto list = std::make_shared<std::vector<brouk::PasswordEntry>>(
+            std::move(entries).value());
+        strongSelf->_passwords->Run(
+            target,
+            [list](brouk::PasswordStore& store) {
+              std::int64_t now =
+                  static_cast<std::int64_t>(NSDate.date.timeIntervalSince1970);
+              for (brouk::PasswordEntry& entry : *list) {
+                store.Add(entry, entry.created > 0 ? entry.created : now);
+                brouk::Wipe(entry.password);
+                brouk::Wipe(entry.note);
+                brouk::Wipe(entry.totp);
+              }
+            },
+            [target, answer, notes](const std::optional<std::string>& failed) {
+              if (failed) {
+                notes->push_back("The passwords were not imported: " + *failed);
+              }
+              (*answer)(
+                  brouk::ProfileManagerDelegate::ImportResult{target, *notes});
+            });
+      });
 }
 
 // Deleting asks natively, so the page cannot delete without the user (005:
