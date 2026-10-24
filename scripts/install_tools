@@ -28,6 +28,9 @@ NINJA_VERSION=1.13.2
 NODE_VERSION=24.21.0
 GH_VERSION=2.102.0
 LLVM_TOOLS_VERSION=22.1.8 # clang-format and clang-tidy (from PyPI wheels)
+# Rust only builds Brave's adblock-rust and our thin C wrapper around it
+# (specs/007, specs/001). Standalone installers from static.rust-lang.org.
+RUST_VERSION=1.98.0
 
 PYPI=https://files.pythonhosted.org/packages
 
@@ -50,6 +53,9 @@ artifact() {
     clang-tidy-mac-x64) echo "$PYPI/86/14/27f6ed1ffdf3fcc53d4482a5f1292b39751c7426ca70deca8bb7d04f5dae/clang_tidy-$LLVM_TOOLS_VERSION-py2.py3-none-macosx_10_9_x86_64.whl 04b6c97bcdc032763d0d924531def281acd0b5a939bcc79994cbf3c6fe83e1ae" ;;
     clang-tidy-mac-arm64) echo "$PYPI/01/23/949977d4304e30eeef80206b37a9305084926ea06b99708961fcbf27913f/clang_tidy-$LLVM_TOOLS_VERSION-py2.py3-none-macosx_11_0_arm64.whl 916d7cbc9590e719459738fedc5ba76ac91f128d671390e574a0779014c84d73" ;;
     clang-tidy-linux-x64) echo "$PYPI/82/19/0f2668f8f5e2452b096a2b898f2b6bcecbceb6dd0c7f75d1755ce1f18d8b/clang_tidy-$LLVM_TOOLS_VERSION-py2.py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl 1a3de07ba82d4403d8b692ae63a5520d4db5c606014c92c24bbcef9259057bf1" ;;
+    rust-mac-x64) echo "https://static.rust-lang.org/dist/rust-$RUST_VERSION-x86_64-apple-darwin.tar.xz a3717fb569beab7060699dc237c90fce3d9d1efb72bec333ec8a116525100361" ;;
+    rust-mac-arm64) echo "https://static.rust-lang.org/dist/rust-$RUST_VERSION-aarch64-apple-darwin.tar.xz 5395f380bd220890b89b7e8ce137f3965cf0625b6f561af11e97c8d5c8743c3b" ;;
+    rust-linux-x64) echo "https://static.rust-lang.org/dist/rust-$RUST_VERSION-x86_64-unknown-linux-gnu.tar.xz ed8ee2df70909c88cbaf87a6cfa3920dac00b537de12a6abe6906641e0f5952f" ;;
     *) echo "No artifact for $1 on $PLATFORM" >&2; return 1 ;;
   esac
 }
@@ -123,5 +129,17 @@ for t in clang-format clang-tidy; do
   chmod +x "$exe"
   link "$exe" "$t"
 done
+
+# Rust: the installer puts rustc, cargo and the standard library into a
+# prefix inside .tools (no rustup, nothing in ~/.cargo).
+RUST_DIR="$TOOLS/rust-$RUST_VERSION"
+if [[ ! -x "$RUST_DIR/bin/cargo" ]]; then
+  src="$TOOLS/rust-src-$RUST_VERSION"
+  extract "$(fetch rust)" "$src"
+  "$(find "$src" -maxdepth 2 -name install.sh | head -1)" \
+    --prefix="$RUST_DIR" --without=rust-docs --disable-ldconfig >/dev/null
+  rm -rf "$src"
+fi
+for t in cargo rustc; do link "$RUST_DIR/bin/$t" "$t"; done
 
 echo "Tools installed in $BIN. Run: source scripts/env.sh"
