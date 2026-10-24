@@ -5,6 +5,7 @@
 #include <string>
 
 #include "brouk/adblock_cosmetic_script.h"
+#include "brouk/adblock_picker_script.h"
 #include "brouk/json_viewer_script.h"
 #include "cef/internal_scheme.h"
 #include "core/devtools_frontend.h"
@@ -242,6 +243,35 @@ class AdblockHandler : public CefV8Handler {
  private:
   RendererApp* app_;  // Outlives every context.
   IMPLEMENT_REFCOUNTING(AdblockHandler);
+};
+
+// The element picker's native callback: one picked selector to the
+// browser, which accepts it only during a picker the user started.
+class PickedHandler : public CefV8Handler {
+ public:
+  PickedHandler() = default;
+  PickedHandler(const PickedHandler&) = delete;
+  PickedHandler& operator=(const PickedHandler&) = delete;
+
+  bool Execute(const CefString& /*name*/,
+               CefRefPtr<CefV8Value> /*object*/,
+               const CefV8ValueList& arguments,
+               CefRefPtr<CefV8Value>& /*retval*/,
+               CefString& /*exception*/) override {
+    CefRefPtr<CefV8Context> context = CefV8Context::GetCurrentContext();
+    CefRefPtr<CefFrame> frame = context ? context->GetFrame() : nullptr;
+    if (!frame || arguments.size() != 1 || !arguments[0]->IsString()) {
+      return true;
+    }
+    CefRefPtr<CefProcessMessage> message =
+        CefProcessMessage::Create(std::string(kAdblockPicked));
+    message->GetArgumentList()->SetString(0, arguments[0]->GetStringValue());
+    frame->SendProcessMessage(PID_BROWSER, message);
+    return true;
+  }
+
+ private:
+  IMPLEMENT_REFCOUNTING(PickedHandler);
 };
 
 class ReportHandler : public CefV8Handler {
@@ -525,6 +555,23 @@ bool RendererApp::OnProcessMessageReceived(
     return true;
   }
   std::string name = message->GetName().ToString();
+  if (source_process == PID_BROWSER && frame && name == kAdblockPick) {
+    // The callback and the script that takes it run in one go: the page
+    // gets no chance to call it.
+    CefRefPtr<CefV8Context> context = frame->GetV8Context();
+    if (context && context->Enter()) {
+      context->GetGlobal()->SetValue(
+          "__broukPicked",
+          CefV8Value::CreateFunction("__broukPicked", new PickedHandler()),
+          V8_PROPERTY_ATTRIBUTE_DONTENUM);
+      CefRefPtr<CefV8Value> result;
+      CefRefPtr<CefV8Exception> exception;
+      context->Eval(kAdblockPickerScript, "brouk://adblock-picker.js", 0,
+                    result, exception);
+      context->Exit();
+    }
+    return true;
+  }
   if (source_process == PID_BROWSER && frame &&
       (name == kAdblockCosmeticAnswer || name == kAdblockClassesAnswer)) {
     CefRefPtr<CefListValue> args = message->GetArgumentList();

@@ -123,6 +123,13 @@ class TabDelegateBridge : public TabClientDelegate {
   void OnPageBlocked(const AdblockRequestInfo& info) override {
     [tab_ handlePageBlocked:info];
   }
+  void OnElementPicked(const std::string& url,
+                       const std::string& selector) override {
+    BRTab* tab = tab_;
+    [tab.delegate tab:tab
+        pickedElement:ToNSString(selector)
+               onPage:ToNSString(url)];
+  }
   void OnPopupAborted(int popup_id) override {
     BRTab* tab = tab_;
     [tab.delegate tab:tab popupAborted:popup_id];
@@ -1045,6 +1052,12 @@ class TabInternalPageBridge : public InternalPageDelegate {
           }];
   _blockedView.frame = _containerView.bounds;
   [_containerView addSubview:_blockedView];
+}
+
+- (void)startElementPicker {
+  if (_client && _browser) {
+    _client->StartElementPicker(_browser);
+  }
 }
 
 - (void)removeBlockedView {

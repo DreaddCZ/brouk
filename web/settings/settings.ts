@@ -8,6 +8,7 @@ import { cefTransport } from '../shared/bridge.js';
 import { button, byId, element, errorText } from '../shared/dom.js';
 import { SettingsApi, type SettingItem, type SettingsState } from './api.js';
 import { isShown, parseSettingTarget, sections, shortcutFromKey } from './logic.js';
+import { startAdblockPanel } from './adblock_panel.js';
 
 const api = new SettingsApi(cefTransport());
 let state: SettingsState | null = null;
@@ -250,6 +251,7 @@ function start(): void {
   window.addEventListener('focus', () => void refresh());
   window.addEventListener('hashchange', () => void showTarget());
   void refresh().then(showTarget);
+  startAdblockPanel();
 }
 
 start();

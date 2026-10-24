@@ -3,6 +3,8 @@ add_library(brouk_cef STATIC
   adblock_request_handler.cc
   adblock_request_handler.h
   adblock_service.cc
+  adblock_settings.cc
+  adblock_settings.h
   adblock_service.h
   browser_app.cc
   browser_app.h

@@ -47,6 +47,7 @@ add_executable(brouk_core_tests
   core/request_rules_test.cc
   core/screen_share_test.cc
   core/search_engines_test.cc
+  core/secure_dns_test.cc
   core/permissions_test.cc
   core/profile_export_test.cc
   core/profile_registry_test.cc

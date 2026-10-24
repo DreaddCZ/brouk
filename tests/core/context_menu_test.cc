@@ -168,5 +168,18 @@ TEST(ContextMenuTest, SearchLabelCollapsesAndShortens) {
             "Search Google for “" + expected + "…”");
 }
 
+TEST(ContextMenuTest, BlockElementWhenAdBlockingApplies) {
+  ContextMenuContext context;
+  context.can_block_element = true;
+  std::vector<MenuItem> menu = BuildContextMenu(context);
+  ASSERT_GE(menu.size(), 2U);
+  EXPECT_EQ(menu[menu.size() - 2].command, MenuCommand::kBlockElement);
+  EXPECT_EQ(menu.back().command, MenuCommand::kInspect);
+  context.is_editable = true;
+  for (const MenuItem& item : BuildContextMenu(context)) {
+    EXPECT_NE(item.command, MenuCommand::kBlockElement);
+  }
+}
+
 }  // namespace
 }  // namespace brouk

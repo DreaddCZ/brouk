@@ -48,12 +48,13 @@ case "${1:-}" in
     find "$out" -name '*.test.js' -print0 | xargs -0 node --test
     ;;
   adblock)
-    # The cosmetic filtering script alone, for embedding into the renderer.
-    out="${2:?usage: scripts/web adblock <out-file>}"
+    # The ad blocker's page scripts alone (cosmetic filtering and the
+    # element picker), for embedding into the renderer.
+    out="${2:?usage: scripts/web adblock <out-dir>}"
     tmp="$(mktemp -d)"
     "$TSC" -p adblock/tsconfig.json --outDir "$tmp"
-    mkdir -p "$(dirname "$out")"
-    cp "$tmp/adblock/cosmetic.js" "$out"
+    mkdir -p "$out"
+    cp "$tmp/adblock/cosmetic.js" "$tmp/adblock/picker.js" "$out/"
     rm -rf "$tmp"
     ;;
   jsonview)

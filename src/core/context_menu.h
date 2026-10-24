@@ -17,6 +17,7 @@ enum class MenuCommand {
   kPrint,
   kViewSource,
   kInspect,
+  kBlockElement,  // The ad blocker's element picker (007).
   // Link.
   kOpenLinkInNewTab,
   kOpenLinkInNewWindow,
@@ -66,6 +67,8 @@ struct ContextMenuContext {
   std::vector<std::string> spelling_suggestions;
   // Name of the default search engine, for "Search Google for …".
   std::string search_engine_name = "Google";
+  // Ad blocking applies to the page: "Block element…" is offered (007).
+  bool can_block_element = false;
 };
 
 // Builds Chrome's context menu for what was clicked: link, image, selection

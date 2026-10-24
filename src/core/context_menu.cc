@@ -161,6 +161,9 @@ std::vector<MenuItem> BuildContextMenu(const ContextMenuContext& context) {
     }
     menu.Separator();
   }
+  if (context.can_block_element && !context.is_editable) {
+    menu.Add(MenuCommand::kBlockElement, "Block Element…");
+  }
   menu.Add(MenuCommand::kInspect, "Inspect");
   return menu.Take();
 }

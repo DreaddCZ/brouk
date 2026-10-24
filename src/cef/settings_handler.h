@@ -7,6 +7,7 @@
 #include <string_view>
 #include <vector>
 
+#include "cef/adblock_service.h"
 #include "core/profile_registry.h"
 #include "core/result.h"
 #include "core/settings.h"
@@ -37,6 +38,10 @@ class SettingsPageDelegate {
   virtual void RevealSettingsFolder() = 0;
   // Clear browsing data (013), on the history page.
   virtual void OpenClearBrowsingData() = 0;
+  // Ad blocking (007): null before the browser is ready; the system
+  // language (for the regional list).
+  virtual AdblockService* Adblock() = 0;
+  virtual std::string Language() = 0;
   virtual void ExportSettings(FileDone done) = 0;
   virtual void ImportSettings(FileDone done) = 0;
 };

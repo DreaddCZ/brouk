@@ -30,19 +30,23 @@ add_custom_command(OUTPUT "${_viewer_h}"
   VERBATIM)
 target_sources(brouk_renderer PRIVATE "${_viewer_h}")
 
-# Cosmetic filtering (web/adblock, TypeScript), embedded the same way (007).
-set(_cosmetic_js "${PROJECT_BINARY_DIR}/generated/brouk/adblock_cosmetic.js")
+# The ad blocker's page scripts (web/adblock, TypeScript), embedded the same
+# way (007): cosmetic filtering and the element picker.
+set(_adblock_js_dir "${PROJECT_BINARY_DIR}/generated/brouk/adblock")
 set(_cosmetic_h "${PROJECT_BINARY_DIR}/generated/brouk/adblock_cosmetic_script.h")
-add_custom_command(OUTPUT "${_cosmetic_h}"
-  COMMAND "${PROJECT_SOURCE_DIR}/scripts/web" adblock "${_cosmetic_js}"
-  COMMAND ${CMAKE_COMMAND} -DINPUT=${_cosmetic_js} -DOUTPUT=${_cosmetic_h}
+set(_picker_h "${PROJECT_BINARY_DIR}/generated/brouk/adblock_picker_script.h")
+add_custom_command(OUTPUT "${_cosmetic_h}" "${_picker_h}"
+  COMMAND "${PROJECT_SOURCE_DIR}/scripts/web" adblock "${_adblock_js_dir}"
+  COMMAND ${CMAKE_COMMAND} -DINPUT=${_adblock_js_dir}/cosmetic.js -DOUTPUT=${_cosmetic_h}
           -DNAME=kAdblockCosmeticScript -P "${PROJECT_SOURCE_DIR}/cmake/EmbedText.cmake"
+  COMMAND ${CMAKE_COMMAND} -DINPUT=${_adblock_js_dir}/picker.js -DOUTPUT=${_picker_h}
+          -DNAME=kAdblockPickerScript -P "${PROJECT_SOURCE_DIR}/cmake/EmbedText.cmake"
   DEPENDS "${PROJECT_SOURCE_DIR}/web/adblock/cosmetic.ts"
+          "${PROJECT_SOURCE_DIR}/web/adblock/picker.ts"
           "${PROJECT_SOURCE_DIR}/web/adblock/tsconfig.json"
           "${PROJECT_SOURCE_DIR}/web/tsconfig.json"
           "${PROJECT_SOURCE_DIR}/web/package-lock.json"
           "${PROJECT_SOURCE_DIR}/cmake/EmbedText.cmake"
-  COMMENT "Building the cosmetic filtering script"
+  COMMENT "Building the ad blocker's page scripts"
   VERBATIM)
-target_sources(brouk_renderer PRIVATE "${_cosmetic_h}")
-target_include_directories(brouk_renderer PRIVATE "${PROJECT_BINARY_DIR}/generated")
+target_sources(brouk_renderer PRIVATE "${_cosmetic_h}" "${_picker_h}")

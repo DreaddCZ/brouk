@@ -98,6 +98,23 @@ bool TabClient::OnProcessMessageReceived(CefRefPtr<CefBrowser> browser,
                                          CefRefPtr<CefProcessMessage> message) {
   CEF_REQUIRE_UI_THREAD();
   std::string name = message->GetName().ToString();
+  if (source_process == PID_RENDERER && frame && name == kAdblockPicked) {
+    // Only the picker the user started, once, in the main frame (007).
+    CefRefPtr<CefListValue> args = message->GetArgumentList();
+    if (picker_active_ && frame->IsMain() && args && args->GetSize() == 1 &&
+        args->GetType(0) == VTYPE_STRING && delegate_) {
+      picker_active_ = false;
+      std::string selector = args->GetString(0).ToString();
+      bool clean = !selector.empty() && selector.size() <= 1024 &&
+                   std::ranges::none_of(selector, [](char c) {
+                     return static_cast<unsigned char>(c) < 0x20;
+                   });
+      if (clean) {
+        delegate_->OnElementPicked(frame->GetURL().ToString(), selector);
+      }
+    }
+    return true;
+  }
   if (source_process == PID_RENDERER && frame && adblock_ &&
       (name == kAdblockCosmeticRequest || name == kAdblockClassesRequest)) {
     HandleAdblockMessage(browser, frame, name, message->GetArgumentList());
@@ -206,6 +223,11 @@ void TabClient::OnBeforeContextMenu(CefRefPtr<CefBrowser> browser,
   if (delegate_) {
     context.search_engine_name = delegate_->CurrentSearchEngine().name;
   }
+  if (adblock_) {
+    std::string page = browser->GetMainFrame()->GetURL().ToString();
+    context.can_block_element =
+        AdblockCosmeticFor(*adblock_, adblock_profile_, page, page).has_value();
+  }
   FillMenuModel(model, BuildContextMenu(context));
 }
 
@@ -255,6 +277,9 @@ bool TabClient::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
           BuildSearchUrl(params->GetSelectionText().ToString(),
                          delegate_->CurrentSearchEngine().url_template),
           OpenDisposition::kNewForegroundTab);
+      break;
+    case MenuCommand::kBlockElement:
+      StartElementPicker(browser);
       break;
     case MenuCommand::kInspect:
       // Turns the tab's dev tools on, with the clicked element selected in
@@ -1087,6 +1112,16 @@ void TabClient::HandleAdblockMessage(const CefRefPtr<CefBrowser>& browser,
       CefProcessMessage::Create(std::string(kAdblockClassesAnswer));
   reply->GetArgumentList()->SetString(0, *answer);
   frame->SendProcessMessage(PID_RENDERER, reply);
+}
+
+void TabClient::StartElementPicker(const CefRefPtr<CefBrowser>& browser) {
+  CEF_REQUIRE_UI_THREAD();
+  if (!browser || !adblock_) {
+    return;
+  }
+  picker_active_ = true;
+  browser->GetMainFrame()->SendProcessMessage(
+      PID_RENDERER, CefProcessMessage::Create(std::string(kAdblockPick)));
 }
 
 }  // namespace brouk
