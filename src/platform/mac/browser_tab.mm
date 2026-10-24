@@ -2,6 +2,7 @@
 
 #import "platform/mac/adblock_blocked_view.h"
 #import "platform/mac/devtools_dock.h"
+#import "platform/mac/password_menu.h"
 #import "platform/mac/permission_prompt_view.h"
 #import "platform/mac/sad_tab_view.h"
 #import "platform/mac/screen_share_picker.h"
@@ -68,6 +69,11 @@ NSString* StripFragment(NSString* url) {
 - (void)dismissPermissionPrompt:(std::uint64_t)requestId;
 - (void)askOpenExternalProtocol:(const brouk::ExternalProtocolRequest&)request
                            done:(brouk::ExternalProtocolDone)done;
+- (void)showPasswordMenu:(const brouk::PasswordMenu&)menu
+                    done:(brouk::PasswordMenuDone)done;
+- (void)hidePasswordMenu;
+- (BOOL)handlePasswordMenuKey:(int)keyCode;
+- (void)handlePasswordIcon:(brouk::PasswordIcon)icon;
 @end
 
 namespace brouk {
@@ -150,6 +156,37 @@ class TabDelegateBridge : public TabClientDelegate {
   void OpenUrl(const std::string& url, OpenDisposition disposition) override {
     BRTab* tab = tab_;
     [tab.delegate tab:tab openURL:ToNSString(url) disposition:disposition];
+  }
+  // Password manager (008).
+  void ShowPasswordMenu(const PasswordMenu& menu,
+                        PasswordMenuDone done) override {
+    BRTab* tab = tab_;
+    if (!tab) {
+      done(-1);
+      return;
+    }
+    [tab showPasswordMenu:menu done:std::move(done)];
+  }
+  void HidePasswordMenu() override { [tab_ hidePasswordMenu]; }
+  bool HandlePasswordMenuKey(int windows_key_code) override {
+    return [tab_ handlePasswordMenuKey:windows_key_code];
+  }
+  void ShowPasswordPrompt(const PasswordPrompt& prompt,
+                          PasswordPromptDone done) override {
+    BRTab* tab = tab_;
+    id<BRTabDelegate> delegate = tab.delegate;
+    if (!delegate) {
+      done(PasswordPromptAnswer{});
+      return;
+    }
+    [delegate tab:tab showPasswordPrompt:prompt done:std::move(done)];
+  }
+  void OnPasswordIconChanged(PasswordIcon icon) override {
+    [tab_ handlePasswordIcon:icon];
+  }
+  void OpenPasswordsPage() override {
+    BRTab* tab = tab_;
+    [tab.delegate tabOpenPasswordsPage:tab];
   }
   void CopyTextToClipboard(const std::string& text) override {
     NSPasteboard* pasteboard = NSPasteboard.generalPasteboard;
@@ -369,6 +406,7 @@ class TabInternalPageBridge : public InternalPageDelegate {
   NSMutableArray<NSString*>* _blockedPopupURLs;
   // Permission prompts of this tab; the first one is shown.
   NSMutableArray<BRPermissionPromptView*>* _permissionPrompts;
+  BRPasswordMenu* _passwordMenu;  // Created on first use (008).
 }
 
 - (instancetype)initWithId:(brouk::TabId)tabId
@@ -402,6 +440,8 @@ class TabInternalPageBridge : public InternalPageDelegate {
     if (const brouk::AdblockService* adblock = [delegate adblockService]) {
       _client->SetAdblock(adblock, profileId);
     }
+    // The password manager (008) for the tab's login forms.
+    _client->SetPasswords([delegate passwordManager], profileId);
   }
   return self;
 }
@@ -1057,6 +1097,53 @@ class TabInternalPageBridge : public InternalPageDelegate {
 - (void)startElementPicker {
   if (_client && _browser) {
     _client->StartElementPicker(_browser);
+  }
+}
+
+#pragma mark - Passwords (008)
+
+- (void)showPasswordMenu:(const brouk::PasswordMenu&)menu
+                    done:(brouk::PasswordMenuDone)done {
+  if (menu.at_key_icon) {
+    [_delegate tab:self showKeyIconMenu:menu done:std::move(done)];
+    return;
+  }
+  NSView* view =
+      _browser ? (__bridge NSView*)_browser->GetHost()->GetWindowHandle() : nil;
+  if (!view || self.tabView.hidden) {
+    done(-1);
+    return;
+  }
+  // The page gives the field's box from the top left of the view.
+  CGFloat y =
+      view.isFlipped ? menu.y : view.bounds.size.height - menu.y - menu.height;
+  if (!_passwordMenu) {
+    _passwordMenu = [[BRPasswordMenu alloc] init];
+  }
+  [_passwordMenu showItems:menu.items
+                 belowRect:NSMakeRect(menu.x, y, menu.width, menu.height)
+                    inView:view
+                      done:std::move(done)];
+}
+
+- (void)hidePasswordMenu {
+  [_passwordMenu close];
+}
+
+- (BOOL)handlePasswordMenuKey:(int)keyCode {
+  return [_passwordMenu handleKeyCode:keyCode];
+}
+
+- (void)handlePasswordIcon:(brouk::PasswordIcon)icon {
+  if (icon != _passwordIcon) {
+    _passwordIcon = icon;
+    [_delegate tabPasswordIconChanged:self];
+  }
+}
+
+- (void)passwordKeyIconClicked {
+  if (_client) {
+    _client->OnPasswordKeyIconClicked();
   }
 }
 

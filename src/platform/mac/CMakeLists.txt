@@ -45,7 +45,13 @@ add_executable(brouk_app
   find_bar.mm
   internal_page_window.h
   internal_page_window.mm
+  keychain.h
+  keychain.mm
   main.mm
+  password_menu.h
+  password_menu.mm
+  password_prompt.h
+  password_prompt.mm
   menu_shortcuts.h
   menu_shortcuts.mm
   permission_prompt_view.h
@@ -69,7 +75,8 @@ brouk_target_options(brouk_app CEF APP)
 target_link_libraries(brouk_app PRIVATE brouk_cef brouk_core
   "-framework AppKit" "-framework AVFoundation" "-framework Cocoa"
   "-framework CoreServices"
-  "-framework IOSurface" "-framework ScreenCaptureKit"
+  "-framework IOSurface" "-framework LocalAuthentication"
+  "-framework ScreenCaptureKit" "-framework Security"
   "-framework SecurityInterface" "-framework UniformTypeIdentifiers")
 set_target_properties(brouk_app PROPERTIES
   OUTPUT_NAME "${APP_EXECUTABLE_NAME}"

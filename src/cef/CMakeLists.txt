@@ -33,6 +33,10 @@ add_library(brouk_cef STATIC
   internal_scheme.h
   json_util.h
   own_request_loader.cc
+  password_manager.cc
+  password_manager.h
+  password_tab.cc
+  password_tab.h
   own_request_loader.h
   permission_mapping.cc
   permission_mapping.h

@@ -90,6 +90,27 @@ void TabClient::SendRendererConfig(const CefRefPtr<CefBrowser>& browser,
 void TabClient::DetachDelegate() {
   CEF_REQUIRE_UI_THREAD();
   delegate_ = nullptr;
+  if (passwords_) {
+    passwords_->Detach();
+  }
+}
+
+void TabClient::SetPasswords(PasswordManager* manager,
+                             const ProfileId& profile) {
+  CEF_REQUIRE_UI_THREAD();
+  if (passwords_) {
+    passwords_->Detach();
+  }
+  passwords_ = manager && delegate_
+                   ? std::make_shared<PasswordTab>(manager, profile, delegate_)
+                   : nullptr;
+}
+
+void TabClient::OnPasswordKeyIconClicked() {
+  CEF_REQUIRE_UI_THREAD();
+  if (passwords_) {
+    passwords_->OnKeyIconClicked();
+  }
 }
 
 bool TabClient::OnProcessMessageReceived(CefRefPtr<CefBrowser> browser,
@@ -98,6 +119,16 @@ bool TabClient::OnProcessMessageReceived(CefRefPtr<CefBrowser> browser,
                                          CefRefPtr<CefProcessMessage> message) {
   CEF_REQUIRE_UI_THREAD();
   std::string name = message->GetName().ToString();
+  if (source_process == PID_RENDERER && frame && name == kFormsMessage) {
+    // Login forms (008): untrusted, validated by the password logic.
+    CefRefPtr<CefListValue> args = message->GetArgumentList();
+    if (passwords_ && args && args->GetSize() == 2 &&
+        args->GetType(0) == VTYPE_STRING && args->GetType(1) == VTYPE_STRING) {
+      passwords_->HandleMessage(browser, frame, args->GetString(0).ToString(),
+                                args->GetString(1).ToString());
+    }
+    return true;
+  }
   if (source_process == PID_RENDERER && frame && name == kAdblockPicked) {
     // Only the picker the user started, once, in the main frame (007).
     CefRefPtr<CefListValue> args = message->GetArgumentList();
@@ -556,7 +587,9 @@ bool TabClient::OnPreKeyEvent(CefRefPtr<CefBrowser> browser,
     browser->GetHost()->ExitFullscreen(/*will_cause_resize=*/true);
     return true;
   }
-  return false;
+  // The password drop-down takes the arrow keys while it is open (008).
+  return event.type == KEYEVENT_RAWKEYDOWN && delegate_ &&
+         delegate_->HandlePasswordMenuKey(event.windows_key_code);
 }
 
 bool TabClient::OnKeyEvent(CefRefPtr<CefBrowser> /*browser*/,
@@ -658,6 +691,9 @@ void TabClient::OnLoadStart(CefRefPtr<CefBrowser> /*browser*/,
   CEF_REQUIRE_UI_THREAD();
   if (frame->IsMain()) {
     main_load_failed_ = false;
+    if (passwords_) {
+      passwords_->OnMainFrameLoadStart();
+    }
   }
   // A new document in the main frame starts silent: the old page and its
   // frames are gone. (Not called for same-document navigations.)

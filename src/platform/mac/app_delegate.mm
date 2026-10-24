@@ -17,6 +17,7 @@
 #import "platform/mac/browser_window_controller.h"
 #import "platform/mac/data_paths.h"
 #import "platform/mac/internal_page_window.h"
+#import "platform/mac/keychain.h"
 #import "platform/mac/menu_shortcuts.h"
 #import "platform/mac/profile_colors.h"
 #import "platform/mac/settings_watcher.h"
@@ -30,12 +31,14 @@
 #include "cef/history_page_handler.h"
 #include "cef/history_service.h"
 #include "cef/internal_scheme.h"
+#include "cef/password_manager.h"
 #include "cef/profile_manager_handler.h"
 #include "cef/settings_handler.h"
 #include "core/adblock_lists.h"
 #include "core/address_input.h"
 #include "core/bookmark_profile.h"
 #include "core/download_paths.h"
+#include "core/password_generator.h"
 #include "core/profile_export.h"
 #include "core/profile_registry.h"
 #include "core/request_rules.h"
@@ -490,6 +493,8 @@ class AppSettingsPage : public SettingsPageDelegate {
   // the lists or the profiles' categories change.
   std::unique_ptr<brouk::AdblockService> _adblock;
   std::string _adblockConfiguration;
+  // Built-in passwords (008), same lifetime.
+  std::unique_ptr<brouk::PasswordManager> _passwords;
   // History menu (013): tabs and windows closed in this run, and each
   // profile's recently visited pages (fetched from its history).
   brouk::ClosedTabList _closedTabs;
@@ -583,6 +588,21 @@ class AppSettingsPage : public SettingsPageDelegate {
           "adblock",
       resources.UTF8String ?: "");
   [self configureAdblock];
+  _passwords = std::make_unique<brouk::PasswordManager>(
+      [profilesDir](const brouk::ProfileId& profile) {
+        return profilesDir / profile / "passwords.db";
+      },
+      brouk::mac::CreateKeychain(brouk::mac::KeychainServiceName()));
+  __weak BRAppDelegate* weakApp = self;
+  _passwords->SetOfferToSave([weakApp](const brouk::ProfileId& profile) {
+    BRAppDelegate* app = weakApp;
+    if (!app) {
+      return false;
+    }
+    std::optional<brouk::Settings> settings =
+        app->_profiles->ProfileSettings(profile);
+    return !settings || settings->GetBool("passwords.offer_to_save");
+  });
   // Remote debugging (006) is fixed for this run: from the setting (passed
   // to CefInitialize) or the --remote-debugging-port switch.
   CefRefPtr<CefCommandLine> commandLine =
@@ -944,7 +964,8 @@ class AppSettingsPage : public SettingsPageDelegate {
 - (void)releaseBrowserObjects {
   [_bookmarks saveNow];
   _adblock.reset();
-  _history.reset();  // Finishes queued history work, closes the databases.
+  _passwords.reset();  // Finishes queued work, closes the databases.
+  _history.reset();    // Finishes queued history work, closes the databases.
   _settingsWatcher = nil;
   _profileManager = nil;
   _settingsWindow = nil;
@@ -1203,6 +1224,15 @@ class AppSettingsPage : public SettingsPageDelegate {
   }
   [self configureAdblock];
   [self applySecureDns];
+  if (_passwords) {
+    _passwords->SetOptions(
+        {.fill_on_click = global.GetBool("passwords.fill_on_click"),
+         .copy_totp = global.GetBool("passwords.copy_totp"),
+         .breach_check = global.GetBool("passwords.breach_check"),
+         .rules = brouk::PasswordRulesFromSettings(
+             static_cast<int>(global.GetInt("passwords.generated_length")),
+             global.GetString("passwords.generated_characters"))});
+  }
   NSUInteger problems = _profiles->problems().size();
   for (BRBrowserWindowController* controller in _windows) {
     controller.settingsProblemCount = problems;
@@ -2068,6 +2098,10 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
   return _adblock.get();
 }
 
+- (nullable brouk::PasswordManager*)passwordManager {
+  return _passwords.get();
+}
+
 // Adds a site to a profile's allowlist, or takes it (and patterns
 // matching it) off (the shield popup, the blocked page).
 - (void)setAdblockSite:(const std::string&)host
@@ -2374,6 +2408,9 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
     strongSelf->_requestContexts.erase(target);
     if (strongSelf->_history) {
       strongSelf->_history->CloseProfile(target);
+    }
+    if (strongSelf->_passwords) {
+      strongSelf->_passwords->DeleteProfile(target);
     }
     strongSelf->_closedTabs.RemoveProfile(target);
     strongSelf->_recentPages.erase(target);

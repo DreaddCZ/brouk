@@ -57,6 +57,18 @@ case "${1:-}" in
     cp "$tmp/adblock/cosmetic.js" "$tmp/adblock/picker.js" "$out/"
     rm -rf "$tmp"
     ;;
+  forms)
+    # The forms page script (login forms, 008) as one plain script for
+    # embedding into the renderer: its modules joined, without the import
+    # lines and export keywords (the renderer wraps it in a function).
+    out="${2:?usage: scripts/web forms <out-file>}"
+    tmp="$(mktemp -d)"
+    "$TSC" -p forms/tsconfig.json --outDir "$tmp"
+    mkdir -p "$(dirname "$out")"
+    cat "$tmp/forms/field_rules.js" "$tmp/forms/login.js" |
+      grep -v '^import ' | sed -e 's/^export //' > "$out"
+    rm -rf "$tmp"
+    ;;
   jsonview)
     # The JSON viewer script alone, for embedding into the renderer.
     out="${2:?usage: scripts/web jsonview <out-file>}"

@@ -1,0 +1,10 @@
+{
+  // The forms page script alone, for embedding into the renderer (see
+  // scripts/web forms). Its tests run with the other pages' tests.
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "..",
+    "outDir": "../../build/web"
+  },
+  "include": ["field_rules.ts", "login.ts"]
+}

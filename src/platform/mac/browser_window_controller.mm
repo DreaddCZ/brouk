@@ -22,6 +22,8 @@
 #import "platform/mac/download_notice.h"
 #import "platform/mac/find_bar.h"
 #import "platform/mac/menu_shortcuts.h"
+#import "platform/mac/password_menu.h"
+#import "platform/mac/password_prompt.h"
 #import "platform/mac/profile_colors.h"
 #import "platform/mac/site_info_popover.h"
 
@@ -158,6 +160,8 @@ NSButton* ToolbarButton(NSString* symbol,
   NSButton* _zoomButton;
   NSButton* _starButton;    // Bookmark this tab (011).
   NSButton* _shieldButton;  // Ad blocking (007): count and popup.
+  NSButton* _keyButton;     // Passwords (008): saved logins, save prompt.
+  BRPasswordMenu* _keyMenu;
   BRBookmarksBar* _bookmarksBar;
   BOOL _browserUIHidden;  // Page full screen.
   NSView* _contentArea;
@@ -449,6 +453,16 @@ NSButton* ToolbarButton(NSString* symbol,
                           weight:NSFontWeightMedium];
   _shieldButton.hidden = YES;
   [_toolbar addSubview:_shieldButton];
+
+  // The password manager's key (008): shown when the site has saved logins
+  // or a login waits to be saved.
+  _keyButton = ToolbarButton(@"key", @"Passwords", @"Saved passwords", self,
+                             @selector(passwordKeyClicked:));
+  _keyButton.symbolConfiguration = [NSImageSymbolConfiguration
+      configurationWithPointSize:12
+                          weight:NSFontWeightMedium];
+  _keyButton.hidden = YES;
+  [_toolbar addSubview:_keyButton];
   [self layoutAddressArea];
 
   _findBar = [[BRFindBar alloc]
@@ -955,17 +969,18 @@ NSButton* ToolbarButton(NSString* symbol,
   _addressField.frame = NSMakeRect(left, 8, right - left, 24);
   CGFloat end = NSMaxX(_addressField.frame);
   _starButton.frame = NSMakeRect(end - 28, 8, 26, 24);
-  _shieldButton.frame = NSMakeRect(end - 78, 8, 48, 24);
-  _zoomButton.frame = NSMakeRect(end - 136, 10, 54, 20);
-  _popupBlockedButton.frame = NSMakeRect(end - 166, 8, 26, 24);
-  _settingsProblemButton.frame = NSMakeRect(end - 196, 8, 26, 24);
+  _keyButton.frame = NSMakeRect(end - 54, 8, 26, 24);
+  _shieldButton.frame = NSMakeRect(end - 104, 8, 48, 24);
+  _zoomButton.frame = NSMakeRect(end - 162, 10, 54, 20);
+  _popupBlockedButton.frame = NSMakeRect(end - 192, 8, 26, 24);
+  _settingsProblemButton.frame = NSMakeRect(end - 222, 8, 26, 24);
   [_remoteDebuggingButton sizeToFit];
   NSSize size = _remoteDebuggingButton.frame.size;
   _remoteDebuggingButton.frame =
-      NSMakeRect(end - 200 - size.width, 10, size.width, 20);
+      NSMakeRect(end - 226 - size.width, 10, size.width, 20);
   for (NSView* view in @[
-         _starButton, _shieldButton, _zoomButton, _popupBlockedButton,
-         _settingsProblemButton, _remoteDebuggingButton
+         _starButton, _keyButton, _shieldButton, _zoomButton,
+         _popupBlockedButton, _settingsProblemButton, _remoteDebuggingButton
        ]) {
     view.autoresizingMask = NSViewMinXMargin;
   }
@@ -1098,6 +1113,7 @@ NSButton* ToolbarButton(NSString* symbol,
   _popupBlockedButton.hidden = tab.blockedPopupURLs.count == 0;
 
   [self updateShield];
+  [self updateKeyButton];
 
   BOOL bookmarkable = [self canBookmarkTab:tab];
   _starButton.hidden = !bookmarkable;
@@ -2546,6 +2562,71 @@ static std::int64_t Now() {
                            }
                          }];
                        }];
+}
+
+#pragma mark - Passwords (008)
+
+- (nullable brouk::PasswordManager*)passwordManager {
+  return [_owner passwordManager];
+}
+
+- (void)updateKeyButton {
+  brouk::PasswordIcon icon = [self activeTab].passwordIcon;
+  _keyButton.hidden = icon == brouk::PasswordIcon::kHidden;
+  BOOL pending = icon == brouk::PasswordIcon::kSavePending;
+  _keyButton.image =
+      [NSImage imageWithSystemSymbolName:pending ? @"key.fill" : @"key"
+                accessibilityDescription:@"Passwords"];
+  _keyButton.contentTintColor =
+      pending ? NSColor.controlAccentColor : NSColor.secondaryLabelColor;
+  _keyButton.toolTip = pending ? @"Save password" : @"Saved passwords";
+  _keyButton.accessibilityValue = _keyButton.toolTip;
+}
+
+- (void)tabPasswordIconChanged:(BRTab*)tab {
+  if (tab == [self activeTab]) {
+    [self updateKeyButton];
+  }
+}
+
+- (IBAction)passwordKeyClicked:(id)sender {
+  [[self activeTab] passwordKeyIconClicked];
+}
+
+- (void)tab:(BRTab*)tab
+    showPasswordPrompt:(const brouk::PasswordPrompt&)prompt
+                  done:(brouk::PasswordPromptDone)done {
+  if (tab != [self activeTab] || !self.window.visible) {
+    // Reachable later from the key icon.
+    done(brouk::PasswordPromptAnswer{});
+    return;
+  }
+  [self updateKeyButton];
+  [BRPasswordPrompt showPrompt:prompt
+                    relativeTo:_keyButton
+                          done:std::move(done)];
+}
+
+- (void)tab:(BRTab*)tab
+    showKeyIconMenu:(const brouk::PasswordMenu&)menu
+               done:(brouk::PasswordMenuDone)done {
+  if (tab != [self activeTab] || _keyButton.hidden) {
+    done(-1);
+    return;
+  }
+  if (!_keyMenu) {
+    _keyMenu = [[BRPasswordMenu alloc] init];
+  }
+  NSRect anchor = _keyButton.bounds;
+  anchor.size.width = 1;
+  [_keyMenu showItems:menu.items
+            belowRect:anchor
+               inView:_keyButton
+                 done:std::move(done)];
+}
+
+- (void)tabOpenPasswordsPage:(BRTab*)tab {
+  [self showInternalPage:@"passwords" fragment:@""];
 }
 
 #pragma mark - Ad blocking (007)

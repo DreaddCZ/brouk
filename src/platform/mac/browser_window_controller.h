@@ -109,6 +109,8 @@ NS_ASSUME_NONNULL_BEGIN
              inProfile:(const brouk::ProfileId&)profile;
 // Appends a rule to My filters; `done` runs once the engines use it.
 - (void)addAdblockRule:(const std::string&)rule done:(void (^)(void))done;
+// Password manager (008): null before CEF is ready.
+- (nullable brouk::PasswordManager*)passwordManager;
 @end
 
 @interface BRBrowserWindowController : NSWindowController <NSWindowDelegate>
