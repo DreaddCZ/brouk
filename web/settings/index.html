@@ -43,6 +43,36 @@
     <p><button type="button" id="adblock-filters-save">Save My filters</button>
       <span id="adblock-filters-saved" class="hint" role="status"></span></p>
   </section>
+  <section class="group autofill" id="autofill" aria-labelledby="autofill-title">
+    <h3 id="autofill-title">Autofill: saved entries</h3>
+    <p class="hint">Contact, address and company details for forms, shared by all
+      profiles. The switches are in the Autofill section above.</p>
+    <p id="autofill-error" class="error" role="alert" hidden></p>
+    <div class="autofill-tools">
+      <input type="search" id="autofill-search" placeholder="Search entries" aria-label="Search entries"
+        spellcheck="false">
+      <select id="autofill-sort" aria-label="Sort entries">
+        <option value="last_used">Last used</option>
+        <option value="label">Label</option>
+        <option value="times_used">Times used</option>
+      </select>
+      <button type="button" id="autofill-add">Add entry</button>
+      <button type="button" id="autofill-find-duplicates">Find duplicates</button>
+      <button type="button" id="autofill-import">Import…</button>
+      <button type="button" id="autofill-export">Export…</button>
+      <button type="button" id="autofill-delete-selected" class="danger" hidden></button>
+    </div>
+    <div id="autofill-duplicates" class="duplicates" hidden></div>
+    <div id="autofill-entries" class="autofill-list"></div>
+    <p id="autofill-empty" class="hint" hidden>No entries. Brouk offers to save them when you fill a
+      form, or add one here.</p>
+    <h3>Custom fields</h3>
+    <p class="hint">Values for fields Brouk does not know, e.g. a contract number. A field is
+      suggested when its label contains one of the label words.</p>
+    <div id="autofill-custom"></div>
+    <p><button type="button" id="autofill-add-custom">Add custom field</button></p>
+    <div id="autofill-toast" class="autofill-toast" role="status" hidden></div>
+  </section>
   <h2 class="scope">For one profile</h2>
   <label class="profile-pick">Profile
     <select id="profile"></select>
@@ -57,5 +87,31 @@
   <p class="hint">Profiles are exported and imported in the profile manager
     (Profiles &gt; Manage Profiles).</p>
 </main>
+<div id="autofill-editor" class="modal" hidden>
+  <form class="dialog wide" id="autofill-editor-form" role="dialog" aria-modal="true"
+    aria-labelledby="autofill-editor-title">
+    <h2 id="autofill-editor-title">Edit entry</h2>
+    <label class="field"><span>Label</span> <input type="text" id="autofill-label"
+      placeholder="e.g. Work, Home, Company A invoicing"></label>
+    <div id="autofill-fields" class="autofill-fields"></div>
+    <p id="autofill-origin" class="hint"></p>
+    <p id="autofill-editor-error" class="error" role="alert" hidden></p>
+    <div class="dialog-buttons">
+      <button type="button" id="autofill-editor-cancel">Cancel</button>
+      <button type="submit" class="primary">Save</button>
+    </div>
+  </form>
+</div>
+<div id="autofill-merge" class="modal" hidden>
+  <div class="dialog wide" role="dialog" aria-modal="true" aria-labelledby="autofill-merge-title">
+    <h2 id="autofill-merge-title">Merge entries</h2>
+    <p class="hint">Choose the value to keep for each field where the entries differ.</p>
+    <div id="autofill-merge-body"></div>
+    <div class="dialog-buttons">
+      <button type="button" id="autofill-merge-cancel">Cancel</button>
+      <button type="button" class="primary" id="autofill-merge-ok">Merge</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>

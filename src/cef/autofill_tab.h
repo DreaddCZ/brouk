@@ -83,7 +83,7 @@ class AutofillTab : public std::enable_shared_from_this<AutofillTab> {
   void FillForm(const std::string& frame_id, int form_id, std::int64_t entry);
   void ClearForm(const std::string& frame_id, int form_id);
   void Send(const std::string& frame_id, const std::string& message);
-  void Ask(AutofillPrompt prompt,
+  void Ask(const AutofillPrompt& prompt,
            std::optional<std::int64_t> entry,
            AutofillValues stored,
            std::string site);

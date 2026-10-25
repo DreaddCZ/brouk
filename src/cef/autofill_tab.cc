@@ -256,7 +256,9 @@ void AutofillTab::OnSubmit(const CefRefPtr<CefFrame>& frame,
     site = site.substr(4);
   }
   if (result.kind == AutofillComparison::Kind::kSame) {
-    manager_->MarkEntryUsed(manager_->entries()[*result.entry].id);
+    if (result.entry) {
+      manager_->MarkEntryUsed(manager_->entries()[*result.entry].id);
+    }
     return;
   }
   AutofillPrompt prompt;
@@ -270,7 +272,7 @@ void AutofillTab::OnSubmit(const CefRefPtr<CefFrame>& frame,
     out.new_value = std::move(new_value);
     return out;
   };
-  if (result.kind == AutofillComparison::Kind::kDifferent) {
+  if (result.kind == AutofillComparison::Kind::kDifferent || !result.entry) {
     prompt.kind = AutofillPrompt::Kind::kSaveNew;
     prompt.suggested_label = site;
     for (const auto& [field, value] : stored) {
@@ -291,10 +293,10 @@ void AutofillTab::OnSubmit(const CefRefPtr<CefFrame>& frame,
       prompt.lines.push_back(line(field, "", stored[field]));
     }
   }
-  Ask(std::move(prompt), entry_id, std::move(stored), site);
+  Ask(prompt, entry_id, std::move(stored), site);
 }
 
-void AutofillTab::Ask(AutofillPrompt prompt,
+void AutofillTab::Ask(const AutofillPrompt& prompt,
                       std::optional<std::int64_t> entry_id,
                       AutofillValues stored,
                       std::string site) {
@@ -302,7 +304,7 @@ void AutofillTab::Ask(AutofillPrompt prompt,
   AutofillPrompt::Kind kind = prompt.kind;
   delegate_->ShowAutofillPrompt(
       prompt, [weak, kind, entry_id, stored = std::move(stored),
-               site = std::move(site)](AutofillPromptAnswer answer) {
+               site = std::move(site)](const AutofillPromptAnswer& answer) {
         std::shared_ptr<AutofillTab> self = weak.lock();
         if (!self || !self->delegate_) {
           return;

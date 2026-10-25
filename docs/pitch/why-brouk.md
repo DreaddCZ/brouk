@@ -159,7 +159,8 @@ Dev tools are switched **per tab** with an always-visible toggle — rules never
 | History, bookmarks, ad blocking | ✅ in use |
 | Developer tools | 🔧 being built |
 | Passwords (built-in manager) | 🔧 built, in testing; Bitwarden next |
-| Link routing, autofill, downloads | 📋 specified, next |
+| Form autofill (Czech and EU company details) | 🔧 built, in testing |
+| Link routing, downloads | 📋 specified, next |
 | VPN per profile | 🔍 being investigated |
 
 <!-- Update this slide before each presentation. -->

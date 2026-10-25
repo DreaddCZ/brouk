@@ -9,6 +9,7 @@ import { button, byId, element, errorText } from '../shared/dom.js';
 import { SettingsApi, type SettingItem, type SettingsState } from './api.js';
 import { isShown, parseSettingTarget, sections, shortcutFromKey } from './logic.js';
 import { startAdblockPanel } from './adblock_panel.js';
+import { startAutofillPanel } from './autofill_panel.js';
 
 const api = new SettingsApi(cefTransport());
 let state: SettingsState | null = null;
@@ -205,6 +206,12 @@ async function refresh(): Promise<void> {
 async function showTarget(): Promise<void> {
   const target = parseSettingTarget(window.location.hash);
   if (target === null) return;
+  if (target.key === 'autofill') {
+    // Settings → Autofill (009): the section, not one setting.
+    history.replaceState(null, '', window.location.pathname);
+    document.getElementById('autofill')?.scrollIntoView({ block: 'start' });
+    return;
+  }
   // Cleared, so choosing the same setting again changes the hash again.
   history.replaceState(null, '', window.location.pathname);
   if (target.profile !== null && target.profile !== profileId) {
@@ -252,6 +259,7 @@ function start(): void {
   window.addEventListener('hashchange', () => void showTarget());
   void refresh().then(showTarget);
   startAdblockPanel();
+  startAutofillPanel();
 }
 
 start();

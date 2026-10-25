@@ -68,7 +68,7 @@ std::string Hint(const JsonValue& object) {
   return object.StringOr("hint", "").substr(0, 200);
 }
 
-std::string Write(JsonValue root) {
+std::string Write(const JsonValue& root) {
   return WriteJsonDocument(root);
 }
 
@@ -174,7 +174,7 @@ std::string AutofillFillMessage(const AutofillForm& form,
   JsonValue root = JsonValue::Object();
   root.Add("fields", std::move(fields));
   root.Add("highlight", JsonValue::Bool(true));
-  return Write(std::move(root));
+  return Write(root);
 }
 
 std::string AutofillFieldMessage(int field, std::string_view value) {
@@ -182,7 +182,7 @@ std::string AutofillFieldMessage(int field, std::string_view value) {
   fields.Add(std::to_string(field), JsonValue::String(std::string(value)));
   JsonValue root = JsonValue::Object();
   root.Add("fields", std::move(fields));
-  return Write(std::move(root));
+  return Write(root);
 }
 
 std::string AutofillClearMessage(const std::vector<int>& fields) {
@@ -192,13 +192,13 @@ std::string AutofillClearMessage(const std::vector<int>& fields) {
   }
   JsonValue root = JsonValue::Object();
   root.Add("clear", std::move(list));
-  return Write(std::move(root));
+  return Write(root);
 }
 
 std::string AutofillFocusedMessage(std::string_view value) {
   JsonValue root = JsonValue::Object();
   root.Add("focused", JsonValue::String(std::string(value)));
-  return Write(std::move(root));
+  return Write(root);
 }
 
 }  // namespace brouk
