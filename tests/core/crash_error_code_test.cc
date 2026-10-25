@@ -10,7 +10,9 @@ namespace {
 TEST(CrashErrorCodeTest, NamesCommonSignals) {
   EXPECT_EQ(CrashErrorCodeText(SIGSEGV), "Error code: SIGSEGV");
   EXPECT_EQ(CrashErrorCodeText(SIGABRT), "Error code: SIGABRT");
+#if !defined(_WIN32)
   EXPECT_EQ(CrashErrorCodeText(SIGKILL), "Error code: SIGKILL");
+#endif
 }
 
 TEST(CrashErrorCodeTest, UnknownCodesAreNumbers) {

@@ -11,16 +11,20 @@ const char* SignalName(int code) {
   switch (code) {
     case SIGILL:
       return "SIGILL";
+#if !defined(_WIN32)
+    // POSIX only. Windows reports crashes as exception codes instead
+    // (STATUS_ACCESS_VIOLATION, ...), named when the Windows app is built.
     case SIGTRAP:
       return "SIGTRAP";
-    case SIGABRT:
-      return "SIGABRT";
     case SIGBUS:
       return "SIGBUS";
-    case SIGFPE:
-      return "SIGFPE";
     case SIGKILL:
       return "SIGKILL";
+#endif
+    case SIGABRT:
+      return "SIGABRT";
+    case SIGFPE:
+      return "SIGFPE";
     case SIGSEGV:
       return "SIGSEGV";
     case SIGTERM:
