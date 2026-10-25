@@ -1,6 +1,6 @@
 # 014 – Downloads
 
-- **Status:** ready
+- **Status:** in-progress
 - **Priority:** P2
 - **Depends on:** 001, 003, 005, 010, 012, 013
 
@@ -129,3 +129,11 @@ None.
   - Spec set to `ready`.
 - Check in the CEF headers before implementing: `CefDownloadHandler` (`CanDownload`, `OnBeforeDownload`, `OnDownloadUpdated`), `CefDownloadItem`, `CefDownloadItemCallback` (pause/resume/cancel). Verify whether CEF already sets the quarantine attribute on macOS before adding our own.
 - 2026-10-23 (user's decision, from 013): the downloads page opens as a tab, like the history page (internal page in a tab, see 013 notes).
+- 2026-10-25 (implementation):
+  - Chromium (inside CEF) already writes to a temporary `.crdownload` name and renames when done, and sets the quarantine attribute and "Where from" (`com.apple.quarantine`, `kMDItemWhereFroms`) on macOS; Brouk adds nothing of its own for these (verified in a test run).
+  - The downloads list lives in each profile's history.db (table `downloads`, history schema version 2), so deleting a profile removes it and Clear browsing data → "Download history" (new checkbox, on by default) clears it; running downloads are never cleared.
+  - "Delete the file" moves it to the Trash (as Chrome on macOS), so a mistake can be undone in Finder.
+  - Retry starts the download again in a tab of its profile (`StartDownload`); without such a tab in the window, the address opens in a new background tab of the profile.
+  - Automatic downloads, like Chrome: the first download of a page and downloads the user started (a navigation with a user gesture, within 5 seconds) go through; further downloads are held and the permission prompt asks; the answer is stored as Chromium's automatic-downloads site setting per profile, and held downloads start after Allow.
+  - The Downloads stack bounces through the `com.apple.DownloadFileFinished` distributed notification, as Chrome does. The Dock badge shows the number of running downloads, the progress bar their combined progress (indeterminate when a size is unknown).
+  - Shortcut ⌥⌘L (`shortcuts.show_downloads`); the interim download notice of 012 is removed.

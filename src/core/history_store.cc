@@ -24,7 +24,7 @@ namespace {
 
 // Version 1: urls and visits. Favicons and downloads (013, 014) come later
 // as new versions.
-constexpr std::int64_t kSchemaVersion = 1;
+constexpr std::int64_t kSchemaVersion = 2;
 
 constexpr std::int64_t kSecondsPerDay = std::int64_t{24} * 60 * 60;
 
@@ -246,7 +246,23 @@ std::optional<Error> HistoryStore::CreateSchema() {
       "  transition INTEGER NOT NULL);"
       "CREATE INDEX IF NOT EXISTS visits_url ON visits(url_id);"
       "CREATE INDEX IF NOT EXISTS visits_time ON visits(visit_time);"
-      "PRAGMA user_version=1;"
+      // Version 2: the downloads list (014).
+      "CREATE TABLE IF NOT EXISTS downloads("
+      "  id INTEGER PRIMARY KEY,"
+      "  url TEXT NOT NULL,"
+      "  original_url TEXT NOT NULL DEFAULT '',"
+      "  referrer_site TEXT NOT NULL DEFAULT '',"
+      "  path TEXT NOT NULL DEFAULT '',"
+      "  mime_type TEXT NOT NULL DEFAULT '',"
+      "  state TEXT NOT NULL,"
+      "  error TEXT NOT NULL DEFAULT '',"
+      "  received INTEGER NOT NULL DEFAULT 0,"
+      "  total INTEGER NOT NULL DEFAULT 0,"
+      "  start_time INTEGER NOT NULL,"
+      "  end_time INTEGER NOT NULL DEFAULT 0,"
+      "  opened INTEGER NOT NULL DEFAULT 0);"
+      "CREATE INDEX IF NOT EXISTS downloads_start ON downloads(start_time);"
+      "PRAGMA user_version=2;"
       "COMMIT;");
 }
 
@@ -859,6 +875,111 @@ std::optional<HistoryMatch> HistoryStore::FindPage(std::string_view url) {
                       .typed_count = query->ColumnInt(3),
                       .last_visit = query->ColumnInt(4),
                       .inline_completion = {}};
+}
+
+Result<std::int64_t> HistoryStore::SaveDownload(const DownloadRecord& record) {
+  Error error;
+  std::optional<SqliteStatement> statement = db_->Prepare(
+      record.id == 0
+          ? "INSERT INTO downloads(url, original_url, referrer_site, path, "
+            "mime_type, state, error, received, total, start_time, end_time, "
+            "opened) VALUES(?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)"
+          : "INSERT OR REPLACE INTO downloads(id, url, original_url, "
+            "referrer_site, path, mime_type, state, error, received, total, "
+            "start_time, end_time, opened) VALUES(?13, ?1, ?2, ?3, ?4, ?5, ?6, "
+            "?7, ?8, ?9, ?10, ?11, ?12)",
+      error);
+  if (!statement) {
+    return error;
+  }
+  statement->Bind(1, record.url);
+  statement->Bind(2, record.original_url);
+  statement->Bind(3, record.referrer_site);
+  statement->Bind(4, record.path);
+  statement->Bind(5, record.mime_type);
+  statement->Bind(6, DownloadStateName(record.state));
+  statement->Bind(7, record.error);
+  statement->Bind(8, record.received);
+  statement->Bind(9, record.total);
+  statement->Bind(10, record.start_time);
+  statement->Bind(11, record.end_time);
+  statement->Bind(12, std::int64_t{record.opened ? 1 : 0});
+  if (record.id != 0) {
+    statement->Bind(13, record.id);
+  }
+  if (!statement->Run()) {
+    return Error{"The download could not be recorded."};
+  }
+  return record.id != 0 ? record.id : db_->last_insert_id();
+}
+
+std::vector<DownloadRecord> HistoryStore::Downloads(std::size_t limit) {
+  std::vector<DownloadRecord> records;
+  Error error;
+  std::optional<SqliteStatement> statement = db_->Prepare(
+      "SELECT id, url, original_url, referrer_site, path, mime_type, state, "
+      "error, received, total, start_time, end_time, opened FROM downloads "
+      "ORDER BY start_time DESC, id DESC LIMIT ?",
+      error);
+  if (!statement) {
+    return records;
+  }
+  statement->Bind(1, static_cast<std::int64_t>(limit));
+  while (statement->Step()) {
+    DownloadRecord record;
+    record.id = statement->ColumnInt(0);
+    record.url = statement->ColumnText(1);
+    record.original_url = statement->ColumnText(2);
+    record.referrer_site = statement->ColumnText(3);
+    record.path = statement->ColumnText(4);
+    record.mime_type = statement->ColumnText(5);
+    record.state = DownloadStateFromName(statement->ColumnText(6));
+    record.error = statement->ColumnText(7);
+    record.received = statement->ColumnInt(8);
+    record.total = statement->ColumnInt(9);
+    record.start_time = statement->ColumnInt(10);
+    record.end_time = statement->ColumnInt(11);
+    record.opened = statement->ColumnInt(12) != 0;
+    records.push_back(std::move(record));
+  }
+  return records;
+}
+
+bool HistoryStore::RemoveDownload(std::int64_t id) {
+  Error error;
+  std::optional<SqliteStatement> statement =
+      db_->Prepare("DELETE FROM downloads WHERE id = ?", error);
+  if (!statement) {
+    return false;
+  }
+  statement->Bind(1, id);
+  return statement->Run() && db_->changes() > 0;
+}
+
+int HistoryStore::DeleteDownloadsSince(std::int64_t since) {
+  Error error;
+  std::optional<SqliteStatement> statement = db_->Prepare(
+      "DELETE FROM downloads WHERE start_time >= ? AND state NOT IN "
+      "('in_progress', 'paused')",
+      error);
+  if (!statement) {
+    return 0;
+  }
+  statement->Bind(1, since);
+  return statement->Run() ? db_->changes() : 0;
+}
+
+std::int64_t HistoryStore::CountDownloadsSince(std::int64_t since) {
+  Error error;
+  std::optional<SqliteStatement> statement = db_->Prepare(
+      "SELECT COUNT(*) FROM downloads WHERE start_time >= ? AND state NOT IN "
+      "('in_progress', 'paused')",
+      error);
+  if (!statement) {
+    return 0;
+  }
+  statement->Bind(1, since);
+  return statement->Step() ? statement->ColumnInt(0) : 0;
 }
 
 }  // namespace brouk

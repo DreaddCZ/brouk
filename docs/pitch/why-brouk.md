@@ -160,7 +160,8 @@ Dev tools are switched **per tab** with an always-visible toggle — rules never
 | Developer tools | 🔧 being built |
 | Passwords (built-in manager) | 🔧 built, in testing; Bitwarden next |
 | Form autofill (Czech and EU company details) | 🔧 built, in testing |
-| Link routing, downloads | 📋 specified, next |
+| Downloads (one list for all profiles) | 🔧 built, in testing |
+| Link routing | 📋 specified, next |
 | VPN per profile | 🔍 being investigated |
 
 <!-- Update this slide before each presentation. -->

@@ -24,6 +24,10 @@ add_library(brouk_cef STATIC
   context_menu_model.cc
   context_menu_model.h
   devtools_channel.cc
+  download_service.cc
+  download_service.h
+  downloads_page_handler.cc
+  downloads_page_handler.h
   devtools_channel.h
   devtools_frontend_client.cc
   devtools_frontend_client.h

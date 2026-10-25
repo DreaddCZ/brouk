@@ -49,6 +49,8 @@ set(BROUK_CORE_SOURCES
   dialog_spam_guard.h
   download_paths.cc
   download_paths.h
+  download_record.cc
+  download_record.h
   external_protocol.cc
   external_protocol.h
   history_query.cc

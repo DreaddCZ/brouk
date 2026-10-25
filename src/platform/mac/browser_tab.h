@@ -32,10 +32,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)tabCloseReady:(BRTab*)tab;
 - (void)tabDidClose:(BRTab*)tab;
 - (BOOL)tab:(BRTab*)tab handleUnhandledKeyEvent:(NSEvent*)event;
-- (std::string)tab:(BRTab*)tab
-    reserveDownloadPath:(const std::string&)suggested;
+- (brouk::DownloadTarget)tab:(BRTab*)tab
+         reserveDownloadPath:(const std::string&)suggested;
 - (void)tab:(BRTab*)tab releaseDownloadPath:(const std::string&)path;
-- (void)tab:(BRTab*)tab downloadUpdated:(const brouk::DownloadInfo&)info;
 - (void)tab:(BRTab*)tab fullscreenChanged:(BOOL)fullscreen;
 // History (013): a page was shown, or its title changed.
 - (void)tab:(BRTab*)tab
@@ -98,6 +97,8 @@ NS_ASSUME_NONNULL_BEGIN
     showAutofillPrompt:(const brouk::AutofillPrompt&)prompt
                   done:(brouk::AutofillPromptDone)done;
 - (void)tabOpenAutofillSettings:(BRTab*)tab;
+// Downloads (014): null before CEF is ready.
+- (nullable brouk::DownloadService*)downloadService;
 @end
 
 @interface BRTab : NSObject

@@ -38,7 +38,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 011 | [Bookmark manager](011-bookmarks.md) | done — window choice after 010 | P1 |
 | 012 | [Web platform basics](012-web-platform-basics.md) | in-progress | P1 |
 | 013 | [History](013-history.md) | in-progress — storage, recording, retention, address bar suggestions, History menu with closed tabs, history limits, the history page as a tab with search, SQL editor, Clean up and Clear browsing data (merged); history in profile export postponed | P1 |
-| 014 | [Downloads](014-downloads.md) | ready | P2 |
+| 014 | [Downloads](014-downloads.md) | in-progress — folders per profile, button and popup, downloads page, Dock, quit question, automatic downloads in review | P2 |
 | 015 | [Session restore](015-session-restore.md) | done | P1 |
 | 016 | [Help](016-help.md) | ready | P2 |
 | 017 | [VPN per profile](017-profile-vpn.md) | draft | P2 |

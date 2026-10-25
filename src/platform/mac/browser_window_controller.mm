@@ -20,7 +20,7 @@
 #import "platform/mac/autofill_prompt.h"
 #import "platform/mac/browser_tab.h"
 #import "platform/mac/browser_window.h"
-#import "platform/mac/download_notice.h"
+#import "platform/mac/downloads_popover.h"
 #import "platform/mac/find_bar.h"
 #import "platform/mac/menu_shortcuts.h"
 #import "platform/mac/password_menu.h"
@@ -137,6 +137,7 @@ NSButton* ToolbarButton(NSString* symbol,
                                          BRFindBarDelegate,
                                          BRBookmarksBarDelegate,
                                          BRAdblockPopoverActions,
+                                         BRDownloadsActions,
                                          BRSuggestionsPopupDelegate>
 @end
 
@@ -167,7 +168,7 @@ NSButton* ToolbarButton(NSString* symbol,
   BOOL _browserUIHidden;  // Page full screen.
   NSView* _contentArea;
   BRFindBar* _findBar;
-  BRDownloadNotice* _downloadNotice;
+  BRDownloadsButton* _downloadsButton;  // Downloads (014).
   // The tab whose page is in HTML full screen, if any.
   __weak BRTab* _fullscreenTab;
   // We put the window into macOS full screen for that page (and leave it
@@ -474,10 +475,17 @@ NSButton* ToolbarButton(NSString* symbol,
   _findBar.hidden = YES;
   [root addSubview:_findBar];
 
-  _downloadNotice =
-      [[BRDownloadNotice alloc] initWithFrame:NSMakeRect(12, 12, 420, 40)];
-  _downloadNotice.autoresizingMask = NSViewMaxXMargin | NSViewMaxYMargin;
-  [root addSubview:_downloadNotice];
+  // Downloads (014): right of the address area, from the first download of
+  // the run until the app quits.
+  _downloadsButton =
+      [[BRDownloadsButton alloc] initWithFrame:NSMakeRect(0, 7, 28, 26)];
+  _downloadsButton.target = self;
+  _downloadsButton.action = @selector(showDownloadsPopover:);
+  _downloadsButton.autoresizingMask = NSViewMinXMargin;
+  _downloadsButton.hidden = YES;
+  [_toolbar addSubview:_downloadsButton];
+  [self layoutAddressArea];
+  [self downloadsChanged];
 }
 
 #pragma mark - Tabs
@@ -540,10 +548,15 @@ NSButton* ToolbarButton(NSString* symbol,
   if (handler) {
     BOOL bookmarks = [page isEqualToString:@"bookmarks"];
     BOOL passwords = [page isEqualToString:@"passwords"];
+    BOOL downloads = [page isEqualToString:@"downloads"];
     NSString* title = bookmarks   ? @"Bookmarks"
                       : passwords ? @"Passwords"
+                      : downloads ? @"Downloads"
                                   : @"History";
-    NSString* symbol = bookmarks ? @"star" : passwords ? @"key" : @"clock";
+    NSString* symbol = bookmarks   ? @"star"
+                       : passwords ? @"key"
+                       : downloads ? @"arrow.down.circle"
+                                   : @"clock";
     [tab createInternalPageWithURL:url
                              title:title
                               icon:[NSImage imageWithSystemSymbolName:symbol
@@ -591,7 +604,8 @@ NSButton* ToolbarButton(NSString* symbol,
 
 // Internal pages shown in tabs (013, 011); the others have their windows.
 - (BOOL)opensInTab:(NSString*)page {
-  return [page isEqualToString:@"history"] ||
+  return [page isEqualToString:@"downloads"] ||
+         [page isEqualToString:@"history"] ||
          [page isEqualToString:@"bookmarks"] ||
          [page isEqualToString:@"passwords"];
 }
@@ -966,6 +980,11 @@ NSButton* ToolbarButton(NSString* symbol,
   NSRect b = _toolbar.bounds;
   CGFloat left = _addressLeft + 6;
   CGFloat right = b.size.width - 12;
+  // The downloads button sits at the right end once there are downloads.
+  if (_downloadsButton && !_downloadsButton.hidden) {
+    _downloadsButton.frame = NSMakeRect(right - 28, 7, 28, 26);
+    right -= 32;
+  }
   if (_toggleOnLeft) {
     _devToolsToggle.frame = NSMakeRect(left, 7, 30, 26);
     _devToolsToggle.autoresizingMask = NSViewMaxXMargin;
@@ -1503,17 +1522,117 @@ NSButton* ToolbarButton(NSString* symbol,
   }
 }
 
-- (std::string)tab:(BRTab*)tab
-    reserveDownloadPath:(const std::string&)suggested {
-  return [_owner reserveDownloadPath:suggested];
+- (brouk::DownloadTarget)tab:(BRTab*)tab
+         reserveDownloadPath:(const std::string&)suggested {
+  return [_owner reserveDownloadPath:suggested forProfile:tab.profileId];
 }
 
 - (void)tab:(BRTab*)tab releaseDownloadPath:(const std::string&)path {
   [_owner releaseDownloadPath:path];
 }
 
-- (void)tab:(BRTab*)tab downloadUpdated:(const brouk::DownloadInfo&)info {
-  [_downloadNotice updateWithInfo:info];
+#pragma mark - Downloads (014)
+
+- (nullable brouk::DownloadService*)downloadService {
+  return [_owner downloadService];
+}
+
+// The button, its ring and dot, and an open popup follow the service.
+- (void)downloadsChanged {
+  brouk::DownloadService* service = [_owner downloadService];
+  BOOL shown = service && service->AnyThisRun();
+  if (_downloadsButton.hidden == shown) {
+    _downloadsButton.hidden = !shown;
+    [self layoutAddressArea];
+  }
+  if (!shown) {
+    return;
+  }
+  _downloadsButton.progress =
+      service->RunningCount() > 0 ? service->Progress() : NAN;
+  _downloadsButton.showsDot = service->HasUnseen();
+  if ([BRDownloadsPopover isShown] && self.window.isKeyWindow) {
+    [self listRecentDownloads:^(std::vector<brouk::DownloadEntry> entries) {
+      [BRDownloadsPopover updateEntries:std::move(entries)];
+    }];
+  }
+}
+
+// The last 24 hours of all profiles (014).
+- (void)listRecentDownloads:(void (^)(std::vector<brouk::DownloadEntry>))done {
+  brouk::DownloadService* service = [_owner downloadService];
+  if (!service) {
+    return;
+  }
+  std::vector<brouk::ProfileId> profiles;
+  for (const brouk::ProfileInfo& info : [_owner profileList]) {
+    profiles.push_back(info.id);
+  }
+  service->List(profiles, 200, [done](std::vector<brouk::DownloadEntry> all) {
+    std::vector<brouk::DownloadRecord> records;
+    std::vector<brouk::DownloadEntry> recent;
+    std::int64_t now =
+        static_cast<std::int64_t>(NSDate.date.timeIntervalSince1970);
+    for (brouk::DownloadEntry& entry : all) {
+      if (entry.record.Running() || entry.record.start_time >= now - 86400) {
+        recent.push_back(std::move(entry));
+      }
+    }
+    done(std::move(recent));
+  });
+}
+
+- (IBAction)showDownloadsPopover:(id)sender {
+  brouk::DownloadService* service = [_owner downloadService];
+  if (!service) {
+    return;
+  }
+  __weak BRBrowserWindowController* weakSelf = self;
+  [self listRecentDownloads:^(std::vector<brouk::DownloadEntry> entries) {
+    BRBrowserWindowController* strongSelf = weakSelf;
+    if (!strongSelf) {
+      return;
+    }
+    [BRDownloadsPopover showEntries:std::move(entries)
+                         relativeTo:strongSelf->_downloadsButton
+                            actions:strongSelf];
+    service->MarkAllSeen();
+  }];
+}
+
+// ⌥⌘L, View → Downloads: the downloads page as a tab.
+- (IBAction)showDownloads:(id)sender {
+  [self showInternalPage:@"downloads" fragment:@""];
+}
+
+#pragma mark - BRDownloadsActions
+
+- (NSColor*)colorOfProfile:(const brouk::ProfileId&)profile {
+  return brouk::mac::ProfileColor([_owner profileInfo:profile].color);
+}
+
+- (void)retryDownload:(const brouk::DownloadEntry&)entry {
+  brouk::DownloadService* service = [_owner downloadService];
+  CefRefPtr<CefBrowser> browser;
+  for (BRTab* tab in _tabs.allValues) {
+    if (tab.profileId == entry.profile && !tab.isInternalPage &&
+        [tab browser]) {
+      browser = [tab browser];
+      break;
+    }
+  }
+  if (browser && service) {
+    service->Retry(entry.profile, entry.record.id, entry.record.url, browser);
+    return;
+  }
+  // No tab of the profile here: the address in a new tab starts it again.
+  [self openTabWithURL:@(entry.record.url.c_str())
+               profile:entry.profile
+              activate:NO];
+}
+
+- (void)showAllDownloads {
+  [self showDownloads:nil];
 }
 
 #pragma mark - HTML full screen

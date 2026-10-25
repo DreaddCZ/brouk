@@ -22,6 +22,8 @@ enum class PermissionKind {
   kStorageAccess,
   kCameraPanTiltZoom,
   kPopups,  // Pop-ups and redirects (blocked by default, as in Chrome).
+  // Several downloads without a click in between (014, as in Chrome).
+  kAutomaticDownloads,
   kOther,
 };
 

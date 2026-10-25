@@ -41,8 +41,8 @@ add_executable(brouk_app
   devtools_dock.mm
   devtools_window.h
   devtools_window.mm
-  download_notice.h
-  download_notice.mm
+  downloads_popover.h
+  downloads_popover.mm
   export_password_dialog.h
   export_password_dialog.mm
   find_bar.h
@@ -106,7 +106,7 @@ set(_bundle_commands "")
 # Internal pages (web/, TypeScript), compiled into the bundle's resources.
 file(GLOB_RECURSE _web_sources CONFIGURE_DEPENDS
   "${PROJECT_SOURCE_DIR}/web/shared/*" "${PROJECT_SOURCE_DIR}/web/history/*"
-  "${PROJECT_SOURCE_DIR}/web/bookmarks/*"
+  "${PROJECT_SOURCE_DIR}/web/bookmarks/*" "${PROJECT_SOURCE_DIR}/web/downloads/*"
   "${PROJECT_SOURCE_DIR}/web/forms/*" "${PROJECT_SOURCE_DIR}/web/passwords/*"
   "${PROJECT_SOURCE_DIR}/web/profiles/*"
   "${PROJECT_SOURCE_DIR}/web/settings/*" "${PROJECT_SOURCE_DIR}/web/tools/*"

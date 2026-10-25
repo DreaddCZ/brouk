@@ -39,6 +39,7 @@ add_executable(brouk_core_tests
   core/devtools_tools_test.cc
   core/dialog_spam_guard_test.cc
   core/download_paths_test.cc
+  core/download_record_test.cc
   core/external_protocol_test.cc
   core/history_query_test.cc
   core/history_sql_test.cc

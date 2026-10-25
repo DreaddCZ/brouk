@@ -420,6 +420,7 @@ struct ClearRequest {
   bool history = false;
   bool cookies = false;
   bool cache = false;
+  bool downloads = false;  // The downloads list (014); never the files.
 };
 
 // One profile after the other: the sites of the time range are read from
@@ -464,14 +465,21 @@ void RunClear(HistoryService& history,
               state->sites,
               [state, step, service, profile, since](bool cookies_ok) {
                 state->cookies_failed |= !cookies_ok;
-                if (!state->request.history) {
+                bool history = state->request.history;
+                bool downloads = state->request.downloads;
+                if (!history && !downloads) {
                   (*step)();
                   return;
                 }
                 service->Run(
                     profile,
-                    [since](HistoryStore& store) {
-                      store.DeleteVisitsSince(since);
+                    [since, history, downloads](HistoryStore& store) {
+                      if (history) {
+                        store.DeleteVisitsSince(since);
+                      }
+                      if (downloads) {
+                        store.DeleteDownloadsSince(since);
+                      }
                     },
                     [step] { (*step)(); });
               });
@@ -904,7 +912,8 @@ bool HistoryPageHandler::OnQuery(CefRefPtr<CefBrowser> /*browser*/,
               .since = *since,
               .history = flag("history"),
               .cookies = flag("cookies"),
-              .cache = flag("cache")},
+              .cache = flag("cache"),
+              .downloads = flag("downloads")},
              callback);
   } else if (*type == "history.delete") {
     std::optional<std::vector<DeleteItem>> items =

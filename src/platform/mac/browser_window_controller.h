@@ -72,7 +72,6 @@ NS_ASSUME_NONNULL_BEGIN
 - (std::optional<brouk::Error>)setRequestRules:(brouk::RequestRuleSet)rules
                                     forProfile:(const brouk::ProfileId&)profile;
 // Downloads (app-wide, so concurrent downloads never share a file name).
-- (std::string)reserveDownloadPath:(const std::string&)suggested;
 - (void)releaseDownloadPath:(const std::string&)path;
 // The command palette (003) lists the tabs of all browser windows, front
 // window first, and opens settings at one setting.
@@ -113,6 +112,11 @@ NS_ASSUME_NONNULL_BEGIN
 - (nullable brouk::PasswordManager*)passwordManager;
 // Form autofill (009): null before CEF is ready.
 - (nullable brouk::AutofillManager*)autofillManager;
+// Downloads (014): null before CEF is ready; a path in the profile's
+// download folder.
+- (nullable brouk::DownloadService*)downloadService;
+- (brouk::DownloadTarget)reserveDownloadPath:(const std::string&)suggested
+                                  forProfile:(const brouk::ProfileId&)profile;
 @end
 
 @interface BRBrowserWindowController : NSWindowController <NSWindowDelegate>
@@ -134,6 +138,10 @@ NS_ASSUME_NONNULL_BEGIN
 
 // Problems found in the settings files; a toolbar warning leads to them.
 @property(nonatomic) NSUInteger settingsProblemCount;
+// Downloads (014) changed: the toolbar button and an open popup follow.
+- (void)downloadsChanged;
+// Starts a failed or cancelled download again in a tab of its profile.
+- (void)retryDownload:(const brouk::DownloadEntry&)entry;
 
 // Developer tools (006): toggle side (setting), the remote debugging port
 // (0: off; shows the indicator), and the shared dock position and size.
