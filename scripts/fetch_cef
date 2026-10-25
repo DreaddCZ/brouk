@@ -51,6 +51,9 @@ fi
 # Archives are cached outside the repo so switching versions or re-extracting
 # does not download again. CI points BROUK_CEF_CACHE at a cached directory.
 CACHE="${BROUK_CEF_CACHE:-$HOME/.cache/brouk/cef}"
+# Git Bash on Windows: GNU tar reads "D:\..." as a remote host; use the
+# /d/... form.
+if command -v cygpath >/dev/null; then CACHE="$(cygpath -u "$CACHE")"; fi
 mkdir -p "$CACHE"
 ARCHIVE="$CACHE/$NAME.tar.bz2"
 
