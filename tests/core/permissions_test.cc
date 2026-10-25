@@ -59,6 +59,7 @@ TEST(PermissionsTest, Texts) {
   EXPECT_EQ(PermissionDescription(K::kCamera), "Use your camera");
   EXPECT_EQ(PermissionName(K::kMicrophone), "Microphone");
   EXPECT_EQ(PermissionName(K::kPopups), "Pop-ups and redirects");
+  EXPECT_EQ(PermissionName(K::kAutomaticDownloads), "Automatic downloads");
 }
 
 }  // namespace

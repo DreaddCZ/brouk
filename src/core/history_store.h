@@ -12,6 +12,7 @@
 #include <string_view>
 #include <vector>
 
+#include "core/download_record.h"
 #include "core/result.h"
 #include "core/sqlite_db.h"
 #include "core/url_pattern.h"
@@ -150,6 +151,15 @@ class HistoryStore {
   int DeleteHost(std::string_view host);
   // Removes single visits, and pages left without visits.
   int DeleteVisits(std::span<const std::int64_t> ids);
+
+  // The downloads list (014). SaveDownload adds a record (id 0; returns
+  // the new id) or replaces the one with its id. Downloads: newest first.
+  // Clearing keeps running downloads; the files stay.
+  Result<std::int64_t> SaveDownload(const DownloadRecord& record);
+  std::vector<DownloadRecord> Downloads(std::size_t limit);
+  bool RemoveDownload(std::int64_t id);
+  int DeleteDownloadsSince(std::int64_t since);
+  std::int64_t CountDownloadsSince(std::int64_t since);
 
   // For tests and the history page later.
   std::optional<HistoryMatch> FindPage(std::string_view url);

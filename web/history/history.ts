@@ -701,7 +701,7 @@ function renderClear(): void {
     }));
     return row;
   }));
-  const any = ['clear-history', 'clear-cookies', 'clear-cache'].some((id) => byId<HTMLInputElement>(id).checked);
+  const any = ['clear-history', 'clear-downloads', 'clear-cookies', 'clear-cache'].some((id) => byId<HTMLInputElement>(id).checked);
   const summary = byId('clear-summary');
   summary.classList.toggle('confirm-text', clearConfirming);
   summary.textContent = clearConfirming ? 'Clear the chosen data? This cannot be undone.' : '';
@@ -724,6 +724,7 @@ async function runClear(): Promise<void> {
       history: byId<HTMLInputElement>('clear-history').checked,
       cookies: byId<HTMLInputElement>('clear-cookies').checked,
       cache: byId<HTMLInputElement>('clear-cache').checked,
+      downloads: byId<HTMLInputElement>('clear-downloads').checked,
     });
     closeClear();
     showError(cookiesCleared ? null : 'The cookies could not be cleared (the cookie store did not answer). The rest was cleared; please try again.');
@@ -808,7 +809,7 @@ async function start(): Promise<void> {
   byId('clear-run').addEventListener('click', () => void runClear());
   byId('clear-profile').addEventListener('change', () => void loadClear());
   byId('clear-range').addEventListener('change', () => void loadClear());
-  for (const id of ['clear-history', 'clear-cookies', 'clear-cache']) {
+  for (const id of ['clear-history', 'clear-downloads', 'clear-cookies', 'clear-cache']) {
     byId(id).addEventListener('change', () => {
       clearConfirming = false;
       renderClear();

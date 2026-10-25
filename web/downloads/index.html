@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="light dark">
+<title>Downloads</title>
+<link rel="stylesheet" href="shared/base.css">
+<link rel="stylesheet" href="downloads.css">
+<script type="module" src="downloads.js"></script>
+</head>
+<body>
+<main>
+  <header class="top">
+    <h1>Downloads</h1>
+    <input type="search" id="query" placeholder="Search by file name or address" aria-label="Search downloads"
+      spellcheck="false" autocomplete="off">
+    <label>Profile <select id="profile-filter" aria-label="Show downloads of"></select></label>
+    <button type="button" id="clear">Clear all</button>
+  </header>
+  <p id="error" class="error" role="alert" hidden></p>
+  <div id="list"></div>
+  <p id="empty" class="empty" hidden>No downloads.</p>
+</main>
+</body>
+</html>

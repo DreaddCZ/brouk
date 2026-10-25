@@ -35,6 +35,8 @@ std::string PermissionDescription(PermissionKind kind) {
       return "Use and move your camera";
     case PermissionKind::kPopups:
       return "Open pop-ups and redirects";
+    case PermissionKind::kAutomaticDownloads:
+      return "Download multiple files";
     case PermissionKind::kOther:
       return "Use a browser feature";
   }
@@ -69,6 +71,8 @@ std::string PermissionName(PermissionKind kind) {
       return "Camera movement";
     case PermissionKind::kPopups:
       return "Pop-ups and redirects";
+    case PermissionKind::kAutomaticDownloads:
+      return "Automatic downloads";
     case PermissionKind::kOther:
       return "Other";
   }

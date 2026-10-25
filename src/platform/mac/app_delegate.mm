@@ -17,6 +17,7 @@
 #import "platform/mac/bookmark_store.h"
 #import "platform/mac/browser_window_controller.h"
 #import "platform/mac/data_paths.h"
+#import "platform/mac/downloads_popover.h"
 #import "platform/mac/export_password_dialog.h"
 #import "platform/mac/internal_page_window.h"
 #import "platform/mac/keychain.h"
@@ -31,6 +32,8 @@
 #include "cef/browser_app.h"
 #include "cef/browsing_data.h"
 #include "cef/devtools_preferences.h"
+#include "cef/download_service.h"
+#include "cef/downloads_page_handler.h"
 #include "cef/history_page_handler.h"
 #include "cef/history_service.h"
 #include "cef/internal_scheme.h"
@@ -124,6 +127,7 @@
 - (std::vector<brouk::ProfileInfo>)allProfiles;
 - (nullable brouk::PasswordManager*)passwordManager;
 - (nullable brouk::AutofillManager*)autofillManager;
+- (void)downloadsChanged;
 - (BOOL)profileUsesBitwarden:(const brouk::ProfileId&)profile;
 - (BOOL)breachCheckEnabled;
 - (std::vector<std::string>)keepListOfProfile:(const brouk::ProfileId&)profile;
@@ -445,6 +449,74 @@ class AppBookmarksPage : public BookmarksPageDelegate {
   id observer_;
 };
 
+// Posted when the downloads change (014); the downloads pages listen.
+static NSString* const BRDownloadsDidChangeNotification =
+    @"BRDownloadsDidChange";
+
+// Answers one downloads page tab (014): file actions in Finder, retrying in
+// the window holding the tab.
+class AppDownloadsPage : public DownloadsPageDelegate {
+ public:
+  AppDownloadsPage(BRAppDelegate* app,
+                   BRBrowserWindowController* controller,
+                   TabId tab)
+      : app_(app), controller_(controller), tab_(tab) {}
+  ~AppDownloadsPage() override {
+    if (observer_) {
+      [NSNotificationCenter.defaultCenter removeObserver:observer_];
+    }
+  }
+  AppDownloadsPage(const AppDownloadsPage&) = delete;
+  AppDownloadsPage& operator=(const AppDownloadsPage&) = delete;
+
+  std::vector<ProfileInfo> Profiles() override {
+    BRAppDelegate* app = app_;
+    return app ? [app allProfiles] : std::vector<ProfileInfo>{};
+  }
+  ProfileId CurrentProfile() override {
+    return [controller_ profileOfTab:tab_];
+  }
+  DownloadService* Service() override { return [app_ downloadService]; }
+  bool FileExists(const std::string& path) override {
+    return mac::DownloadedFileExists(path);
+  }
+  void OpenFile(const std::string& path) override {
+    mac::OpenDownloadedFile(path);
+  }
+  void RevealFile(const std::string& path) override {
+    mac::RevealDownloadedFile(path);
+  }
+  bool TrashFile(const std::string& path) override {
+    return mac::TrashDownloadedFile(path);
+  }
+  void CopyText(const std::string& text) override {
+    NSPasteboard* pasteboard = NSPasteboard.generalPasteboard;
+    [pasteboard clearContents];
+    [pasteboard setString:@(text.c_str()) forType:NSPasteboardTypeString];
+  }
+  void Retry(const DownloadEntry& entry) override {
+    [controller_ retryDownload:entry];
+  }
+  void Watch(std::function<void()> changed) override {
+    if (observer_) {
+      [NSNotificationCenter.defaultCenter removeObserver:observer_];
+    }
+    observer_ = [NSNotificationCenter.defaultCenter
+        addObserverForName:BRDownloadsDidChangeNotification
+                    object:nil
+                     queue:nil
+                usingBlock:^(NSNotification*) {
+                  changed();
+                }];
+  }
+
+ private:
+  __weak BRAppDelegate* app_;
+  __weak BRBrowserWindowController* controller_;
+  TabId tab_;
+  id observer_;
+};
+
 // Answers one passwords page tab (008): Touch ID, the clipboard and file
 // panels through the window holding the tab.
 class AppPasswordsPage : public PasswordsPageDelegate {
@@ -697,6 +769,9 @@ class AppSettingsPage : public SettingsPageDelegate {
   std::unique_ptr<brouk::PasswordManager> _passwords;
   // Form autofill data (009), same lifetime.
   std::unique_ptr<brouk::AutofillManager> _autofill;
+  // Downloads of all profiles (014), same lifetime.
+  std::unique_ptr<brouk::DownloadService> _downloads;
+  NSProgressIndicator* _dockProgress;
   // History menu (013): tabs and windows closed in this run, and each
   // profile's recently visited pages (fetched from its history).
   brouk::ClosedTabList _closedTabs;
@@ -790,6 +865,16 @@ class AppSettingsPage : public SettingsPageDelegate {
           "adblock",
       resources.UTF8String ?: "");
   [self configureAdblock];
+  _downloads = std::make_unique<brouk::DownloadService>(_history.get());
+  __weak BRAppDelegate* downloadsOwner = self;
+  _downloads->SetChangedCallback(
+      [downloadsOwner] { [downloadsOwner downloadsChanged]; });
+  _downloads->SetFinishedCallback([](const std::string& path) {
+    // Makes the Downloads stack in the Dock bounce, as Chrome does.
+    [NSDistributedNotificationCenter.defaultCenter
+        postNotificationName:@"com.apple.DownloadFileFinished"
+                      object:@(path.c_str())];
+  });
   _passwords = std::make_unique<brouk::PasswordManager>(
       [profilesDir](const brouk::ProfileId& profile) {
         return profilesDir / profile / "passwords.db";
@@ -1094,31 +1179,82 @@ class AppSettingsPage : public SettingsPageDelegate {
   [[self openWindow] openTabWithURL:url profile:profile activate:YES];
 }
 
-- (std::string)reserveDownloadPath:(const std::string&)suggested {
-  // The folder from the settings (004) if it exists; otherwise Chrome's
-  // default, ~/Downloads.
-  const std::string& configured =
-      _profiles->global_settings().GetString("downloads.folder");
-  if (!configured.empty()) {
-    NSString* folder = @(configured.c_str()).stringByExpandingTildeInPath;
+// Downloads (014): the profile's own folder if one is set, else the folder
+// for all profiles, else ~/Downloads. A set folder that is missing or not
+// writable makes the download ask, starting in ~/Downloads.
+- (brouk::DownloadTarget)reserveDownloadPath:(const std::string&)suggested
+                                  forProfile:(const brouk::ProfileId&)profile {
+  NSFileManager* files = NSFileManager.defaultManager;
+  auto usable = [files](NSString* folder) {
     BOOL isDirectory = NO;
-    if ([NSFileManager.defaultManager fileExistsAtPath:folder
-                                           isDirectory:&isDirectory] &&
-        isDirectory) {
-      return _downloadPaths->Reserve(folder.UTF8String, suggested);
-    }
-    NSLog(@"Download folder %@ does not exist; using Downloads.", folder);
-  }
-  NSURL* downloads =
-      [NSFileManager.defaultManager URLForDirectory:NSDownloadsDirectory
-                                           inDomain:NSUserDomainMask
-                                  appropriateForURL:nil
-                                             create:YES
-                                              error:nil];
-  NSString* dir =
+    return [files fileExistsAtPath:folder isDirectory:&isDirectory] &&
+           isDirectory && [files isWritableFileAtPath:folder];
+  };
+  NSURL* downloads = [files URLForDirectory:NSDownloadsDirectory
+                                   inDomain:NSUserDomainMask
+                          appropriateForURL:nil
+                                     create:YES
+                                      error:nil];
+  NSString* fallback =
       downloads.path
           ?: [NSHomeDirectory() stringByAppendingPathComponent:@"Downloads"];
-  return _downloadPaths->Reserve(dir.UTF8String, suggested);
+  std::optional<brouk::Settings> settings = _profiles->ProfileSettings(profile);
+  std::string configured =
+      settings ? settings->GetString("downloads.folder") : std::string();
+  if (configured.empty()) {
+    configured = _profiles->global_settings().GetString("downloads.folder");
+  }
+  if (configured.empty()) {
+    return {_downloadPaths->Reserve(fallback.UTF8String, suggested), false};
+  }
+  NSString* folder = @(configured.c_str()).stringByExpandingTildeInPath;
+  if (usable(folder)) {
+    return {_downloadPaths->Reserve(folder.UTF8String, suggested), false};
+  }
+  return {_downloadPaths->Reserve(fallback.UTF8String, suggested), true};
+}
+
+- (nullable brouk::DownloadService*)downloadService {
+  return _downloads.get();
+}
+
+// The windows' buttons and the Dock icon: progress and the number of
+// running downloads (014, as Chrome).
+- (void)downloadsChanged {
+  for (BRBrowserWindowController* controller in _windows) {
+    [controller downloadsChanged];
+  }
+  [NSNotificationCenter.defaultCenter
+      postNotificationName:brouk::BRDownloadsDidChangeNotification
+                    object:nil];
+  NSDockTile* tile = NSApp.dockTile;
+  int running = _downloads ? _downloads->RunningCount() : 0;
+  tile.badgeLabel =
+      running > 0 ? [NSString stringWithFormat:@"%d", running] : nil;
+  if (running == 0) {
+    if (tile.contentView) {
+      tile.contentView = nil;
+      [tile display];
+    }
+    return;
+  }
+  if (!tile.contentView) {
+    NSImageView* icon =
+        [NSImageView imageViewWithImage:NSApp.applicationIconImage];
+    icon.frame = NSMakeRect(0, 0, tile.size.width, tile.size.height);
+    _dockProgress = [[NSProgressIndicator alloc]
+        initWithFrame:NSMakeRect(tile.size.width * 0.1, tile.size.height * 0.08,
+                                 tile.size.width * 0.8, 16)];
+    _dockProgress.style = NSProgressIndicatorStyleBar;
+    _dockProgress.minValue = 0;
+    _dockProgress.maxValue = 1;
+    [icon addSubview:_dockProgress];
+    tile.contentView = icon;
+  }
+  double progress = _downloads->Progress();
+  _dockProgress.indeterminate = progress < 0;
+  _dockProgress.doubleValue = progress < 0 ? 0 : progress;
+  [tile display];
 }
 
 - (void)releaseDownloadPath:(const std::string&)path {
@@ -1154,6 +1290,23 @@ class AppSettingsPage : public SettingsPageDelegate {
   if (_quitting) {
     return;
   }
+  // Running downloads would be lost: ask first (014, as Chrome).
+  int running = _downloads ? _downloads->RunningCount() : 0;
+  if (running > 0) {
+    NSAlert* alert = [[NSAlert alloc] init];
+    alert.messageText =
+        running == 1
+            ? @"1 download is in progress. Cancel it and quit?"
+            : [NSString stringWithFormat:@"%d downloads are in progress. "
+                                         @"Cancel them and quit?",
+                                         running];
+    [alert addButtonWithTitle:@"Quit"];
+    [alert addButtonWithTitle:@"Keep Downloading"];
+    alert.alertStyle = NSAlertStyleWarning;
+    if ([alert runModal] != NSAlertFirstButtonReturn) {
+      return;
+    }
+  }
   _quitting = YES;
   // The windows open now are the session to continue with (015).
   [_sessionTimer invalidate];
@@ -1172,6 +1325,7 @@ class AppSettingsPage : public SettingsPageDelegate {
 - (void)releaseBrowserObjects {
   [_bookmarks saveNow];
   _adblock.reset();
+  _downloads.reset();  // Before the history it records into.
   _passwords.reset();  // Finishes queued work, closes the databases.
   _autofill.reset();
   _history.reset();  // Finishes queued history work, closes the databases.
@@ -1861,6 +2015,10 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
   if ([page isEqualToString:@"history"]) {
     return std::make_unique<brouk::HistoryPageHandler>(
         std::make_unique<brouk::AppHistoryPage>(self, controller, tabId));
+  }
+  if ([page isEqualToString:@"downloads"]) {
+    return std::make_unique<brouk::DownloadsPageHandler>(
+        std::make_unique<brouk::AppDownloadsPage>(self, controller, tabId));
   }
   if ([page isEqualToString:@"passwords"]) {
     return std::make_unique<brouk::PasswordsPageHandler>(
@@ -3116,6 +3274,10 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
           title:@"Always Show Bookmarks Bar"
          action:@selector(toggleBookmarksBar:)
        shortcut:@"toggle_bookmarks_bar"];
+  [self addItem:view
+          title:@"Downloads"
+         action:@selector(showDownloads:)
+       shortcut:@"show_downloads"];
   [view addItem:NSMenuItem.separatorItem];
   [self addItem:view
           title:@"Stop"

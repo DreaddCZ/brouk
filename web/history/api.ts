@@ -47,6 +47,8 @@ export interface ClearChoice {
   readonly history: boolean;
   readonly cookies: boolean;
   readonly cache: boolean;
+  /** The downloads list (014); the files stay. */
+  readonly downloads: boolean;
 }
 
 /** What Clean up does in one profile. */

@@ -262,17 +262,15 @@ class TabDelegateBridge : public TabClientDelegate {
   bool AskWhereToSaveDownloads() override {
     return [tab_.delegate askWhereToSaveDownloads];
   }
-  std::string ReserveDownloadPath(const std::string& suggested) override {
+  DownloadTarget ReserveDownloadPath(const std::string& suggested) override {
     BRTab* tab = tab_;
-    return [tab.delegate tab:tab reserveDownloadPath:suggested];
+    id<BRTabDelegate> delegate = tab.delegate;
+    return delegate ? [delegate tab:tab reserveDownloadPath:suggested]
+                    : DownloadTarget{};
   }
   void ReleaseDownloadPath(const std::string& path) override {
     BRTab* tab = tab_;
     [tab.delegate tab:tab releaseDownloadPath:path];
-  }
-  void OnDownloadUpdated(const DownloadInfo& info) override {
-    BRTab* tab = tab_;
-    [tab.delegate tab:tab downloadUpdated:info];
   }
   void ShowPermissionPrompt(const PermissionRequest& request,
                             PermissionDone done) override {
@@ -494,6 +492,8 @@ class TabInternalPageBridge : public InternalPageDelegate {
     _client->SetPasswords([delegate passwordManager], profileId);
     // Form autofill (009), the same data in every profile.
     _client->SetAutofill([delegate autofillManager]);
+    // Downloads (014) go to the app's list.
+    _client->SetDownloads([delegate downloadService], profileId);
   }
   return self;
 }

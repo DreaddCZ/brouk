@@ -67,7 +67,7 @@ constexpr std::array<std::string_view, 7> kSecureDnsLabels = {
     "Off (system DNS)", "Cloudflare", "Quad9", "AdGuard DNS (blocks ads)",
     "NextDNS",          "Control D",  "Custom"};
 
-constexpr std::array<SettingDef, 49> kSettings = {{
+constexpr std::array<SettingDef, 50> kSettings = {{
     // Global.
     {.key = "appearance.theme",
      .scope = SettingScope::kGlobal,
@@ -478,6 +478,15 @@ constexpr std::array<SettingDef, 49> kSettings = {{
      .description = "ads, privacy, malware, domains (DNS-style lists), "
                     "cookies (cookie banners), annoyances, regional, "
                     "custom."},
+    {.key = "downloads.folder",
+     .scope = SettingScope::kProfile,
+     .type = SettingDef::Type::kString,
+     .default_value = "",
+     .format = SettingDef::Format::kFolder,
+     .max_length = 1024,
+     .section = "Downloads",
+     .label = "Download folder for this profile",
+     .description = "Empty: the download folder for all profiles."},
     {.key = "passwords.source",
      .scope = SettingScope::kProfile,
      .type = SettingDef::Type::kChoice,

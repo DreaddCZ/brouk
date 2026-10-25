@@ -38,6 +38,8 @@ NSString* SymbolFor(brouk::PermissionKind kind) {
       return @"bell";
     case K::kClipboard:
       return @"doc.on.clipboard";
+    case K::kAutomaticDownloads:
+      return @"arrow.down.circle";
     default:
       return @"lock.open";
   }

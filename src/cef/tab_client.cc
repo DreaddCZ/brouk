@@ -1,6 +1,7 @@
 #include "cef/tab_client.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -14,6 +15,7 @@
 #include "core/crash_error_code.h"
 #include "core/external_protocol.h"
 #include "core/page_events.h"
+#include "core/web_origin.h"
 #include "include/cef_image.h"
 #include "include/cef_navigation_entry.h"
 #include "include/cef_parser.h"
@@ -504,7 +506,7 @@ void TabClient::DownloadFavicon(const CefRefPtr<CefBrowser>& browser,
 }
 
 bool TabClient::OnBeforeDownload(
-    CefRefPtr<CefBrowser> /*browser*/,
+    CefRefPtr<CefBrowser> browser,
     CefRefPtr<CefDownloadItem> download_item,
     const CefString& suggested_name,
     CefRefPtr<CefBeforeDownloadCallback> callback) {
@@ -512,37 +514,39 @@ bool TabClient::OnBeforeDownload(
   if (!delegate_) {
     return false;  // Tab is closing: Alloy style cancels the download.
   }
-  std::string path = delegate_->ReserveDownloadPath(suggested_name.ToString());
-  download_paths_[download_item->GetId()] = path;
+  DownloadTarget target =
+      delegate_->ReserveDownloadPath(suggested_name.ToString());
+  download_paths_[download_item->GetId()] = target.path;
   // Like Chrome: save to the downloads folder without asking, except for
-  // "Save Link/Image As…" or when the user chose to be asked (settings).
+  // "Save Link/Image As…", when the user chose to be asked (settings), or
+  // when the profile's folder cannot be used.
   bool ask =
       save_as_urls_.erase(download_item->GetOriginalUrl().ToString()) > 0 ||
       save_as_urls_.erase(download_item->GetURL().ToString()) > 0 ||
-      delegate_->AskWhereToSaveDownloads();
-  callback->Continue(path, ask);
+      delegate_->AskWhereToSaveDownloads() || target.ask;
+  callback->Continue(target.path, ask);
+  if (downloads_) {
+    std::string page =
+        browser ? browser->GetMainFrame()->GetURL().ToString() : "";
+    std::optional<std::string> origin = WebOriginOf(page);
+    std::string site = origin ? HostOfOrigin(*origin) : "";
+    if (site.starts_with("www.")) {
+      site = site.substr(4);
+    }
+    downloads_->OnStarted(downloads_profile_, download_item, site);
+  }
   return true;
 }
 
-void TabClient::OnDownloadUpdated(
-    CefRefPtr<CefBrowser> /*browser*/,
-    CefRefPtr<CefDownloadItem> download_item,
-    CefRefPtr<CefDownloadItemCallback> /*callback*/) {
+void TabClient::OnDownloadUpdated(CefRefPtr<CefBrowser> /*browser*/,
+                                  CefRefPtr<CefDownloadItem> download_item,
+                                  CefRefPtr<CefDownloadItemCallback> callback) {
   CEF_REQUIRE_UI_THREAD();
-  DownloadInfo info;
-  info.id = download_item->GetId();
-  info.full_path = download_item->GetFullPath().ToString();
-  info.percent = download_item->GetPercentComplete();
-  if (download_item->IsComplete()) {
-    info.state = DownloadInfo::State::kComplete;
-  } else if (download_item->IsCanceled()) {
-    info.state = DownloadInfo::State::kCanceled;
-  } else if (download_item->IsInterrupted()) {
-    info.state = DownloadInfo::State::kFailed;
-  }
-  bool finished = info.state != DownloadInfo::State::kInProgress;
+  bool finished =
+      download_item->IsComplete() || download_item->IsCanceled() ||
+      (download_item->IsInterrupted() && !download_item->IsPaused());
   if (finished) {
-    auto it = download_paths_.find(info.id);
+    auto it = download_paths_.find(download_item->GetId());
     if (it != download_paths_.end()) {
       if (delegate_) {
         delegate_->ReleaseDownloadPath(it->second);
@@ -550,9 +554,85 @@ void TabClient::OnDownloadUpdated(
       download_paths_.erase(it);
     }
   }
-  if (delegate_ && (!info.full_path.empty() || finished)) {
-    delegate_->OnDownloadUpdated(info);
+  if (downloads_) {
+    downloads_->OnUpdated(download_item, callback);
   }
+}
+
+namespace {
+
+std::int64_t SteadyMillis() {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+             std::chrono::steady_clock::now().time_since_epoch())
+      .count();
+}
+
+}  // namespace
+
+// Several downloads from one page without the user starting them ask for
+// the "Automatic downloads" permission (014, as in Chrome). The first
+// download of a page and downloads the user started (a navigation with a
+// user gesture) always go through; the others wait for the answer.
+bool TabClient::CanDownload(CefRefPtr<CefBrowser> browser,
+                            const CefString& url,
+                            const CefString& /*request_method*/) {
+  CEF_REQUIRE_UI_THREAD();
+  std::string target = url.ToString();
+  bool gesture =
+      target == gesture_url_ && SteadyMillis() - gesture_time_ < 5000;
+  if (gesture || page_downloads_++ == 0) {
+    return true;
+  }
+  std::string page = browser->GetMainFrame()->GetURL().ToString();
+  CefRefPtr<CefRequestContext> context =
+      browser->GetHost()->GetRequestContext();
+  cef_content_setting_values_t value =
+      context ? context->GetContentSetting(
+                    page, page, CEF_CONTENT_SETTING_TYPE_AUTOMATIC_DOWNLOADS)
+              : CEF_CONTENT_SETTING_VALUE_DEFAULT;
+  if (value == CEF_CONTENT_SETTING_VALUE_ALLOW) {
+    return true;
+  }
+  if (value == CEF_CONTENT_SETTING_VALUE_BLOCK || !delegate_) {
+    return false;
+  }
+  held_downloads_.push_back(target);
+  if (asking_downloads_) {
+    return false;
+  }
+  asking_downloads_ = true;
+  PermissionRequest request;
+  request.id = next_media_prompt_id_++;
+  request.origin = OriginForPrompt(OriginOf(page));
+  request.kinds = {PermissionKind::kAutomaticDownloads};
+  CefRefPtr<TabClient> self = this;
+  delegate_->ShowPermissionPrompt(
+      request, [self, owner = browser, page](PermissionChoice choice) {
+        self->asking_downloads_ = false;
+        std::vector<std::string> held = std::move(self->held_downloads_);
+        self->held_downloads_.clear();
+        CefRefPtr<CefRequestContext> context =
+            owner->GetHost()->GetRequestContext();
+        bool allow = choice == PermissionChoice::kAllow ||
+                     choice == PermissionChoice::kAllowOnce;
+        if (context && (choice == PermissionChoice::kAllow ||
+                        choice == PermissionChoice::kBlock)) {
+          context->SetContentSetting(
+              page, page, CEF_CONTENT_SETTING_TYPE_AUTOMATIC_DOWNLOADS,
+              allow ? CEF_CONTENT_SETTING_VALUE_ALLOW
+                    : CEF_CONTENT_SETTING_VALUE_BLOCK);
+        }
+        if (!allow) {
+          return;
+        }
+        // The held downloads start now; they count as the user's.
+        for (const std::string& held_url : held) {
+          self->gesture_url_ = held_url;
+          self->gesture_time_ = SteadyMillis();
+          owner->GetHost()->StartDownload(held_url);
+        }
+      });
+  return false;
 }
 
 void TabClient::OnFindResult(CefRefPtr<CefBrowser> /*browser*/,
@@ -779,6 +859,7 @@ void TabClient::OnLoadStart(CefRefPtr<CefBrowser> /*browser*/,
   CEF_REQUIRE_UI_THREAD();
   if (frame->IsMain()) {
     main_load_failed_ = false;
+    page_downloads_ = 0;
     if (passwords_) {
       passwords_->OnMainFrameLoadStart();
     }
@@ -1014,10 +1095,15 @@ void TabClient::EndOneTimeGrants(const CefRefPtr<CefBrowser>& browser,
 bool TabClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
                                CefRefPtr<CefFrame> frame,
                                CefRefPtr<CefRequest> request,
-                               bool /*user_gesture*/,
+                               bool user_gesture,
                                bool /*is_redirect*/) {
   CEF_REQUIRE_UI_THREAD();
   std::string url = request->GetURL().ToString();
+  if (user_gesture) {
+    // A link the user clicked may turn out to be a download (014).
+    gesture_url_ = url;
+    gesture_time_ = SteadyMillis();
+  }
   switch (ClassifyScheme(url)) {
     case SchemeHandling::kBrowser:
       return false;

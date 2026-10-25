@@ -11,6 +11,7 @@
 
 #include "cef/adblock_request_handler.h"
 #include "cef/autofill_tab.h"
+#include "cef/download_service.h"
 #include "cef/password_tab.h"
 #include "core/dialog_spam_guard.h"
 #include "core/permissions.h"
@@ -56,13 +57,11 @@ using JsDialogDone =
 // Where a link from the context menu opens (Chrome's choices).
 enum class OpenDisposition { kNewBackgroundTab, kNewForegroundTab, kNewWindow };
 
-// State of a download, for the download notice (012, item 18).
-struct DownloadInfo {
-  enum class State { kInProgress, kComplete, kCanceled, kFailed };
-  std::uint32_t id = 0;
-  State state = State::kInProgress;
-  std::string full_path;  // Empty until the target path is known.
-  int percent = -1;       // -1 if unknown.
+// Where a download goes (014): a unique path in the profile's download
+// folder, or the user is asked (the folder is missing or not writable).
+struct DownloadTarget {
+  std::string path;
+  bool ask = false;
 };
 
 // A site asks for permissions (camera, location, ...).
@@ -200,11 +199,10 @@ class TabClientDelegate : public PasswordTabDelegate,
   // Every download asks where to save (otherwise only "Save As…").
   virtual bool AskWhereToSaveDownloads() = 0;
 
-  // Downloads: a unique path in the downloads folder for the suggested
-  // (untrusted) file name, reserved until released.
-  virtual std::string ReserveDownloadPath(const std::string& suggested) = 0;
+  // Downloads (014): a unique path in the tab's profile's download folder
+  // for the suggested (untrusted) file name, reserved until released.
+  virtual DownloadTarget ReserveDownloadPath(const std::string& suggested) = 0;
   virtual void ReleaseDownloadPath(const std::string& path) = 0;
-  virtual void OnDownloadUpdated(const DownloadInfo& info) = 0;
 
   // Ad blocking (007): a request the ad blocker matched or that went to a
   // third party; and a page load it blocked (the tab explains it).
@@ -258,6 +256,12 @@ class TabClient : public CefClient,
   void OnPasswordKeyIconClicked();
   // Form autofill (009), set before the browser is created. UI thread.
   void SetAutofill(AutofillManager* manager);
+  // The app's downloads (014), set before the browser is created; the
+  // service outlives every browser. UI thread.
+  void SetDownloads(DownloadService* service, const ProfileId& profile) {
+    downloads_ = service;
+    downloads_profile_ = profile;
+  }
 
   // The settings a tab's renderer follows (kRendererConfigMessage), sent
   // when they change.
@@ -308,6 +312,9 @@ class TabClient : public CefClient,
                               bool fullscreen) override;
 
   // CefDownloadHandler:
+  bool CanDownload(CefRefPtr<CefBrowser> browser,
+                   const CefString& url,
+                   const CefString& request_method) override;
   bool OnBeforeDownload(CefRefPtr<CefBrowser> browser,
                         CefRefPtr<CefDownloadItem> download_item,
                         const CefString& suggested_name,
@@ -439,7 +446,17 @@ class TabClient : public CefClient,
                             const CefRefPtr<CefListValue>& args);
 
   std::shared_ptr<PasswordTab> passwords_;  // UI thread.
-  std::shared_ptr<AutofillTab> autofill_;   // UI thread.
+  DownloadService* downloads_ = nullptr;    // UI thread.
+  ProfileId downloads_profile_;
+  // Automatic downloads (014): downloads the page started since it loaded,
+  // the last navigation the user started (its downloads are always
+  // allowed), and downloads held back until the user allows them.
+  int page_downloads_ = 0;
+  std::string gesture_url_;
+  std::int64_t gesture_time_ = 0;
+  std::vector<std::string> held_downloads_;
+  bool asking_downloads_ = false;
+  std::shared_ptr<AutofillTab> autofill_;  // UI thread.
   AutofillManager* autofill_manager_ = nullptr;
   // The right-click Autofill menu's values, by menu id (009).
   std::map<int, std::string> autofill_menu_values_;
