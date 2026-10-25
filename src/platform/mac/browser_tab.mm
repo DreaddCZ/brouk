@@ -220,6 +220,20 @@ class TabDelegateBridge : public TabClientDelegate {
       [alert runModal];
     }
   }
+  void ShowAutofillPrompt(const AutofillPrompt& prompt,
+                          AutofillPromptDone done) override {
+    BRTab* tab = tab_;
+    id<BRTabDelegate> delegate = tab.delegate;
+    if (!delegate) {
+      done(AutofillPromptAnswer{});
+      return;
+    }
+    [delegate tab:tab showAutofillPrompt:prompt done:std::move(done)];
+  }
+  void OpenAutofillSettings() override {
+    BRTab* tab = tab_;
+    [tab.delegate tabOpenAutofillSettings:tab];
+  }
   void OpenPasswordsPage() override {
     BRTab* tab = tab_;
     [tab.delegate tabOpenPasswordsPage:tab];
@@ -478,6 +492,8 @@ class TabInternalPageBridge : public InternalPageDelegate {
     }
     // The password manager (008) for the tab's login forms.
     _client->SetPasswords([delegate passwordManager], profileId);
+    // Form autofill (009), the same data in every profile.
+    _client->SetAutofill([delegate autofillManager]);
   }
   return self;
 }

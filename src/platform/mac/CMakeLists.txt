@@ -24,6 +24,8 @@ add_executable(brouk_app
   address_suggestions_popup.h
   address_suggestions_popup.mm
   app_delegate.h
+  autofill_prompt.h
+  autofill_prompt.mm
   app_delegate.mm
   browser_tab.h
   browser_tab.mm

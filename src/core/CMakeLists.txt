@@ -16,6 +16,14 @@ set(BROUK_CORE_SOURCES
   address_input.h
   address_suggestions.cc
   address_suggestions.h
+  autofill_entry.cc
+  autofill_forms.cc
+  autofill_forms.h
+  autofill_entry.h
+  autofill_rules.cc
+  autofill_rules.h
+  autofill_store.cc
+  autofill_store.h
   bookmark_file.cc
   bookmark_file.h
   bookmark_html.cc

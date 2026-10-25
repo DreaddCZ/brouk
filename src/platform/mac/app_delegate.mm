@@ -26,6 +26,7 @@
 
 #include "brouk/app_info.h"
 #include "cef/adblock_service.h"
+#include "cef/autofill_manager.h"
 #include "cef/bookmarks_page_handler.h"
 #include "cef/browser_app.h"
 #include "cef/browsing_data.h"
@@ -122,6 +123,7 @@
 - (void)importSettingsWithDone:(brouk::SettingsPageDelegate::FileDone)done;
 - (std::vector<brouk::ProfileInfo>)allProfiles;
 - (nullable brouk::PasswordManager*)passwordManager;
+- (nullable brouk::AutofillManager*)autofillManager;
 - (BOOL)profileUsesBitwarden:(const brouk::ProfileId&)profile;
 - (BOOL)breachCheckEnabled;
 - (std::vector<std::string>)keepListOfProfile:(const brouk::ProfileId&)profile;
@@ -603,6 +605,54 @@ class AppSettingsPage : public SettingsPageDelegate {
   }
   void RevealSettingsFolder() override { [app_ revealSettingsFolder]; }
   AdblockService* Adblock() override { return [app_ adblockService]; }
+  AutofillManager* Autofill() override { return [app_ autofillManager]; }
+  void SaveAutofillFile(std::string json, TextSaveDone done) override {
+    NSSavePanel* panel = [NSSavePanel savePanel];
+    panel.title = @"Export Autofill Data";
+    panel.message = @"The file is not encrypted: it contains your saved "
+                    @"addresses and company details in plain text.";
+    panel.nameFieldStringValue = @"Autofill.json";
+    panel.allowedContentTypes = @[ UTTypeJSON ];
+    __block TextSaveDone answer = std::move(done);
+    __block std::string text = std::move(json);
+    [panel beginWithCompletionHandler:^(NSModalResponse response) {
+      if (response != NSModalResponseOK || !panel.URL) {
+        answer(false, std::nullopt);
+        return;
+      }
+      NSData* data = [NSData dataWithBytes:text.data() length:text.size()];
+      NSError* error = nil;
+      if (![data writeToURL:panel.URL
+                    options:NSDataWritingAtomic
+                      error:&error]) {
+        answer(false, Error{std::string("The file could not be saved: ") +
+                            error.localizedDescription.UTF8String});
+        return;
+      }
+      answer(true, std::nullopt);
+    }];
+  }
+  void OpenAutofillFile(TextOpenDone done) override {
+    NSOpenPanel* panel = [NSOpenPanel openPanel];
+    panel.title = @"Import Autofill Data";
+    panel.message = @"A file exported from Brouk's autofill settings.";
+    panel.allowedContentTypes = @[ UTTypeJSON ];
+    panel.allowsMultipleSelection = NO;
+    __block TextOpenDone answer = std::move(done);
+    [panel beginWithCompletionHandler:^(NSModalResponse response) {
+      if (response != NSModalResponseOK || !panel.URL) {
+        answer(std::nullopt, std::nullopt);
+        return;
+      }
+      NSData* data = [NSData dataWithContentsOfURL:panel.URL];
+      if (!data) {
+        answer(std::nullopt, Error{"The file could not be read."});
+        return;
+      }
+      answer(std::string(static_cast<const char*>(data.bytes), data.length),
+             std::nullopt);
+    }];
+  }
   std::string Language() override {
     NSString* language = NSLocale.preferredLanguages.firstObject ?: @"en";
     return language.UTF8String ?: "en";
@@ -645,6 +695,8 @@ class AppSettingsPage : public SettingsPageDelegate {
   std::string _adblockConfiguration;
   // Built-in passwords (008), same lifetime.
   std::unique_ptr<brouk::PasswordManager> _passwords;
+  // Form autofill data (009), same lifetime.
+  std::unique_ptr<brouk::AutofillManager> _autofill;
   // History menu (013): tabs and windows closed in this run, and each
   // profile's recently visited pages (fetched from its history).
   brouk::ClosedTabList _closedTabs;
@@ -754,6 +806,11 @@ class AppSettingsPage : public SettingsPageDelegate {
         app->_profiles->ProfileSettings(profile);
     return !settings || settings->GetBool("passwords.offer_to_save");
   });
+  _autofill = std::make_unique<brouk::AutofillManager>(
+      std::filesystem::path(brouk::mac::AppDataDirectory().UTF8String) /
+          "autofill.db",
+      brouk::mac::CreateDevKeychainIfRequested()
+          ?: brouk::mac::CreateKeychain(brouk::mac::KeychainServiceName()));
   // Remote debugging (006) is fixed for this run: from the setting (passed
   // to CefInitialize) or the --remote-debugging-port switch.
   CefRefPtr<CefCommandLine> commandLine =
@@ -1116,7 +1173,8 @@ class AppSettingsPage : public SettingsPageDelegate {
   [_bookmarks saveNow];
   _adblock.reset();
   _passwords.reset();  // Finishes queued work, closes the databases.
-  _history.reset();    // Finishes queued history work, closes the databases.
+  _autofill.reset();
+  _history.reset();  // Finishes queued history work, closes the databases.
   _settingsWatcher = nil;
   _profileManager = nil;
   _settingsWindow = nil;
@@ -1375,6 +1433,21 @@ class AppSettingsPage : public SettingsPageDelegate {
   }
   [self configureAdblock];
   [self applySecureDns];
+  if (_autofill) {
+    std::string country = global.GetString("autofill.phone_country");
+    if (country.empty()) {
+      country = NSLocale.currentLocale.countryCode.UTF8String ?: "";
+    }
+    std::ranges::transform(country, country.begin(), [](unsigned char c) {
+      return static_cast<char>(std::toupper(c));
+    });
+    _autofill->SetOptions(
+        {.enabled = global.GetBool("autofill.enabled"),
+         .entries = global.GetBool("autofill.entries"),
+         .custom_fields = global.GetBool("autofill.custom_fields"),
+         .offer_to_save = global.GetBool("autofill.offer_to_save"),
+         .country = country});
+  }
   if (_passwords) {
     _passwords->SetOptions(
         {.fill_on_click = global.GetBool("passwords.fill_on_click"),
@@ -2255,6 +2328,10 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
 
 - (nullable brouk::PasswordManager*)passwordManager {
   return _passwords.get();
+}
+
+- (nullable brouk::AutofillManager*)autofillManager {
+  return _autofill.get();
 }
 
 - (BOOL)profileUsesBitwarden:(const brouk::ProfileId&)profile {

@@ -59,6 +59,7 @@ add_custom_command(OUTPUT "${_forms_h}"
   COMMAND ${CMAKE_COMMAND} -DINPUT=${_forms_js} -DOUTPUT=${_forms_h}
           -DNAME=kFormsScript -P "${PROJECT_SOURCE_DIR}/cmake/EmbedText.cmake"
   DEPENDS "${PROJECT_SOURCE_DIR}/web/forms/field_rules.ts"
+          "${PROJECT_SOURCE_DIR}/web/forms/address_rules.ts"
           "${PROJECT_SOURCE_DIR}/web/forms/login.ts"
           "${PROJECT_SOURCE_DIR}/web/forms/tsconfig.json"
           "${PROJECT_SOURCE_DIR}/web/tsconfig.json"

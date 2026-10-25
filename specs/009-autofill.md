@@ -1,6 +1,6 @@
 # 009 – Form autofill
 
-- **Status:** ready
+- **Status:** in-progress
 - **Priority:** P1
 - **Depends on:** 001, 004, 005
 
@@ -163,3 +163,12 @@ None.
   - The normalising, comparison and validation rules are pure core functions; cover them with unit tests, including Czech examples.
   - Spec set to `ready`.
 - 2026-10-23 (with the user): a place in settings to review and edit saved autofill data. Specified as Settings → Autofill, with usage stats, origin of each entry, search and sort, bulk delete and JSON export/import.
+- 2026-10-25 (implementation):
+  - Storage: `autofill.db`, each entry and custom field encrypted as a whole (labels included) with XChaCha20-Poly1305 and the app key in the keychain ("Brouk Keys", account `autofill-key`); only ids and usage counts are plain. Same libsodium as 008.
+  - Field detection: the autocomplete attribute, then English and Czech hints in name, id, label and placeholder (`web/forms/address_rules.ts`, unit-tested); a second field of the same kind is not filled again (a second street field becomes line 2). `<select>` fields (country, region) are filled by matching an option's text or value.
+  - Like Chrome: filled fields are tinted light blue until the user changes them; the drop-down lists the most recently used entries first; the prompt hangs from the right end of the address bar.
+  - Offered on submit events, Enter in a field and clicks on submit buttons (not on other buttons such as "add to cart"); the same values are offered once per tab.
+  - "Similar" (Update): the same email or phone, or last name and street (and first name, when both have one) at most 2 edits apart after normalising. "Adds information": all overlapping values equal and at least one new field.
+  - Import of the JSON file: entries equal to a saved one are skipped, entries adding fields to one are merged into it, all others are added (similar ones can then be merged with Find duplicates).
+  - The phone country is the setting `autofill.phone_country` (two letters) or the Mac's region; a national trunk 0 is dropped for countries that use one.
+  - Settings → Autofill is a section of the settings page (`brouk://settings/#global:autofill` scrolls to it).

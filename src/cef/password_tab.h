@@ -24,7 +24,12 @@ struct PasswordMenuItem {
     kCode,
     kReadQrCode,
     kManage,
-    kWarning
+    kWarning,
+    // Autofill (009) uses the same drop-down.
+    kAutofillEntry,
+    kCustomField,
+    kClearFilled,
+    kManageAutofill
   };
   Kind kind = Kind::kLogin;
   std::string title;     // User name, "Use a strong password", …

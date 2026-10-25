@@ -67,7 +67,7 @@ constexpr std::array<std::string_view, 7> kSecureDnsLabels = {
     "Off (system DNS)", "Cloudflare", "Quad9", "AdGuard DNS (blocks ads)",
     "NextDNS",          "Control D",  "Custom"};
 
-constexpr std::array<SettingDef, 44> kSettings = {{
+constexpr std::array<SettingDef, 49> kSettings = {{
     // Global.
     {.key = "appearance.theme",
      .scope = SettingScope::kGlobal,
@@ -290,6 +290,41 @@ constexpr std::array<SettingDef, 44> kSettings = {{
      .default_value = "true",
      .section = "Passwords",
      .label = "Unlock Bitwarden with Touch ID"},
+    // Form autofill (009), for all profiles.
+    {.key = "autofill.enabled",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kBool,
+     .default_value = "true",
+     .section = "Autofill",
+     .label = "Fill forms with saved addresses and details"},
+    {.key = "autofill.entries",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kBool,
+     .default_value = "true",
+     .section = "Autofill",
+     .label = "Offer saved entries (contact, address, company)"},
+    {.key = "autofill.custom_fields",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kBool,
+     .default_value = "true",
+     .section = "Autofill",
+     .label = "Offer custom fields"},
+    {.key = "autofill.offer_to_save",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kBool,
+     .default_value = "true",
+     .section = "Autofill",
+     .label = "Offer to save what you type into forms"},
+    {.key = "autofill.phone_country",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kString,
+     .default_value = "",
+     .max_length = 2,
+     .section = "Autofill",
+     .label = "Country for phone numbers",
+     .description = "Two letters, e.g. CZ. Numbers without a country code "
+                    "are compared as numbers of this country. Empty: the "
+                    "Mac's region."},
     {.key = "downloads.folder",
      .scope = SettingScope::kGlobal,
      .type = SettingDef::Type::kString,

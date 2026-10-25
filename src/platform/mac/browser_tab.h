@@ -91,6 +91,13 @@ NS_ASSUME_NONNULL_BEGIN
     showKeyIconMenu:(const brouk::PasswordMenu&)menu
                done:(brouk::PasswordMenuDone)done;
 - (void)tabOpenPasswordsPage:(BRTab*)tab;
+// Form autofill (009): null before CEF is ready; the save prompt; Settings
+// → Autofill.
+- (nullable brouk::AutofillManager*)autofillManager;
+- (void)tab:(BRTab*)tab
+    showAutofillPrompt:(const brouk::AutofillPrompt&)prompt
+                  done:(brouk::AutofillPromptDone)done;
+- (void)tabOpenAutofillSettings:(BRTab*)tab;
 @end
 
 @interface BRTab : NSObject

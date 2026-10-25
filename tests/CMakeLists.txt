@@ -24,6 +24,9 @@ add_executable(brouk_core_tests
   core/adblock_store_test.cc
   core/address_input_test.cc
   core/address_suggestions_test.cc
+  core/autofill_forms_test.cc
+  core/autofill_rules_test.cc
+  core/autofill_store_test.cc
   core/bookmark_file_test.cc
   core/bookmark_html_test.cc
   core/bookmark_model_test.cc

@@ -17,6 +17,7 @@
 
 #import "platform/mac/address_field.h"
 #import "platform/mac/address_suggestions_popup.h"
+#import "platform/mac/autofill_prompt.h"
 #import "platform/mac/browser_tab.h"
 #import "platform/mac/browser_window.h"
 #import "platform/mac/download_notice.h"
@@ -2635,6 +2636,29 @@ static std::int64_t Now() {
 
 - (void)tabOpenPasswordsPage:(BRTab*)tab {
   [self showInternalPage:@"passwords" fragment:@""];
+}
+
+#pragma mark - Autofill (009)
+
+- (nullable brouk::AutofillManager*)autofillManager {
+  return [_owner autofillManager];
+}
+
+// The prompt hangs from the right end of the address field, where Chrome
+// shows its save bubbles.
+- (void)tab:(BRTab*)tab
+    showAutofillPrompt:(const brouk::AutofillPrompt&)prompt
+                  done:(brouk::AutofillPromptDone)done {
+  if (tab != [self activeTab] || !self.window.visible) {
+    done(brouk::AutofillPromptAnswer{});
+    return;
+  }
+  NSView* anchor = _starButton.hidden ? _addressField : _starButton;
+  [BRAutofillPrompt showPrompt:prompt relativeTo:anchor done:std::move(done)];
+}
+
+- (void)tabOpenAutofillSettings:(BRTab*)tab {
+  [_owner openSettingsAtKey:@"autofill" profile:nil];
 }
 
 #pragma mark - Ad blocking (007)

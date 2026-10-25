@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "cef/adblock_settings.h"
+#include "cef/autofill_settings.h"
 #include "cef/json_util.h"
 #include "core/internal_pages.h"
 #include "core/profile_id.h"
@@ -275,6 +276,10 @@ bool SettingsHandler::OnQuery(CefRefPtr<CefBrowser> /*browser*/,
     delegate.ExportSettings(FileAnswer(callback));
   } else if (*type == "settings.import") {
     delegate.ImportSettings(FileAnswer(callback));
+  } else if (type->starts_with("autofill.")) {
+    if (!HandleAutofillSettingsMessage(*type, message, delegate, callback)) {
+      callback->Failure(kBadRequest, "Unknown request.");
+    }
   } else if (!type->starts_with("adblock.") ||
              !HandleAdblockSettingsMessage(*type, message, delegate,
                                            callback)) {
