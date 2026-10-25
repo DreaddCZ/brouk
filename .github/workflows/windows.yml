@@ -6,8 +6,6 @@ name: windows
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ci/windows-build] # TEMPORARY while the job is brought up
   schedule:
     - cron: "0 4 * * 1" # Mondays 04:00 UTC
 
@@ -55,6 +53,8 @@ jobs:
             }
           }
 
+      # clang-cl is the runner's LLVM (not pinned, like clang on the Linux
+      # runner); its version is printed here.
       - name: Tool versions
         run: |
           source scripts/env.sh
