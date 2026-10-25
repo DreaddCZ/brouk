@@ -28,7 +28,10 @@ compile() {  # compile <dir>
   # The Requests tool shows response bodies with it too.
   cp "$1/jsonview/viewer.js" "$1/shared/json_viewer.js"
   # Pages and styles next to their scripts.
-  find shared bookmarks history profiles settings tools -name '*.html' -o -name '*.css' | while read -r f; do
+  # The password checkup's strength estimate (008), flattened for the page.
+  node "$ROOT/scripts/vendor_modules.mjs" node_modules "$1/passwords" zx \
+    @zxcvbn-ts/core @zxcvbn-ts/language-common @zxcvbn-ts/language-en
+  find shared bookmarks history passwords profiles settings tools -name '*.html' -o -name '*.css' | while read -r f; do
     mkdir -p "$1/$(dirname "$f")"
     cp "$f" "$1/$f"
   done
@@ -55,6 +58,18 @@ case "${1:-}" in
     "$TSC" -p adblock/tsconfig.json --outDir "$tmp"
     mkdir -p "$out"
     cp "$tmp/adblock/cosmetic.js" "$tmp/adblock/picker.js" "$out/"
+    rm -rf "$tmp"
+    ;;
+  forms)
+    # The forms page script (login forms, 008) as one plain script for
+    # embedding into the renderer: its modules joined, without the import
+    # lines and export keywords (the renderer wraps it in a function).
+    out="${2:?usage: scripts/web forms <out-file>}"
+    tmp="$(mktemp -d)"
+    "$TSC" -p forms/tsconfig.json --outDir "$tmp"
+    mkdir -p "$(dirname "$out")"
+    cat "$tmp/forms/field_rules.js" "$tmp/forms/login.js" |
+      grep -v '^import ' | sed -e 's/^export //' > "$out"
     rm -rf "$tmp"
     ;;
   jsonview)

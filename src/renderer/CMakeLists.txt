@@ -50,3 +50,20 @@ add_custom_command(OUTPUT "${_cosmetic_h}" "${_picker_h}"
   COMMENT "Building the ad blocker's page scripts"
   VERBATIM)
 target_sources(brouk_renderer PRIVATE "${_cosmetic_h}" "${_picker_h}")
+
+# The login forms script (web/forms, TypeScript), embedded the same way (008).
+set(_forms_js "${PROJECT_BINARY_DIR}/generated/brouk/forms.js")
+set(_forms_h "${PROJECT_BINARY_DIR}/generated/brouk/forms_script.h")
+add_custom_command(OUTPUT "${_forms_h}"
+  COMMAND "${PROJECT_SOURCE_DIR}/scripts/web" forms "${_forms_js}"
+  COMMAND ${CMAKE_COMMAND} -DINPUT=${_forms_js} -DOUTPUT=${_forms_h}
+          -DNAME=kFormsScript -P "${PROJECT_SOURCE_DIR}/cmake/EmbedText.cmake"
+  DEPENDS "${PROJECT_SOURCE_DIR}/web/forms/field_rules.ts"
+          "${PROJECT_SOURCE_DIR}/web/forms/login.ts"
+          "${PROJECT_SOURCE_DIR}/web/forms/tsconfig.json"
+          "${PROJECT_SOURCE_DIR}/web/tsconfig.json"
+          "${PROJECT_SOURCE_DIR}/web/package-lock.json"
+          "${PROJECT_SOURCE_DIR}/cmake/EmbedText.cmake"
+  COMMENT "Building the login forms script"
+  VERBATIM)
+target_sources(brouk_renderer PRIVATE "${_forms_h}")

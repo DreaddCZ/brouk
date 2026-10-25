@@ -1,6 +1,6 @@
 # 008 – Password manager
 
-- **Status:** ready
+- **Status:** in-progress
 - **Priority:** P1
 - **Depends on:** 001, 003, 005
 
@@ -207,3 +207,14 @@ None.
   - CEF's WebAuthn support on macOS (security keys; whether hybrid sign-in with a phone works);
   - the Keychain access-control API for Touch ID protection.
 - The QR code reader needs a library (e.g. zxing-cpp, Apache-2.0), and the strength estimate may use `@zxcvbn-ts/core` (MIT). Both need the user's approval and a listing under the third-party rules.
+- 2026-10-24 (implementation, built-in source):
+  - Libraries approved by the user: libsodium 1.0.22 (ISC) for encryption and Argon2id; the strength estimate `@zxcvbn-ts/core` (MIT) in the passwords page. The QR code reader uses macOS Vision instead of zxing-cpp (no new library; Windows needs its own later).
+  - Same-site matching uses the public suffix list from the `psl` crate, already part of adblock-rust's dependencies (007), through our Rust wrapper; no new library.
+  - Encryption: XChaCha20-Poly1305 with a random 256-bit key per profile in the login keychain (service "Brouk Keys", generic password items). In phase 1 builds are signed ad hoc, so macOS asks once after a rebuild whether Brouk may use its key ("Always Allow"). Developer test copies keep their keys in their own data folder.
+  - Like Chrome: generated passwords use letters and digits without easily confused characters (l, I, O, 0, 1) and the symbols `- _ . : !`; an http entry is offered (never filled automatically) on the https page of the same host; entries of other hosts of the site are offered only in the main frame; a generated password is saved at once without a user name, which the submit adds; an unanswered save prompt stays reachable from the key icon until the user moves on to another page (a script forwarding within 5 seconds does not count).
+  - Chrome keeps automatically filled values from page scripts until the user interacts with the page; CEF offers no such hook, so a filled value is readable by the page's scripts at once (as with most password manager extensions).
+  - The drop-down sits under the field also in frames of the same origin; in a cross-origin frame its position is approximate (the frame's offset is not visible to the page script).
+  - "Read QR code from this page" is in the key icon's menu, shown when the site has saved logins; the code goes to the site's login (Brouk asks which one if there are several). The page is captured through the tab's DevTools protocol, so no screen recording permission is needed.
+  - The checkup needs the page unlocked: the strength estimate runs in the passwords page, which gets the passwords for it. Import: entries with the same site and user name but another password are not imported but listed, so the user decides.
+  - The breach check also runs when a password is saved or updated from the prompt, with a warning if it is known from breaches.
+  - Shortcut ⌥⌘P (shortcuts.passwords) for the passwords page; Brouk → Passwords.

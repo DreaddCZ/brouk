@@ -446,3 +446,21 @@ pub unsafe extern "C" fn brouk_adblock_free_bytes(data: *mut u8, len: usize) {
         drop(Box::from_raw(ptr::slice_from_raw_parts_mut(data, len)));
     }
 }
+
+/// The registrable domain of `host` (public suffix list, e.g. "example.co.uk"
+/// for "www.example.co.uk"), or NULL if it has none (an IP address, a public
+/// suffix itself). Free the result with `brouk_adblock_free_string`.
+///
+/// # Safety
+/// `host` is NUL-terminated.
+#[no_mangle]
+pub unsafe extern "C" fn brouk_registrable_domain(host: *const c_char) -> *mut c_char {
+    let Some(host) = borrow_str(host) else {
+        return ptr::null_mut();
+    };
+    catch_unwind(AssertUnwindSafe(|| match psl::domain_str(host) {
+        Some(domain) => to_c_string(domain.to_owned()),
+        None => ptr::null_mut(),
+    }))
+    .unwrap_or(ptr::null_mut())
+}

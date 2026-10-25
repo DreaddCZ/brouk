@@ -56,13 +56,18 @@ constexpr std::array<std::string_view, 2> kBookmarksBar = {"new_tab_page",
 constexpr std::array<std::string_view, 2> kBookmarksBarLabels = {
     "On the new tab page only", "Always"};
 
+constexpr std::array<std::string_view, 2> kPasswordSources = {"builtin",
+                                                              "bitwarden"};
+constexpr std::array<std::string_view, 2> kPasswordSourceLabels = {
+    "Built-in password manager", "Bitwarden"};
+
 constexpr std::array<std::string_view, 7> kSecureDns = {
     "off", "cloudflare", "quad9", "adguard", "nextdns", "controld", "custom"};
 constexpr std::array<std::string_view, 7> kSecureDnsLabels = {
     "Off (system DNS)", "Cloudflare", "Quad9", "AdGuard DNS (blocks ads)",
     "NextDNS",          "Control D",  "Custom"};
 
-constexpr std::array<SettingDef, 34> kSettings = {{
+constexpr std::array<SettingDef, 44> kSettings = {{
     // Global.
     {.key = "appearance.theme",
      .scope = SettingScope::kGlobal,
@@ -221,6 +226,70 @@ constexpr std::array<SettingDef, 34> kSettings = {{
      .description = "For \"Custom\": the service's address, e.g. "
                     "https://dns.nextdns.io/abc123 for your own NextDNS "
                     "configuration."},
+    // Password manager (008).
+    {.key = "passwords.fill_on_click",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kBool,
+     .default_value = "false",
+     .section = "Passwords",
+     .label = "Fill passwords only on click",
+     .description = "Otherwise a site's only saved login is filled when the "
+                    "page loads."},
+    {.key = "passwords.generated_length",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kInteger,
+     .default_value = "20",
+     .min_value = 8,
+     .max_value = 64,
+     .section = "Passwords",
+     .label = "Length of generated passwords"},
+    {.key = "passwords.generated_characters",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kString,
+     .default_value = "upper, lower, digits, symbols",
+     .max_length = 64,
+     .section = "Passwords",
+     .label = "Characters in generated passwords",
+     .description = "Any of upper, lower, digits, symbols."},
+    {.key = "passwords.copy_totp",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kBool,
+     .default_value = "false",
+     .section = "Passwords",
+     .label = "Copy the 2FA code after filling a login",
+     .description = "For logins with a 2FA secret."},
+    {.key = "passwords.breach_check",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kBool,
+     .default_value = "true",
+     .section = "Passwords",
+     .label = "Check saved passwords for breaches",
+     .description = "Sends only the first 5 characters of each password's "
+                    "hash to Have I Been Pwned."},
+    {.key = "passwords.bitwarden_cli",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kString,
+     .default_value = "",
+     .max_length = 1024,
+     .section = "Passwords",
+     .label = "Bitwarden CLI",
+     .description = "Path of the bw program. Empty: found automatically."},
+    {.key = "passwords.bitwarden_lock_minutes",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kInteger,
+     .default_value = "15",
+     .min_value = 1,
+     .max_value = 1440,
+     .section = "Passwords",
+     .label = "Lock Bitwarden after (minutes)",
+     .description = "Without use. It also locks when the Mac sleeps or the "
+                    "screen locks."},
+    {.key = "passwords.bitwarden_touch_id",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kBool,
+     .default_value = "true",
+     .section = "Passwords",
+     .label = "Unlock Bitwarden with Touch ID"},
     {.key = "downloads.folder",
      .scope = SettingScope::kGlobal,
      .type = SettingDef::Type::kString,
@@ -374,6 +443,22 @@ constexpr std::array<SettingDef, 34> kSettings = {{
      .description = "ads, privacy, malware, domains (DNS-style lists), "
                     "cookies (cookie banners), annoyances, regional, "
                     "custom."},
+    {.key = "passwords.source",
+     .scope = SettingScope::kProfile,
+     .type = SettingDef::Type::kChoice,
+     .default_value = "builtin",
+     .choices = kPasswordSources,
+     .choice_labels = kPasswordSourceLabels,
+     .section = "Passwords",
+     .label = "Passwords",
+     .description = "Where this profile's passwords are saved and filled "
+                    "from."},
+    {.key = "passwords.offer_to_save",
+     .scope = SettingScope::kProfile,
+     .type = SettingDef::Type::kBool,
+     .default_value = "true",
+     .section = "Passwords",
+     .label = "Offer to save passwords"},
     {.key = "history.keep_list",
      .scope = SettingScope::kProfile,
      .type = SettingDef::Type::kString,

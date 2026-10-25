@@ -14,6 +14,9 @@ path = "src/lib.rs"
 [dependencies]
 adblock = { version = "=0.13.3", default-features = false, features = ["full-regex-handling", "embedded-domain-resolver", "css-validation"] }
 serde_json = "1"
+# Already in adblock's dependency tree; also gives the password manager (008)
+# registrable domains from the public suffix list.
+psl = "=2.1.245"
 
 [profile.release]
 panic = "abort"

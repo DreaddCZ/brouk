@@ -9,6 +9,8 @@ add_library(brouk_cef STATIC
   browser_app.cc
   browser_app.h
   bookmarks_page_handler.cc
+  breach_check.cc
+  breach_check.h
   bookmarks_page_handler.h
   browsing_data.cc
   browsing_data.h
@@ -33,6 +35,12 @@ add_library(brouk_cef STATIC
   internal_scheme.h
   json_util.h
   own_request_loader.cc
+  password_manager.cc
+  password_manager.h
+  password_tab.cc
+  password_tab.h
+  passwords_page_handler.cc
+  passwords_page_handler.h
   own_request_loader.h
   permission_mapping.cc
   permission_mapping.h

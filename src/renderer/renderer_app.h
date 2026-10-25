@@ -50,6 +50,9 @@ class RendererApp : public CefApp, public CefRenderProcessHandler {
   // answers, kept out of the page's reach.
   void SetAdblockReceiver(CefRefPtr<CefV8Context> context,
                           CefRefPtr<CefV8Value> function);
+  // Login forms (008): the page script's receiver for fill messages.
+  void SetFormsReceiver(CefRefPtr<CefV8Context> context,
+                        CefRefPtr<CefV8Value> function);
 
  private:
   struct DisplayMediaHandler {
@@ -59,6 +62,7 @@ class RendererApp : public CefApp, public CefRenderProcessHandler {
   // By frame identifier.
   std::map<std::string, DisplayMediaHandler> display_media_handlers_;
   std::map<std::string, DisplayMediaHandler> adblock_receivers_;
+  std::map<std::string, DisplayMediaHandler> forms_receivers_;
   void DeliverAdblockAnswer(const CefRefPtr<CefFrame>& frame,
                             const std::string& json,
                             const std::string& script);

@@ -55,12 +55,12 @@ TEST(ProfileExportTest, ReportsWhatIsNotImported) {
       "  profile:\n"
       "    name: Home\n"
       "    color: magenta\n"
-      "passwords: []\n");
+      "history: []\n");
   ASSERT_TRUE(imported);
   ASSERT_EQ(imported.value().problems.size(), 2u);
   EXPECT_NE(imported.value().problems[0].find("profile.color"),
             std::string::npos);
-  EXPECT_NE(imported.value().problems[1].find("passwords"), std::string::npos);
+  EXPECT_NE(imported.value().problems[1].find("history"), std::string::npos);
   EXPECT_EQ(imported.value().settings.GetString("profile.name"), "Home");
   EXPECT_EQ(imported.value().settings.GetString("profile.color"), "blue");
 }

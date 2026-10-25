@@ -1,6 +1,7 @@
 # Portable core: no CEF, no platform headers. Builds and is tested on Linux.
 include(BroukYaml)
 include(BroukSqlite)
+include(BroukSodium)
 
 set(BROUK_CORE_SOURCES
   adblock_engine.cc
@@ -31,6 +32,8 @@ set(BROUK_CORE_SOURCES
   context_menu.h
   crash_error_code.cc
   crash_error_code.h
+  crypto.cc
+  crypto.h
   devtools_frontend.h
   devtools_tools.cc
   devtools_tools.h
@@ -54,6 +57,18 @@ set(BROUK_CORE_SOURCES
   launch_args.h
   page_events.cc
   page_events.h
+  password_checkup.cc
+  password_checkup.h
+  password_csv.cc
+  password_csv.h
+  password_forms.cc
+  password_forms.h
+  password_generator.cc
+  password_generator.h
+  password_profile.cc
+  password_profile.h
+  password_store.cc
+  password_store.h
   permissions.cc
   permissions.h
   profile_export.cc
@@ -67,11 +82,13 @@ set(BROUK_CORE_SOURCES
   request_rules.h
   result.h
   screen_share.cc
+  screen_share.h
   search_engines.cc
   search_engines.h
+  secret_store.cc
+  secret_store.h
   secure_dns.cc
   secure_dns.h
-  screen_share.h
   security_state.cc
   security_state.h
   service_workers.cc
@@ -94,10 +111,14 @@ set(BROUK_CORE_SOURCES
   tab_strip_layout.h
   tab_strip_model.cc
   tab_strip_model.h
+  totp.cc
+  totp.h
   url_display.cc
   url_display.h
   url_pattern.cc
   url_pattern.h
+  web_origin.cc
+  web_origin.h
   yaml_io.cc
   yaml_io.h
   yaml_value.cc
@@ -117,10 +138,10 @@ brouk_target_options(brouk_core_testing)
 # yaml-cpp throws; the one file using it catches everything (see the file).
 set_source_files_properties(yaml_io.cc PROPERTIES COMPILE_OPTIONS -fexceptions)
 
-target_link_libraries(brouk_core PRIVATE brouk_yaml_cpp brouk_sqlite)
+target_link_libraries(brouk_core PRIVATE brouk_yaml_cpp brouk_sqlite brouk_sodium)
 target_link_libraries(brouk_core PUBLIC brouk_adblock_rs)
 target_link_libraries(brouk_core_testing PRIVATE brouk_yaml_cpp_testing
-  brouk_sqlite_testing)
+  brouk_sqlite_testing brouk_sodium_testing)
 target_link_libraries(brouk_core_testing PUBLIC brouk_adblock_rs)
 
 foreach(target brouk_core brouk_core_testing)

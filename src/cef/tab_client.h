@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "cef/adblock_request_handler.h"
+#include "cef/password_tab.h"
 #include "core/dialog_spam_guard.h"
 #include "core/permissions.h"
 #include "core/screen_share.h"
@@ -96,10 +97,11 @@ struct PopupHost {
 };
 
 // Implemented by the platform UI for one tab. Every method is called on the
-// CEF UI thread (the main thread on macOS).
-class TabClientDelegate {
+// CEF UI thread (the main thread on macOS). The password manager's UI (008)
+// comes from PasswordTabDelegate.
+class TabClientDelegate : public PasswordTabDelegate {
  public:
-  virtual ~TabClientDelegate() = default;
+  ~TabClientDelegate() override = default;
 
   virtual void OnBrowserCreated(CefRefPtr<CefBrowser> browser) = 0;
   virtual void OnTitleChanged(const std::string& title) = 0;
@@ -181,7 +183,7 @@ class TabClientDelegate {
 
   // Context menu actions that need the platform UI.
   virtual void OpenUrl(const std::string& url, OpenDisposition disposition) = 0;
-  virtual void CopyTextToClipboard(const std::string& text) = 0;
+  // (CopyTextToClipboard comes from PasswordTabDelegate.)
   virtual void CopyImageToClipboard(const std::vector<std::uint8_t>& png) = 0;
 
   // Settings (004) the tab follows.
@@ -246,6 +248,11 @@ class TabClient : public CefClient,
     adblock_ = service;
     adblock_profile_ = std::move(profile);
   }
+  // The password manager for the tab's profile (008), set before its
+  // browser is created. `manager` outlives every browser. UI thread.
+  void SetPasswords(PasswordManager* manager, const ProfileId& profile);
+  // The key icon in the address bar was clicked. UI thread.
+  void OnPasswordKeyIconClicked();
 
   // The settings a tab's renderer follows (kRendererConfigMessage), sent
   // when they change.
@@ -424,6 +431,7 @@ class TabClient : public CefClient,
                             const std::string& name,
                             const CefRefPtr<CefListValue>& args);
 
+  std::shared_ptr<PasswordTab> passwords_;   // UI thread.
   const AdblockService* adblock_ = nullptr;  // Read on the IO thread.
   bool picker_active_ = false;               // UI thread.
   ProfileId adblock_profile_;

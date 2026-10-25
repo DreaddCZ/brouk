@@ -41,11 +41,19 @@ add_executable(brouk_app
   devtools_window.mm
   download_notice.h
   download_notice.mm
+  export_password_dialog.h
+  export_password_dialog.mm
   find_bar.h
   find_bar.mm
   internal_page_window.h
   internal_page_window.mm
+  keychain.h
+  keychain.mm
   main.mm
+  password_menu.h
+  password_menu.mm
+  password_prompt.h
+  password_prompt.mm
   menu_shortcuts.h
   menu_shortcuts.mm
   permission_prompt_view.h
@@ -69,8 +77,10 @@ brouk_target_options(brouk_app CEF APP)
 target_link_libraries(brouk_app PRIVATE brouk_cef brouk_core
   "-framework AppKit" "-framework AVFoundation" "-framework Cocoa"
   "-framework CoreServices"
-  "-framework IOSurface" "-framework ScreenCaptureKit"
-  "-framework SecurityInterface" "-framework UniformTypeIdentifiers")
+  "-framework IOSurface" "-framework LocalAuthentication"
+  "-framework ScreenCaptureKit" "-framework Security"
+  "-framework SecurityInterface" "-framework UniformTypeIdentifiers"
+  "-framework Vision")
 set_target_properties(brouk_app PROPERTIES
   OUTPUT_NAME "${APP_EXECUTABLE_NAME}"
   RUNTIME_OUTPUT_DIRECTORY "${APP_BUNDLE}/Contents/MacOS")
@@ -95,6 +105,7 @@ set(_bundle_commands "")
 file(GLOB_RECURSE _web_sources CONFIGURE_DEPENDS
   "${PROJECT_SOURCE_DIR}/web/shared/*" "${PROJECT_SOURCE_DIR}/web/history/*"
   "${PROJECT_SOURCE_DIR}/web/bookmarks/*"
+  "${PROJECT_SOURCE_DIR}/web/forms/*" "${PROJECT_SOURCE_DIR}/web/passwords/*"
   "${PROJECT_SOURCE_DIR}/web/profiles/*"
   "${PROJECT_SOURCE_DIR}/web/settings/*" "${PROJECT_SOURCE_DIR}/web/tools/*"
   "${PROJECT_SOURCE_DIR}/web/jsonview/*")
@@ -105,6 +116,7 @@ add_custom_command(OUTPUT "${_web_stamp}"
   COMMAND ${CMAKE_COMMAND} -E touch "${_web_stamp}"
   DEPENDS ${_web_sources} "${PROJECT_SOURCE_DIR}/web/tsconfig.json"
           "${PROJECT_SOURCE_DIR}/web/package-lock.json"
+          "${PROJECT_SOURCE_DIR}/scripts/vendor_modules.mjs"
   COMMENT "Building internal pages"
   VERBATIM)
 

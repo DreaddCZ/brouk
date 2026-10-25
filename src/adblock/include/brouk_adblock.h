@@ -57,6 +57,7 @@ char* brouk_adblock_hidden_class_id_selectors(const BroukAdblockEngine* engine,
                                               const uint8_t* json,
                                               size_t len);
 uint8_t brouk_adblock_check_filter(const char* line, char** error);
+char* brouk_registrable_domain(const char* host);
 void brouk_adblock_free_string(char* text);
 void brouk_adblock_free_bytes(uint8_t* data, size_t len);
 

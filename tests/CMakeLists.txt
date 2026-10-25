@@ -32,6 +32,7 @@ add_executable(brouk_core_tests
   core/command_palette_test.cc
   core/context_menu_test.cc
   core/crash_error_code_test.cc
+  core/crypto_test.cc
   core/devtools_tools_test.cc
   core/dialog_spam_guard_test.cc
   core/download_paths_test.cc
@@ -43,14 +44,21 @@ add_executable(brouk_core_tests
   core/json_test.cc
   core/launch_args_test.cc
   core/page_events_test.cc
+  core/password_checkup_test.cc
+  core/password_csv_test.cc
+  core/password_forms_test.cc
+  core/password_generator_test.cc
+  core/password_profile_test.cc
+  core/password_store_test.cc
+  core/permissions_test.cc
+  core/profile_export_test.cc
+  core/profile_registry_test.cc
   core/request_log_test.cc
   core/request_rules_test.cc
   core/screen_share_test.cc
   core/search_engines_test.cc
+  core/secret_store_test.cc
   core/secure_dns_test.cc
-  core/permissions_test.cc
-  core/profile_export_test.cc
-  core/profile_registry_test.cc
   core/security_state_test.cc
   core/service_workers_test.cc
   core/session_test.cc
@@ -60,8 +68,10 @@ add_executable(brouk_core_tests
   core/shortcuts_test.cc
   core/tab_strip_layout_test.cc
   core/tab_strip_model_test.cc
+  core/totp_test.cc
   core/url_display_test.cc
   core/url_pattern_test.cc
+  core/web_origin_test.cc
   core/yaml_io_test.cc
   core/zoom_test.cc
 )

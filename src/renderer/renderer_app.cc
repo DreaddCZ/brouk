@@ -6,11 +6,13 @@
 
 #include "brouk/adblock_cosmetic_script.h"
 #include "brouk/adblock_picker_script.h"
+#include "brouk/forms_script.h"
 #include "brouk/json_viewer_script.h"
 #include "cef/internal_scheme.h"
 #include "core/devtools_frontend.h"
 #include "core/internal_pages.h"
 #include "core/page_events.h"
+#include "core/password_forms.h"
 #include "core/screen_share.h"
 #include "include/cef_command_line.h"
 #include "include/cef_pack_resources.h"
@@ -245,6 +247,55 @@ class AdblockHandler : public CefV8Handler {
   IMPLEMENT_REFCOUNTING(AdblockHandler);
 };
 
+// The forms script's native function (008): ("start", receiver) registers
+// the receiver for fill messages; any other kind goes to the browser with
+// its JSON payload, which the browser validates.
+constexpr char kFormsFunction[] = "__broukForms";
+
+class FormsHandler : public CefV8Handler {
+ public:
+  explicit FormsHandler(RendererApp* app) : app_(app) {}
+  FormsHandler(const FormsHandler&) = delete;
+  FormsHandler& operator=(const FormsHandler&) = delete;
+
+  bool Execute(const CefString& /*name*/,
+               CefRefPtr<CefV8Value> /*object*/,
+               const CefV8ValueList& arguments,
+               CefRefPtr<CefV8Value>& /*retval*/,
+               CefString& exception) override {
+    CefRefPtr<CefV8Context> context = CefV8Context::GetCurrentContext();
+    CefRefPtr<CefFrame> frame = context ? context->GetFrame() : nullptr;
+    if (!frame || arguments.size() != 2 || !arguments[0]->IsString()) {
+      exception = "invalid arguments";
+      return true;
+    }
+    std::string kind = arguments[0]->GetStringValue().ToString();
+    if (kind == "start") {
+      if (arguments[1]->IsFunction()) {
+        app_->SetFormsReceiver(context, arguments[1]);
+      }
+      return true;
+    }
+    if (!arguments[1]->IsString() || kind.size() > 16) {
+      return true;
+    }
+    std::string json = arguments[1]->GetStringValue().ToString();
+    if (json.size() > kMaxFormsMessageBytes) {
+      return true;
+    }
+    CefRefPtr<CefProcessMessage> message =
+        CefProcessMessage::Create(std::string(kFormsMessage));
+    message->GetArgumentList()->SetString(0, kind);
+    message->GetArgumentList()->SetString(1, json);
+    frame->SendProcessMessage(PID_BROWSER, message);
+    return true;
+  }
+
+ private:
+  RendererApp* app_;  // Outlives every context.
+  IMPLEMENT_REFCOUNTING(FormsHandler);
+};
+
 // The element picker's native callback: one picked selector to the
 // browser, which accepts it only during a picker the user started.
 class PickedHandler : public CefV8Handler {
@@ -450,6 +501,16 @@ void RendererApp::OnContextCreated(CefRefPtr<CefBrowser> browser,
     context->Eval(kAdblockCosmeticScript, "brouk://adblock-cosmetic.js", 0,
                   result, exception);
   }
+  // Login forms (008), in every http(s) frame; the browser decides what to
+  // fill and where.
+  if (frame_url.starts_with("http://") || frame_url.starts_with("https://")) {
+    global->SetValue(
+        kFormsFunction,
+        CefV8Value::CreateFunction(kFormsFunction, new FormsHandler(this)),
+        V8_PROPERTY_ATTRIBUTE_DONTENUM);
+    context->Eval(std::string("(function () {\n") + kFormsScript + "\n})();",
+                  "brouk://forms.js", 0, result, exception);
+  }
   // The JSON viewer checks the document itself once it has loaded. Wrapped
   // in a function, so none of its names reach the page's global scope.
   if (json_viewer_ && frame->IsMain()) {
@@ -487,10 +548,27 @@ void RendererApp::OnContextReleased(CefRefPtr<CefBrowser> browser,
       receiver->second.context->IsSame(context)) {
     adblock_receivers_.erase(receiver);
   }
+  auto forms = forms_receivers_.find(frame->GetIdentifier().ToString());
+  if (forms != forms_receivers_.end() &&
+      forms->second.context->IsSame(context)) {
+    forms_receivers_.erase(forms);
+  }
   auto it = display_media_handlers_.find(frame->GetIdentifier().ToString());
   if (it != display_media_handlers_.end() &&
       it->second.context->IsSame(context)) {
     display_media_handlers_.erase(it);
+  }
+}
+
+void RendererApp::SetFormsReceiver(CefRefPtr<CefV8Context> context,
+                                   CefRefPtr<CefV8Value> function) {
+  CEF_REQUIRE_RENDERER_THREAD();
+  CefRefPtr<CefFrame> frame = context ? context->GetFrame() : nullptr;
+  if (frame) {
+    // Only the script's own call counts: it runs before the page's scripts,
+    // which cannot reach the native function afterwards.
+    forms_receivers_.try_emplace(frame->GetIdentifier().ToString(),
+                                 DisplayMediaHandler{context, function});
   }
 }
 
@@ -569,6 +647,17 @@ bool RendererApp::OnProcessMessageReceived(
       context->Eval(kAdblockPickerScript, "brouk://adblock-picker.js", 0,
                     result, exception);
       context->Exit();
+    }
+    return true;
+  }
+  if (source_process == PID_BROWSER && frame && name == kFormsFillMessage) {
+    CefRefPtr<CefListValue> args = message->GetArgumentList();
+    auto it = forms_receivers_.find(frame->GetIdentifier().ToString());
+    if (args && args->GetSize() == 1 && args->GetType(0) == VTYPE_STRING &&
+        it != forms_receivers_.end() && it->second.context->Enter()) {
+      CefV8ValueList arguments = {CefV8Value::CreateString(args->GetString(0))};
+      it->second.function->ExecuteFunction(nullptr, arguments);
+      it->second.context->Exit();
     }
     return true;
   }

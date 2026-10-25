@@ -79,6 +79,18 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)tab:(BRTab*)tab allowSiteOf:(NSString*)url;
 // The element picker picked `selector` on the page at `url`.
 - (void)tab:(BRTab*)tab pickedElement:(NSString*)selector onPage:(NSString*)url;
+// Password manager (008): null before CEF is ready; the key icon's state
+// changed; the save prompt and the key icon's menu, anchored to the icon;
+// the passwords page.
+- (nullable brouk::PasswordManager*)passwordManager;
+- (void)tabPasswordIconChanged:(BRTab*)tab;
+- (void)tab:(BRTab*)tab
+    showPasswordPrompt:(const brouk::PasswordPrompt&)prompt
+                  done:(brouk::PasswordPromptDone)done;
+- (void)tab:(BRTab*)tab
+    showKeyIconMenu:(const brouk::PasswordMenu&)menu
+               done:(brouk::PasswordMenuDone)done;
+- (void)tabOpenPasswordsPage:(BRTab*)tab;
 @end
 
 @interface BRTab : NSObject
@@ -90,6 +102,10 @@ NS_ASSUME_NONNULL_BEGIN
 - (const std::vector<brouk::AdblockRequestInfo>&)adblockRequests;
 // Starts the ad blocker's element picker in the page (007).
 - (void)startElementPicker;
+
+// The key icon of the password manager (008) and its click.
+@property(nonatomic, readonly) brouk::PasswordIcon passwordIcon;
+- (void)passwordKeyIconClicked;
 
 @property(nonatomic, readonly) brouk::TabId tabId;
 @property(nonatomic, weak) id<BRTabDelegate> delegate;
