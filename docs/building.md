@@ -27,7 +27,8 @@ build/debug-x86_64/Brouk.app/Contents/MacOS/brouk https://example.com
 What `scripts/build` does:
 
 1. `scripts/install_tools` downloads the pinned build tools (CMake, Ninja,
-   Node.js, GitHub CLI, clang-format, clang-tidy) into `.tools/` and checks
+   Node.js, GitHub CLI, clang-format, clang-tidy, Rust with the standard
+   library for both Mac architectures) into `.tools/` and checks
    their checksums. Nothing is installed system-wide. (Homebrew is not used:
    it no longer ships prebuilt tools for Intel Macs.)
 2. `scripts/fetch_cef` downloads the pinned CEF version for the target
@@ -36,6 +37,26 @@ What `scripts/build` does:
 3. CMake + Ninja build the app into `build/<config>-<arch>/`.
 
 To use the pinned tools directly in a terminal: `source scripts/env.sh`.
+
+### Disk images for other Macs
+
+```sh
+scripts/package_mac                # .dmg for this Mac's architecture
+scripts/package_mac --arch arm64   # Apple Silicon (also from an Intel Mac)
+scripts/package_mac --all          # both
+```
+
+This makes a Release build and packs it into
+`build/dist/Brouk-<version>-<arch>.dmg` (about 110–130 MB), with a `.sha256`
+file next to it. The image holds the app, a link to Applications and a
+"Read me first.txt". The person installing needs nothing else: everything
+Brouk uses is inside the app.
+
+Until phase 2 the app is signed like local builds (the self-signed
+"Brouk Local Dev" certificate, or ad-hoc), not with an Apple Developer ID and
+not notarized. So on another Mac, macOS blocks the first launch ("cannot
+verify Brouk"); it is allowed once in System Settings → Privacy & Security →
+"Open Anyway", as the read-me explains. Updates mean installing a newer image.
 
 ### Build types and checks
 
