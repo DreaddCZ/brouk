@@ -48,9 +48,12 @@ endif()
 
 # CEF's MSVC flags that clang-cl does not support: /MP (cl.exe's own
 # parallel build; Ninja runs compilers in parallel) and /RTC1 (cl.exe's
-# run-time checks).
+# run-time checks). Its /W4 /WX are tuned for cl.exe; under clang-cl they
+# fail on CEF's own code, which is third-party code (no warnings, as
+# BroukSodium.cmake). Our targets get our flags (BroukCompilerOptions.cmake).
 if(MSVC)
-  list(REMOVE_ITEM CEF_COMPILER_FLAGS /MP)
+  list(REMOVE_ITEM CEF_COMPILER_FLAGS /MP /W4 /WX)
+  list(APPEND CEF_COMPILER_FLAGS /w)
   list(REMOVE_ITEM CEF_COMPILER_FLAGS_DEBUG /RTC1)
 endif()
 
