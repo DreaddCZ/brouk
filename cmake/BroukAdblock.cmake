@@ -4,8 +4,25 @@
 # release mode: request matching must stay well under 1 ms (007).
 set(BROUK_ADBLOCK_DIR "${PROJECT_SOURCE_DIR}/src/adblock")
 set(BROUK_CARGO_TARGET_DIR "${CMAKE_BINARY_DIR}/cargo")
+# On macOS, for the architecture being built, which may be the other one
+# (scripts/build --arch); cargo then puts the library under the target's name.
+set(_cargo_target_args "")
+set(_cargo_out "${BROUK_CARGO_TARGET_DIR}/release")
+if(APPLE)
+  if(PROJECT_ARCH STREQUAL "arm64" OR CMAKE_OSX_ARCHITECTURES STREQUAL "arm64")
+    set(_rust_target aarch64-apple-darwin)
+  elseif(PROJECT_ARCH STREQUAL "x86_64" OR CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64")
+    set(_rust_target x86_64-apple-darwin)
+  elseif(CMAKE_HOST_SYSTEM_PROCESSOR STREQUAL "arm64")
+    set(_rust_target aarch64-apple-darwin)
+  else()
+    set(_rust_target x86_64-apple-darwin)
+  endif()
+  set(_cargo_target_args --target ${_rust_target})
+  set(_cargo_out "${BROUK_CARGO_TARGET_DIR}/${_rust_target}/release")
+endif()
 set(BROUK_ADBLOCK_LIBRARY
-  "${BROUK_CARGO_TARGET_DIR}/release/${CMAKE_STATIC_LIBRARY_PREFIX}brouk_adblock${CMAKE_STATIC_LIBRARY_SUFFIX}")
+  "${_cargo_out}/${CMAKE_STATIC_LIBRARY_PREFIX}brouk_adblock${CMAKE_STATIC_LIBRARY_SUFFIX}")
 
 find_program(BROUK_CARGO cargo REQUIRED
   HINTS "${PROJECT_SOURCE_DIR}/.tools/bin" NO_DEFAULT_PATH)
@@ -20,7 +37,7 @@ add_custom_command(
   COMMAND ${CMAKE_COMMAND} -E env ${_adblock_env}
           "${BROUK_CARGO}" build --release --locked --quiet
           --manifest-path "${BROUK_ADBLOCK_DIR}/Cargo.toml"
-          --target-dir "${BROUK_CARGO_TARGET_DIR}"
+          --target-dir "${BROUK_CARGO_TARGET_DIR}" ${_cargo_target_args}
   DEPENDS "${BROUK_ADBLOCK_DIR}/Cargo.toml" "${BROUK_ADBLOCK_DIR}/Cargo.lock"
           "${BROUK_ADBLOCK_DIR}/src/lib.rs"
   COMMENT "Building the ad blocking engine (Rust)"

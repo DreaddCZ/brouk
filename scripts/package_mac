@@ -1,0 +1,90 @@
+#!/usr/bin/env bash
+# Packages Brouk for macOS as a disk image (.dmg) to hand to other people
+# (phase 1, see specs/001 and docs/building.md).
+#
+#   scripts/package_mac                  Release build and .dmg for this Mac
+#   scripts/package_mac --arch arm64     for Apple Silicon (also from Intel)
+#   scripts/package_mac --arch x86_64    for Intel (also from Apple Silicon)
+#   scripts/package_mac --all            both
+#
+# The images end up in build/dist/, each with a .sha256 file. The app is
+# signed as local builds are (the self-signed "Brouk Local Dev" certificate,
+# or ad-hoc), not with an Apple Developer ID, so macOS blocks it on other Macs
+# until it is allowed once in System Settings; the image's "Read me first"
+# says how. Developer ID signing and notarization come in phase 2.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+ARCHS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --arch) ARCHS+=("$2"); shift ;;
+    --all) ARCHS+=(arm64 x86_64) ;;
+    *) echo "Unknown option: $1" >&2; exit 2 ;;
+  esac
+  shift
+done
+[[ ${#ARCHS[@]} -eq 0 ]] && ARCHS=("$(uname -m)")
+
+if [[ "$(uname -s)" != Darwin ]]; then
+  echo "scripts/package_mac runs on macOS only." >&2
+  exit 1
+fi
+
+# The app's name and version live in CMakeLists.txt only (CLAUDE.md).
+cmake_var() { sed -n "s/^set($1 \"\(.*\)\")$/\1/p" "$ROOT/CMakeLists.txt"; }
+APP_NAME="$(cmake_var APP_NAME)"
+APP_VERSION="$(cmake_var APP_VERSION)"
+DIST="$ROOT/build/dist"
+mkdir -p "$DIST"
+
+for arch in "${ARCHS[@]}"; do
+  case "$arch" in
+    arm64) LABEL="Apple Silicon" ;;
+    x86_64) LABEL="Intel" ;;
+    *) echo "Unknown architecture: $arch (use arm64 or x86_64)" >&2; exit 2 ;;
+  esac
+
+  "$ROOT/scripts/build" --release --arch "$arch"
+  APP="$ROOT/build/release-$arch/$APP_NAME.app"
+
+  # Never hand out a broken or mixed-architecture bundle.
+  codesign --verify --deep --strict "$APP"
+  if ! lipo -archs "$APP/Contents/MacOS/$(defaults read "$APP/Contents/Info" CFBundleExecutable)" |
+      grep -qw "$arch"; then
+    echo "$APP is not an $arch build." >&2
+    exit 1
+  fi
+
+  STAGE="$(mktemp -d)"
+  trap 'rm -rf "$STAGE"' EXIT
+  # ditto keeps the bundle's symbolic links and signatures intact.
+  ditto "$APP" "$STAGE/$APP_NAME.app"
+  ln -s /Applications "$STAGE/Applications"
+  cat > "$STAGE/Read me first.txt" <<EOF
+$APP_NAME $APP_VERSION for Macs with $LABEL processors, macOS 15 or later.
+
+Install: drag $APP_NAME onto the Applications folder.
+
+The first time you open it, macOS says it cannot verify $APP_NAME, because
+this build is not signed with an Apple Developer ID yet. To allow it once:
+
+  1. Open $APP_NAME from Applications and click "Done" in the warning.
+  2. Open System Settings > Privacy & Security, scroll down and click
+     "Open Anyway" next to the message about $APP_NAME.
+  3. Confirm with your password or Touch ID, then click "Open Anyway".
+
+From then on it opens normally. Nothing else needs to be installed.
+EOF
+
+  DMG="$DIST/$APP_NAME-$APP_VERSION-$arch.dmg"
+  rm -f "$DMG"
+  # ULMO (LZMA) gives the smallest image; macOS 10.15+ opens it.
+  hdiutil create -volname "$APP_NAME $APP_VERSION" -srcfolder "$STAGE" \
+    -fs HFS+ -format ULMO -ov "$DMG" >/dev/null
+  hdiutil verify -quiet "$DMG"
+  (cd "$DIST" && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256")
+  rm -rf "$STAGE"
+  trap - EXIT
+  echo "Packaged $DMG ($(du -h "$DMG" | cut -f1))"
+done
