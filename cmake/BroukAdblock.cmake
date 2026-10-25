@@ -37,6 +37,11 @@ endif()
 if(MSVC)
   # The static C runtime, as the rest of the build (BroukCompilerOptions.cmake).
   list(APPEND _adblock_env "RUSTFLAGS=-Ctarget-feature=+crt-static")
+  # Cargo links the build scripts with link.exe from PATH, which in Git Bash
+  # is the coreutils "link"; use the C++ build's linker.
+  find_program(BROUK_RUST_LINKER NAMES "${CMAKE_LINKER}" lld-link REQUIRED)
+  list(APPEND _adblock_env
+    "CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER=${BROUK_RUST_LINKER}")
 endif()
 
 add_custom_command(
