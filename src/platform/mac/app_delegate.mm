@@ -14,6 +14,8 @@
 #include <utility>
 #include <vector>
 
+#include <unistd.h>
+
 #import "platform/mac/bookmark_store.h"
 #import "platform/mac/browser_window_controller.h"
 #import "platform/mac/data_paths.h"
@@ -21,6 +23,8 @@
 #import "platform/mac/export_password_dialog.h"
 #import "platform/mac/internal_page_window.h"
 #import "platform/mac/keychain.h"
+#import "platform/mac/link_resolver.h"
+#import "platform/mac/link_routing_controller.h"
 #import "platform/mac/menu_shortcuts.h"
 #import "platform/mac/profile_colors.h"
 #import "platform/mac/settings_watcher.h"
@@ -90,6 +94,7 @@
 
 @interface BRAppDelegate () <BRBrowserWindowOwner,
                              BRInternalPageOwner,
+                             BRLinkRoutingHost,
                              NSMenuDelegate>
 - (std::vector<brouk::ProfileManagerDelegate::Summary>)profileSummaries;
 - (brouk::Result<brouk::ProfileId>)createProfileNamed:(const std::string&)name
@@ -810,17 +815,23 @@ class AppSettingsPage : public SettingsPageDelegate {
   int _browserCount;
   BOOL _quitting;
   std::unique_ptr<brouk::DownloadPathReserver> _downloadPaths;
+  // Link routing (010), from cefContextInitialized; links from other apps
+  // that arrive before it (the link started Brouk) wait here.
+  BRLinkRoutingController* _linkRouting;
+  NSMutableArray<NSArray<NSString*>*>* _pendingExternalLinks;
 }
 
 - (instancetype)init {
   if ((self = [super init])) {
     _windows = [NSMutableArray array];
+    _pendingExternalLinks = [NSMutableArray array];
     _profiles = std::make_unique<brouk::ProfileRegistry>(
         brouk::mac::AppDataDirectory().fileSystemRepresentation);
     _profiles->Load();
     // Web data of profiles deleted earlier; Chromium is not running yet.
     _profiles->RemoveWebDataOfDeletedProfiles(
         brouk::mac::WebDataRootDirectory().fileSystemRepresentation);
+    [BRLinkResolver removeLeftoverDataIn:brouk::mac::WebDataRootDirectory()];
     _bookmarks = [[BRBookmarkStore alloc]
         initWithFile:[brouk::mac::AppDataDirectory()
                          stringByAppendingPathComponent:@"bookmarks.json"]];
@@ -916,6 +927,10 @@ class AppSettingsPage : public SettingsPageDelegate {
                 changed:^{
                   [weakSelf settingsFilesChanged];
                 }];
+  _linkRouting = [[BRLinkRoutingController alloc]
+      initWithHost:self
+        configFile:[brouk::mac::AppDataDirectory()
+                       stringByAppendingPathComponent:@"link-routing.yaml"]];
   // Like Chrome, URLs given on the command line open as tabs.
   brouk::LaunchRequest request = brouk::BrowserApp::LaunchRequestFrom(
       CefCommandLine::GetGlobalCommandLine());
@@ -928,16 +943,21 @@ class AppSettingsPage : public SettingsPageDelegate {
       [self openLaunchRequest:request inController:[self frontController]];
     }
     _sessionReady = YES;
+    [self openPendingExternalLinks];
     return;
   }
   _sessionReady = YES;
-  if (_profiles->show_manager_at_startup() && request.urls.empty() &&
-      !request.profile) {
+  BOOL hasLinks = !request.urls.empty() || _pendingExternalLinks.count > 0;
+  if (_profiles->show_manager_at_startup() && !hasLinks && !request.profile) {
     _profileManagerAtStartup = YES;
     [self manageProfiles:nil];
     return;
   }
-  [self openLaunchRequest:request inController:nil];
+  if (!request.urls.empty() || request.profile ||
+      _pendingExternalLinks.count == 0) {
+    [self openLaunchRequest:request inController:nil];
+  }
+  [self openPendingExternalLinks];
   if (action == brouk::StartupAction::kNewWindowOfferRestore) {
     __weak BRAppDelegate* weakDelegate = self;
     BRBrowserWindowController* front = [self frontController];
@@ -1058,6 +1078,21 @@ class AppSettingsPage : public SettingsPageDelegate {
 // window; an empty new tab when none of the URLs is usable.
 - (void)openLaunchRequest:(const brouk::LaunchRequest&)request
              inController:(nullable BRBrowserWindowController*)controller {
+  // URLs from the command line (or a second launch) are links from another
+  // app (010), unless --profile names where they go.
+  if (!request.profile && !request.urls.empty() && _linkRouting) {
+    BOOL routed = NO;
+    for (const std::string& url : request.urls) {
+      brouk::AddressInputResult input = brouk::ClassifyAddressInput(url);
+      if (input.kind != brouk::AddressInputResult::Kind::kEmpty) {
+        [_linkRouting openExternalURL:@(input.url.c_str()) fromApp:@""];
+        routed = YES;
+      }
+    }
+    if (routed) {
+      return;
+    }
+  }
   brouk::ProfileId profile = _profiles->default_profile().id;
   if (request.profile) {
     const brouk::ProfileInfo* named = _profiles->FindByName(*request.profile);
@@ -1093,6 +1128,7 @@ class AppSettingsPage : public SettingsPageDelegate {
   [self reportProfileProblems];
   [self applySettings];
   [self reloadRequestRules];
+  [_linkRouting reload];
   for (BRBrowserWindowController* controller in _windows) {
     [controller profilesDidChange];
   }
@@ -1274,6 +1310,73 @@ class AppSettingsPage : public SettingsPageDelegate {
   [self newWindow:nil];
 }
 
+#pragma mark - Link routing (010)
+
+// Links from other apps (Brouk as the default browser, `open URL`).
+- (void)application:(NSApplication*)application
+           openURLs:(NSArray<NSURL*>*)urls {
+  NSString* app = [self senderOfCurrentAppleEvent];
+  for (NSURL* url in urls) {
+    NSString* scheme = url.scheme.lowercaseString;
+    if (![scheme isEqualToString:@"http"] &&
+        ![scheme isEqualToString:@"https"]) {
+      continue;
+    }
+    [_pendingExternalLinks addObject:@[ url.absoluteString, app ]];
+  }
+  if (_sessionReady) {
+    [self openPendingExternalLinks];
+  }
+}
+
+// The app that sent the link, for the picker; "" if unknown.
+- (NSString*)senderOfCurrentAppleEvent {
+  NSAppleEventDescriptor* event =
+      NSAppleEventManager.sharedAppleEventManager.currentAppleEvent;
+  pid_t pid = [event attributeDescriptorForKeyword:keySenderPIDAttr].int32Value;
+  NSRunningApplication* sender =
+      pid > 0
+          ? [NSRunningApplication runningApplicationWithProcessIdentifier:pid]
+          : nil;
+  if (!sender || sender.processIdentifier == getpid()) {
+    sender = NSWorkspace.sharedWorkspace.frontmostApplication;
+  }
+  if (!sender || sender.processIdentifier == getpid()) {
+    return @"";
+  }
+  return sender.localizedName ?: @"";
+}
+
+- (void)openPendingExternalLinks {
+  if (_quitting || !_linkRouting) {
+    return;
+  }
+  NSArray<NSArray<NSString*>*>* links = [_pendingExternalLinks copy];
+  [_pendingExternalLinks removeAllObjects];
+  for (NSArray<NSString*>* link in links) {
+    [_linkRouting openExternalURL:link[0] fromApp:link[1]];
+  }
+}
+
+- (BOOL)routeLinkURL:(NSString*)url
+              source:(brouk::LinkSource)source
+             fromTab:(BRTab*)tab
+            inWindow:(BRBrowserWindowController*)controller
+          foreground:(BOOL)foreground {
+  if (_quitting || !_linkRouting) {
+    return NO;
+  }
+  return [_linkRouting routeURL:url
+                         source:source
+                        fromTab:tab
+                       inWindow:controller
+                     foreground:foreground];
+}
+
+- (BOOL)moveChosenWindowToActiveSpace {
+  return _profiles->global_settings().GetString("links.other_space") == "move";
+}
+
 - (IBAction)newWindow:(nullable id)sender {
   if (_quitting || !_profilesLoaded) {
     return;
@@ -1308,6 +1411,7 @@ class AppSettingsPage : public SettingsPageDelegate {
     }
   }
   _quitting = YES;
+  [_linkRouting cancelPending];
   // The windows open now are the session to continue with (015).
   [_sessionTimer invalidate];
   _sessionTimer = nil;

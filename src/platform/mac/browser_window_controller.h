@@ -16,6 +16,7 @@
 #include "cef/history_service.h"
 #include "cef/tab_client.h"
 #include "core/closed_tabs.h"
+#include "core/link_router.h"
 #include "core/profile_registry.h"
 #include "core/session.h"
 #include "core/tab_strip_model.h"
@@ -24,6 +25,7 @@
 NS_ASSUME_NONNULL_BEGIN
 
 @class BRBrowserWindowController;
+@class BRTab;
 
 // Implemented by the app delegate: app-wide bookkeeping of windows and
 // browsers (needed to quit CEF only after every browser has closed).
@@ -48,6 +50,14 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)browserWindowDidCreateBrowser;
 - (void)browserWindowDidCloseBrowser;
 - (void)browserWindowWillClose:(BRBrowserWindowController*)controller;
+// Link routing (010): a new tab or window from inside the browser. NO
+// when the link stays in `tab`'s profile and the caller opens it as
+// before; YES when routing took it over.
+- (BOOL)routeLinkURL:(NSString*)url
+              source:(brouk::LinkSource)source
+             fromTab:(BRTab*)tab
+            inWindow:(BRBrowserWindowController*)controller
+          foreground:(BOOL)foreground;
 // "Open Link in New Window": a new window with a tab in `profile`.
 - (void)openWindowWithURL:(NSString*)url
                   profile:(const brouk::ProfileId&)profile;
@@ -132,6 +142,25 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)openTabWithURL:(nullable NSString*)url
                profile:(const brouk::ProfileId&)profile
               activate:(BOOL)activate;
+
+// Link routing (010).
+// The active tab, if any.
+- (nullable BRTab*)activeTab;
+// The profile groups, left to right (the default profile's always last).
+- (std::vector<brouk::TabStripModel::Group>)tabGroups;
+// Profiles with a group here: those with tabs, and the default profile.
+- (std::vector<brouk::ProfileId>)groupProfiles;
+// A routed link that stays in its source profile: after `opener` when it
+// is still in this window, else at the end of `profile`'s group.
+- (void)openURL:(NSString*)url
+      nextToTab:(nullable BRTab*)opener
+        profile:(const brouk::ProfileId&)profile
+     foreground:(BOOL)foreground;
+// An address typed into `tab` (a new tab), loaded there after routing.
+- (void)loadTypedURL:(NSString*)url inTab:(BRTab*)tab;
+// Closes `tab` if it is still an empty new tab (its address was routed to
+// another profile).
+- (void)closeTabIfUnused:(BRTab*)tab;
 
 // Profile names, colours or the default profile changed: redraw.
 - (void)profilesDidChange;

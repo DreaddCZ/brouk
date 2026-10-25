@@ -499,6 +499,71 @@ NSButton* ToolbarButton(NSString* symbol,
   return active ? _tabs[@(*active)] : nil;
 }
 
+#pragma mark - Link routing (010)
+
+- (std::vector<brouk::TabStripModel::Group>)tabGroups {
+  return _model->groups();
+}
+
+- (std::vector<brouk::ProfileId>)groupProfiles {
+  std::vector<brouk::ProfileId> profiles;
+  for (const brouk::TabStripModel::Group& group : _model->groups()) {
+    if (group.count > 0 || group.profile == _model->default_profile()) {
+      profiles.push_back(group.profile);
+    }
+  }
+  return profiles;
+}
+
+- (BOOL)ownsTab:(nullable BRTab*)tab {
+  return tab && _tabs[@(tab.tabId)] == tab;
+}
+
+- (void)openURL:(NSString*)url
+      nextToTab:(nullable BRTab*)opener
+        profile:(const brouk::ProfileId&)profile
+     foreground:(BOOL)foreground {
+  if (![self ownsTab:opener]) {
+    [self openTabWithURL:url profile:profile activate:foreground];
+    return;
+  }
+  BRTab* tab = [self insertTabFromOpener:opener foreground:foreground];
+  [tab createBrowserWithURL:url
+             requestContext:[_owner requestContextForProfile:tab.profileId]];
+}
+
+- (void)loadTypedURL:(NSString*)url inTab:(BRTab*)tab {
+  if ([self ownsTab:tab]) {
+    [self navigateTab:tab toURL:url typed:YES];
+  }
+}
+
+// A new tab nothing was loaded in yet.
+- (BOOL)isUnusedNewTab:(BRTab*)tab {
+  return !tab.isInternalPage && !tab.canGoBack &&
+         (tab.url.length == 0 || [tab.url isEqualToString:@"about:blank"]);
+}
+
+- (void)closeTabIfUnused:(BRTab*)tab {
+  if ([self ownsTab:tab] && [self isUnusedNewTab:tab]) {
+    [self closeTab:tab];
+  }
+}
+
+// An address typed (or chosen from the suggestions) in a new tab is routed
+// like a link (010); in a tab already in use it stays in its profile.
+- (BOOL)routeTypedURL:(NSString*)url inTab:(BRTab*)tab {
+  if (![self isUnusedNewTab:tab] || [self internalPageOf:url]) {
+    return NO;
+  }
+  id<BRBrowserWindowOwner> owner = _owner;
+  return [owner routeLinkURL:url
+                      source:brouk::LinkSource::kTypedNewTab
+                     fromTab:tab
+                    inWindow:self
+                  foreground:YES];
+}
+
 - (BRTab*)makeTabInProfile:(const brouk::ProfileId&)profile {
   BRTab* tab = [[BRTab alloc] initWithId:NextTabId()
                                  profile:profile
@@ -1226,6 +1291,20 @@ NSButton* ToolbarButton(NSString* symbol,
 
 - (std::optional<brouk::PopupHost>)tab:(BRTab*)opener
                             wantsPopup:(const brouk::PopupRequest&)request {
+  // Links that open a new tab (target=_blank) are routed (010); popups a
+  // script opens as a window are not, so sign-in popups keep their opener.
+  // CEF cannot tell a link from window.open() without features, so those
+  // are routed too.
+  id<BRBrowserWindowOwner> owner = _owner;
+  if (!request.wants_popup_window && request.user_gesture &&
+      !request.target_url.empty() &&
+      [owner routeLinkURL:@(request.target_url.c_str())
+                   source:brouk::LinkSource::kNewTab
+                  fromTab:opener
+                 inWindow:self
+               foreground:request.disposition != CEF_WOD_NEW_BACKGROUND_TAB]) {
+    return std::nullopt;
+  }
   // window.open() with size features opens a popup window (Chrome); other
   // popups become tabs next to their opener.
   BRBrowserWindowController* target = self;
@@ -1410,6 +1489,15 @@ NSButton* ToolbarButton(NSString* symbol,
 - (void)tab:(BRTab*)opener
         openURL:(NSString*)url
     disposition:(brouk::OpenDisposition)disposition {
+  id<BRBrowserWindowOwner> owner = _owner;
+  if ([owner routeLinkURL:url
+                   source:brouk::LinkSource::kNewTab
+                  fromTab:opener
+                 inWindow:self
+               foreground:disposition !=
+                          brouk::OpenDisposition::kNewBackgroundTab]) {
+    return;
+  }
   if (disposition == brouk::OpenDisposition::kNewWindow) {
     [_owner openWindowWithURL:url profile:opener.profileId];
     return;
@@ -1918,6 +2006,10 @@ NSButton* ToolbarButton(NSString* symbol,
     return;
   }
   NSString* url = [NSString stringWithUTF8String:result.url.c_str()];
+  if ([self routeTypedURL:url inTab:tab]) {
+    [self updateToolbar];
+    return;
+  }
   // Typed addresses count for history ranking; searches do not (Chrome).
   [self navigateTab:tab
               toURL:url
@@ -2127,6 +2219,10 @@ NSButton* ToolbarButton(NSString* symbol,
       _suggestionRows[static_cast<std::size_t>(row)];
   [self closeSuggestions];
   tab.pendingAddressText = nil;
+  if ([self routeTypedURL:@(suggestion.url.c_str()) inTab:tab]) {
+    [self updateToolbar];
+    return;
+  }
   if (suggestion.kind == brouk::AddressSuggestion::Kind::kBookmark) {
     tab.nextVisitBookmark = YES;
     [self navigateTab:tab toURL:@(suggestion.url.c_str()) typed:NO];
