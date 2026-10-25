@@ -60,6 +60,7 @@ Many client accounts in one window · full control over every page · nothing yo
 - One profile in the rule → it just opens there. Several → a quick picker (press `1`, `2`, `3`)
 - Works for links from **Outlook and Teams**, including **Safe Links**, Proofpoint and Mimecast wrappers — routed by the real address, while the company link check still runs
 - Several windows? The picker shows thumbnails of each window and its profile groups
+- Set it up in Settings → Links, and make Brouk the default browser with one button
 - Sign-in redirects and popups never jump profiles, so logins don't break
 
 <!-- Demo: click a Jira link in Teams; it lands in the right client's group without touching the clipboard. -->
@@ -161,7 +162,7 @@ Dev tools are switched **per tab** with an always-visible toggle — rules never
 | Passwords (built-in manager) | 🔧 built, in testing; Bitwarden next |
 | Form autofill (Czech and EU company details) | 🔧 built, in testing |
 | Downloads (one list for all profiles) | 🔧 built, in testing |
-| Link routing | 📋 specified, next |
+| Link routing (rules, picker, Safe Links and other wrappers) | 🔧 built, in testing |
 | VPN per profile | 🔍 being investigated |
 
 <!-- Update this slide before each presentation. -->
