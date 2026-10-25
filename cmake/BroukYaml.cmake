@@ -26,7 +26,8 @@ function(brouk_yaml_cpp_library target)
     "${yaml-cpp_SOURCE_DIR}/include")
   target_include_directories(${target} PRIVATE "${yaml-cpp_SOURCE_DIR}/src")
   # No RTTI anywhere (see BroukCompilerOptions.cmake); its own warnings off.
-  target_compile_options(${target} PRIVATE ${ARGN} -fno-rtti -w)
+  target_compile_options(${target} PRIVATE ${ARGN} ${BROUK_NO_RTTI_FLAG}
+    ${BROUK_NO_WARNINGS_FLAG})
   target_link_options(${target} PRIVATE ${ARGN})
 endfunction()
 

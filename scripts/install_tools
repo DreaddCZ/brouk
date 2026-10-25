@@ -20,6 +20,8 @@ case "$(uname -s)-$(uname -m)" in
   Darwin-x86_64) PLATFORM=mac-x64 ;;
   Darwin-arm64) PLATFORM=mac-arm64 ;;
   Linux-x86_64) PLATFORM=linux-x64 ;;
+  # Git Bash (MSYS2) on Windows, as on the GitHub Actions Windows runners.
+  MINGW64_NT*-x86_64 | MSYS_NT*-x86_64) PLATFORM=win-x64 ;;
   *) echo "Unsupported platform: $(uname -s)-$(uname -m)" >&2; exit 1 ;;
 esac
 
@@ -45,20 +47,26 @@ artifact() {
   case "$1-$PLATFORM" in
     cmake-mac-*) echo "https://github.com/Kitware/CMake/releases/download/v$CMAKE_VERSION/cmake-$CMAKE_VERSION-macos-universal.tar.gz 4b7b73704b1db9b374e5c9ab8e17ac6148b817b6396ee75cd94a852cbac9d305" ;;
     cmake-linux-x64) echo "https://github.com/Kitware/CMake/releases/download/v$CMAKE_VERSION/cmake-$CMAKE_VERSION-linux-x86_64.tar.gz e5bb807f7728cb60cd8b27ebc97a2edb469b68655f21e844a600c3575b76f5bb" ;;
+    cmake-win-x64) echo "https://github.com/Kitware/CMake/releases/download/v$CMAKE_VERSION/cmake-$CMAKE_VERSION-windows-x86_64.zip bace36e94b31c68ab6fa295f26dfa11219e0701cf7c94b0284a7d1cb13dac536" ;;
     ninja-mac-*) echo "https://github.com/ninja-build/ninja/releases/download/v$NINJA_VERSION/ninja-mac.zip c99048673aa765960a99cf10c6ddb9f1fad506099ff0a0e137ad8960a88f321b" ;;
     ninja-linux-x64) echo "https://github.com/ninja-build/ninja/releases/download/v$NINJA_VERSION/ninja-linux.zip 5749cbc4e668273514150a80e387a957f933c6ed3f5f11e03fb30955e2bbead6" ;;
+    ninja-win-x64) echo "https://github.com/ninja-build/ninja/releases/download/v$NINJA_VERSION/ninja-win.zip 07fc8261b42b20e71d1720b39068c2e14ffcee6396b76fb7a795fb460b78dc65" ;;
     node-mac-x64) echo "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-darwin-x64.tar.gz 1462cb3b3046b815cf8ea436d3da450ec1a9f11dac7e5a46b0ada5305d7e8097" ;;
     node-mac-arm64) echo "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-darwin-arm64.tar.gz bed7eea5325e1108f32ce5228ddd6a5f0f08a499ee42aa7442aea583702f6057" ;;
     node-linux-x64) echo "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6" ;;
+    node-win-x64) echo "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-win-x64.zip 158f7685b44de51f6c0df1d153526cbcd3e1bc739a8dfc607721cef75de9e541" ;;
     gh-mac-x64) echo "https://github.com/cli/cli/releases/download/v$GH_VERSION/gh_${GH_VERSION}_macOS_amd64.zip b245f24eb2bf5f75b426b4c26da3651a107f8d5b6f4fddfbfccc5679041378b3" ;;
     gh-mac-arm64) echo "https://github.com/cli/cli/releases/download/v$GH_VERSION/gh_${GH_VERSION}_macOS_arm64.zip da922c20d1792e5b2cbf375593d7a658acf034c12c84e007e71c76ef959c337e" ;;
     gh-linux-x64) echo "https://github.com/cli/cli/releases/download/v$GH_VERSION/gh_${GH_VERSION}_linux_amd64.tar.gz bb766f710eef8ede859c18578c72c327597cd4c8a85b06001b1f3843c6019386" ;;
+    gh-win-x64) echo "https://github.com/cli/cli/releases/download/v$GH_VERSION/gh_${GH_VERSION}_windows_amd64.zip ae64e556ecc240b200f7eba60d550e4bb60d78e860e69dd88c449405b86067f4" ;;
     clang-format-mac-x64) echo "$PYPI/5d/d8/29b9db6098da1a011ca3f7560c3942fa81404dbbb4367c3bd1d5c435da3b/clang_format-$LLVM_TOOLS_VERSION-py2.py3-none-macosx_10_9_x86_64.whl fc2ac5bd0ea41af49968fb69426207806d5f7016cb8f4bfbd44f4f1ffe8d53f2" ;;
     clang-format-mac-arm64) echo "$PYPI/2e/55/539cc1036dae16659f50500ca34838cc5b16cd3e98e3faaf164186b98093/clang_format-$LLVM_TOOLS_VERSION-py2.py3-none-macosx_11_0_arm64.whl d1147107222c0dda3e4869e9e8c4a79f9ed1de83819e5274de42b82adf3d2129" ;;
     clang-format-linux-x64) echo "$PYPI/e5/88/b82c066fa807da4ca2518fecf79071361f6324b77375e5e92c059c0697fd/clang_format-$LLVM_TOOLS_VERSION-py2.py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl b00cff6bfd1f1686f073a4fdf1cb937dbd58bf7510c659477805c03afdea0816" ;;
+    clang-format-win-x64) echo "$PYPI/08/60/c6783b3190a8f741107a44912a11c39c1a51e254e86a4c43cb0151cea0dd/clang_format-$LLVM_TOOLS_VERSION-py2.py3-none-win_amd64.whl 5fe6ad3e9399d589aff5ead432568a84cdcbbd621f1708340819efd74cbf8176" ;;
     clang-tidy-mac-x64) echo "$PYPI/86/14/27f6ed1ffdf3fcc53d4482a5f1292b39751c7426ca70deca8bb7d04f5dae/clang_tidy-$LLVM_TOOLS_VERSION-py2.py3-none-macosx_10_9_x86_64.whl 04b6c97bcdc032763d0d924531def281acd0b5a939bcc79994cbf3c6fe83e1ae" ;;
     clang-tidy-mac-arm64) echo "$PYPI/01/23/949977d4304e30eeef80206b37a9305084926ea06b99708961fcbf27913f/clang_tidy-$LLVM_TOOLS_VERSION-py2.py3-none-macosx_11_0_arm64.whl 916d7cbc9590e719459738fedc5ba76ac91f128d671390e574a0779014c84d73" ;;
     clang-tidy-linux-x64) echo "$PYPI/82/19/0f2668f8f5e2452b096a2b898f2b6bcecbceb6dd0c7f75d1755ce1f18d8b/clang_tidy-$LLVM_TOOLS_VERSION-py2.py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl 1a3de07ba82d4403d8b692ae63a5520d4db5c606014c92c24bbcef9259057bf1" ;;
+    clang-tidy-win-x64) echo "$PYPI/54/af/0580f6145d8a0c218844208a6c90ce539a4bdf65a66b672e6b4604a81c0a/clang_tidy-$LLVM_TOOLS_VERSION-py2.py3-none-win_amd64.whl df9bf841ecbf501d08b6fa34523be840f59b1a76d16b6ee5edb0e5c7c22b59c2" ;;
     rust-mac-x64) echo "https://static.rust-lang.org/dist/rust-$RUST_VERSION-x86_64-apple-darwin.tar.xz a3717fb569beab7060699dc237c90fce3d9d1efb72bec333ec8a116525100361" ;;
     rust-mac-arm64) echo "https://static.rust-lang.org/dist/rust-$RUST_VERSION-aarch64-apple-darwin.tar.xz 5395f380bd220890b89b7e8ce137f3965cf0625b6f561af11e97c8d5c8743c3b" ;;
     rust-linux-x64) echo "https://static.rust-lang.org/dist/rust-$RUST_VERSION-x86_64-unknown-linux-gnu.tar.xz ed8ee2df70909c88cbaf87a6cfa3920dac00b537de12a6abe6906641e0f5952f" ;;
@@ -80,6 +88,7 @@ artifact() {
     zizmor-mac-x64) echo "https://github.com/zizmorcore/zizmor/releases/download/v$ZIZMOR_VERSION/zizmor-x86_64-apple-darwin.tar.gz 10e6b18b11ea07e515a16f0f0518c7b07527bc9977c1fd5698181ce7f3554202" ;;
     zizmor-mac-arm64) echo "https://github.com/zizmorcore/zizmor/releases/download/v$ZIZMOR_VERSION/zizmor-aarch64-apple-darwin.tar.gz e28d22b087f9ebb8d99da6e740d348c930f559961c7c3f12badda54f882195a2" ;;
     zizmor-linux-x64) echo "https://github.com/zizmorcore/zizmor/releases/download/v$ZIZMOR_VERSION/zizmor-x86_64-unknown-linux-gnu.tar.gz e65324f4430c2717591937edcec90ccbefaf14c174f8ec9415e03ca875b46e1a" ;;
+    rust-win-x64) echo "https://static.rust-lang.org/dist/rust-$RUST_VERSION-x86_64-pc-windows-msvc.tar.xz 14ff744da07522dde540ab01bc02f2265aa9b4d58bfe8cf42c4c45e479acef1d" ;;
     *) echo "No artifact for $1 on $PLATFORM" >&2; return 1 ;;
   esac
 }
@@ -114,7 +123,9 @@ extract() {
   local archive="$1" dest="$2"
   rm -rf "$dest.tmp" && mkdir -p "$dest.tmp"
   case "$archive" in
-    *.zip|*.whl) unzip -q "$archive" -d "$dest.tmp" ;;
+    *.zip|*.whl)
+      if command -v unzip >/dev/null; then unzip -q "$archive" -d "$dest.tmp"
+      else 7z x -bd -y -o"$dest.tmp" "$archive" >/dev/null; fi ;;
     *.tar.gz|*.tar.xz) tar -xf "$archive" -C "$dest.tmp" ;;
     *) cp "$archive" "$dest.tmp/" ;; # a bare executable
   esac
@@ -130,27 +141,45 @@ install_tool() {
   echo "$dest"
 }
 
-link() { ln -sf "$1" "$BIN/$2"; }
+EXE=""
+[[ "$PLATFORM" == win-x64 ]] && EXE=".exe"
+
+# Windows programs look for their own files next to the executable as it was
+# started, so a link or copy in .tools/bin would not find them: there the
+# tools' own directories go on PATH instead (.tools/paths, read by env.sh).
+: > "$TOOLS/paths.new"
+link() {
+  if [[ "$PLATFORM" == win-x64 ]]; then
+    dirname "$1" >> "$TOOLS/paths.new"
+  else
+    ln -sf "$1" "$BIN/$2"
+  fi
+}
 
 dir="$(install_tool cmake "$CMAKE_VERSION")"
 for t in cmake ctest cpack; do
-  link "$(find "$dir" -type f -path "*/bin/$t" | head -1)" "$t"
+  link "$(find "$dir" -type f -path "*/bin/$t$EXE" | head -1)" "$t"
 done
 
 dir="$(install_tool ninja "$NINJA_VERSION")"
-chmod +x "$dir/ninja"
-link "$dir/ninja" ninja
+chmod +x "$dir/ninja$EXE"
+link "$dir/ninja$EXE" ninja
 
 dir="$(install_tool node "$NODE_VERSION")"
-node_bin="$(dirname "$(find "$dir" -path '*/bin/node' | head -1)")"
+if [[ "$PLATFORM" == win-x64 ]]; then
+  # The Windows archive has node.exe, npm and npx at its top level.
+  node_bin="$(dirname "$(find "$dir" -name node.exe | head -1)")"
+else
+  node_bin="$(dirname "$(find "$dir" -path '*/bin/node' | head -1)")"
+fi
 for t in node npm npx; do link "$node_bin/$t" "$t"; done
 
 dir="$(install_tool gh "$GH_VERSION")"
-link "$(find "$dir" -type f -path '*/bin/gh' | head -1)" gh
+link "$(find "$dir" -type f -path "*/bin/gh$EXE" | head -1)" gh
 
 for t in clang-format clang-tidy; do
   dir="$(install_tool "$t" "$LLVM_TOOLS_VERSION")"
-  exe="$(find "$dir" -type f -path "*/bin/$t" | head -1)"
+  exe="$(find "$dir" -type f -path "*/bin/$t$EXE" | head -1)"
   chmod +x "$exe"
   link "$exe" "$t"
 done
@@ -158,11 +187,23 @@ done
 # Rust: the installer puts rustc, cargo and the standard library into a
 # prefix inside .tools (no rustup, nothing in ~/.cargo).
 RUST_DIR="$TOOLS/rust-$RUST_VERSION"
-if [[ ! -x "$RUST_DIR/bin/cargo" ]]; then
+if [[ ! -x "$RUST_DIR/bin/cargo$EXE" ]]; then
   src="$TOOLS/rust-src-$RUST_VERSION"
   extract "$(fetch rust)" "$src"
-  "$(find "$src" -maxdepth 2 -name install.sh | head -1)" \
-    --prefix="$RUST_DIR" --without=rust-docs --disable-ldconfig >/dev/null
+  if [[ "$PLATFORM" == win-x64 ]]; then
+    # install.sh does not run in Git Bash; the components it would install
+    # are plain directory trees.
+    top="$(dirname "$(find "$src" -maxdepth 2 -name components | head -1)")"
+    rm -rf "$RUST_DIR.tmp" && mkdir -p "$RUST_DIR.tmp"
+    for c in rustc cargo rust-std-x86_64-pc-windows-msvc; do
+      cp -R "$top/$c/." "$RUST_DIR.tmp/"
+    done
+    rm -f "$RUST_DIR.tmp/manifest.in"
+    rm -rf "$RUST_DIR" && mv "$RUST_DIR.tmp" "$RUST_DIR"
+  else
+    "$(find "$src" -maxdepth 2 -name install.sh | head -1)" \
+      --prefix="$RUST_DIR" --without=rust-docs --disable-ldconfig >/dev/null
+  fi
   rm -rf "$src"
 fi
 # Macs build for both architectures (scripts/build --arch, 002).
@@ -177,15 +218,19 @@ if [[ "$PLATFORM" == mac-* ]]; then
     rm -rf "$src"
   fi
 fi
-for t in cargo rustc; do link "$RUST_DIR/bin/$t" "$t"; done
+for t in cargo rustc; do link "$RUST_DIR/bin/$t$EXE" "$t"; done
 
-# Scanners: each archive (or bare download) holds one executable.
-for name in opengrep gitleaks osv-scanner cargo-deny zizmor; do
+# Scanners: each archive (or bare download) holds one executable. Not on
+# Windows: scripts/sast runs on Linux and macOS.
+[[ "$PLATFORM" == win-x64 ]] || for name in opengrep gitleaks osv-scanner cargo-deny zizmor; do
   version_var="$(echo "${name}_VERSION" | tr 'a-z-' 'A-Z_')"
   dir="$(install_tool "$name" "${!version_var}")"
   exe="$(find "$dir" -type f \( -name "$name" -o -name "${name}_*" \) | head -1)"
   chmod +x "$exe"
   link "$exe" "$name"
 done
+
+sort -u "$TOOLS/paths.new" > "$TOOLS/paths"
+rm -f "$TOOLS/paths.new"
 
 echo "Tools installed in $BIN. Run: source scripts/env.sh"

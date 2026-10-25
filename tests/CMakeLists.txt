@@ -12,7 +12,7 @@ FetchContent_MakeAvailable(googletest)
 # GoogleTest must match our sanitizer and RTTI settings.
 foreach(gtest_target gtest gtest_main)
   target_compile_options(${gtest_target} PRIVATE ${BROUK_SANITIZER_FLAGS}
-                         -fno-rtti)
+                         ${BROUK_NO_RTTI_FLAG})
 endforeach()
 
 include(GoogleTest)

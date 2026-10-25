@@ -24,12 +24,19 @@ endif()
 set(BROUK_ADBLOCK_LIBRARY
   "${_cargo_out}/${CMAKE_STATIC_LIBRARY_PREFIX}brouk_adblock${CMAKE_STATIC_LIBRARY_SUFFIX}")
 
+# On Windows the pinned tools are not linked into .tools/bin (see
+# scripts/install_tools).
+file(GLOB _rust_bin "${PROJECT_SOURCE_DIR}/.tools/rust-*/bin")
 find_program(BROUK_CARGO cargo REQUIRED
-  HINTS "${PROJECT_SOURCE_DIR}/.tools/bin" NO_DEFAULT_PATH)
+  HINTS "${PROJECT_SOURCE_DIR}/.tools/bin" ${_rust_bin} NO_DEFAULT_PATH)
 
 set(_adblock_env "CARGO_HOME=${PROJECT_SOURCE_DIR}/.tools/cargo")
 if(APPLE)
   list(APPEND _adblock_env "MACOSX_DEPLOYMENT_TARGET=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+endif()
+if(MSVC)
+  # The static C runtime, as the rest of the build (BroukCompilerOptions.cmake).
+  list(APPEND _adblock_env "RUSTFLAGS=-Ctarget-feature=+crt-static")
 endif()
 
 add_custom_command(
@@ -50,7 +57,10 @@ set_target_properties(brouk_adblock_rs PROPERTIES
 add_dependencies(brouk_adblock_rs brouk_adblock_build)
 # What Rust's standard library needs from the system (cargo's
 # native-static-libs; on macOS libSystem, which is linked anyway).
-if(NOT APPLE)
+if(WIN32)
+  target_link_libraries(brouk_adblock_rs INTERFACE
+    advapi32 bcrypt kernel32 ntdll userenv ws2_32)
+elseif(NOT APPLE)
   find_package(Threads REQUIRED)
   target_link_libraries(brouk_adblock_rs INTERFACE Threads::Threads dl m)
 endif()

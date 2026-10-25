@@ -18,6 +18,11 @@ if(APPLE)
   endif()
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set(BROUK_CEF_PLATFORM linux64)
+elseif(WIN32)
+  set(BROUK_CEF_PLATFORM windows64)
+  # CEF adds /MT (/MTd in Debug); the runtime library is chosen for all our
+  # targets in BroukCompilerOptions.cmake instead.
+  set(CEF_RUNTIME_LIBRARY_FLAG "" CACHE STRING "" FORCE)
 else()
   message(FATAL_ERROR "CEF platform not configured for ${CMAKE_SYSTEM_NAME}")
 endif()

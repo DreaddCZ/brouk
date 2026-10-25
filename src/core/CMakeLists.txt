@@ -166,7 +166,8 @@ add_library(brouk_core_testing STATIC EXCLUDE_FROM_ALL ${BROUK_CORE_SOURCES})
 brouk_target_options(brouk_core_testing)
 
 # yaml-cpp throws; the one file using it catches everything (see the file).
-set_source_files_properties(yaml_io.cc PROPERTIES COMPILE_OPTIONS -fexceptions)
+set_source_files_properties(yaml_io.cc PROPERTIES
+  COMPILE_OPTIONS ${BROUK_EXCEPTIONS_FLAG})
 
 target_link_libraries(brouk_core PRIVATE brouk_yaml_cpp brouk_sqlite brouk_sodium)
 target_link_libraries(brouk_core PUBLIC brouk_adblock_rs)

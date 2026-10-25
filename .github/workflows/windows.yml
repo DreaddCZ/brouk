@@ -1,0 +1,88 @@
+# Windows CI (specs/002, specs/001): builds the portable code (core, CEF
+# integration, renderer) on Windows x64 with clang-cl and runs its tests and
+# the internal pages' tests. There is no Windows app yet. Runs weekly and on
+# demand only: Windows minutes cost twice the Linux ones on a private repo.
+name: windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ci/windows-build] # TEMPORARY while the job is brought up
+  schedule:
+    - cron: "0 4 * * 1" # Mondays 04:00 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: windows-2025
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    env:
+      BROUK_CEF_CACHE: ${{ github.workspace }}/.cef-cache
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Cache pinned tools
+        uses: actions/cache@v6.1.0
+        with:
+          path: .tools
+          key: tools-${{ runner.os }}-${{ hashFiles('scripts/install_tools') }}
+
+      - name: Cache CEF download
+        uses: actions/cache@v6.1.0
+        with:
+          path: .cef-cache
+          key: cef-windows64-${{ hashFiles('scripts/fetch_cef') }}
+
+      - name: Install tools
+        run: scripts/install_tools
+
+      # clang-cl needs the MSVC headers and libraries and the Windows SDK:
+      # load the Visual Studio developer environment for the later steps.
+      - name: Visual Studio environment
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
+            -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath
+          cmd /c "`"$vs\VC\Auxiliary\Build\vcvars64.bat`" >nul && set" | ForEach-Object {
+            if ($_ -match '^([^=]+)=(.*)$') {
+              Add-Content -Path $env:GITHUB_ENV -Value "$($Matches[1])=$($Matches[2])"
+            }
+          }
+
+      - name: Tool versions
+        run: |
+          source scripts/env.sh
+          clang-cl --version
+          cmake --version | head -1
+          cargo --version
+          node --version
+
+      - name: Internal pages (TypeScript type-check and tests)
+        run: scripts/web test
+
+      - name: Fetch CEF
+        run: scripts/fetch_cef windows64
+
+      # lld-link: Git Bash's /usr/bin/link would shadow MSVC's link.exe.
+      - name: Configure (Debug)
+        run: |
+          source scripts/env.sh
+          cmake -S . -B build/debug -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl \
+            -DCMAKE_LINKER=lld-link
+
+      - name: Build
+        run: |
+          source scripts/env.sh
+          cmake --build build/debug
+
+      - name: Test
+        run: |
+          source scripts/env.sh
+          ctest --test-dir build/debug --output-on-failure
