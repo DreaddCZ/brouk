@@ -1404,49 +1404,67 @@ class AppSettingsPage : public SettingsPageDelegate {
   return _linkRouting;
 }
 
-// Whether macOS opens web links with this copy of Brouk.
-- (BOOL)isDefaultBrowser {
-  NSURL* handler = [NSWorkspace.sharedWorkspace
-      URLForApplicationToOpenURL:[NSURL URLWithString:@"https://example.com/"]];
+// Whether macOS opens `scheme` links with this copy of Brouk.
+- (BOOL)isDefaultForScheme:(NSString*)scheme {
+  NSURL* url =
+      [NSURL URLWithString:[scheme stringByAppendingString:@"://example.com/"]];
+  NSURL* handler = [NSWorkspace.sharedWorkspace URLForApplicationToOpenURL:url];
   return handler && [[NSBundle bundleWithURL:handler].bundleIdentifier
                         isEqualToString:NSBundle.mainBundle.bundleIdentifier];
 }
 
-// macOS asks the user to confirm, once per scheme.
+- (BOOL)isDefaultBrowser {
+  return
+      [self isDefaultForScheme:@"http"] && [self isDefaultForScheme:@"https"];
+}
+
+// macOS asks the user once ("Use Brouk" or keep the current browser) and
+// then usually changes http and https together, so a second request can
+// fail although nothing is wrong. The result is judged by what macOS uses
+// afterwards. Keeping the current browser is not an error.
 - (void)makeDefaultBrowserWithDone:
     (std::function<void(std::optional<brouk::Error>)>)done {
-  NSURL* app = NSBundle.mainBundle.bundleURL;
   __block std::function<void(std::optional<brouk::Error>)> answer =
       std::move(done);
-  auto failed = ^(NSError* error) {
-    answer(
-        brouk::Error{"Brouk could not be made the default browser: " +
-                     std::string(error.localizedDescription.UTF8String ?: "")});
+  __weak BRAppDelegate* weakSelf = self;
+  void (^afterHttps)(NSError* _Nullable) = ^(NSError* _Nullable error) {
+    [weakSelf finishDefaultBrowser:answer error:error];
   };
+  void (^afterHttp)(NSError* _Nullable) = ^(NSError* _Nullable error) {
+    BRAppDelegate* strongSelf = weakSelf;
+    if (!strongSelf || error || [strongSelf isDefaultForScheme:@"https"]) {
+      [strongSelf finishDefaultBrowser:answer error:error];
+      return;
+    }
+    [strongSelf requestDefaultForScheme:@"https" done:afterHttps];
+  };
+  [self requestDefaultForScheme:@"http" done:afterHttp];
+}
+
+// Main thread: `done` runs on the main thread.
+- (void)requestDefaultForScheme:(NSString*)scheme
+                           done:(void (^)(NSError* _Nullable error))done {
   [NSWorkspace.sharedWorkspace
-      setDefaultApplicationAtURL:app
-            toOpenURLsWithScheme:@"http"
-               completionHandler:^(NSError* _Nullable httpError) {
+      setDefaultApplicationAtURL:NSBundle.mainBundle.bundleURL
+            toOpenURLsWithScheme:scheme
+               completionHandler:^(NSError* _Nullable error) {
                  dispatch_async(dispatch_get_main_queue(), ^{
-                   if (httpError) {
-                     failed(httpError);
-                     return;
-                   }
-                   [NSWorkspace.sharedWorkspace
-                       setDefaultApplicationAtURL:app
-                             toOpenURLsWithScheme:@"https"
-                                completionHandler:^(
-                                    NSError* _Nullable httpsError) {
-                                  dispatch_async(dispatch_get_main_queue(), ^{
-                                    if (httpsError) {
-                                      failed(httpsError);
-                                    } else {
-                                      answer(std::nullopt);
-                                    }
-                                  });
-                                }];
+                   done(error);
                  });
                }];
+}
+
+- (void)finishDefaultBrowser:
+            (const std::function<void(std::optional<brouk::Error>)>&)done
+                       error:(nullable NSError*)error {
+  if ([self isDefaultBrowser] || !error ||
+      ([error.domain isEqualToString:NSCocoaErrorDomain] &&
+       error.code == NSUserCancelledError)) {
+    done(std::nullopt);
+    return;
+  }
+  done(brouk::Error{"Brouk could not be made the default browser: " +
+                    std::string(error.localizedDescription.UTF8String ?: "")});
 }
 
 - (BOOL)moveChosenWindowToActiveSpace {
