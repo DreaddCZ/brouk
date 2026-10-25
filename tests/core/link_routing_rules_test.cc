@@ -139,6 +139,33 @@ TEST(LinkRoutingRulesTest, EquallySpecificRulesKeepTheirOrder) {
             "p-first");
 }
 
+TEST(LinkRoutingRulesTest, ProfileLinks) {
+  LinkRoutingConfig config;
+  config.rules = {{"github.com/company-a/", {"p-a"}},
+                  {"portal.azure.com", {"p-a", "p-b"}},
+                  {"*.sharepoint.com", {"p-b"}}};
+  EXPECT_EQ(
+      PatternsOfProfile(config, "p-a"),
+      (std::vector<std::string>{"github.com/company-a/", "portal.azure.com"}));
+
+  // p-a keeps GitHub (written differently), leaves Azure, joins SharePoint
+  // and gets a new rule.
+  std::vector<std::string> patterns = {"https://GitHub.com/company-a/*",
+                                       "*.sharepoint.com", "jira.example.com",
+                                       "jira.example.com"};
+  SetProfilePatterns(config, "p-a", patterns);
+  ASSERT_EQ(config.rules.size(), 4u);
+  EXPECT_EQ(config.rules[0], (RoutingRule{"github.com/company-a/", {"p-a"}}));
+  EXPECT_EQ(config.rules[1], (RoutingRule{"portal.azure.com", {"p-b"}}));
+  EXPECT_EQ(config.rules[2], (RoutingRule{"*.sharepoint.com", {"p-b", "p-a"}}));
+  EXPECT_EQ(config.rules[3], (RoutingRule{"jira.example.com", {"p-a"}}));
+
+  // Removing all of a profile's links deletes rules left without profiles.
+  SetProfilePatterns(config, "p-a", {});
+  ASSERT_EQ(config.rules.size(), 2u);
+  EXPECT_EQ(config.rules[1], (RoutingRule{"*.sharepoint.com", {"p-b"}}));
+}
+
 TEST(LinkRoutingRulesTest, NarrowingARule) {
   LinkRoutingConfig config;
   config.rules = {{"portal.azure.com", {"p-a", "p-b", "p-c"}}};

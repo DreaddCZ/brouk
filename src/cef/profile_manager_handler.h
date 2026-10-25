@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "core/link_routing_rules.h"
 #include "core/profile_registry.h"
 #include "core/result.h"
 #include "include/wrapper/cef_message_router.h"
@@ -51,6 +52,10 @@ class ProfileManagerDelegate {
   virtual void ExportProfile(const ProfileId& id, ExportDone done) = 0;
   // Asks for a file (natively) and imports it as a new profile.
   virtual void ImportProfile(ImportDone done) = 0;
+  // Link routing (010), for each profile's links: null before the browser
+  // is ready; saving replaces the rules file.
+  virtual const LinkRoutingConfig* LinkRouting() = 0;
+  virtual std::optional<Error> SetLinkRouting(LinkRoutingConfig config) = 0;
 };
 
 // Answers the profile manager page's bridge messages (web/profiles/api.ts):

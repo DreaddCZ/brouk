@@ -223,6 +223,15 @@ class AppProfileManager : public ProfileManagerDelegate {
     }
     [app importProfileWithDone:std::move(done)];
   }
+  const LinkRoutingConfig* LinkRouting() override {
+    BRLinkRoutingController* routing = [app_ linkRouting];
+    return routing ? &routing.config : nullptr;
+  }
+  std::optional<Error> SetLinkRouting(LinkRoutingConfig config) override {
+    BRLinkRoutingController* routing = [app_ linkRouting];
+    return routing ? [routing setConfig:std::move(config)]
+                   : std::optional<Error>(Error{kClosing});
+  }
 
  private:
   static constexpr char kClosing[] = "Brouk is closing.";

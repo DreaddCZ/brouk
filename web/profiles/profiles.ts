@@ -1,17 +1,23 @@
 /**
  * The profile manager page (005): list, create, rename, recolour, make
- * default, delete and open profiles. Built with DOM calls only; text from
- * the browser is set with textContent, never as HTML.
+ * default, delete and open profiles, and edit the links that open in each
+ * profile (010). Built with DOM calls only; text from the browser is set
+ * with textContent, never as HTML.
  */
 import { cefTransport } from '../shared/bridge.js';
 import { button, byId, element, errorText } from '../shared/dom.js';
-import { ProfilesApi, type ImportResult, type Profile, type ProfilesState } from './api.js';
+import { ProfilesApi, type ImportResult, type LinkProblem, type Profile, type ProfilesState } from './api.js';
 import { colorLabel, nameProblem, tabsLabel } from './logic.js';
 
 const api = new ProfilesApi(cefTransport());
-let state: ProfilesState = { profiles: [], colors: [], showAtStartup: false };
+let state: ProfilesState = { profiles: [], colors: [], showAtStartup: false, linksReady: false };
 /** The profile being edited, 'new' for the new-profile form, or null. */
 let editing: string | null = null;
+/**
+ * Links the browser did not accept, kept while the form is shown again
+ * (also for a profile just created, whose form then opens for editing).
+ */
+let linkDraft: { patterns: string[]; problems: LinkProblem[] } | null = null;
 
 /** An information box (not an error), e.g. what an import left out. */
 function showNotice(title: string | null, lines: readonly string[] = []): void {
@@ -88,15 +94,20 @@ function editForm(profile: Profile | null): HTMLFormElement {
     colors.append(swatch);
   }
 
+  const links = linksField(profile);
+
   const save = element('button', { className: 'primary', text: profile ? 'Save' : 'Create' });
   save.type = 'submit';
   const cancel = button('Cancel', () => {
     editing = null;
+    linkDraft = null;
     render();
   });
   const buttons = element('div', { className: 'buttons' });
   buttons.append(cancel, save);
-  form.append(field, problem, colors, buttons);
+  form.append(field, problem, colors);
+  if (links !== null) form.append(links.box);
+  form.append(buttons);
 
   const check = (): string | null => {
     const message = nameProblem(input.value, state.profiles, profile?.id ?? null);
@@ -113,23 +124,104 @@ function editForm(profile: Profile | null): HTMLFormElement {
     const checked = form.querySelector<HTMLInputElement>('input[type=radio]:checked');
     const color = checked?.value ?? initial;
     const name = input.value.trim();
+    const patterns = links?.patterns() ?? null;
     void run(async () => {
-      if (profile === null) {
-        await api.create(name, color);
+      let id = profile?.id ?? null;
+      if (profile !== null && patterns !== null) {
+        // Links first: if one is not valid, nothing changes yet.
+        const problems = await api.setLinks(profile.id, patterns);
+        if (problems.length > 0) {
+          linkDraft = { patterns, problems };
+          return;
+        }
+      }
+      if (id === null) {
+        id = await api.create(name, color);
+        if (patterns !== null && patterns.length > 0) {
+          const problems = await api.setLinks(id, patterns);
+          if (problems.length > 0) {
+            // The profile exists now: its form shows what to fix.
+            editing = id;
+            linkDraft = { patterns, problems };
+            return;
+          }
+        }
       } else {
-        await api.update(profile.id, name, color);
+        await api.update(id, name, color);
       }
       editing = null;
+      linkDraft = null;
     });
   });
   form.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
       editing = null;
+      linkDraft = null;
       render();
     }
   });
   queueMicrotask(() => input.focus());
   return form;
+}
+
+/**
+ * "Links that open in this profile" (010): one pattern per row. Saving makes
+ * them this profile's routing rules; a rule shared with other profiles says
+ * so. Null until the browser has started routing.
+ */
+function linksField(profile: Profile | null): { box: HTMLFieldSetElement; patterns: () => string[] } | null {
+  if (!state.linksReady) return null;
+  const box = element('fieldset', { className: 'links' });
+  box.append(element('legend', { text: 'Links that open in this profile' }));
+  box.append(
+    element('p', {
+      className: 'hint',
+      text: 'Links from other apps, new tabs opened from pages and addresses typed into a new tab ' +
+        'open here when they match, e.g. companya.atlassian.net, *.sharepoint.com or ' +
+        'github.com/company-a/*. All rules are in Settings → Links.',
+    }),
+  );
+  const rows = element('div', { className: 'link-rows' });
+  const shared = new Map((profile?.links ?? []).map((l) => [l.pattern, l.sharedWith]));
+  const initial = linkDraft?.patterns ?? (profile?.links ?? []).map((l) => l.pattern);
+  const problems = new Map((linkDraft?.problems ?? []).map((p) => [p.index, p.message]));
+  const addRow = (pattern: string, problem: string | undefined): void => {
+    const row = element('div', { className: 'link-row' });
+    const input = element('input');
+    input.type = 'text';
+    input.value = pattern;
+    input.placeholder = 'example.com';
+    input.spellcheck = false;
+    input.autocomplete = 'off';
+    input.setAttribute('aria-label', 'Links matching');
+    const remove = button('Remove', () => row.remove());
+    remove.setAttribute('aria-label', `Remove ${pattern || 'this link'}`);
+    row.append(input, remove);
+    const others = shared.get(pattern) ?? [];
+    if (others.length > 0) {
+      row.append(element('p', { className: 'hint', text: `Shared with ${others.join(', ')}: Brouk asks which profile.` }));
+    }
+    if (problem !== undefined) {
+      input.setAttribute('aria-invalid', 'true');
+      const text = element('p', { className: 'problem', text: problem });
+      text.setAttribute('role', 'alert');
+      row.append(text);
+    }
+    rows.append(row);
+  };
+  initial.forEach((pattern, index) => addRow(pattern, problems.get(index)));
+  const add = button('Add link', () => {
+    addRow('', undefined);
+    rows.querySelector<HTMLInputElement>('.link-row:last-child input')?.focus();
+  });
+  box.append(rows, add);
+  return {
+    box,
+    patterns: () =>
+      Array.from(rows.querySelectorAll<HTMLInputElement>('input'))
+        .map((i) => i.value.trim())
+        .filter((p) => p !== ''),
+  };
 }
 
 function profileItem(profile: Profile): HTMLLIElement {
@@ -149,6 +241,9 @@ function profileItem(profile: Profile): HTMLLIElement {
     name.append(element('span', { className: 'badge', text: 'Default' }));
   }
   who.append(name, element('div', { className: 'tabs', text: tabsLabel(profile.openTabs) }));
+  if (profile.links.length > 0) {
+    who.append(element('div', { className: 'tabs', text: `Opens ${profile.links.map((l) => l.pattern).join(', ')}` }));
+  }
 
   const actions = element('div', { className: 'actions' });
   const open = button('Open', () => void run(() => api.open(profile.id)), 'primary');
@@ -157,7 +252,7 @@ function profileItem(profile: Profile): HTMLLIElement {
     editing = profile.id;
     render();
   });
-  edit.setAttribute('aria-label', `Rename or recolour ${profile.name}`);
+  edit.setAttribute('aria-label', `Rename, recolour or edit the links of ${profile.name}`);
   const exportButton = button('Export…', () => void run(() => api.exportProfile(profile.id)));
   exportButton.setAttribute('aria-label', `Export ${profile.name} to a file`);
   actions.append(open, edit, exportButton);

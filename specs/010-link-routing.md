@@ -19,6 +19,7 @@ The browser keeps a live model of all its windows and tabs, including which disp
 - A rule with **one** profile opens the link in that profile without asking.
 - A rule with **several** profiles shows the picker, listing only those profiles (e.g. `portal.azure.com` → A, B or C).
 - Only a few rules are expected, for the most used sites: Atlassian products, cloud providers, git providers and similar.
+- Rules are edited in Settings → Links, and per profile in the profile manager: a profile's edit form lists the links that open in it (one pattern per line, editable). Saving there adds the profile to the rule for each pattern (or creates the rule) and takes it out of rules no longer listed; a rule shared with other profiles says so.
 
 **Which link opens are routed:**
 
@@ -102,6 +103,7 @@ The browser keeps a live model of all its windows and tabs, including which disp
 - [ ] A link from inside the browser that matches no rule stays in the current profile.
 - [ ] The destination window follows the rules above (default profile → most recent window on the current screen; other profiles: one window → there; several → user chooses; none → new group in the frontmost window).
 - [ ] Routing rules can be added, edited and deleted in settings.
+- [ ] A profile's edit form in the profile manager lists the links that open in it; adding, changing or removing a pattern there changes the rules accordingly, and an invalid pattern is shown and nothing is saved.
 
 **Link wrappers**
 - [ ] A Safe Links link from Outlook or Teams to `https://companya.atlassian.net/browse/X-1`, with a rule `companya.atlassian.net` → A, opens in profile A without a prompt. The wrapper URL is loaded first in that tab, and the tab ends on the Jira page.
@@ -169,4 +171,4 @@ None.
   - Picker: number keys, arrows plus Return, Esc (back from the window step, else cancel), "A" ticks "Always open…" (Tab reaches checkboxes only with macOS's full keyboard navigation), plus Back and Cancel buttons for the mouse. Thumbnails are screenshots of the active tab through the DevTools protocol (`Page.captureScreenshot`); a tab not loaded yet shows its favicon. Links that arrive while the picker is open wait for it.
   - Opaque wrappers: the neutral context is a request context with its own folder `web/link-check-<random>`, deleted when the check ends; leftovers (after a crash) are deleted at the next start. An in-memory (incognito) context would match the spec better, but under CEF's Chrome bootstrap its browser never starts loading. The check stops at the first main-frame navigation, popup or download that leaves the wrapper hosts. Closing the "Checking link" window cancels the link.
   - The real wrapped links from the user's Outlook and Teams are still to be checked against the decoders (the tests use the public formats and Proofpoint's own v3 example).
-
+- 2026-10-25 (user's request): the profile manager's edit form also lists the profile's links (see Description). A pattern written differently but equal (`https://GitHub.com/a/*` and `github.com/a/`) joins the existing rule; a new profile's links are saved right after it is created.

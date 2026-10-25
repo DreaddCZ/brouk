@@ -263,6 +263,60 @@ const RoutingRule* FindRoutingRule(const LinkRoutingConfig& config,
   return best;
 }
 
+namespace {
+
+// The same pattern however it was written ("https://Example.com/a/*" and
+// "example.com/a/").
+std::string NormalPattern(std::string_view pattern) {
+  std::optional<UrlPattern> parsed = UrlPattern::Parse(pattern);
+  return parsed ? parsed->ToString() : std::string(pattern);
+}
+
+}  // namespace
+
+std::vector<std::string> PatternsOfProfile(const LinkRoutingConfig& config,
+                                           const ProfileId& profile) {
+  std::vector<std::string> patterns;
+  for (const RoutingRule& rule : config.rules) {
+    if (std::ranges::find(rule.profiles, profile) != rule.profiles.end()) {
+      patterns.push_back(rule.pattern);
+    }
+  }
+  return patterns;
+}
+
+void SetProfilePatterns(LinkRoutingConfig& config,
+                        const ProfileId& profile,
+                        std::span<const std::string> patterns) {
+  std::vector<std::string> wanted;
+  for (const std::string& pattern : patterns) {
+    std::string normal = NormalPattern(pattern);
+    if (std::ranges::find(wanted, normal) == wanted.end()) {
+      wanted.push_back(std::move(normal));
+    }
+  }
+  for (RoutingRule& rule : config.rules) {
+    bool listed =
+        std::ranges::find(wanted, NormalPattern(rule.pattern)) != wanted.end();
+    auto it = std::ranges::find(rule.profiles, profile);
+    if (!listed && it != rule.profiles.end()) {
+      rule.profiles.erase(it);
+    } else if (listed && it == rule.profiles.end()) {
+      rule.profiles.push_back(profile);
+    }
+  }
+  std::erase_if(config.rules,
+                [](const RoutingRule& rule) { return rule.profiles.empty(); });
+  for (const std::string& pattern : wanted) {
+    bool exists = std::ranges::any_of(config.rules, [&](const RoutingRule& r) {
+      return NormalPattern(r.pattern) == pattern;
+    });
+    if (!exists) {
+      config.rules.push_back({pattern, {profile}});
+    }
+  }
+}
+
 bool NarrowRoutingRule(LinkRoutingConfig& config,
                        std::string_view pattern,
                        const ProfileId& profile) {

@@ -5,11 +5,15 @@ import { ProfilesApi, parseImportResult, parseState } from './api.js';
 
 const state = {
   profiles: [
-    { id: 'default', name: 'Main', color: 'blue', isDefault: true, openTabs: 3 },
-    { id: 'p-12345678', name: 'Work', color: 'green', isDefault: false, openTabs: 0 },
+    { id: 'default', name: 'Main', color: 'blue', isDefault: true, openTabs: 3, links: [] },
+    {
+      id: 'p-12345678', name: 'Work', color: 'green', isDefault: false, openTabs: 0,
+      links: [{ pattern: 'portal.azure.com', sharedWith: ['Main'] }],
+    },
   ],
   colors: ['grey', 'blue', 'green'],
   showAtStartup: false,
+  linksReady: true,
 };
 
 test('parseState accepts a valid state', () => {
@@ -17,6 +21,23 @@ test('parseState accepts a valid state', () => {
   assert.equal(parsed.profiles.length, 2);
   assert.equal(parsed.profiles[0]?.name, 'Main');
   assert.deepEqual(parsed.colors, ['grey', 'blue', 'green']);
+});
+
+test('parseState reads each profile\'s links', () => {
+  const parsed = parseState(state);
+  assert.deepEqual(parsed.profiles[1]?.links, [{ pattern: 'portal.azure.com', sharedWith: ['Main'] }]);
+  assert.equal(parsed.linksReady, true);
+  assert.throws(
+    () => parseState({ ...state, profiles: [{ ...state.profiles[0], links: [{ pattern: 1, sharedWith: [] }] }] }),
+    BridgeError,
+  );
+});
+
+test('setLinks returns the problems', async () => {
+  const api = new ProfilesApi(async () => '{"problems":[{"index":1,"message":"Not a valid pattern."}]}');
+  assert.deepEqual(await api.setLinks('p-12345678', ['a.com', 'bad pattern']), [
+    { index: 1, message: 'Not a valid pattern.' },
+  ]);
 });
 
 test('parseState rejects wrong shapes', () => {

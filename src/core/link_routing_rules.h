@@ -3,6 +3,7 @@
 
 #include <filesystem>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -69,6 +70,20 @@ const RoutingRule* FindRoutingRule(const LinkRoutingConfig& config,
 bool NarrowRoutingRule(LinkRoutingConfig& config,
                        std::string_view pattern,
                        const ProfileId& profile);
+
+// The profile manager edits one profile's links (010): the patterns of the
+// rules that list `profile`, in the rules' order.
+std::vector<std::string> PatternsOfProfile(const LinkRoutingConfig& config,
+                                           const ProfileId& profile);
+
+// Makes `patterns` the profile's links. A rule for a pattern that is no
+// longer listed loses the profile (and goes when it has no profile left);
+// a listed pattern joins the rule for the same pattern (written in any
+// equivalent way) at its end, or gets a new rule of its own. Patterns must
+// be valid (UrlPattern::Parse).
+void SetProfilePatterns(LinkRoutingConfig& config,
+                        const ProfileId& profile,
+                        std::span<const std::string> patterns);
 
 }  // namespace brouk
 

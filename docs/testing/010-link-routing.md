@@ -37,4 +37,5 @@ Setup: profiles Main (default), Work and Client. In Settings → Links add the r
 
 20. Add a rule with a pattern like `bad pattern`. Expected: it is marked as not valid and nothing is saved until it is fixed. Add a rule with only a pattern: it stays on the page and is saved once a profile is added.
 21. Reorder a rule's profiles with ↑ and check that the picker offers them in the new order. Delete a rule; the next matching link is not routed by it.
-22. Edit `~/Library/Application Support/Brouk/link-routing.yaml` while Brouk runs (e.g. change a rule's profile). Expected: the next link follows the change. An invalid entry is listed at the top of Settings → Links.
+22. Profiles → Manage Profiles → Edit on Work. Expected: "Links that open in this profile" lists `companya.atlassian.net` and `portal.azure.com` (with "Shared with Client"). Add `*.sharepoint.com`, remove the Azure line and Save. Expected: Settings → Links shows `*.sharepoint.com` → Work and `portal.azure.com` → Client only. Enter `bad pattern` and Save. Expected: the line is marked and nothing changes. Create a new profile with a link. Expected: the rule appears for it.
+23. Edit `~/Library/Application Support/Brouk/link-routing.yaml` while Brouk runs (e.g. change a rule's profile). Expected: the next link follows the change. An invalid entry is listed at the top of Settings → Links.
