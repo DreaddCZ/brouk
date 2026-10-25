@@ -46,6 +46,14 @@ if(APPLE)
     "-mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
 endif()
 
+# CEF's MSVC flags that clang-cl does not support: /MP (cl.exe's own
+# parallel build; Ninja runs compilers in parallel) and /RTC1 (cl.exe's
+# run-time checks).
+if(MSVC)
+  list(REMOVE_ITEM CEF_COMPILER_FLAGS /MP)
+  list(REMOVE_ITEM CEF_COMPILER_FLAGS_DEBUG /RTC1)
+endif()
+
 # The minimal distribution ships only Release binaries of CEF itself; our Debug
 # builds use them too (our own code and the wrapper are still built as Debug).
 set(BROUK_CEF_BINARY_DIR "${CEF_BINARY_DIR_RELEASE}")
