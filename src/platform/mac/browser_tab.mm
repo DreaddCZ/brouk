@@ -159,6 +159,10 @@ class TabDelegateBridge : public TabClientDelegate {
     BRTab* tab = tab_;
     [tab.delegate tab:tab openURL:ToNSString(url) disposition:disposition];
   }
+  bool RouteFirstNavigation(const std::string& url) override {
+    BRTab* tab = tab_;
+    return tab && [tab.delegate tab:tab routeFirstNavigation:ToNSString(url)];
+  }
   // Password manager (008).
   void ShowPasswordMenu(const PasswordMenu& menu,
                         PasswordMenuDone done) override {
@@ -516,6 +520,12 @@ class TabInternalPageBridge : public InternalPageDelegate {
 
 - (CefRefPtr<CefClient>)client {
   return _client;  // Null once the browser has closed.
+}
+
+- (void)routeFirstNavigation {
+  if (_client) {
+    _client->RouteFirstNavigation();
+  }
 }
 
 - (CefRefPtr<CefBrowser>)browser {

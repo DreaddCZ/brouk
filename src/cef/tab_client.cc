@@ -1106,6 +1106,10 @@ bool TabClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
   }
   switch (ClassifyScheme(url)) {
     case SchemeHandling::kBrowser:
+      if (route_first_navigation_ && frame->IsMain() && url != "about:blank") {
+        route_first_navigation_ = false;
+        return delegate_ && delegate_->RouteFirstNavigation(url);
+      }
       return false;
     case SchemeHandling::kBlocked:
       return true;  // Cancel silently, as Chrome does.

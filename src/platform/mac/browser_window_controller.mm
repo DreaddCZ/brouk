@@ -1294,10 +1294,13 @@ NSButton* ToolbarButton(NSString* symbol,
   // Links that open a new tab (target=_blank) are routed (010); popups a
   // script opens as a window are not, so sign-in popups keep their opener.
   // CEF cannot tell a link from window.open() without features, so those
-  // are routed too.
+  // are routed too, also when the page opened them after an asynchronous
+  // step (no user gesture any more; the popup blocker has let them
+  // through). A tab opened blank is routed at its first page.
   id<BRBrowserWindowOwner> owner = _owner;
-  if (!request.wants_popup_window && request.user_gesture &&
-      !request.target_url.empty() &&
+  BOOL blank =
+      request.target_url.empty() || request.target_url == "about:blank";
+  if (!request.wants_popup_window && !blank &&
       [owner routeLinkURL:@(request.target_url.c_str())
                    source:brouk::LinkSource::kNewTab
                   fromTab:opener
@@ -1315,6 +1318,9 @@ NSButton* ToolbarButton(NSString* symbol,
   }
   BOOL foreground = request.disposition != CEF_WOD_NEW_BACKGROUND_TAB;
   BRTab* tab = [target insertTabFromOpener:opener foreground:foreground];
+  if (blank && !request.wants_popup_window) {
+    [tab routeFirstNavigation];
+  }
   NSString* key = [NSString
       stringWithFormat:@"%lld:%d", static_cast<long long>(opener.tabId),
                        request.popup_id];
@@ -1506,6 +1512,23 @@ NSButton* ToolbarButton(NSString* symbol,
   BRTab* tab = [self insertTabFromOpener:opener foreground:foreground];
   [tab createBrowserWithURL:url
              requestContext:[_owner requestContextForProfile:tab.profileId]];
+}
+
+- (BOOL)tab:(BRTab*)tab routeFirstNavigation:(NSString*)url {
+  id<BRBrowserWindowOwner> owner = _owner;
+  if (![owner routeLinkURL:url
+                    source:brouk::LinkSource::kNewTab
+                   fromTab:tab
+                  inWindow:self
+                foreground:tab == [self activeTab]]) {
+    return NO;
+  }
+  // Called from inside the navigation: the tab closes afterwards.
+  __weak BRBrowserWindowController* weakSelf = self;
+  dispatch_async(dispatch_get_main_queue(), ^{
+    [weakSelf closeTab:tab];
+  });
+  return YES;
 }
 
 #pragma mark - Developer tools (006)
