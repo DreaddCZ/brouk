@@ -48,7 +48,7 @@ All features and requirements live in [`specs/`](specs/README.md).
 - **Languages:** C++20 for the core, Objective-C++ (AppKit) for the macOS UI, TypeScript for the HTML pages. Swift only for a macOS API not reachable from Objective-C. No Rust, except Brave's `adblock-rust` built as a library for ad blocking (007). Details: `specs/001-technology-stack.md`.
 - **Configuration:** YAML files, global and per profile (on macOS in `~/Library/Application Support/Brouk/`), live reload, machine-written (comments not preserved). Details: `specs/004-configuration.md`.
 - **Build:** CMake + Ninja, pinned CEF version downloaded by script, `tsc` for TypeScript, GoogleTest and Node's test runner for tests.
-- **Phases:** phase 1 (now) — personal use, builds made locally on the user's Macs, CI runs only Linux core build and tests. Phase 2 — colleagues: signing, notarization, macOS CI, public update feed. Details: `specs/001-technology-stack.md`. "Phase 1/2" always means these release phases; platforms are rolled out separately (002).
+- **Phases:** phase 1 (now) — personal use, builds made locally on the user's Macs, CI runs the Linux core build and tests, plus short macOS smoke tests of each release before it is published (019). Phase 2 — colleagues: signing, notarization, macOS CI, public update feed. Details: `specs/001-technology-stack.md`. "Phase 1/2" always means these release phases; platforms are rolled out separately (002).
 - **Help:** `brouk://help` in its own window, written in Markdown (`web/help/content/`) and converted at build time with markdown-it; pages link to sections with a "?" icon button. Details: `specs/016-help.md`.
 - From phase 2, the app **updates itself automatically**; CI picks up new CEF releases, builds, signs and publishes them.
 

@@ -43,7 +43,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 016 | [Help](016-help.md) | ready | P2 |
 | 017 | [VPN per profile](017-profile-vpn.md) | draft | P2 |
 | 018 | [Feedback and issue reporting](018-feedback.md) | draft | P2 |
-| 019 | [Release pipeline: local build, remote tests, publish](019-release-pipeline.md) | draft | P2 |
+| 019 | [Release pipeline: local build, remote tests, publish](019-release-pipeline.md) | ready | P2 |
 
 ## Roadmap
 
