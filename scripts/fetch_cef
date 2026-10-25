@@ -54,9 +54,11 @@ CACHE="${BROUK_CEF_CACHE:-$HOME/.cache/brouk/cef}"
 mkdir -p "$CACHE"
 ARCHIVE="$CACHE/$NAME.tar.bz2"
 
+# Reads the file from stdin: with a Windows path (backslashes) in its
+# arguments, sha256sum would print the hash with a leading "\".
 sha256() {
-  if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1
-  else shasum -a 256 "$1" | cut -d' ' -f1; fi
+  if command -v sha256sum >/dev/null; then sha256sum < "$1" | cut -d' ' -f1
+  else shasum -a 256 < "$1" | cut -d' ' -f1; fi
 }
 
 if [[ ! -f "$ARCHIVE" ]] || [[ "$(sha256 "$ARCHIVE")" != "$EXPECTED" ]]; then

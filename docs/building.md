@@ -188,6 +188,25 @@ cmake --build build/debug && ctest --test-dir build/debug
 
 Without CEF (core only): add `-DBROUK_WITH_CEF=OFF`.
 
+## Windows (core and tests only)
+
+There is no Windows app yet (spec 002). The same portable code builds and is
+tested on Windows x64 with clang-cl; CI does this weekly and on demand
+(`.github/workflows/windows.yml`, "Run workflow" on the Actions page). In Git
+Bash, with Visual Studio's C++ tools and LLVM installed and the Visual Studio
+developer environment loaded (`vcvars64.bat`):
+
+```sh
+scripts/install_tools && source scripts/env.sh
+scripts/fetch_cef windows64
+cmake -S . -B build/debug -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+  -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl -DCMAKE_LINKER=lld-link
+cmake --build build/debug && ctest --test-dir build/debug
+```
+
+On Windows the sanitizers are off (they run on Linux) and everything uses the
+static C runtime, as CEF does.
+
 ## Updating pinned versions
 
 - Tools: versions and SHA-256 checksums at the top of `scripts/install_tools`.
