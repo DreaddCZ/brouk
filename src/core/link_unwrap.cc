@@ -456,6 +456,21 @@ bool IsRoutableUrl(std::string_view url) {
          });
 }
 
+std::span<const BuiltInLinkWrapper> BuiltInLinkWrappers() {
+  // Keep in step with kBuiltInWrappers.
+  static constexpr std::array<BuiltInLinkWrapper, 6> kList = {{
+      {"Microsoft Safe Links",
+       "*.safelinks.protection.outlook.com, Teams Safe Links page", false},
+      {"Proofpoint URL Defense (v1, v2, v3)",
+       "urldefense.com, urldefense.proofpoint.com", false},
+      {"Barracuda", "linkprotect.cudasvc.com", false},
+      {"Cisco Secure Email", "secure-web.cisco.com", false},
+      {"Google redirect", "www.google.com/url", false},
+      {"Mimecast", "protect-*.mimecast.com, *.mimecastprotect.com", true},
+  }};
+  return kList;
+}
+
 UnwrappedLink UnwrapLink(std::string_view url,
                          std::span<const LinkWrapperRule> user_wrappers) {
   UnwrappedLink result;

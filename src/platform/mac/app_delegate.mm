@@ -129,6 +129,10 @@
 - (IBAction)clearBrowsingData:(nullable id)sender;
 - (void)exportSettingsWithDone:(brouk::SettingsPageDelegate::FileDone)done;
 - (void)importSettingsWithDone:(brouk::SettingsPageDelegate::FileDone)done;
+- (nullable BRLinkRoutingController*)linkRouting;
+- (BOOL)isDefaultBrowser;
+- (void)makeDefaultBrowserWithDone:
+    (std::function<void(std::optional<brouk::Error>)>)done;
 - (std::vector<brouk::ProfileInfo>)allProfiles;
 - (nullable brouk::PasswordManager*)passwordManager;
 - (nullable brouk::AutofillManager*)autofillManager;
@@ -751,6 +755,29 @@ class AppSettingsPage : public SettingsPageDelegate {
     }
     [app importSettingsWithDone:std::move(done)];
   }
+  const LinkRoutingConfig* LinkRouting() override {
+    BRLinkRoutingController* routing = [app_ linkRouting];
+    return routing ? &routing.config : nullptr;
+  }
+  std::vector<std::string> LinkRoutingProblems() override {
+    BRLinkRoutingController* routing = [app_ linkRouting];
+    return routing ? routing.problems : std::vector<std::string>();
+  }
+  std::optional<Error> SetLinkRouting(LinkRoutingConfig config) override {
+    BRLinkRoutingController* routing = [app_ linkRouting];
+    return routing ? [routing setConfig:std::move(config)]
+                   : std::optional<Error>(Error{kClosing});
+  }
+  bool IsDefaultBrowser() override { return [app_ isDefaultBrowser]; }
+  void MakeDefaultBrowser(
+      std::function<void(std::optional<Error> error)> done) override {
+    BRAppDelegate* app = app_;
+    if (!app) {
+      done(Error{kClosing});
+      return;
+    }
+    [app makeDefaultBrowserWithDone:std::move(done)];
+  }
 
  private:
   static constexpr char kClosing[] = "Brouk is closing.";
@@ -1371,6 +1398,55 @@ class AppSettingsPage : public SettingsPageDelegate {
                         fromTab:tab
                        inWindow:controller
                      foreground:foreground];
+}
+
+- (nullable BRLinkRoutingController*)linkRouting {
+  return _linkRouting;
+}
+
+// Whether macOS opens web links with this copy of Brouk.
+- (BOOL)isDefaultBrowser {
+  NSURL* handler = [NSWorkspace.sharedWorkspace
+      URLForApplicationToOpenURL:[NSURL URLWithString:@"https://example.com/"]];
+  return handler && [[NSBundle bundleWithURL:handler].bundleIdentifier
+                        isEqualToString:NSBundle.mainBundle.bundleIdentifier];
+}
+
+// macOS asks the user to confirm, once per scheme.
+- (void)makeDefaultBrowserWithDone:
+    (std::function<void(std::optional<brouk::Error>)>)done {
+  NSURL* app = NSBundle.mainBundle.bundleURL;
+  __block std::function<void(std::optional<brouk::Error>)> answer =
+      std::move(done);
+  auto failed = ^(NSError* error) {
+    answer(
+        brouk::Error{"Brouk could not be made the default browser: " +
+                     std::string(error.localizedDescription.UTF8String ?: "")});
+  };
+  [NSWorkspace.sharedWorkspace
+      setDefaultApplicationAtURL:app
+            toOpenURLsWithScheme:@"http"
+               completionHandler:^(NSError* _Nullable httpError) {
+                 dispatch_async(dispatch_get_main_queue(), ^{
+                   if (httpError) {
+                     failed(httpError);
+                     return;
+                   }
+                   [NSWorkspace.sharedWorkspace
+                       setDefaultApplicationAtURL:app
+                             toOpenURLsWithScheme:@"https"
+                                completionHandler:^(
+                                    NSError* _Nullable httpsError) {
+                                  dispatch_async(dispatch_get_main_queue(), ^{
+                                    if (httpsError) {
+                                      failed(httpsError);
+                                    } else {
+                                      answer(std::nullopt);
+                                    }
+                                  });
+                                }];
+                 });
+               }];
 }
 
 - (BOOL)moveChosenWindowToActiveSpace {

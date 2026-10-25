@@ -43,6 +43,14 @@ std::optional<std::string> LinkWrapperName(
 // characters.
 bool IsRoutableUrl(std::string_view url);
 
+// The built-in wrappers, for the settings page.
+struct BuiltInLinkWrapper {
+  std::string_view name;
+  std::string_view hosts;  // As people read them.
+  bool opaque = false;
+};
+std::span<const BuiltInLinkWrapper> BuiltInLinkWrappers();
+
 }  // namespace brouk
 
 #endif  // BROUK_CORE_LINK_UNWRAP_H_

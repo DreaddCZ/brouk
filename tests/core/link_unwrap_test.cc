@@ -191,6 +191,11 @@ TEST(LinkUnwrapTest, WrapperNames) {
   EXPECT_EQ(LinkWrapperName("https://example.com/", {}), std::nullopt);
 }
 
+TEST(LinkUnwrapTest, BuiltInListForSettings) {
+  ASSERT_EQ(BuiltInLinkWrappers().size(), 6u);
+  EXPECT_TRUE(BuiltInLinkWrappers().back().opaque);
+}
+
 TEST(LinkUnwrapTest, RoutableUrls) {
   EXPECT_TRUE(IsRoutableUrl("https://example.com"));
   EXPECT_TRUE(IsRoutableUrl("HTTP://user@example.com:8080/a?b#c"));
