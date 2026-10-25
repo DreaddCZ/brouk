@@ -185,6 +185,8 @@ TEST(SettingsTest, FileFormat) {
             "profiles:\n"
             "  default: \"default\"\n"
             "  show_manager_at_startup: false\n"
+            "links:\n"
+            "  other_space: switch\n"
             "shortcuts:\n"
             "  new_tab: \"cmd+t\"\n"
             "  new_window: \"cmd+n\"\n"

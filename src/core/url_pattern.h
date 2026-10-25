@@ -14,6 +14,7 @@ namespace brouk {
 //   *.example.com            its subdomains and the host itself
 //   example.com:8443         that host and port
 //   example.com/api/         that host, paths starting with /api/
+//   example.com/api/*        the same
 // Hosts are compared without case. A pattern that is more specific wins:
 // an exact host over a wildcard, a longer path prefix over a shorter one.
 struct UrlPattern {

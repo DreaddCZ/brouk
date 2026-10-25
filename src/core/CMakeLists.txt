@@ -65,6 +65,12 @@ set(BROUK_CORE_SOURCES
   json.h
   launch_args.cc
   launch_args.h
+  link_router.cc
+  link_router.h
+  link_routing_rules.cc
+  link_routing_rules.h
+  link_unwrap.cc
+  link_unwrap.h
   page_events.cc
   page_events.h
   password_checkup.cc

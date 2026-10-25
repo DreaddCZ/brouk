@@ -1,6 +1,6 @@
 # 010 – Link routing and window picker
 
-- **Status:** ready
+- **Status:** in-progress
 - **Priority:** P1
 - **Depends on:** 001, 003, 005
 

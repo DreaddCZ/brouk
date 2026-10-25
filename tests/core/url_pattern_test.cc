@@ -12,6 +12,8 @@ TEST(UrlPatternTest, Parsing) {
   EXPECT_EQ(UrlPattern::Parse("https://example.com/api/")->path_prefix,
             "/api/");
   EXPECT_EQ(UrlPattern::Parse(" *.a.b:81/x ")->ToString(), "*.a.b:81/x");
+  EXPECT_EQ(UrlPattern::Parse("github.com/company-a/*")->path_prefix,
+            "/company-a/");
   EXPECT_FALSE(UrlPattern::Parse(""));
   EXPECT_FALSE(UrlPattern::Parse("*."));
   EXPECT_FALSE(UrlPattern::Parse("exa mple.com"));
