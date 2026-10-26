@@ -100,7 +100,8 @@ void SetLinks(
   for (std::size_t i = 0; i < list->GetSize(); ++i) {
     std::string pattern =
         list->GetType(i) == VTYPE_STRING ? list->GetString(i).ToString() : "";
-    if (pattern.size() > kMaxFieldBytes || !UrlPattern::Parse(pattern)) {
+    if (pattern.size() > kMaxFieldBytes ||
+        !UrlPattern::Parse(pattern, UrlPattern::Fragment::kAllowed)) {
       CefRefPtr<CefDictionaryValue> problem = CefDictionaryValue::Create();
       problem->SetInt("index", static_cast<int>(i));
       problem->SetString("message",
