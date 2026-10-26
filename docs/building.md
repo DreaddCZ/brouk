@@ -55,11 +55,33 @@ file next to it. The image holds the app, a link to Applications and a
 "Read me first.txt". The person installing needs nothing else: everything
 Brouk uses is inside the app.
 
-Until phase 2 the app is signed like local builds (the self-signed
-"Brouk Local Dev" certificate, or ad-hoc), not with an Apple Developer ID and
-not notarized. So on another Mac, macOS blocks the first launch ("cannot
-verify Brouk"); it is allowed once in System Settings → Privacy & Security →
-"Open Anyway", as the read-me explains. Updates mean installing a newer image.
+**Signing and notarization.** When the keychain holds a "Developer ID
+Application" certificate, the script signs the app with it (hardened runtime,
+secure timestamp, the entitlements in `src/platform/mac/entitlements/`),
+has Apple notarize the app and the image, and staples the tickets to both.
+The image then opens on any Mac without a warning, also offline. One-time
+setup on the Mac that packages:
+
+1. Create the certificate: Xcode → Settings → Accounts → your team →
+   Manage Certificates → + → Developer ID Application (Account Holder only).
+2. Create an app-specific password at account.apple.com → Sign-In and
+   Security, then save it for the notary service (it asks for the password):
+   `xcrun notarytool store-credentials brouk-notary --apple-id <Apple ID>
+   --team-id <team ID>`. Another name can be used with
+   `BROUK_NOTARY_PROFILE=<name> scripts/package_mac`.
+
+Notarization takes a few minutes per upload (two per architecture). If Apple
+rejects a build, the script prints Apple's log with the reasons.
+
+Without the certificate, the app is signed like local builds (the
+self-signed "Brouk Local Dev" certificate, or ad-hoc) and not notarized. On
+another Mac, macOS then blocks the first launch ("cannot verify Brouk"); it
+is allowed once in System Settings → Privacy & Security → "Open Anyway", as
+the read-me explains. Updates mean installing a newer image.
+
+Local builds (`scripts/build`) keep the plain signature: the hardened runtime
+would block the sanitizer runtime and debuggers. `scripts/build --sign
+<identity>` signs with another certificate.
 
 ### Build types and checks
 

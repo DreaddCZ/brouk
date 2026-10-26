@@ -7,11 +7,16 @@
 #   scripts/package_mac --arch x86_64    for Intel (also from Apple Silicon)
 #   scripts/package_mac --all            both
 #
-# The images end up in build/dist/, each with a .sha256 file. The app is
-# signed as local builds are (the self-signed "Brouk Local Dev" certificate,
-# or ad-hoc), not with an Apple Developer ID, so macOS blocks it on other Macs
-# until it is allowed once in System Settings; the image's "Read me first"
-# says how. Developer ID signing and notarization come in phase 2.
+# The images end up in build/dist/, each with a .sha256 file.
+#
+# With a "Developer ID Application" certificate in the keychain, the app and
+# the image are signed with it and notarized by Apple, so they open on any
+# Mac without a warning. Notarization uses the credentials saved once with
+#   xcrun notarytool store-credentials brouk-notary --apple-id … --team-id …
+# (another name can be given in BROUK_NOTARY_PROFILE). Without the
+# certificate, the app is signed as local builds are, and macOS blocks it on
+# other Macs until it is allowed once in System Settings; the image's
+# "Read me first" then says how.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
@@ -38,6 +43,38 @@ APP_VERSION="$(cmake_var APP_VERSION)"
 DIST="$ROOT/build/dist"
 mkdir -p "$DIST"
 
+DEVELOPER_ID="$(security find-identity -v -p codesigning |
+  sed -n 's/.*"\(Developer ID Application: .*\)"$/\1/p' | head -n 1)"
+NOTARY_PROFILE="${BROUK_NOTARY_PROFILE:-brouk-notary}"
+if [[ -n "$DEVELOPER_ID" ]]; then
+  echo "Signing with $DEVELOPER_ID and notarizing ($NOTARY_PROFILE)."
+  # Fail now rather than after the build if the credentials are missing.
+  if ! xcrun notarytool history --keychain-profile "$NOTARY_PROFILE" \
+      >/dev/null 2>&1; then
+    echo "No working notarization credentials \"$NOTARY_PROFILE\"; save them with" >&2
+    echo "  xcrun notarytool store-credentials $NOTARY_PROFILE --apple-id … --team-id …" >&2
+    exit 1
+  fi
+else
+  echo "No Developer ID certificate: the image will not be notarized." >&2
+fi
+
+# Sends a file (zip or dmg) to Apple's notary service, waits for the answer
+# and prints Apple's log when it is not accepted.
+notarize() {
+  local file="$1" result id status
+  result="$(xcrun notarytool submit "$file" --keychain-profile "$NOTARY_PROFILE" \
+    --wait --output-format plist)"
+  id="$(plutil -extract id raw -o - - <<<"$result")"
+  status="$(plutil -extract status raw -o - - <<<"$result")"
+  if [[ "$status" != Accepted ]]; then
+    echo "Notarization of $(basename "$file") ended with: $status" >&2
+    xcrun notarytool log "$id" --keychain-profile "$NOTARY_PROFILE" >&2 || true
+    exit 1
+  fi
+  echo "Notarized $(basename "$file") ($id)"
+}
+
 for arch in "${ARCHS[@]}"; do
   case "$arch" in
     arm64) LABEL="Apple Silicon" ;;
@@ -45,7 +82,9 @@ for arch in "${ARCHS[@]}"; do
     *) echo "Unknown architecture: $arch (use arm64 or x86_64)" >&2; exit 2 ;;
   esac
 
-  "$ROOT/scripts/build" --release --arch "$arch"
+  SIGN=()
+  [[ -n "$DEVELOPER_ID" ]] && SIGN=(--sign "$DEVELOPER_ID")
+  "$ROOT/scripts/build" --release --arch "$arch" ${SIGN[@]+"${SIGN[@]}"}
   APP="$ROOT/build/release-$arch/$APP_NAME.app"
 
   # Never hand out a broken or mixed-architecture bundle.
@@ -57,17 +96,32 @@ for arch in "${ARCHS[@]}"; do
   fi
 
   STAGE="$(mktemp -d)"
-  trap 'rm -rf "$STAGE"' EXIT
+  trap 'rm -rf "$STAGE" "$STAGE.zip"' EXIT
   # ditto keeps the bundle's symbolic links and signatures intact.
   ditto "$APP" "$STAGE/$APP_NAME.app"
   ln -s /Applications "$STAGE/Applications"
-  cat > "$STAGE/Read me first.txt" <<EOF
+  if [[ -n "$DEVELOPER_ID" ]]; then
+    # The app itself is notarized and stapled too, so it opens without a
+    # network connection once it has been copied out of the image.
+    ditto -c -k --keepParent "$STAGE/$APP_NAME.app" "$STAGE.zip"
+    notarize "$STAGE.zip"
+    rm -f "$STAGE.zip"
+    xcrun stapler staple -q "$STAGE/$APP_NAME.app"
+    spctl --assess --type execute "$STAGE/$APP_NAME.app"
+    cat > "$STAGE/Read me first.txt" <<EOF
+$APP_NAME $APP_VERSION for Macs with $LABEL processors, macOS 15 or later.
+
+Install: drag $APP_NAME onto the Applications folder, then open it from there.
+Nothing else needs to be installed.
+EOF
+  else
+    cat > "$STAGE/Read me first.txt" <<EOF
 $APP_NAME $APP_VERSION for Macs with $LABEL processors, macOS 15 or later.
 
 Install: drag $APP_NAME onto the Applications folder.
 
 The first time you open it, macOS says it cannot verify $APP_NAME, because
-this build is not signed with an Apple Developer ID yet. To allow it once:
+this build is not signed with an Apple Developer ID. To allow it once:
 
   1. Open $APP_NAME from Applications and click "Done" in the warning.
   2. Open System Settings > Privacy & Security, scroll down and click
@@ -76,6 +130,7 @@ this build is not signed with an Apple Developer ID yet. To allow it once:
 
 From then on it opens normally. Nothing else needs to be installed.
 EOF
+  fi
 
   DMG="$DIST/$APP_NAME-$APP_VERSION-$arch.dmg"
   rm -f "$DMG"
@@ -83,6 +138,12 @@ EOF
   hdiutil create -volname "$APP_NAME $APP_VERSION" -srcfolder "$STAGE" \
     -fs HFS+ -format ULMO -ov "$DMG" >/dev/null
   hdiutil verify -quiet "$DMG"
+  if [[ -n "$DEVELOPER_ID" ]]; then
+    codesign --sign "$DEVELOPER_ID" --timestamp "$DMG"
+    notarize "$DMG"
+    xcrun stapler staple -q "$DMG"
+    spctl --assess --type open --context context:primary-signature "$DMG"
+  fi
   (cd "$DIST" && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256")
   rm -rf "$STAGE"
   trap - EXIT

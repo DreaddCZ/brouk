@@ -150,10 +150,12 @@ list(APPEND _bundle_commands
           "${APP_BUNDLE}/Contents/Resources/adblock-resources.json")
 
 set(_signed_helpers "")
+set(_helper_kinds "")
 foreach(_suffix_list ${CEF_HELPER_APP_SUFFIXES})
   # Entries look like " (GPU):_gpu:.gpu" (name suffix, target, bundle id).
   string(REPLACE ":" ";" _suffix_list "${_suffix_list}")
   list(GET _suffix_list 0 _name_suffix)
+  list(GET _suffix_list 1 _target_suffix)
   list(GET _suffix_list 2 HELPER_BUNDLE_ID_SUFFIX)
   set(HELPER_NAME "${HELPER_NAME_BASE}${_name_suffix}")
   set(_helper_app "${APP_BUNDLE}/Contents/Frameworks/${HELPER_NAME}.app")
@@ -164,12 +166,14 @@ foreach(_suffix_list ${CEF_HELPER_APP_SUFFIXES})
             "$<TARGET_FILE:brouk_helper>"
             "${_helper_app}/Contents/MacOS/${HELPER_NAME}")
   list(APPEND _signed_helpers "${_helper_app}")
+  list(APPEND _helper_kinds "helper${_target_suffix}")
 endforeach()
 
 # Signing (phase 1, local builds). With the certificate from
 # scripts/create_dev_certificate the app keeps the same identity across
 # builds, so macOS remembers keychain access and permissions; without it the
-# signature is ad-hoc. Inner code first, then the app.
+# signature is ad-hoc. Another identity can be given with
+# -DBROUK_CODESIGN_IDENTITY (scripts/build --sign).
 set(BROUK_DEV_IDENTITY "${APP_NAME} Local Dev")
 execute_process(COMMAND security find-identity -v -p codesigning
                 OUTPUT_VARIABLE _identities ERROR_QUIET)
@@ -183,20 +187,54 @@ else()
   message(STATUS "Signing ad-hoc; run scripts/create_dev_certificate to "
                  "keep keychain access and permissions across builds.")
 endif()
+
+# Releases for other Macs (scripts/package_mac) are signed with an Apple
+# Developer ID, which notarization requires together with the hardened
+# runtime, a secure timestamp and entitlements for what Chromium needs under
+# that runtime (JIT for V8, camera, microphone…; as Chrome's own, see
+# entitlements/). Local builds keep the plain signature: the hardened runtime
+# would block the sanitizer runtime and debuggers.
+set(_sign codesign --force --sign "${BROUK_CODESIGN_IDENTITY}")
+set(_entitlements_dir "${CMAKE_CURRENT_SOURCE_DIR}/entitlements")
+set(_signing_inputs "")
+string(FIND "${BROUK_CODESIGN_IDENTITY}" "Developer ID Application" _developer_id)
+if(_developer_id EQUAL 0)
+  list(APPEND _sign --options runtime --timestamp)
+  file(GLOB _signing_inputs "${_entitlements_dir}/*.entitlements")
+endif()
+# Re-sign when the identity changes, not only when the code does.
+file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/signing_identity.txt"
+     CONTENT "${BROUK_CODESIGN_IDENTITY}\n")
+list(APPEND _signing_inputs "${CMAKE_CURRENT_BINARY_DIR}/signing_identity.txt")
+
+# Inner code first, then the app.
 list(APPEND _bundle_commands
-  COMMAND codesign --force --sign "${BROUK_CODESIGN_IDENTITY}"
+  COMMAND ${_sign}
           "${_framework}/Libraries/libcef_sandbox.dylib"
           "${_framework}/Libraries/libvk_swiftshader.dylib"
           "${_framework}/Libraries/libvulkan.dylib"
-  COMMAND codesign --force --sign "${BROUK_CODESIGN_IDENTITY}" "${_framework}"
-  COMMAND codesign --force --sign "${BROUK_CODESIGN_IDENTITY}" ${_signed_helpers}
-  COMMAND codesign --force --sign "${BROUK_CODESIGN_IDENTITY}" "${APP_BUNDLE}"
+  COMMAND ${_sign} "${_framework}")
+foreach(_helper_app _kind IN ZIP_LISTS _signed_helpers _helper_kinds)
+  set(_helper_sign ${_sign})
+  if(_developer_id EQUAL 0 AND EXISTS "${_entitlements_dir}/${_kind}.entitlements")
+    list(APPEND _helper_sign
+         --entitlements "${_entitlements_dir}/${_kind}.entitlements")
+  endif()
+  list(APPEND _bundle_commands COMMAND ${_helper_sign} "${_helper_app}")
+endforeach()
+set(_app_sign ${_sign})
+if(_developer_id EQUAL 0)
+  list(APPEND _app_sign --entitlements "${_entitlements_dir}/app.entitlements")
+endif()
+list(APPEND _bundle_commands
+  COMMAND ${_app_sign} "${APP_BUNDLE}"
   COMMAND ${CMAKE_COMMAND} -E touch "${_bundle_stamp}")
 
 add_custom_command(OUTPUT "${_bundle_stamp}"
   ${_bundle_commands}
   DEPENDS brouk_app brouk_helper "${_web_stamp}"
           "$<TARGET_FILE:brouk_app>" "$<TARGET_FILE:brouk_helper>"
+          ${_signing_inputs}
   COMMENT "Assembling and signing ${APP_NAME}.app (${BROUK_CODESIGN_IDENTITY})"
   VERBATIM)
 add_custom_target(brouk_bundle ALL DEPENDS "${_bundle_stamp}")
