@@ -50,6 +50,8 @@ NSString* StripFragment(NSString* url) {
          transition:(cef_transition_type_t)transition;
 - (void)handleLoading:(BOOL)loading back:(BOOL)back forward:(BOOL)forward;
 - (void)handleFavicon:(NSImage*)image;
+- (void)handleFaviconPNG:(const std::vector<std::uint8_t>&)png
+                 iconURL:(const std::string&)iconURL;
 - (void)handleCloseReady;
 - (void)handleBrowserClosed;
 - (void)openDockInspecting:(NSPoint)point;
@@ -106,7 +108,8 @@ class TabDelegateBridge : public TabClientDelegate {
                              bool can_go_forward) override {
     [tab_ handleLoading:is_loading back:can_go_back forward:can_go_forward];
   }
-  void OnFaviconChanged(const std::vector<std::uint8_t>& png) override {
+  void OnFaviconChanged(const std::string& icon_url,
+                        const std::vector<std::uint8_t>& png) override {
     NSImage* image = nil;
     if (!png.empty()) {
       NSData* data = [NSData dataWithBytes:png.data() length:png.size()];
@@ -115,6 +118,9 @@ class TabDelegateBridge : public TabClientDelegate {
       image.size = NSMakeSize(16, 16);
     }
     [tab_ handleFavicon:image];
+    if (image) {
+      [tab_ handleFaviconPNG:png iconURL:icon_url];
+    }
   }
   std::optional<PopupHost> OnBeforePopup(const PopupRequest& request) override {
     BRTab* tab = tab_;
@@ -1057,6 +1063,14 @@ class TabInternalPageBridge : public InternalPageDelegate {
 - (void)handleFavicon:(NSImage*)image {
   _favicon = image;
   [_delegate tabDidChangeState:self];
+}
+
+// For history (013): the icon belongs to the page shown now.
+- (void)handleFaviconPNG:(const std::vector<std::uint8_t>&)png
+                 iconURL:(const std::string&)iconURL {
+  if (_url.length && !_isInternalPage) {
+    [_delegate tab:self favicon:png iconURL:iconURL forURL:_url];
+  }
 }
 
 - (void)showJsDialog:(const brouk::JsDialogRequest&)request

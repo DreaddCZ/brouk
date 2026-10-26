@@ -32,6 +32,7 @@ select { font: inherit; padding: 4px 8px; border-radius: 7px; border: 1px solid 
 .row .name, .row .url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .row .url, .row .path { color: var(--muted); font-size: 12px; }
 .icon { width: 18px; height: 18px; display: grid; place-items: center; color: var(--muted); font-size: 14px; }
+.icon img { width: 16px; height: 16px; }
 .profile { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--muted); white-space: nowrap; }
 .profile.inherited { opacity: 0.7; }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--c, var(--grey)); flex: none; }

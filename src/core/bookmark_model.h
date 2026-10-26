@@ -122,6 +122,9 @@ class BookmarkModel {
   // Bookmarks with exactly this URL visible in `profile`, in tree order.
   std::vector<BookmarkId> BookmarksWithUrl(std::string_view url,
                                            const ProfileId& profile) const;
+  // The URLs of all bookmarks, sorted and without repeats (history keeps
+  // their favicons, 013).
+  std::vector<std::string> AllUrls() const;
   // Bookmarks visible in `profile` whose name or URL contains every word of
   // `query` (case-insensitive), in tree order, at most `limit`. An empty
   // `profile` searches all bookmarks.

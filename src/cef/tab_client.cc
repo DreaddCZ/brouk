@@ -478,8 +478,9 @@ void TabClient::OnFaviconURLChange(CefRefPtr<CefBrowser> browser,
   CEF_REQUIRE_UI_THREAD();
   if (icon_urls.empty()) {
     favicon_url_.clear();
+    favicon_png_.clear();
     if (delegate_) {
-      delegate_->OnFaviconChanged({});
+      delegate_->OnFaviconChanged({}, {});
     }
     return;
   }
@@ -489,15 +490,21 @@ void TabClient::OnFaviconURLChange(CefRefPtr<CefBrowser> browser,
 void TabClient::DownloadFavicon(const CefRefPtr<CefBrowser>& browser,
                                 const std::string& url) {
   if (url == favicon_url_) {
+    // Another page with the same icon: history keeps it for this page too.
+    if (delegate_ && !favicon_png_.empty()) {
+      delegate_->OnFaviconChanged(favicon_url_, favicon_png_);
+    }
     return;
   }
   favicon_url_ = url;
+  favicon_png_.clear();
   auto done = [](const CefRefPtr<TabClient>& client,
                  const std::string& image_url,
                  const std::vector<std::uint8_t>& png) {
     // Ignore results for an icon the page has replaced meanwhile.
     if (client->delegate_ && image_url == client->favicon_url_) {
-      client->delegate_->OnFaviconChanged(png);
+      client->favicon_png_ = png;
+      client->delegate_->OnFaviconChanged(image_url, png);
     }
   };
   browser->GetHost()->DownloadImage(url, /*is_favicon=*/true, kFaviconMaxSize,

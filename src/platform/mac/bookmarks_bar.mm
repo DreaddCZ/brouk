@@ -30,8 +30,15 @@ NSString* TitleOf(const brouk::BookmarkItem& item) {
   return item.name.empty() ? ToNSString(item.url) : ToNSString(item.name);
 }
 
-NSImage* IconOf(const brouk::BookmarkItem& item) {
-  // Site icons come with the favicon cache (011); until then a generic one.
+// The site's icon from the profile's history (013), else a generic one.
+NSImage* IconOf(const brouk::BookmarkItem& item,
+                BRFaviconCache* _Nullable favicons,
+                const brouk::ProfileId& profile) {
+  if (!item.folder) {
+    if (NSImage* icon = [favicons iconForURL:item.url profile:profile]) {
+      return icon;
+    }
+  }
   return [NSImage imageWithSystemSymbolName:item.folder ? @"folder" : @"globe"
                    accessibilityDescription:nil];
 }
@@ -167,8 +174,19 @@ NSImage* SnapshotOf(NSView* view) {
     ]];
     self.accessibilityRole = NSAccessibilityToolbarRole;
     self.accessibilityLabel = @"Bookmarks bar";
+    [NSNotificationCenter.defaultCenter
+        addObserver:self
+           selector:@selector(faviconsChanged:)
+               name:BRFaviconsDidChangeNotification
+             object:nil];
   }
   return self;
+}
+
+- (void)faviconsChanged:(NSNotification*)notification {
+  if (notification.object == _favicons && _store) {
+    [self rebuild];
+  }
 }
 
 - (BOOL)isFlipped {
@@ -229,7 +247,7 @@ NSImage* SnapshotOf(NSView* view) {
     button.bar = self;
     button.bezelStyle = NSBezelStyleRecessed;
     button.showsBorderOnlyWhileMouseInside = YES;
-    button.image = IconOf(*item);
+    button.image = IconOf(*item, _favicons, _profile);
     button.imagePosition = NSImageLeading;
     button.imageScaling = NSImageScaleProportionallyDown;
     button.font = [NSFont systemFontOfSize:12];
@@ -335,7 +353,7 @@ NSImage* SnapshotOf(NSView* view) {
     NSMenuItem* entry = [menu addItemWithTitle:TitleOf(*item)
                                         action:nil
                                  keyEquivalent:@""];
-    entry.image = IconOf(*item);
+    entry.image = IconOf(*item, _favicons, _profile);
     entry.tag = static_cast<NSInteger>(id);
     if (item->folder) {
       entry.submenu = [self menuForFolder:id];
@@ -373,7 +391,7 @@ NSImage* SnapshotOf(NSView* view) {
     NSMenuItem* entry = [menu addItemWithTitle:TitleOf(*item)
                                         action:nil
                                  keyEquivalent:@""];
-    entry.image = IconOf(*item);
+    entry.image = IconOf(*item, _favicons, _profile);
     entry.tag = static_cast<NSInteger>(button.bookmarkId);
     if (item->folder) {
       entry.submenu = [self menuForFolder:button.bookmarkId];

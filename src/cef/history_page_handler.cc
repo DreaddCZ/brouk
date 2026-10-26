@@ -10,6 +10,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -198,6 +199,61 @@ void ForEachProfile(
   }
 }
 
+// Site icons (013) of the rows of an answer: each profile's images by icon
+// id, filled on the history thread (one profile at a time), read on the UI
+// thread once all are done.
+class Icons {
+ public:
+  explicit Icons(const std::vector<ProfileId>& profiles) {
+    for (const ProfileId& profile : profiles) {
+      images_[profile];
+    }
+  }
+  // Remembers the image of `id` (0: none) and returns the key rows use, ""
+  // without an image.
+  std::string Add(HistoryStore& store,
+                  const ProfileId& profile,
+                  std::int64_t id) {
+    if (id == 0) {
+      return {};
+    }
+    auto& images = images_.at(profile);
+    auto it = images.find(id);
+    if (it == images.end()) {
+      it = images.emplace(id, store.IconImage(id)).first;
+    }
+    return it->second.empty() ? std::string() : Key(profile, id);
+  }
+  // {key: "data:image/png;base64,…"}.
+  CefRefPtr<CefDictionaryValue> ToJson() const {
+    CefRefPtr<CefDictionaryValue> json = CefDictionaryValue::Create();
+    for (const auto& [profile, images] : images_) {
+      for (const auto& [id, png] : images) {
+        if (!png.empty()) {
+          json->SetString(
+              Key(profile, id),
+              "data:image/png;base64," +
+                  CefBase64Encode(png.data(), png.size()).ToString());
+        }
+      }
+    }
+    return json;
+  }
+
+ private:
+  static std::string Key(const ProfileId& profile, std::int64_t id) {
+    return profile + ":" + std::to_string(id);
+  }
+  std::map<ProfileId, std::map<std::int64_t, std::vector<std::uint8_t>>>
+      images_;
+};
+
+void SetIcon(const CefRefPtr<CefDictionaryValue>& row, const std::string& key) {
+  if (!key.empty()) {
+    row->SetString("icon", key);
+  }
+}
+
 struct Search {
   std::shared_ptr<const HistoryQuery> query;
   std::string text;
@@ -208,21 +264,30 @@ void AnswerSites(HistoryService& history,
                  const std::vector<ProfileId>& profiles,
                  const std::shared_ptr<const Search>& search,
                  const CefRefPtr<Callback>& callback) {
-  ForEachProfile<HistorySite>(
+  auto icons = std::make_shared<Icons>(profiles);
+  ForEachProfile<std::pair<HistorySite, std::string>>(
       history, profiles,
-      [search](HistoryStore& store, const ProfileId& profile) {
-        if (search->query->empty()) {
-          return store.Sites();
+      [search, icons](HistoryStore& store, const ProfileId& profile) {
+        std::vector<HistorySite> sites =
+            search->query->empty()
+                ? store.Sites()
+                : store.SearchSites(*search->query, search->names.at(profile));
+        std::vector<std::pair<HistorySite, std::string>> rows;
+        for (HistorySite& site : sites) {
+          std::string icon =
+              icons->Add(store, profile, store.HostIcon(site.host));
+          rows.emplace_back(std::move(site), std::move(icon));
         }
-        return store.SearchSites(*search->query, search->names.at(profile));
+        return rows;
       },
-      [callback, search](const auto& results) {
+      [callback, search, icons](const auto& results) {
         CefRefPtr<CefListValue> list = CefListValue::Create();
         for (const auto& [profile, sites] : results) {
-          for (const HistorySite& site : sites) {
+          for (const auto& [site, icon] : sites) {
             CefRefPtr<CefDictionaryValue> row = CefDictionaryValue::Create();
             row->SetString("profile", profile);
             row->SetString("host", site.host);
+            SetIcon(row, icon);
             row->SetDouble("visits", static_cast<double>(site.visit_count));
             row->SetDouble("pages", static_cast<double>(site.page_count));
             row->SetDouble("lastVisit", static_cast<double>(site.last_visit));
@@ -231,6 +296,7 @@ void AnswerSites(HistoryService& history,
         }
         CefRefPtr<CefDictionaryValue> answer = CefDictionaryValue::Create();
         answer->SetList("sites", list);
+        answer->SetDictionary("icons", icons->ToJson());
         answer->SetList("problems", ProblemsJson(*search->query, search->text));
         callback->Success(ToJson(answer));
       });
@@ -242,18 +308,29 @@ void AnswerPages(HistoryService& history,
                  const std::shared_ptr<const Search>& search,
                  const CefRefPtr<Callback>& callback) {
   std::string name = search->names.at(profile);
-  ForEachProfile<HistoryMatch>(
+  auto icons = std::make_shared<Icons>(std::vector<ProfileId>{profile});
+  ForEachProfile<std::pair<HistoryMatch, std::string>>(
       history, {profile},
-      [host, search, name](HistoryStore& store, const ProfileId& /*profile*/) {
-        return search->query->empty()
-                   ? store.PagesOfHost(host)
-                   : store.SearchPagesOfHost(host, *search->query, name);
+      [host, search, name, icons](HistoryStore& store,
+                                  const ProfileId& profile) {
+        std::vector<HistoryMatch> pages =
+            search->query->empty()
+                ? store.PagesOfHost(host)
+                : store.SearchPagesOfHost(host, *search->query, name);
+        std::vector<std::pair<HistoryMatch, std::string>> rows;
+        for (HistoryMatch& page : pages) {
+          std::string icon =
+              icons->Add(store, profile, store.PageIcon(page.url));
+          rows.emplace_back(std::move(page), std::move(icon));
+        }
+        return rows;
       },
-      [callback](const auto& results) {
+      [callback, icons](const auto& results) {
         CefRefPtr<CefListValue> list = CefListValue::Create();
-        for (const HistoryMatch& page : results.front().second) {
+        for (const auto& [page, icon] : results.front().second) {
           CefRefPtr<CefDictionaryValue> row = CefDictionaryValue::Create();
           row->SetString("url", page.url);
+          SetIcon(row, icon);
           row->SetString("title", page.title);
           row->SetDouble("visits", static_cast<double>(page.visit_count));
           row->SetDouble("lastVisit", static_cast<double>(page.last_visit));
@@ -261,6 +338,7 @@ void AnswerPages(HistoryService& history,
         }
         CefRefPtr<CefDictionaryValue> answer = CefDictionaryValue::Create();
         answer->SetList("pages", list);
+        answer->SetDictionary("icons", icons->ToJson());
         callback->Success(ToJson(answer));
       });
 }
@@ -271,34 +349,51 @@ void AnswerVisits(HistoryService& history,
                   int limit,
                   const std::shared_ptr<const Search>& search,
                   const CefRefPtr<Callback>& callback) {
-  ForEachProfile<HistoryVisit>(
+  auto icons = std::make_shared<Icons>(profiles);
+  ForEachProfile<std::pair<HistoryVisit, std::string>>(
       history, profiles,
-      [before, limit, search](HistoryStore& store, const ProfileId& profile) {
+      [before, limit, search, icons](HistoryStore& store,
+                                     const ProfileId& profile) {
         auto count = static_cast<std::size_t>(limit);
-        if (search->query->empty()) {
-          return store.Visits(before, count);
+        std::vector<HistoryVisit> visits =
+            search->query->empty()
+                ? store.Visits(before, count)
+                : store.SearchVisits(*search->query, search->names.at(profile),
+                                     before, count);
+        std::vector<std::pair<HistoryVisit, std::string>> rows;
+        std::map<std::string, std::int64_t> page_icons;
+        for (HistoryVisit& visit : visits) {
+          auto known = page_icons.find(visit.url);
+          if (known == page_icons.end()) {
+            known =
+                page_icons.emplace(visit.url, store.PageIcon(visit.url)).first;
+          }
+          std::string icon = icons->Add(store, profile, known->second);
+          rows.emplace_back(std::move(visit), std::move(icon));
         }
-        return store.SearchVisits(*search->query, search->names.at(profile),
-                                  before, count);
+        return rows;
       },
-      [callback, limit, search](const auto& results) {
+      [callback, limit, search, icons](const auto& results) {
         // Newest first across profiles, at most `limit`.
-        std::vector<std::pair<const ProfileId*, const HistoryVisit*>> merged;
+        std::vector<std::tuple<const ProfileId*, const HistoryVisit*,
+                               const std::string*>>
+            merged;
         for (const auto& [profile, visits] : results) {
-          for (const HistoryVisit& visit : visits) {
-            merged.emplace_back(&profile, &visit);
+          for (const auto& [visit, icon] : visits) {
+            merged.emplace_back(&profile, &visit, &icon);
           }
         }
         std::ranges::stable_sort(merged, [](const auto& a, const auto& b) {
-          return a.second->time > b.second->time;
+          return std::get<1>(a)->time > std::get<1>(b)->time;
         });
         if (merged.size() > static_cast<std::size_t>(limit)) {
           merged.resize(static_cast<std::size_t>(limit));
         }
         CefRefPtr<CefListValue> list = CefListValue::Create();
-        for (const auto& [profile, visit] : merged) {
+        for (const auto& [profile, visit, icon] : merged) {
           CefRefPtr<CefDictionaryValue> row = CefDictionaryValue::Create();
           row->SetString("profile", *profile);
+          SetIcon(row, *icon);
           row->SetDouble("id", static_cast<double>(visit->id));
           row->SetString("url", visit->url);
           row->SetString("title", visit->title);
@@ -310,6 +405,7 @@ void AnswerVisits(HistoryService& history,
         }
         CefRefPtr<CefDictionaryValue> answer = CefDictionaryValue::Create();
         answer->SetList("visits", list);
+        answer->SetDictionary("icons", icons->ToJson());
         answer->SetList("problems", ProblemsJson(*search->query, search->text));
         callback->Success(ToJson(answer));
       });

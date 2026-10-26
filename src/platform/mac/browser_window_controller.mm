@@ -1885,6 +1885,17 @@ NSButton* ToolbarButton(NSString* symbol,
   }
 }
 
+- (void)tab:(BRTab*)tab
+    favicon:(const std::vector<std::uint8_t>&)png
+    iconURL:(const std::string&)iconURL
+     forURL:(NSString*)url {
+  if (brouk::HistoryService* history = [_owner historyService]) {
+    std::string page = url.UTF8String ?: "";
+    history->SetFavicon(tab.profileId, page, iconURL, png);
+    [_owner faviconChangedForURL:page profile:tab.profileId];
+  }
+}
+
 - (void)tabDidCreateBrowser:(BRTab*)tab {
   [_owner browserWindowDidCreateBrowser];
   for (NSString* key in [_pendingPopups allKeysForObject:tab]) {
@@ -2768,6 +2779,7 @@ static std::int64_t Now() {
   BOOL show = !_isPopup && !_browserUIHidden && tab &&
               (_bookmarksBarAlwaysShown || newTabPage);
   if (show) {
+    _bookmarksBar.favicons = [_owner faviconCache];
     [_bookmarksBar showStore:[_owner bookmarkStore] profile:tab.profileId];
   }
   if (show == _bookmarksBar.hidden) {

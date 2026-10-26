@@ -22,9 +22,11 @@ namespace brouk {
 
 namespace {
 
-// Version 1: urls and visits. Favicons and downloads (013, 014) come later
-// as new versions.
-constexpr std::int64_t kSchemaVersion = 2;
+// Version 1: urls and visits; 2: downloads (014); 3: favicons (013).
+constexpr std::int64_t kSchemaVersion = 3;
+
+// Larger icons are not stored; a 32 px PNG is a few kilobytes.
+constexpr std::size_t kMaxFaviconBytes = std::size_t{64} * 1024;
 
 constexpr std::int64_t kSecondsPerDay = std::int64_t{24} * 60 * 60;
 
@@ -262,7 +264,35 @@ std::optional<Error> HistoryStore::CreateSchema() {
       "  end_time INTEGER NOT NULL DEFAULT 0,"
       "  opened INTEGER NOT NULL DEFAULT 0);"
       "CREATE INDEX IF NOT EXISTS downloads_start ON downloads(start_time);"
-      "PRAGMA user_version=2;"
+      // Version 3: favicons (013), as Chrome's History keeps them: one row
+      // per icon, shared by the pages that use it. A page's icon goes when
+      // the page leaves the history, unless a bookmark keeps it
+      // (icon_kept); an icon goes when no page uses it any more.
+      "CREATE TABLE IF NOT EXISTS favicons("
+      "  id INTEGER PRIMARY KEY,"
+      "  icon_url TEXT NOT NULL UNIQUE,"
+      "  image BLOB NOT NULL,"
+      "  updated INTEGER NOT NULL);"
+      "CREATE TABLE IF NOT EXISTS icon_mapping("
+      "  page_url TEXT PRIMARY KEY,"
+      "  icon_id INTEGER NOT NULL);"
+      "CREATE INDEX IF NOT EXISTS icon_mapping_icon ON icon_mapping(icon_id);"
+      "CREATE TABLE IF NOT EXISTS icon_kept(url TEXT PRIMARY KEY);"
+      "CREATE TRIGGER IF NOT EXISTS urls_icon AFTER DELETE ON urls BEGIN"
+      "  DELETE FROM icon_mapping WHERE page_url = old.url"
+      "    AND NOT EXISTS (SELECT 1 FROM icon_kept WHERE url = old.url);"
+      "END;"
+      "CREATE TRIGGER IF NOT EXISTS icon_mapping_delete AFTER DELETE ON"
+      "  icon_mapping BEGIN"
+      "  DELETE FROM favicons WHERE id = old.icon_id AND NOT EXISTS"
+      "    (SELECT 1 FROM icon_mapping WHERE icon_id = old.icon_id);"
+      "END;"
+      "CREATE TRIGGER IF NOT EXISTS icon_mapping_update AFTER UPDATE OF icon_id"
+      "  ON icon_mapping BEGIN"
+      "  DELETE FROM favicons WHERE id = old.icon_id AND NOT EXISTS"
+      "    (SELECT 1 FROM icon_mapping WHERE icon_id = old.icon_id);"
+      "END;"
+      "PRAGMA user_version=3;"
       "COMMIT;");
 }
 
@@ -488,6 +518,9 @@ int HistoryStore::DeleteVisitsBefore(std::int64_t cutoff) {
     return 0;
   }
   int removed = db_->changes();
+  // Also icons of pages that never made it into the history (an error
+  // page, a never-recorded site).
+  PruneIcons();
   if (removed > 0) {
     db_->Execute(
         "BEGIN;"
@@ -800,6 +833,7 @@ int HistoryStore::DeleteVisitsSince(std::int64_t since) {
     return 0;
   }
   int removed = db_->changes();
+  PruneIcons();
   if (removed > 0) {
     db_->Execute(
         "BEGIN;"
@@ -980,6 +1014,113 @@ std::int64_t HistoryStore::CountDownloadsSince(std::int64_t since) {
   }
   statement->Bind(1, since);
   return statement->Step() ? statement->ColumnInt(0) : 0;
+}
+
+std::optional<Error> HistoryStore::SetFavicon(std::string_view page_url,
+                                              std::string_view icon_url,
+                                              std::span<const std::uint8_t> png,
+                                              std::int64_t time) {
+  if (png.empty() || png.size() > kMaxFaviconBytes || icon_url.empty()) {
+    return Error{"The icon is empty or too large."};
+  }
+  Error error;
+  std::optional<SqliteStatement> icon = db_->Prepare(
+      "INSERT INTO favicons(icon_url, image, updated) VALUES(?1, ?2, ?3) "
+      "ON CONFLICT(icon_url) DO UPDATE SET image = excluded.image,"
+      "  updated = excluded.updated "
+      "RETURNING id",
+      error);
+  if (!icon) {
+    return error;
+  }
+  icon->Bind(1, icon_url);
+  icon->BindBlob(2, png);
+  icon->Bind(3, time);
+  if (!icon->Step()) {
+    return Error{"Could not save the icon."};
+  }
+  std::int64_t icon_id = icon->ColumnInt(0);
+  icon->Run();
+  std::optional<SqliteStatement> mapping = db_->Prepare(
+      "INSERT INTO icon_mapping(page_url, icon_id) VALUES(?1, ?2) "
+      "ON CONFLICT(page_url) DO UPDATE SET icon_id = excluded.icon_id "
+      "WHERE icon_id <> excluded.icon_id",
+      error);
+  if (!mapping) {
+    return error;
+  }
+  mapping->Bind(1, page_url);
+  mapping->Bind(2, icon_id);
+  if (!mapping->Run()) {
+    return Error{"Could not save the icon."};
+  }
+  return std::nullopt;
+}
+
+std::int64_t HistoryStore::PageIcon(std::string_view url) {
+  Error error;
+  std::optional<SqliteStatement> query = db_->Prepare(
+      "SELECT icon_id FROM icon_mapping WHERE page_url = ?1", error);
+  if (!query) {
+    return 0;
+  }
+  query->Bind(1, url);
+  if (query->Step()) {
+    return query->ColumnInt(0);
+  }
+  return HostIcon(HostOf(url));
+}
+
+std::int64_t HistoryStore::HostIcon(std::string_view host) {
+  if (host.empty()) {
+    return 0;
+  }
+  Error error;
+  std::optional<SqliteStatement> query = db_->Prepare(
+      "SELECT icon_mapping.icon_id FROM urls JOIN icon_mapping"
+      "  ON icon_mapping.page_url = urls.url "
+      "WHERE urls.host = ?1 ORDER BY urls.last_visit DESC LIMIT 1",
+      error);
+  if (!query) {
+    return 0;
+  }
+  query->Bind(1, host);
+  return query->Step() ? query->ColumnInt(0) : 0;
+}
+
+std::vector<std::uint8_t> HistoryStore::IconImage(std::int64_t id) {
+  Error error;
+  std::optional<SqliteStatement> query =
+      db_->Prepare("SELECT image FROM favicons WHERE id = ?1", error);
+  if (!query) {
+    return {};
+  }
+  query->Bind(1, id);
+  return query->Step() ? query->ColumnBlob(0) : std::vector<std::uint8_t>();
+}
+
+void HistoryStore::SetKeptIconPages(std::span<const std::string> urls) {
+  Error error;
+  if (db_->Execute("BEGIN; DELETE FROM icon_kept;")) {
+    return;
+  }
+  std::optional<SqliteStatement> insert =
+      db_->Prepare("INSERT OR IGNORE INTO icon_kept(url) VALUES(?1)", error);
+  if (insert) {
+    for (const std::string& url : urls) {
+      insert->Reset();
+      insert->Bind(1, url);
+      insert->Run();
+    }
+  }
+  db_->Execute("COMMIT;");
+  PruneIcons();
+}
+
+void HistoryStore::PruneIcons() {
+  db_->Execute(
+      "DELETE FROM icon_mapping WHERE page_url NOT IN (SELECT url FROM urls) "
+      "AND page_url NOT IN (SELECT url FROM icon_kept);");
 }
 
 }  // namespace brouk

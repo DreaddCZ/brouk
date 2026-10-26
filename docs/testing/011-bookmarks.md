@@ -72,3 +72,9 @@ Use at least two profiles (e.g. "Work" and "Home") with tabs in the same window.
 51. ⌘K and type a bookmark's name. Expected: it is listed with a star; choosing it opens it in the current tab. Bookmarks linked to another profile are not listed.
 52. Profiles → Manage Profiles → Delete a profile with linked bookmarks. Expected: the dialog says how many bookmarks and folders will become general; after deleting, they show in every profile (the manager page lists them as general).
 53. Export a profile with linked bookmarks (some in general folders, one linked folder), import the file. Expected: the new profile's bookmarks are recreated in the same folders (missing folders created as general ones), linked to the new profile.
+
+## Icons
+
+54. Bookmark pages of sites you have visited. Expected: the bar, the Bookmarks menu and the manager page show the sites' icons; a bookmark of a site never visited shows the globe, and gets its icon after one visit (the bar updates by itself).
+55. A bookmark to another page of a visited site (e.g. en.wikipedia.org/wiki/Beetle after visiting the main page). Expected: it shows the site's icon.
+

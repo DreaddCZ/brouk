@@ -86,3 +86,10 @@ Address bar suggestions and recording are in `003-browser-ui.md` (steps 37–48)
 61. Profile "All profiles": each profile's numbers are listed; clearing affects every profile.
 62. Use a profile with no open tab. Expected: the counts and clearing still work (a hidden helper is used). If the cookie count says "number unknown", report it.
 
+## Favicons
+
+63. Visit a few sites with icons (e.g. github.com, en.wikipedia.org). Open ⌘Y. Expected: site rows show the sites' icons; expanded pages and By day rows too. A site without an icon shows its first letter.
+64. Delete a site row, then check with the SQL editor that nothing is left of it. Expected: the site and its icon are gone (icons are not in the SQL views; the row simply no longer shows).
+65. Clear browsing data → Browsing history, All time. Expected: history is empty; bookmarked sites still show their icons on the bar.
+66. Visit a site in profile Work only. Expected: its icon shows in Work's rows, and a bookmark to it shows the globe in Main's bar.
+

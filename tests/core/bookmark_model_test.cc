@@ -43,6 +43,16 @@ TEST(BookmarkModelTest, StartsWithTheTwoTopLevelFolders) {
   EXPECT_FALSE(model.Remove(kOther));
 }
 
+TEST(BookmarkModelTest, AllUrlsListsEveryBookmarkOnce) {
+  BookmarkModel model;
+  AddUrl(model, kBar, "https://b.com/");
+  BookmarkId folder = AddDir(model, kOther, "Work", "p-work");
+  AddUrl(model, folder, "https://a.com/");
+  AddUrl(model, kOther, "https://b.com/");
+  EXPECT_EQ(model.AllUrls(),
+            (std::vector<std::string>{"https://a.com/", "https://b.com/"}));
+}
+
 TEST(BookmarkModelTest, AddsAtTheEndOrAtAnIndex) {
   BookmarkModel model;
   BookmarkId a = AddUrl(model, kBar, "https://a.com/");
