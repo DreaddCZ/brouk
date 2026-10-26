@@ -27,6 +27,10 @@ set(CMAKE_OBJCXX_STANDARD 20)
 set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# scripts/web installs web/node_modules when the lockfile changed; run one at a
+# time, so that parallel steps do not install into the same folder at once.
+set_property(GLOBAL APPEND PROPERTY JOB_POOLS brouk_web=1)
+
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(BroukCompilerOptions)
 

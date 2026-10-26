@@ -27,6 +27,7 @@ add_custom_command(OUTPUT "${_viewer_h}"
           "${PROJECT_SOURCE_DIR}/web/package-lock.json"
           "${PROJECT_SOURCE_DIR}/cmake/EmbedText.cmake"
   COMMENT "Building the JSON viewer"
+  JOB_POOL brouk_web
   VERBATIM)
 target_sources(brouk_renderer PRIVATE "${_viewer_h}")
 
@@ -48,6 +49,7 @@ add_custom_command(OUTPUT "${_cosmetic_h}" "${_picker_h}"
           "${PROJECT_SOURCE_DIR}/web/package-lock.json"
           "${PROJECT_SOURCE_DIR}/cmake/EmbedText.cmake"
   COMMENT "Building the ad blocker's page scripts"
+  JOB_POOL brouk_web
   VERBATIM)
 target_sources(brouk_renderer PRIVATE "${_cosmetic_h}" "${_picker_h}")
 
@@ -66,5 +68,6 @@ add_custom_command(OUTPUT "${_forms_h}"
           "${PROJECT_SOURCE_DIR}/web/package-lock.json"
           "${PROJECT_SOURCE_DIR}/cmake/EmbedText.cmake"
   COMMENT "Building the login forms script"
+  JOB_POOL brouk_web
   VERBATIM)
 target_sources(brouk_renderer PRIVATE "${_forms_h}")
