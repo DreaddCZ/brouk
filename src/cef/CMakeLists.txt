@@ -43,6 +43,10 @@ add_library(brouk_cef STATIC
   internal_page_client.h
   internal_scheme.cc
   internal_scheme.h
+  link_resolver_client.cc
+  link_resolver_client.h
+  link_routing_settings.cc
+  link_routing_settings.h
   json_util.h
   own_request_loader.cc
   password_manager.cc

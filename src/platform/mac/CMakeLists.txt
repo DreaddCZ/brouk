@@ -51,6 +51,12 @@ add_executable(brouk_app
   internal_page_window.mm
   keychain.h
   keychain.mm
+  link_picker.h
+  link_picker.mm
+  link_resolver.h
+  link_resolver.mm
+  link_routing_controller.h
+  link_routing_controller.mm
   main.mm
   password_menu.h
   password_menu.mm

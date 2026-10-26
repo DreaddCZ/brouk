@@ -73,6 +73,28 @@
     <p><button type="button" id="autofill-add-custom">Add custom field</button></p>
     <div id="autofill-toast" class="autofill-toast" role="status" hidden></div>
   </section>
+  <section class="group links" id="links" aria-labelledby="links-title">
+    <h3 id="links-title">Links: routing rules</h3>
+    <p class="hint">Links from other apps, new tabs opened from pages and addresses typed into a
+      new tab open in the profile their rule names. With several profiles, Brouk asks, in this
+      order. Navigation inside a tab and sign-in popups never change profile.</p>
+    <div id="links-default" class="links-default"></div>
+    <p id="links-error" class="error" role="alert" hidden></p>
+    <ul id="links-file-problems" class="problems" hidden></ul>
+    <div id="links-rules"></div>
+    <p id="links-rules-empty" class="hint" hidden>No rules: links stay in the profile they are
+      opened from, and links from other apps open in the default profile.</p>
+    <p><button type="button" id="links-add-rule">Add rule</button>
+      <span id="links-saved" class="hint" role="status"></span></p>
+    <h3>Link wrappers</h3>
+    <p class="hint">Mail and chat tools wrap links in security redirects. Brouk routes by the real
+      address and still loads the wrapper, so the company's check runs. Built in:</p>
+    <ul id="links-builtins" class="links-builtins"></ul>
+    <p class="hint">Your own wrappers: the real address is in a parameter of the link, or known
+      only after loading it.</p>
+    <div id="links-wrappers"></div>
+    <p><button type="button" id="links-add-wrapper">Add wrapper</button></p>
+  </section>
   <h2 class="scope">For one profile</h2>
   <label class="profile-pick">Profile
     <select id="profile"></select>

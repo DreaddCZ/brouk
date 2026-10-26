@@ -185,6 +185,11 @@ class TabClientDelegate : public PasswordTabDelegate,
 
   // Context menu actions that need the platform UI.
   virtual void OpenUrl(const std::string& url, OpenDisposition disposition) = 0;
+  // Link routing (010): the first web page of a tab a page opened blank
+  // (window.open() and then a new location, as Teams does). True when
+  // routing took the link to another profile: the navigation is cancelled
+  // and the platform closes the blank tab.
+  virtual bool RouteFirstNavigation(const std::string& url) = 0;
   // (CopyTextToClipboard comes from PasswordTabDelegate.)
   virtual void CopyImageToClipboard(const std::vector<std::uint8_t>& png) = 0;
 
@@ -240,6 +245,9 @@ class TabClient : public CefClient,
 
   // UI thread. Stops all further callbacks to the delegate.
   void DetachDelegate();
+  // UI thread. The tab was opened blank by a page: its first web page is
+  // routed (see TabClientDelegate::RouteFirstNavigation).
+  void RouteFirstNavigation() { route_first_navigation_ = true; }
 
   // Ad blocking for the tab's requests (007), set before its browser is
   // created. `service` outlives every browser.
@@ -509,6 +517,7 @@ class TabClient : public CefClient,
   void SetFrameAudible(const std::string& frame_id, bool audible);
   // An external-protocol question is open (one at a time, like Chrome).
   bool asking_external_protocol_ = false;
+  bool route_first_navigation_ = false;
   // Screen sharing picker: one at a time; choosing grants the capture.
   void ChooseDesktopSourceForFrame(const CefRefPtr<CefFrame>& frame,
                                    std::uint32_t request_id);

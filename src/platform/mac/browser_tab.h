@@ -47,6 +47,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)tab:(BRTab*)tab
         openURL:(NSString*)url
     disposition:(brouk::OpenDisposition)disposition;
+// Link routing (010): the first page of a tab a page opened blank. YES
+// when it went to another profile (the tab then closes).
+- (BOOL)tab:(BRTab*)tab routeFirstNavigation:(NSString*)url;
 // Settings the tab follows (004).
 - (brouk::TabClientDelegate::SearchEngine)searchEngine;
 - (BOOL)askWhereToSaveDownloads;
@@ -213,6 +216,8 @@ NS_ASSUME_NONNULL_BEGIN
 
 // The client to hand to CEF for a popup that this tab will host.
 - (CefRefPtr<CefClient>)client;
+// The tab hosts a popup a page opened blank: its first page is routed (010).
+- (void)routeFirstNavigation;
 
 - (CefRefPtr<CefBrowser>)browser;
 - (void)loadURL:(NSString*)url;

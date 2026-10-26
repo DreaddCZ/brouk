@@ -4,8 +4,8 @@ import type { Profile } from './api.js';
 import { colorLabel, nameProblem, tabsLabel } from './logic.js';
 
 const profiles: Profile[] = [
-  { id: 'default', name: 'Main', color: 'blue', isDefault: true, openTabs: 1 },
-  { id: 'p-1', name: 'Klient Č', color: 'red', isDefault: false, openTabs: 0 },
+  { id: 'default', name: 'Main', color: 'blue', isDefault: true, openTabs: 1, links: [] },
+  { id: 'p-1', name: 'Klient Č', color: 'red', isDefault: false, openTabs: 0, links: [] },
 ];
 
 test('names must be non-empty, short, plain and unique', () => {

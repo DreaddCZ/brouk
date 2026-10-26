@@ -47,6 +47,9 @@ add_executable(brouk_core_tests
   core/internal_pages_test.cc
   core/json_test.cc
   core/launch_args_test.cc
+  core/link_router_test.cc
+  core/link_routing_rules_test.cc
+  core/link_unwrap_test.cc
   core/page_events_test.cc
   core/password_checkup_test.cc
   core/password_csv_test.cc

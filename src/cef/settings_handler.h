@@ -9,6 +9,7 @@
 
 #include "cef/adblock_service.h"
 #include "cef/autofill_manager.h"
+#include "core/link_routing_rules.h"
 #include "core/profile_registry.h"
 #include "core/result.h"
 #include "core/settings.h"
@@ -55,6 +56,17 @@ class SettingsPageDelegate {
   virtual void OpenAutofillFile(TextOpenDone done) = 0;
   virtual void ExportSettings(FileDone done) = 0;
   virtual void ImportSettings(FileDone done) = 0;
+  // Link routing (010): null before the browser is ready; saving replaces
+  // the rules file.
+  virtual const LinkRoutingConfig* LinkRouting() = 0;
+  virtual std::vector<std::string> LinkRoutingProblems() = 0;
+  virtual std::optional<Error> SetLinkRouting(LinkRoutingConfig config) = 0;
+  // Brouk opens http and https links from other apps. Making it the
+  // default asks the user (macOS); `done` gets an error if it did not
+  // happen.
+  virtual bool IsDefaultBrowser() = 0;
+  virtual void MakeDefaultBrowser(
+      std::function<void(std::optional<Error> error)> done) = 0;
 };
 
 // Answers the settings page's bridge messages (web/settings/api.ts). The

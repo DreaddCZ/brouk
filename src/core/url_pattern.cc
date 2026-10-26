@@ -98,6 +98,11 @@ std::optional<UrlPattern> UrlPattern::Parse(std::string_view text) {
   std::string_view authority = text.substr(0, slash);
   if (slash != std::string_view::npos) {
     pattern.path_prefix = std::string(text.substr(slash));
+    // "github.com/company-a/*" reads naturally; the "*" adds nothing to a
+    // prefix.
+    if (pattern.path_prefix.ends_with("/*")) {
+      pattern.path_prefix.pop_back();
+    }
     if (pattern.path_prefix.find_first_of(" ?#") != std::string::npos) {
       return std::nullopt;
     }

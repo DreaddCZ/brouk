@@ -10,6 +10,7 @@ import { SettingsApi, type SettingItem, type SettingsState } from './api.js';
 import { isShown, parseSettingTarget, sections, shortcutFromKey } from './logic.js';
 import { startAdblockPanel } from './adblock_panel.js';
 import { startAutofillPanel } from './autofill_panel.js';
+import { startLinksPanel } from './links_panel.js';
 
 const api = new SettingsApi(cefTransport());
 let state: SettingsState | null = null;
@@ -206,6 +207,12 @@ async function refresh(): Promise<void> {
 async function showTarget(): Promise<void> {
   const target = parseSettingTarget(window.location.hash);
   if (target === null) return;
+  if (target.key === 'links') {
+    // Settings → Links (010): the section, not one setting.
+    history.replaceState(null, '', window.location.pathname);
+    document.getElementById('links')?.scrollIntoView({ block: 'start' });
+    return;
+  }
   if (target.key === 'autofill') {
     // Settings → Autofill (009): the section, not one setting.
     history.replaceState(null, '', window.location.pathname);
@@ -260,6 +267,7 @@ function start(): void {
   void refresh().then(showTarget);
   startAdblockPanel();
   startAutofillPanel();
+  startLinksPanel();
 }
 
 start();

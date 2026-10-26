@@ -1,6 +1,6 @@
 # 010 – Link routing and window picker
 
-- **Status:** ready
+- **Status:** in-progress
 - **Priority:** P1
 - **Depends on:** 001, 003, 005
 
@@ -19,6 +19,7 @@ The browser keeps a live model of all its windows and tabs, including which disp
 - A rule with **one** profile opens the link in that profile without asking.
 - A rule with **several** profiles shows the picker, listing only those profiles (e.g. `portal.azure.com` → A, B or C).
 - Only a few rules are expected, for the most used sites: Atlassian products, cloud providers, git providers and similar.
+- Rules are edited in Settings → Links, and per profile in the profile manager: a profile's edit form lists the links that open in it (one pattern per line, editable). Saving there adds the profile to the rule for each pattern (or creates the rule) and takes it out of rules no longer listed; a rule shared with other profiles says so.
 
 **Which link opens are routed:**
 
@@ -102,6 +103,7 @@ The browser keeps a live model of all its windows and tabs, including which disp
 - [ ] A link from inside the browser that matches no rule stays in the current profile.
 - [ ] The destination window follows the rules above (default profile → most recent window on the current screen; other profiles: one window → there; several → user chooses; none → new group in the frontmost window).
 - [ ] Routing rules can be added, edited and deleted in settings.
+- [ ] A profile's edit form in the profile manager lists the links that open in it; adding, changing or removing a pattern there changes the rules accordingly, and an invalid pattern is shown and nothing is saved.
 
 **Link wrappers**
 - [ ] A Safe Links link from Outlook or Teams to `https://companya.atlassian.net/browse/X-1`, with a rule `companya.atlassian.net` → A, opens in profile A without a prompt. The wrapper URL is loaded first in that tab, and the tab ends on the Jira page.
@@ -155,3 +157,18 @@ None.
   - Resolve opaque wrappers in a neutral throwaway request context, showing their page only when it needs the user.
   - The decoders (Proofpoint v3 in particular) are pure core functions; cover them with unit tests using real sample links.
 - 2026-10-23: the user will provide real wrapped links from their Outlook and Teams during development. When implementing the wrappers, ask for them; until then, use the public format descriptions.
+- 2026-10-25 (user's decisions, implementation):
+  - A link from inside the browser whose rule lists several profiles, including the source tab's own, stays in that profile without the picker. The picker appears for links from other apps, for addresses typed into a new tab, and for links from a profile the rule does not list.
+  - A link from another app for the default profile with no window on the current screen opens in the most recently used window anywhere; with no window at all, in a new window.
+- 2026-10-25 (implementation):
+  - Core: `src/core/link_routing_rules` (the rules file), `src/core/link_unwrap` (wrapper decoders), `src/core/link_router` (profile and window decisions), all unit-tested. macOS: `link_routing_controller`, `link_picker`, `link_resolver` in `src/platform/mac/`; settings messages in `src/cef/link_routing_settings`; the Links section of the settings page in `web/settings/links_*`.
+  - Rules and the user's wrappers are global, in `link-routing.yaml` next to `settings.yaml` (a list of structured entries does not fit the flat settings file). Profiles are named by id, so renaming a profile keeps its rules. The file is reloaded when it changes, like the settings files. A rule naming a deleted profile skips it; with none left it counts as no match. The Space behaviour is the setting `links.other_space` (`switch` or `move`).
+  - Specificity: a longer path prefix first (any path beats none), then an exact host over a wildcard, then the longer host, then a port; of equally specific rules the first wins. Patterns may end in `/*` (`github.com/company-a/*` is the prefix `/company-a/`).
+  - Links from other apps reach Brouk only when it is the default browser. As in Chrome, Brouk registers for `http` and `https` and Settings → Links has "Make Brouk the default browser" (macOS asks to confirm). HTML files opened from Finder are not handled yet. URLs given on the command line (or a second launch) are routed like links from other apps, unless `--profile` names the profile. The picker names the app that sent the link (from the Apple event).
+  - Which opens are routed: Cmd-click, middle-click, Shift-click, "Open Link in New Tab/Window", links with `target=_blank`, and addresses typed or chosen from the suggestions in a new, unused tab. Popups that ask for a window (`window.open` with size features) are never routed. CEF does not tell a `target=_blank` link from `window.open()` without features, so the latter is routed too; it keeps no opener only when routing moves it to another profile.
+  - 2026-10-25 (user's testing): Teams (web) opens links from its own script, after an asynchronous step or into a tab it opened blank and then sends to the address, so those were not routed. Now new tabs a page opens are routed whether or not Chromium still counts a click (the popup blocker has let them through), and a tab opened blank is routed at its first web page; if that goes to another profile, the blank tab closes. Typical use: a Confluence page in one Microsoft account links to SharePoint or Azure in another; Cmd-click or a click on a `target=_blank` link opens it in the profile of its rule.
+  - A background tab (Cmd-click) routed to another window opens as that window's active tab but does not bring the window forward; links from other apps and foreground opens bring the target window forward. The Space setting applies whenever a window on another Space is brought forward, not only one chosen in the picker.
+  - Picker: number keys, arrows plus Return, Esc (back from the window step, else cancel), "A" ticks "Always open…" (Tab reaches checkboxes only with macOS's full keyboard navigation), plus Back and Cancel buttons for the mouse. Thumbnails are screenshots of the active tab through the DevTools protocol (`Page.captureScreenshot`); a tab not loaded yet shows its favicon. Links that arrive while the picker is open wait for it.
+  - Opaque wrappers: the neutral context is a request context with its own folder `web/link-check-<random>`, deleted when the check ends; leftovers (after a crash) are deleted at the next start. An in-memory (incognito) context would match the spec better, but under CEF's Chrome bootstrap its browser never starts loading. The check stops at the first main-frame navigation, popup or download that leaves the wrapper hosts. Closing the "Checking link" window cancels the link.
+  - The real wrapped links from the user's Outlook and Teams are still to be checked against the decoders (the tests use the public formats and Proofpoint's own v3 example).
+- 2026-10-25 (user's request): the profile manager's edit form also lists the profile's links (see Description). A pattern written differently but equal (`https://GitHub.com/a/*` and `github.com/a/`) joins the existing rule; a new profile's links are saved right after it is created.

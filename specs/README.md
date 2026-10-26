@@ -34,7 +34,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 007 | [Ad and tracker blocking](007-adblock.md) | done — routing hosts after 010 | P1 |
 | 008 | [Password manager](008-password-manager.md) | in-progress — built-in source (forms, saving and filling, generator, 2FA codes and QR reading, passwords page, checkup, import/export, encrypted profile export) in review; Bitwarden next | P1 |
 | 009 | [Form autofill](009-autofill.md) | in-progress — entries, custom fields, filling, saving without duplicates, validation, Settings → Autofill with duplicates and JSON export/import in review | P1 |
-| 010 | [Link routing and window picker](010-link-routing.md) | ready | P1 |
+| 010 | [Link routing and window picker](010-link-routing.md) | in-progress — rules, picker with window thumbnails, wrappers (built-in, own, opaque with "Checking link"), default browser, Settings → Links in review; real Outlook/Teams links to check | P1 |
 | 011 | [Bookmark manager](011-bookmarks.md) | done — window choice after 010 | P1 |
 | 012 | [Web platform basics](012-web-platform-basics.md) | in-progress | P1 |
 | 013 | [History](013-history.md) | in-progress — storage, recording, retention, address bar suggestions, History menu with closed tabs, history limits, the history page as a tab with search, SQL editor, Clean up and Clear browsing data (merged); history in profile export postponed | P1 |

@@ -1,5 +1,6 @@
 #include "cef/profile_manager_handler.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <optional>
 #include <string>
@@ -7,8 +8,10 @@
 
 #include "cef/json_util.h"
 #include "core/internal_pages.h"
+#include "core/link_routing_rules.h"
 #include "core/profile_id.h"
 #include "core/settings_schema.h"
+#include "core/url_pattern.h"
 #include "include/cef_parser.h"
 #include "include/cef_values.h"
 #include "include/wrapper/cef_helpers.h"
@@ -19,6 +22,7 @@ namespace {
 
 constexpr std::size_t kMaxRequestBytes = std::size_t{16} * 1024;
 constexpr std::size_t kMaxFieldBytes = 1024;
+constexpr std::size_t kMaxLinks = 200;
 // Error codes for the page (it shows the message).
 constexpr int kBadRequest = 400;
 constexpr int kFailed = 500;
@@ -49,16 +53,92 @@ std::string ToJson(const CefRefPtr<CefDictionaryValue>& dictionary) {
   return CefWriteJSON(value, JSON_WRITER_DEFAULT).ToString();
 }
 
+// A profile's links (010): its rules' patterns, each with the other
+// profiles the rule offers.
+CefRefPtr<CefListValue> LinksJson(
+    const LinkRoutingConfig& config,
+    const ProfileId& profile,
+    const std::vector<ProfileManagerDelegate::Summary>& summaries) {
+  CefRefPtr<CefListValue> links = CefListValue::Create();
+  for (const RoutingRule& rule : config.rules) {
+    if (std::ranges::find(rule.profiles, profile) == rule.profiles.end()) {
+      continue;
+    }
+    CefRefPtr<CefListValue> others = CefListValue::Create();
+    for (const ProfileId& other : rule.profiles) {
+      for (const ProfileManagerDelegate::Summary& summary : summaries) {
+        if (other != profile && summary.info.id == other) {
+          others->SetString(others->GetSize(), summary.info.name);
+        }
+      }
+    }
+    CefRefPtr<CefDictionaryValue> item = CefDictionaryValue::Create();
+    item->SetString("pattern", rule.pattern);
+    item->SetList("sharedWith", others);
+    links->SetDictionary(links->GetSize(), item);
+  }
+  return links;
+}
+
+// "profiles.setLinks": nothing is saved while a pattern is not valid; the
+// answer lists the problems by position.
+void SetLinks(
+    const CefRefPtr<CefDictionaryValue>& message,
+    ProfileManagerDelegate& delegate,
+    const CefRefPtr<CefMessageRouterBrowserSide::Callback>& callback) {
+  std::optional<ProfileId> id = IdField(message);
+  CefRefPtr<CefListValue> list = message->GetType("patterns") == VTYPE_LIST
+                                     ? message->GetList("patterns")
+                                     : nullptr;
+  const LinkRoutingConfig* current = delegate.LinkRouting();
+  if (!id || !list || list->GetSize() > kMaxLinks || !current) {
+    callback->Failure(kBadRequest, "Invalid request.");
+    return;
+  }
+  std::vector<std::string> patterns;
+  CefRefPtr<CefListValue> problems = CefListValue::Create();
+  for (std::size_t i = 0; i < list->GetSize(); ++i) {
+    std::string pattern =
+        list->GetType(i) == VTYPE_STRING ? list->GetString(i).ToString() : "";
+    if (pattern.size() > kMaxFieldBytes || !UrlPattern::Parse(pattern)) {
+      CefRefPtr<CefDictionaryValue> problem = CefDictionaryValue::Create();
+      problem->SetInt("index", static_cast<int>(i));
+      problem->SetString("message",
+                         "Not a valid pattern (e.g. example.com, "
+                         "*.example.com or example.com/path/*).");
+      problems->SetDictionary(problems->GetSize(), problem);
+      continue;
+    }
+    patterns.push_back(std::move(pattern));
+  }
+  if (problems->GetSize() == 0) {
+    LinkRoutingConfig config = *current;
+    SetProfilePatterns(config, *id, patterns);
+    if (std::optional<Error> error = delegate.SetLinkRouting(config)) {
+      callback->Failure(kFailed, error->message);
+      return;
+    }
+  }
+  CefRefPtr<CefDictionaryValue> answer = CefDictionaryValue::Create();
+  answer->SetList("problems", problems);
+  callback->Success(ToJson(answer));
+}
+
 std::string StateJson(ProfileManagerDelegate& delegate) {
   CefRefPtr<CefListValue> profiles = CefListValue::Create();
   std::size_t index = 0;
-  for (const ProfileManagerDelegate::Summary& summary : delegate.Profiles()) {
+  const LinkRoutingConfig* routing = delegate.LinkRouting();
+  std::vector<ProfileManagerDelegate::Summary> summaries = delegate.Profiles();
+  for (const ProfileManagerDelegate::Summary& summary : summaries) {
     CefRefPtr<CefDictionaryValue> item = CefDictionaryValue::Create();
     item->SetString("id", summary.info.id);
     item->SetString("name", summary.info.name);
     item->SetString("color", summary.info.color);
     item->SetBool("isDefault", summary.is_default);
     item->SetInt("openTabs", summary.open_tabs);
+    item->SetList("links", routing
+                               ? LinksJson(*routing, summary.info.id, summaries)
+                               : CefListValue::Create());
     profiles->SetDictionary(index++, item);
   }
   CefRefPtr<CefListValue> colors = CefListValue::Create();
@@ -70,6 +150,7 @@ std::string StateJson(ProfileManagerDelegate& delegate) {
   state->SetList("profiles", profiles);
   state->SetList("colors", colors);
   state->SetBool("showAtStartup", delegate.ShowAtStartup());
+  state->SetBool("linksReady", routing != nullptr);
   return ToJson(state);
 }
 
@@ -113,6 +194,8 @@ bool ProfileManagerHandler::OnQuery(CefRefPtr<CefBrowser> /*browser*/,
 
   if (*type == "profiles.state") {
     callback->Success(StateJson(delegate));
+  } else if (*type == "profiles.setLinks") {
+    SetLinks(message, delegate, callback);
   } else if (*type == "profiles.create") {
     std::optional<std::string> name = StringField(message, "name");
     std::optional<std::string> color = StringField(message, "color");

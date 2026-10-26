@@ -10,6 +10,7 @@
 #include "cef/adblock_settings.h"
 #include "cef/autofill_settings.h"
 #include "cef/json_util.h"
+#include "cef/link_routing_settings.h"
 #include "core/internal_pages.h"
 #include "core/profile_id.h"
 #include "core/settings_schema.h"
@@ -276,6 +277,10 @@ bool SettingsHandler::OnQuery(CefRefPtr<CefBrowser> /*browser*/,
     delegate.ExportSettings(FileAnswer(callback));
   } else if (*type == "settings.import") {
     delegate.ImportSettings(FileAnswer(callback));
+  } else if (type->starts_with("links.")) {
+    if (!HandleLinkRoutingSettingsMessage(*type, message, delegate, callback)) {
+      callback->Failure(kBadRequest, "Unknown request.");
+    }
   } else if (type->starts_with("autofill.")) {
     if (!HandleAutofillSettingsMessage(*type, message, delegate, callback)) {
       callback->Failure(kBadRequest, "Unknown request.");

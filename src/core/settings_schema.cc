@@ -47,6 +47,10 @@ constexpr std::array<std::string_view, 2> kStartup = {"last_session",
 constexpr std::array<std::string_view, 2> kStartupLabels = {
     "Continue where you left off", "Open a new tab"};
 
+constexpr std::array<std::string_view, 2> kOtherSpace = {"switch", "move"};
+constexpr std::array<std::string_view, 2> kOtherSpaceLabels = {
+    "Switch to that Space", "Move the window here"};
+
 constexpr std::array<std::string_view, 2> kHistoryViews = {"site", "day"};
 constexpr std::array<std::string_view, 2> kHistoryViewLabels = {"By site",
                                                                 "By day"};
@@ -67,7 +71,7 @@ constexpr std::array<std::string_view, 7> kSecureDnsLabels = {
     "Off (system DNS)", "Cloudflare", "Quad9", "AdGuard DNS (blocks ads)",
     "NextDNS",          "Control D",  "Custom"};
 
-constexpr std::array<SettingDef, 50> kSettings = {{
+constexpr std::array<SettingDef, 51> kSettings = {{
     // Global.
     {.key = "appearance.theme",
      .scope = SettingScope::kGlobal,
@@ -432,6 +436,16 @@ constexpr std::array<SettingDef, 50> kSettings = {{
      .default_value = "false",
      .section = "Profiles",
      .label = "Show the profile manager when Brouk starts"},
+    // Link routing (010).
+    {.key = "links.other_space",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kChoice,
+     .default_value = "switch",
+     .choices = kOtherSpace,
+     .choice_labels = kOtherSpaceLabels,
+     .section = "Links",
+     .label = "When the chosen window is on another Space",
+     .description = "For links opened in a window you chose in the picker."},
     // Per profile.
     {.key = "profile.name",
      .scope = SettingScope::kProfile,
