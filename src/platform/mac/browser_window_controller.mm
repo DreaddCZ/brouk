@@ -788,14 +788,20 @@ NSButton* ToolbarButton(NSString* symbol,
     [self replaceTab:history withURL:url typed:NO].nextVisitBookmark = bookmark;
     return;
   }
+  if (!history || history.profileId != profile) {
+    // Another profile: its window is chosen as for a routed link (010).
+    [_owner openURL:url
+          inProfile:profile
+         sourceName:bookmark ? @"From Bookmark Manager" : @"From History"
+           inWindow:self
+         foreground:!newTab
+           bookmark:bookmark];
+    return;
+  }
   // ⌘-click opens in the background, as Chrome does.
   BRTab* tab = [self makeTabInProfile:profile];
   tab.nextVisitBookmark = bookmark;
-  if (history && history.profileId == profile) {
-    _model->InsertAfter(tab.tabId, historyTab, !newTab);
-  } else {
-    _model->AppendTab(tab.tabId, profile, !newTab);
-  }
+  _model->InsertAfter(tab.tabId, historyTab, !newTab);
   [self startTab:tab url:url];
   [self modelDidChange];
   if (!newTab) {
@@ -955,7 +961,15 @@ NSButton* ToolbarButton(NSString* symbol,
 - (void)openTabWithURL:(nullable NSString*)url
                profile:(const brouk::ProfileId&)profile
               activate:(BOOL)activate {
+  [self openTabWithURL:url profile:profile activate:activate bookmark:NO];
+}
+
+- (void)openTabWithURL:(nullable NSString*)url
+               profile:(const brouk::ProfileId&)profile
+              activate:(BOOL)activate
+              bookmark:(BOOL)bookmark {
   BRTab* tab = [self makeTabInProfile:profile];
+  tab.nextVisitBookmark = bookmark;
   _model->AppendTab(tab.tabId, profile, activate);
   [self startTab:tab url:url ?: @"about:blank"];
   [self modelDidChange];

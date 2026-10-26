@@ -59,7 +59,7 @@ Use at least two profiles (e.g. "Work" and "Home") with tabs in the same window.
 41. Click rows to select; ⌘-click toggles, ⇧-click selects a range, ⌘A selects all. Expected: "n items selected", Edit… (one item) and Delete.
 42. Delete (button, ✕, or the Delete key). Expected: "Deleted n items" with Undo for a few seconds; Undo or ⌘Z puts them back where they were.
 43. Drag rows onto a folder on the left or onto a folder row (its middle): they move into it. Drag between rows: they move there. Several selected rows move together.
-44. Double-click a bookmark (or Return). Expected: a general one opens in this tab's profile (in this tab), a linked one in its profile (a new tab when this tab is in another profile). ⌘-double-click: a new background tab. Double-click a folder: it opens.
+44. Double-click a bookmark (or Return). Expected: a general one opens in this tab's profile (in this tab), a linked one in its profile; when this tab is in another profile, it goes to the window 010 chooses: the window with that profile's group, the picker's window step when several windows have it, or a new group here when none has. ⌘-double-click: a background tab there. Double-click a folder: it opens.
 45. While the page is open, add a bookmark with the star in another tab. Expected: the page shows it without reloading.
 46. Export…: save the file; open it in Chrome or Safari's import. Expected: the bookmarks are there (without profile links).
 47. Import… a bookmark file exported from Chrome. Expected: "Imported n bookmarks and m folders"; they are in "Imported" under Other bookmarks, as general items.

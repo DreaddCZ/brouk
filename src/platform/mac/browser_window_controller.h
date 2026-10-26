@@ -58,6 +58,15 @@ NS_ASSUME_NONNULL_BEGIN
              fromTab:(BRTab*)tab
             inWindow:(BRBrowserWindowController*)controller
           foreground:(BOOL)foreground;
+// A page of a known profile opened from the bookmark manager or the
+// history page in a tab of another profile: the window is chosen as for a
+// routed link (010).
+- (void)openURL:(NSString*)url
+      inProfile:(const brouk::ProfileId&)profile
+     sourceName:(NSString*)sourceName
+       inWindow:(BRBrowserWindowController*)controller
+     foreground:(BOOL)foreground
+       bookmark:(BOOL)bookmark;
 // "Open Link in New Window": a new window with a tab in `profile`.
 - (void)openWindowWithURL:(NSString*)url
                   profile:(const brouk::ProfileId&)profile;
@@ -142,6 +151,11 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)openTabWithURL:(nullable NSString*)url
                profile:(const brouk::ProfileId&)profile
               activate:(BOOL)activate;
+// The same; `bookmark` counts the visit as opened from a bookmark (013).
+- (void)openTabWithURL:(nullable NSString*)url
+               profile:(const brouk::ProfileId&)profile
+              activate:(BOOL)activate
+              bookmark:(BOOL)bookmark;
 
 // Link routing (010).
 // The active tab, if any.
@@ -212,8 +226,6 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)restoreSessionWindow:(const brouk::SessionWindow&)window;
 // "Restore pages?" after a crash (015); `restore` runs on "Restore".
 - (void)showRestorePagesBar:(void (^)(void))restore;
-// History page (013): opens one of its entries in `profile`, in the history
-// tab itself when it is in that profile's group (unless `newTab`).
 // A web browser of one of this window's tabs in `profile`, or null.
 - (CefRefPtr<CefBrowser>)anyBrowserInProfile:(const brouk::ProfileId&)profile;
 // The history page with `fragment` (e.g. "clear" opens Clear browsing data):
@@ -221,6 +233,10 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)showHistoryWithFragment:(NSString*)fragment;
 // The profile of a tab (the default profile if the tab is gone).
 - (brouk::ProfileId)profileOfTab:(brouk::TabId)tabId;
+// History page (013): opens one of its entries in `profile`: in the history
+// tab itself when it is in that profile's group (unless `newTab`), next to
+// it as a new tab, or, for another profile, in the window chosen as for a
+// routed link (010).
 - (void)openPage:(NSString*)url
          profile:(const brouk::ProfileId&)profile
           newTab:(BOOL)newTab

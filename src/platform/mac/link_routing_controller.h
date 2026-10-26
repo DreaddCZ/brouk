@@ -62,6 +62,19 @@ NS_ASSUME_NONNULL_BEGIN
         inWindow:(BRBrowserWindowController*)controller
       foreground:(BOOL)foreground;
 
+// A page whose profile is already known, opened from an internal page in
+// a tab of another profile (a linked bookmark on the bookmark manager, an
+// entry on the history page; 011, 013). No rules or wrappers: only the
+// window choice, with the picker's window step when the profile's group is
+// in several windows. `sourceName` is shown in the picker ("From History");
+// `bookmark` counts the visit as opened from a bookmark.
+- (void)openURL:(NSString*)url
+      inProfile:(const brouk::ProfileId&)profile
+     sourceName:(NSString*)sourceName
+       inWindow:(BRBrowserWindowController*)controller
+     foreground:(BOOL)foreground
+       bookmark:(BOOL)bookmark;
+
 // Quitting: closes the picker and stops resolving links.
 - (void)cancelPending;
 
