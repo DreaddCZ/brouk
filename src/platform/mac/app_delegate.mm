@@ -1348,14 +1348,19 @@ class AppSettingsPage : public SettingsPageDelegate {
 
 #pragma mark - Link routing (010)
 
-// Links from other apps (Brouk as the default browser, `open URL`).
+// Links from other apps (Brouk as the default browser, `open URL`) and
+// HTML files opened from Finder.
 - (void)application:(NSApplication*)application
            openURLs:(NSArray<NSURL*>*)urls {
   NSString* app = [self senderOfCurrentAppleEvent];
   for (NSURL* url in urls) {
     NSString* scheme = url.scheme.lowercaseString;
+    // http/https links, and files opened from Finder (HTML documents, see
+    // Info.plist); local files are routed like file paths given on the
+    // command line. Other schemes are never opened from outside.
     if (![scheme isEqualToString:@"http"] &&
-        ![scheme isEqualToString:@"https"]) {
+        ![scheme isEqualToString:@"https"] &&
+        !(url.isFileURL && [scheme isEqualToString:@"file"])) {
       continue;
     }
     [_pendingExternalLinks addObject:@[ url.absoluteString, app ]];
