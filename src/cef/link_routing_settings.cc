@@ -7,6 +7,7 @@
 #include <utility>
 #include <vector>
 
+#include "cef/profile_links.h"
 #include "cef/settings_handler.h"
 #include "core/link_routing_rules.h"
 #include "core/link_unwrap.h"
@@ -212,6 +213,25 @@ bool HandleLinkRoutingSettingsMessage(
   }
   if (type == "links.save") {
     Save(message, delegate, callback);
+    return true;
+  }
+  if (type == "links.setProfileLinks") {
+    // "Links that open in this profile" on the settings page (as in the
+    // profile manager).
+    std::optional<std::string> profile = Text(message, "profile");
+    const LinkRoutingConfig* current = delegate.LinkRouting();
+    bool exists = profile && IsValidProfileId(*profile) &&
+                  delegate.Registry().Find(*profile) != nullptr;
+    if (!exists || !current || message->GetType("patterns") != VTYPE_LIST) {
+      callback->Failure(kBadRequest, "Invalid request.");
+      return true;
+    }
+    SaveProfileLinks(
+        message->GetList("patterns"), *profile, *current,
+        [&delegate](LinkRoutingConfig config) {
+          return delegate.SetLinkRouting(std::move(config));
+        },
+        callback);
     return true;
   }
   if (type == "links.makeDefault") {

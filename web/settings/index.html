@@ -101,7 +101,20 @@
     <h3 id="topic-profile-title" class="scope">For each profile</h3>
     <div id="profile-tabs" class="profile-tabs" role="tablist"
       aria-labelledby="topic-profile-title"></div>
-    <div id="profile-settings" role="tabpanel"></div>
+    <div id="profile-settings" role="tabpanel">
+      <div id="profile-settings-groups"></div>
+      <section id="profile-links" class="group profile-links" aria-labelledby="profile-links-title" hidden>
+        <h3 id="profile-links-title">Links that open in this profile</h3>
+        <p class="hint">Links from other apps, new tabs opened from pages and addresses typed into a
+          new tab open here when they match, e.g. companya.atlassian.net, *.sharepoint.com or
+          github.com/company-a/*. All rules are under Links.</p>
+        <p id="profile-links-error" class="error" role="alert" hidden></p>
+        <div id="profile-links-rows"></div>
+        <p id="profile-links-empty" class="hint" hidden>No links open in this profile by a rule.</p>
+        <p><button type="button" id="profile-links-add">Add link</button>
+          <span id="profile-links-saved" class="hint" role="status"></span></p>
+      </section>
+    </div>
   </div>
   <section class="group files-topic" data-topic="Settings files" aria-label="Settings files">
     <div class="files">

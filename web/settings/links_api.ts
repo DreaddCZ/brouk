@@ -47,6 +47,12 @@ export interface SaveProblem {
   readonly message: string;
 }
 
+/** A pattern of a profile's links the browser did not accept. */
+export interface PatternProblem {
+  readonly index: number;
+  readonly message: string;
+}
+
 function invalid(): BridgeError {
   return new BridgeError('The browser sent an answer that could not be read.');
 }
@@ -112,6 +118,15 @@ export function parseSaveProblems(value: unknown): SaveProblem[] {
   });
 }
 
+export function parsePatternProblems(value: unknown): PatternProblem[] {
+  return list(record(value), 'problems').map((p) => {
+    const item = record(p);
+    const index = item['index'];
+    if (typeof index !== 'number' || !Number.isInteger(index) || index < 0) throw invalid();
+    return { index, message: text(item, 'message') };
+  });
+}
+
 export class LinksApi {
   readonly #transport: Transport | null;
 
@@ -126,6 +141,14 @@ export class LinksApi {
   /** Saves everything, or nothing while an entry has a problem. */
   async save(rules: readonly LinkRule[], wrappers: readonly LinkWrapper[]): Promise<SaveProblem[]> {
     return parseSaveProblems(await send('links.save', { rules, wrappers }, this.#transport));
+  }
+
+  /**
+   * Makes `patterns` the links that open in `profile` (as in the profile
+   * manager); nothing is saved while one is not valid.
+   */
+  async setProfileLinks(profile: string, patterns: readonly string[]): Promise<PatternProblem[]> {
+    return parsePatternProblems(await send('links.setProfileLinks', { profile, patterns }, this.#transport));
   }
 
   async makeDefault(): Promise<void> {

@@ -11,7 +11,7 @@ import { SettingsApi, type SettingItem, type SettingsState } from './api.js';
 import { parseSettingTarget, sections, shortcutFromKey, topicOfSection, topics, type Topic } from './logic.js';
 import { startAdblockPanel } from './adblock_panel.js';
 import { startAutofillPanel } from './autofill_panel.js';
-import { startLinksPanel } from './links_panel.js';
+import { showProfileLinks, startLinksPanel } from './links_panel.js';
 
 const api = new SettingsApi(cefTransport());
 let state: SettingsState | null = null;
@@ -249,7 +249,8 @@ function render(): void {
   // The heading only separates the two parts when both are there.
   byId('topic-profile-title').hidden = (topic?.global.length ?? 0) === 0;
   renderProfileTabs(state.profile.id);
-  renderGroups(byId('profile-settings'), state.profile.id, perProfile);
+  renderGroups(byId('profile-settings-groups'), state.profile.id, perProfile);
+  showProfileLinks(current === 'Profiles' ? state.profile.id : null);
 }
 
 async function refresh(): Promise<void> {
