@@ -43,7 +43,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 016 | [Help](016-help.md) | ready | P2 |
 | 017 | [VPN per profile](017-profile-vpn.md) | draft | P2 |
 | 018 | [Feedback and issue reporting](018-feedback.md) | draft | P2 |
-| 019 | [Release pipeline: local build, remote tests, publish](019-release-pipeline.md) | ready | P2 |
+| 019 | [Release pipeline and automatic updates](019-release-pipeline.md) | ready | P2 |
 | 020 | [Task manager](020-task-manager.md) | ready | P2 |
 | 021 | [File viewers for text formats](021-file-viewers.md) | idea | P3 |
 
@@ -73,6 +73,8 @@ Build order. Each milestone ends with a build the user tests on their Macs.
 2026-10-25 (user's decision): feedback and issue reporting (018) is for the first beta testers, so it is built at the start of phase 2, for macOS and later Windows.
 
 2026-10-25 (user's decision): the release pipeline (019) is built together with 018 at the start of phase 2.
+
+2026-10-26 (user's decision): 019 rewritten: releases are built, notarized and smoke-tested on the user's Intel Mac (no GitHub Actions minutes), published in a public releases repository, and installed copies update themselves with Sparkle (stable/beta channel).
 
 2026-10-25 (user's decision): file viewers for text formats (021) are recorded at a high level for a later phase.
 
