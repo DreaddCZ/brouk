@@ -2444,6 +2444,7 @@ NSButton* ToolbarButton(NSString* symbol,
   [entries addObjectsFromArray:[self paletteActionEntries]];
   [entries addObjectsFromArray:[self paletteBookmarkEntries]];
   [entries addObjectsFromArray:[self paletteSettingEntries]];
+  [entries addObjectsFromArray:[self paletteHelpEntries]];
   [_palette showInWindow:self.window entries:entries];
 }
 
@@ -2586,6 +2587,27 @@ NSButton* ToolbarButton(NSString* symbol,
     NSString* key = @(std::string(def.key).c_str());
     entry.run = ^{
       [owner openSettingsAtKey:key profile:perProfile ? profileId : nil];
+    };
+    [entries addObject:entry];
+  }
+  return entries;
+}
+
+// The help sections (016); choosing one opens help there.
+- (NSArray<BRPaletteEntry*>*)paletteHelpEntries {
+  NSMutableArray<BRPaletteEntry*>* entries = [NSMutableArray array];
+  NSImage* icon = [NSImage imageWithSystemSymbolName:@"questionmark.circle"
+                            accessibilityDescription:nil];
+  __weak id<BRBrowserWindowOwner> owner = _owner;
+  for (NSDictionary<NSString*, NSString*>* section in [_owner helpSections]) {
+    BRPaletteEntry* entry = [[BRPaletteEntry alloc] init];
+    entry.kind = brouk::PaletteItem::Kind::kHelp;
+    entry.title = section[@"title"];
+    entry.detail = @"Help";
+    entry.image = icon;
+    NSString* anchor = section[@"anchor"];
+    entry.run = ^{
+      [owner openHelpAt:anchor];
     };
     [entries addObject:entry];
   }

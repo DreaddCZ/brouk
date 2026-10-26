@@ -53,6 +53,8 @@ set(BROUK_CORE_SOURCES
   download_record.h
   external_protocol.cc
   external_protocol.h
+  help.cc
+  help.h
   history_query.cc
   history_query.h
   history_sql.cc

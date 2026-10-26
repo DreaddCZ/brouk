@@ -110,6 +110,8 @@ class InternalPageClient : public CefClient,
  private:
   InternalPageDelegate* delegate_;  // Not owned. Null after DetachDelegate().
   std::unique_ptr<CefMessageRouterBrowserSide::Handler> handler_;
+  // "?" buttons of every internal page (016).
+  std::unique_ptr<CefMessageRouterBrowserSide::Handler> help_handler_;
   CefRefPtr<CefMessageRouterBrowserSide> router_;
 
   IMPLEMENT_REFCOUNTING(InternalPageClient);

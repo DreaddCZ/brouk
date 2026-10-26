@@ -38,8 +38,21 @@ NS_ASSUME_NONNULL_BEGIN
           handler:(std::unique_ptr<CefMessageRouterBrowserSide::Handler>)handler
           context:(CefRefPtr<CefRequestContext>)context;
 
+// The same; the window keeps its size and position under `frameName`
+// across closing and restarts (help, 016).
+- (instancetype)
+    initWithOwner:(id<BRInternalPageOwner>)owner
+              url:(NSString*)url
+            title:(NSString*)title
+             size:(NSSize)size
+        frameName:(nullable NSString*)frameName
+          handler:(std::unique_ptr<CefMessageRouterBrowserSide::Handler>)handler
+          context:(CefRefPtr<CefRequestContext>)context;
+
 // Closes the page (and then the window).
 - (void)closePage;
+// Runs a script in the page (e.g. help showing a section again).
+- (void)executeJavaScript:(NSString*)code;
 // Navigates the page; only a changed #fragment keeps the page loaded.
 - (void)loadURL:(NSString*)url;
 

@@ -11,7 +11,7 @@
 <body>
 <main>
   <header class="top">
-    <h1>Passwords</h1>
+    <h1>Passwords<button type="button" class="help-button" data-help="passwords-page">?</button></h1>
     <input type="search" id="query" placeholder="Search by site or user name" aria-label="Search passwords"
       spellcheck="false" autocomplete="off">
     <label>Profile <select id="profile-filter" aria-label="Show passwords of"></select></label>
@@ -42,7 +42,7 @@
       with Have I Been Pwned: only the first 5 characters of each password's hash are sent). Built-in
       passwords only; Bitwarden has its own reports.</p>
     <div class="toolbar"><button type="button" id="run-checkup" class="primary">Check passwords</button>
-      <span id="checkup-status" class="selection"></span></div>
+      <span id="checkup-status" class="selection"></span><button type="button" class="help-button" data-help="passwords-checkup">?</button></div>
     <div id="checkup"></div>
   </section>
 

@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "cef/context_menu_model.h"
+#include "cef/help_link.h"
 #include "core/context_menu.h"
 #include "core/internal_pages.h"
 #include "include/wrapper/cef_helpers.h"
@@ -16,13 +17,17 @@ InternalPageClient::InternalPageClient(
     std::unique_ptr<CefMessageRouterBrowserSide::Handler> handler)
     : delegate_(delegate),
       handler_(std::move(handler)),
+      help_handler_(std::make_unique<HelpOpenHandler>()),
       router_(CefMessageRouterBrowserSide::Create(CefMessageRouterConfig())) {
+  // First, so that no page handler refuses "help.open" as unknown.
+  router_->AddHandler(help_handler_.get(), /*first=*/true);
   router_->AddHandler(handler_.get(), /*first=*/false);
 }
 
 InternalPageClient::~InternalPageClient() {
-  // The router must not keep a pointer to the handler we are deleting.
+  // The router must not keep pointers to the handlers we are deleting.
   router_->RemoveHandler(handler_.get());
+  router_->RemoveHandler(help_handler_.get());
 }
 
 void InternalPageClient::DetachDelegate() {
@@ -84,9 +89,9 @@ bool InternalPageClient::OnKeyEvent(CefRefPtr<CefBrowser> /*browser*/,
 
 bool InternalPageClient::OnBeforePopup(
     CefRefPtr<CefBrowser> /*browser*/,
-    CefRefPtr<CefFrame> /*frame*/,
+    CefRefPtr<CefFrame> frame,
     int /*popup_id*/,
-    const CefString& /*target_url*/,
+    const CefString& target_url,
     const CefString& /*target_frame_name*/,
     WindowOpenDisposition /*target_disposition*/,
     bool /*user_gesture*/,
@@ -97,7 +102,12 @@ bool InternalPageClient::OnBeforePopup(
     CefRefPtr<CefDictionaryValue>& /*extra_info*/,
     bool* /*no_javascript_access*/) {
   CEF_REQUIRE_UI_THREAD();
-  return true;  // Internal pages open no popups.
+  // Internal pages open no popups; a web link ⌘-clicked on the help page
+  // opens in a tab (016).
+  if (frame && InternalPageOf(frame->GetURL().ToString()) == "help") {
+    OpenHelpWebLink(target_url.ToString());
+  }
+  return true;
 }
 
 void InternalPageClient::OnAfterCreated(CefRefPtr<CefBrowser> browser) {
@@ -131,8 +141,14 @@ bool InternalPageClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
                                         bool /*user_gesture*/,
                                         bool /*is_redirect*/) {
   CEF_REQUIRE_UI_THREAD();
-  // An internal page window shows internal pages only.
-  if (!IsInternalPageUrl(request->GetURL().ToString())) {
+  // An internal page window shows internal pages only. Web links on the
+  // help page open in a tab of the default profile instead (016).
+  std::string url = request->GetURL().ToString();
+  if (!IsInternalPageUrl(url)) {
+    if (frame->IsMain() &&
+        InternalPageOf(frame->GetURL().ToString()) == "help") {
+      OpenHelpWebLink(url);
+    }
     return true;
   }
   router_->OnBeforeBrowse(browser, frame);

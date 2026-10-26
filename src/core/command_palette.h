@@ -12,7 +12,7 @@ namespace brouk {
 // One thing the command palette (003) can find.
 struct PaletteItem {
   // Also the order of equally good matches.
-  enum class Kind { kTab, kAction, kBookmark, kSetting };
+  enum class Kind { kTab, kAction, kBookmark, kSetting, kHelp };
   Kind kind = Kind::kAction;
   std::string title;   // Matched first: a tab's title, an action's name…
   std::string detail;  // Matched too, worth less: a tab's address, a section.

@@ -6,6 +6,7 @@
  */
 import { cefTransport } from '../shared/bridge.js';
 import { button, byId, element, errorText } from '../shared/dom.js';
+import { wireHelpButtons } from '../shared/help.js';
 import { ProfilesApi, type ImportResult, type LinkProblem, type Profile, type ProfilesState } from './api.js';
 import { colorLabel, nameProblem, tabsLabel } from './logic.js';
 
@@ -332,3 +333,5 @@ function start(): void {
 }
 
 start();
+
+wireHelpButtons();

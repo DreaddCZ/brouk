@@ -7,6 +7,7 @@
  */
 import { cefSubscriber, cefTransport } from '../shared/bridge.js';
 import { button, byId, element, errorText } from '../shared/dom.js';
+import { wireHelpButtons } from '../shared/help.js';
 import { BookmarksApi, type Profile } from './api.js';
 import {
   clickSelection,
@@ -594,3 +595,5 @@ function showToastInfo(message: string): void {
 }
 
 setUp();
+
+wireHelpButtons();
