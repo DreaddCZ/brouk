@@ -7,8 +7,11 @@
 #   scripts/build --arch x86_64       Intel build (also from an Apple Silicon Mac)
 #   scripts/build --test              also run the tests
 #   scripts/build --sign IDENTITY     sign with this certificate instead of
-#                                     "Brouk Local Dev" (kept for later builds
-#                                     in the same build folder)
+#                                     the one chosen automatically (Apple
+#                                     Development, else "Brouk Local Dev")
+#   scripts/build --notarizable       sign for notarization (hardened runtime,
+#                                     used by scripts/package_mac)
+# Both are kept for later builds in the same build folder.
 #
 # The app bundle ends up in build/<config>-<arch>/.
 set -euo pipefail
@@ -17,6 +20,7 @@ CONFIG=Debug
 ARCH="$(uname -m)"
 RUN_TESTS=0
 SIGN_IDENTITY=""
+HARDENED=OFF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --release) CONFIG=Release ;;
@@ -24,6 +28,7 @@ while [[ $# -gt 0 ]]; do
     --arch) ARCH="$2"; shift ;;
     --test) RUN_TESTS=1 ;;
     --sign) SIGN_IDENTITY="$2"; shift ;;
+    --notarizable) HARDENED=ON ;;
     *) echo "Unknown option: $1" >&2; exit 2 ;;
   esac
   shift
@@ -47,7 +52,10 @@ EXTRA=()
 if [[ "$(uname -s)" == Darwin ]]; then
   EXTRA+=("-DCMAKE_OSX_ARCHITECTURES=$ARCH" "-DPROJECT_ARCH=$ARCH")
   if [[ -n "$SIGN_IDENTITY" ]]; then
-    EXTRA+=("-DBROUK_CODESIGN_IDENTITY=$SIGN_IDENTITY")
+    EXTRA+=("-DBROUK_SIGN_IDENTITY=$SIGN_IDENTITY")
+  fi
+  if [[ "$HARDENED" == ON ]]; then
+    EXTRA+=("-DBROUK_HARDENED_RUNTIME=ON")
   fi
 fi
 cmake -S "$ROOT" -B "$BUILD_DIR" -G Ninja -DCMAKE_BUILD_TYPE="$CONFIG" \

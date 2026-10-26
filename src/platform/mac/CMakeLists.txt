@@ -169,42 +169,62 @@ foreach(_suffix_list ${CEF_HELPER_APP_SUFFIXES})
   list(APPEND _helper_kinds "helper${_target_suffix}")
 endforeach()
 
-# Signing (phase 1, local builds). With the certificate from
-# scripts/create_dev_certificate the app keeps the same identity across
-# builds, so macOS remembers keychain access and permissions; without it the
-# signature is ad-hoc. Another identity can be given with
-# -DBROUK_CODESIGN_IDENTITY (scripts/build --sign).
-set(BROUK_DEV_IDENTITY "${APP_NAME} Local Dev")
+# Signing. Every build is signed with a certificate that stays the same
+# across builds, so macOS remembers keychain access and permissions. The
+# keychain remembers apps by team ID when the certificate has one, so Apple
+# certificates of the team are preferred: then local builds and the
+# notarized releases (Developer ID, scripts/package_mac) count as the same
+# app, and rebuilding asks for nothing. Local builds use the "Apple
+# Development" certificate, because macOS refuses to load the sanitizer
+# runtime of debug builds into a Developer ID app. Without an Apple
+# certificate: the self-signed one from scripts/create_dev_certificate (no
+# team ID, so macOS asks again after each rebuild), else ad-hoc.
+# BROUK_SIGN_IDENTITY (scripts/build --sign) picks another certificate.
+set(BROUK_SIGN_IDENTITY "" CACHE STRING
+    "Code signing identity (empty: chosen automatically)")
+option(BROUK_HARDENED_RUNTIME
+       "Sign for notarization: hardened runtime, timestamp, entitlements" OFF)
 execute_process(COMMAND security find-identity -v -p codesigning
                 OUTPUT_VARIABLE _identities ERROR_QUIET)
-string(FIND "${_identities}" "\"${BROUK_DEV_IDENTITY}\"" _found)
-if(_found GREATER -1)
-  set(BROUK_CODESIGN_IDENTITY "${BROUK_DEV_IDENTITY}" CACHE STRING
-      "Code signing identity for local builds")
+# Certificates by their SHA-1 hash: the same name can exist twice (one
+# Apple Development certificate per Mac).
+function(brouk_find_identity name_prefix out)
+  string(REGEX MATCH "([0-9A-F]+) \"${name_prefix}[^\"]*\"" _match
+         "${_identities}")
+  set(${out} "${CMAKE_MATCH_1}" PARENT_SCOPE)
+endfunction()
+brouk_find_identity("Apple Development: " _apple_development)
+brouk_find_identity("Developer ID Application: " _developer_id)
+brouk_find_identity("${APP_NAME} Local Dev" _local_dev)
+if(NOT BROUK_SIGN_IDENTITY STREQUAL "")
+  set(_identity "${BROUK_SIGN_IDENTITY}")
+elseif(_apple_development)
+  set(_identity "${_apple_development}")
+elseif(_developer_id AND NOT CMAKE_BUILD_TYPE STREQUAL "Debug")
+  set(_identity "${_developer_id}")
+elseif(_local_dev)
+  set(_identity "${_local_dev}")
 else()
-  set(BROUK_CODESIGN_IDENTITY "-" CACHE STRING
-      "Code signing identity for local builds (- means ad-hoc)")
+  set(_identity "-")
   message(STATUS "Signing ad-hoc; run scripts/create_dev_certificate to "
                  "keep keychain access and permissions across builds.")
 endif()
 
-# Releases for other Macs (scripts/package_mac) are signed with an Apple
-# Developer ID, which notarization requires together with the hardened
-# runtime, a secure timestamp and entitlements for what Chromium needs under
-# that runtime (JIT for V8, camera, microphone…; as Chrome's own, see
-# entitlements/). Local builds keep the plain signature: the hardened runtime
-# would block the sanitizer runtime and debuggers.
-set(_sign codesign --force --sign "${BROUK_CODESIGN_IDENTITY}")
+# Releases for other Macs (scripts/package_mac) also need, for notarization,
+# the hardened runtime, a secure timestamp and entitlements for what Chromium
+# needs under that runtime (JIT for V8, camera, microphone…; as Chrome's own,
+# see entitlements/). Local builds go without: the hardened runtime would
+# block the sanitizer runtime and debuggers.
+set(_sign codesign --force --sign "${_identity}")
 set(_entitlements_dir "${CMAKE_CURRENT_SOURCE_DIR}/entitlements")
 set(_signing_inputs "")
-string(FIND "${BROUK_CODESIGN_IDENTITY}" "Developer ID Application" _developer_id)
-if(_developer_id EQUAL 0)
+if(BROUK_HARDENED_RUNTIME)
   list(APPEND _sign --options runtime --timestamp)
   file(GLOB _signing_inputs "${_entitlements_dir}/*.entitlements")
 endif()
 # Re-sign when the identity changes, not only when the code does.
 file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/signing_identity.txt"
-     CONTENT "${BROUK_CODESIGN_IDENTITY}\n")
+     CONTENT "${_identity} ${BROUK_HARDENED_RUNTIME}\n")
 list(APPEND _signing_inputs "${CMAKE_CURRENT_BINARY_DIR}/signing_identity.txt")
 
 # Inner code first, then the app.
@@ -216,14 +236,14 @@ list(APPEND _bundle_commands
   COMMAND ${_sign} "${_framework}")
 foreach(_helper_app _kind IN ZIP_LISTS _signed_helpers _helper_kinds)
   set(_helper_sign ${_sign})
-  if(_developer_id EQUAL 0 AND EXISTS "${_entitlements_dir}/${_kind}.entitlements")
+  if(BROUK_HARDENED_RUNTIME AND EXISTS "${_entitlements_dir}/${_kind}.entitlements")
     list(APPEND _helper_sign
          --entitlements "${_entitlements_dir}/${_kind}.entitlements")
   endif()
   list(APPEND _bundle_commands COMMAND ${_helper_sign} "${_helper_app}")
 endforeach()
 set(_app_sign ${_sign})
-if(_developer_id EQUAL 0)
+if(BROUK_HARDENED_RUNTIME)
   list(APPEND _app_sign --entitlements "${_entitlements_dir}/app.entitlements")
 endif()
 list(APPEND _bundle_commands
@@ -235,6 +255,6 @@ add_custom_command(OUTPUT "${_bundle_stamp}"
   DEPENDS brouk_app brouk_helper "${_web_stamp}"
           "$<TARGET_FILE:brouk_app>" "$<TARGET_FILE:brouk_helper>"
           ${_signing_inputs}
-  COMMENT "Assembling and signing ${APP_NAME}.app (${BROUK_CODESIGN_IDENTITY})"
+  COMMENT "Assembling and signing ${APP_NAME}.app (${_identity})"
   VERBATIM)
 add_custom_target(brouk_bundle ALL DEPENDS "${_bundle_stamp}")

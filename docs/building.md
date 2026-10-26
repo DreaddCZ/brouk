@@ -79,9 +79,17 @@ another Mac, macOS then blocks the first launch ("cannot verify Brouk"); it
 is allowed once in System Settings → Privacy & Security → "Open Anyway", as
 the read-me explains. Updates mean installing a newer image.
 
-Local builds (`scripts/build`) keep the plain signature: the hardened runtime
-would block the sanitizer runtime and debuggers. `scripts/build --sign
-<identity>` signs with another certificate.
+**Local builds** (`scripts/build`) are signed with the team's "Apple
+Development" certificate when the keychain has one, without the hardened
+runtime (it would block the sanitizer runtime and debuggers). macOS remembers
+keychain access by team ID, so rebuilt local builds and the notarized
+releases count as the same app and do not ask for keychain access again.
+(Developer ID cannot be used for debug builds: macOS refuses to load the
+sanitizer runtime into a Developer ID app.) Without an Apple certificate,
+builds fall back to the self-signed "Brouk Local Dev" certificate, which has
+no team ID, so macOS asks again after each rebuild. `scripts/build --sign
+<identity>` signs with another certificate. To get the Apple Development
+certificate on another Mac, open Xcode → Settings → Accounts and sign in.
 
 ### Build types and checks
 
