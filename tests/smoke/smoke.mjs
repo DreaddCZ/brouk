@@ -157,7 +157,8 @@ function startServer() {
 
 function crashReports() {
   try {
-    return readdirSync(kCrashReports).filter((name) => name.toLowerCase().startsWith('brouk'));
+    // The main process only: the renderer crash is caused on purpose.
+    return readdirSync(kCrashReports).filter((name) => /^brouk[-_]/i.test(name));
   } catch {
     return [];
   }
