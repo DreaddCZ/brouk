@@ -471,6 +471,34 @@ std::span<const BuiltInLinkWrapper> BuiltInLinkWrappers() {
   return kList;
 }
 
+std::string LinkForLog(std::string_view url) {
+  std::optional<LinkParts> parts = SplitLink(url);
+  if (!parts) {
+    return "(not an http(s) link)";
+  }
+  constexpr std::size_t kMaxPath = 60;
+  std::string text = parts->host;
+  text += parts->path.size() > kMaxPath ? parts->path.substr(0, kMaxPath) + "…"
+                                        : parts->path;
+  char separator = '?';
+  std::string_view query = parts->query;
+  while (!query.empty()) {
+    std::size_t end = query.find('&');
+    std::string_view pair = query.substr(0, end);
+    std::string_view name = pair.substr(0, pair.find('='));
+    if (!name.empty()) {
+      if (separator == '?') {
+        text += ' ';
+      }
+      text += separator;
+      text += name;
+      separator = '&';
+    }
+    query = end == std::string_view::npos ? "" : query.substr(end + 1);
+  }
+  return text;
+}
+
 UnwrappedLink UnwrapLink(std::string_view url,
                          std::span<const LinkWrapperRule> user_wrappers) {
   UnwrappedLink result;

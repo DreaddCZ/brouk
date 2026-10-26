@@ -39,6 +39,10 @@ std::optional<std::string> LinkWrapperName(
     std::string_view url,
     std::span<const LinkWrapperRule> user_wrappers);
 
+// For the log, to see why a link was routed as it was: host, the start of
+// the path and the query parameters' names, never their values (tokens).
+std::string LinkForLog(std::string_view url);
+
 // An absolute http or https URL with a host and no spaces or control
 // characters.
 bool IsRoutableUrl(std::string_view url);

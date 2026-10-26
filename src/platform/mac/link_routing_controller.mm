@@ -234,6 +234,7 @@ NSScreen* ScreenWithMouse() {
 - (void)route:(BRLinkRequest*)request {
   brouk::ProfileDecision decision =
       [self decideProfileFor:request realURL:request.realURL.UTF8String ?: ""];
+  [self logRouting:request decision:decision];
   if (decision.stays_in_source) {
     [self openInSource:request];
     return;
@@ -247,6 +248,25 @@ NSScreen* ScreenWithMouse() {
     }
   }
   [self showPickerFor:request decision:decision];
+}
+
+// One line in the macOS log per routed link, so a link that opens in an
+// unexpected profile can be explained (Console, process "brouk"). Never
+// query values: LinkForLog leaves them out.
+- (void)logRouting:(BRLinkRequest*)request
+          decision:(const brouk::ProfileDecision&)decision {
+  std::string profiles;
+  for (const brouk::ProfileId& profile : decision.profiles) {
+    profiles += (profiles.empty() ? "" : ", ") + profile;
+  }
+  std::string rule = decision.rule_pattern ? "rule " + *decision.rule_pattern
+                                           : std::string("no rule");
+  NSLog(@"Link routing: %@: %s, via %@, routed by %s: %s -> %s",
+        request.sourceName,
+        brouk::LinkForLog(request.url.UTF8String ?: "").c_str(),
+        request.wrapper ?: @"no wrapper",
+        brouk::LinkForLog(request.realURL.UTF8String ?: "").c_str(),
+        rule.c_str(), profiles.c_str());
 }
 
 - (std::vector<brouk::RoutingWindow>)

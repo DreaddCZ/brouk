@@ -34,6 +34,21 @@ TEST(LinkUnwrapTest, PlainLinksStayAsTheyAre) {
             UnwrappedLink::Kind::kPlain);
 }
 
+// What the log may show of a link: never query values, user info or the
+// fragment, as they can hold tokens.
+TEST(LinkUnwrapTest, LinkForLog) {
+  EXPECT_EQ(LinkForLog("https://user:pw@Statics.Teams.cdn.office.net:443/"
+                       "evergreen-assets/safelinks/2/atp-safelinks.html"
+                       "?url=https%3A%2F%2Fx&locale=en&sd=secret#frag"),
+            "statics.teams.cdn.office.net/evergreen-assets/safelinks/2/"
+            "atp-safelinks.html ?url&locale&sd");
+  EXPECT_EQ(LinkForLog("https://example.com"), "example.com/");
+  EXPECT_EQ(LinkForLog("https://example.com/" + std::string(100, 'a')),
+            "example.com/" + std::string(59, 'a') + "…");
+  EXPECT_EQ(LinkForLog("https://example.com/?=1&a=2&&b"), "example.com/ ?a&b");
+  EXPECT_EQ(LinkForLog("mailto:x@example.com"), "(not an http(s) link)");
+}
+
 TEST(LinkUnwrapTest, SafeLinks) {
   ExpectDecoded(
       "https://eur02.safelinks.protection.outlook.com/"
