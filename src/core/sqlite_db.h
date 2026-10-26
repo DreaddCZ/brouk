@@ -5,8 +5,10 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include "core/result.h"
 
@@ -59,6 +61,7 @@ class SqliteStatement {
 
   void Bind(int index, std::int64_t value);
   void Bind(int index, std::string_view value);
+  void BindBlob(int index, std::span<const std::uint8_t> value);
 
   // True while there is a row to read; false when done or on an error
   // (then ok() is false).
@@ -71,6 +74,7 @@ class SqliteStatement {
 
   std::int64_t ColumnInt(int index) const;
   std::string ColumnText(int index) const;
+  std::vector<std::uint8_t> ColumnBlob(int index) const;
 
  private:
   friend class SqliteDatabase;

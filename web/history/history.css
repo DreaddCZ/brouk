@@ -29,6 +29,7 @@ main { max-width: 900px; }
 .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c, var(--grey)); }
 .icon { width: 22px; height: 22px; border-radius: 5px; display: grid; place-items: center;
   font-size: 12px; font-weight: 600; color: var(--muted); background: var(--bg); }
+.icon img { width: 16px; height: 16px; }
 .main { min-width: 0; display: flex; flex-direction: column; }
 .main .title, .main .host { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .main .title { color: var(--text); text-decoration: none; }

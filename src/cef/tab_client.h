@@ -118,8 +118,10 @@ class TabClientDelegate : public PasswordTabDelegate,
   virtual void OnLoadingStateChanged(bool is_loading,
                                      bool can_go_back,
                                      bool can_go_forward) = 0;
-  // PNG-encoded favicon of the current page, or empty if there is none.
-  virtual void OnFaviconChanged(const std::vector<std::uint8_t>& png) = 0;
+  // PNG-encoded favicon of the current page and its URL, or empty if there
+  // is none. Told again for each page, also when the icon is the same.
+  virtual void OnFaviconChanged(const std::string& icon_url,
+                                const std::vector<std::uint8_t>& png) = 0;
 
   // Returns where to host the popup's browser, or nullopt to block it.
   virtual std::optional<PopupHost> OnBeforePopup(
@@ -511,6 +513,7 @@ class TabClient : public CefClient,
 
   TabClientDelegate* delegate_;  // Not owned. Null after DetachDelegate().
   std::string favicon_url_;      // URL of the favicon being shown.
+  std::vector<std::uint8_t> favicon_png_;  // Its image, once downloaded.
   // URLs from "Save Link/Image As…": their downloads ask where to save.
   std::set<std::string> save_as_urls_;
   // Reserved download paths by download id, released when it ends.

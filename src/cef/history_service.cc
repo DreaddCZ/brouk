@@ -47,6 +47,9 @@ struct HistoryService::State {
   std::function<std::filesystem::path(const ProfileId&)> database_path;
   std::optional<int> retention_days = 90;
   std::vector<UrlPattern> never_record;
+  // Bookmarked pages, once the browser has said which; each database also
+  // remembers the last list it got.
+  std::optional<std::vector<std::string>> kept_icon_pages;
   struct Open {
     std::unique_ptr<HistoryStore> store;
     std::int64_t last_cleanup = 0;
@@ -67,6 +70,9 @@ struct HistoryService::State {
       }
       it = open.emplace(profile, Open{std::move(store).value(), 0}).first;
       it->second.store->DeleteMatching(never_record);
+      if (kept_icon_pages) {
+        it->second.store->SetKeptIconPages(*kept_icon_pages);
+      }
     }
     ApplyRetention(it->second, false);
     return it->second.store.get();
@@ -183,6 +189,69 @@ void HistoryService::DeletePage(const ProfileId& profile, std::string url) {
     if (HistoryStore* store = state.Store(profile)) {
       store->DeletePage(url);
     }
+  });
+}
+
+void HistoryService::SetFavicon(const ProfileId& profile,
+                                std::string page_url,
+                                std::string icon_url,
+                                std::vector<std::uint8_t> png) {
+  CEF_REQUIRE_UI_THREAD();
+  if (!ShouldRecordInHistory(page_url) || png.empty()) {
+    return;
+  }
+  std::int64_t time = Now();
+  Post([profile, page_url = std::move(page_url), icon_url = std::move(icon_url),
+        png = std::move(png), time](State& state) {
+    if (MatchesAnyPattern(state.never_record, page_url)) {
+      return;
+    }
+    if (HistoryStore* store = state.Store(profile)) {
+      store->SetFavicon(page_url, icon_url, png, time);
+    }
+  });
+}
+
+void HistoryService::SetKeptIconPages(std::vector<std::string> urls) {
+  CEF_REQUIRE_UI_THREAD();
+  Post([urls = std::move(urls)](State& state) {
+    if (state.kept_icon_pages == urls) {
+      return;
+    }
+    state.kept_icon_pages = urls;
+    for (auto& [profile, entry] : state.open) {
+      entry.store->SetKeptIconPages(urls);
+    }
+  });
+}
+
+void HistoryService::Favicons(const ProfileId& profile,
+                              std::vector<std::string> urls,
+                              IconsDone done) {
+  CEF_REQUIRE_UI_THREAD();
+  Post([profile, urls = std::move(urls),
+        done = std::move(done)](State& state) mutable {
+    std::map<std::string, std::vector<std::uint8_t>> icons;
+    if (HistoryStore* store = state.Store(profile)) {
+      std::map<std::int64_t, std::vector<std::uint8_t>> images;
+      for (std::string& url : urls) {
+        std::int64_t id = store->PageIcon(url);
+        if (id == 0) {
+          continue;
+        }
+        auto image = images.find(id);
+        if (image == images.end()) {
+          image = images.emplace(id, store->IconImage(id)).first;
+        }
+        if (!image->second.empty()) {
+          icons.emplace(std::move(url), image->second);
+        }
+      }
+    }
+    CefPostTask(TID_UI, new FunctionTask([done = std::move(done),
+                                          icons = std::move(icons)]() mutable {
+                  done(std::move(icons));
+                }));
   });
 }
 

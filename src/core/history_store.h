@@ -161,11 +161,30 @@ class HistoryStore {
   int DeleteDownloadsSince(std::int64_t since);
   std::int64_t CountDownloadsSince(std::int64_t since);
 
+  // Favicons (013). A page's icon, PNG at most 64 KB, shared by all pages
+  // with the same icon URL; `time` is when it was seen. Pages keep their
+  // icon while they are in the history or kept by a bookmark (011).
+  std::optional<Error> SetFavicon(std::string_view page_url,
+                                  std::string_view icon_url,
+                                  std::span<const std::uint8_t> png,
+                                  std::int64_t time);
+  // The icon of a page, else of the most recently visited page of its host
+  // that has one; 0 if none. HostIcon: the latter only.
+  std::int64_t PageIcon(std::string_view url);
+  std::int64_t HostIcon(std::string_view host);
+  // The PNG of an icon from PageIcon or HostIcon; empty if it is gone.
+  std::vector<std::uint8_t> IconImage(std::int64_t id);
+  // The pages whose icons stay when they leave the history: the bookmarked
+  // ones. Replaces the previous list; icons no longer needed are removed.
+  void SetKeptIconPages(std::span<const std::string> urls);
+
   // For tests and the history page later.
   std::optional<HistoryMatch> FindPage(std::string_view url);
 
  private:
   std::optional<Error> CreateSchema();
+  // Removes icons of pages that are neither in the history nor kept.
+  void PruneIcons();
   // Calls `visit` for each visit (newest first) of `host` ("" for all
   // hosts) before `before` (0 for any), with its page's visit count, until
   // it returns false.

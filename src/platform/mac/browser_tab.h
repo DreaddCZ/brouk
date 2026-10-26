@@ -45,6 +45,11 @@ NS_ASSUME_NONNULL_BEGIN
          title:(const std::string&)title
     transition:(brouk::VisitTransition)transition;
 - (void)tab:(BRTab*)tab titleChanged:(NSString*)title forURL:(NSString*)url;
+// The page's favicon (PNG) arrived or is the same for a new page.
+- (void)tab:(BRTab*)tab
+    favicon:(const std::vector<std::uint8_t>&)png
+    iconURL:(const std::string&)iconURL
+     forURL:(NSString*)url;
 // The page last recorded forwarded to the next one by itself.
 - (void)tab:(BRTab*)tab visitRedirectedFrom:(const std::string&)url;
 - (void)tab:(BRTab*)tab

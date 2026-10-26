@@ -50,6 +50,23 @@ class HistoryService {
   // The page forwarded to another page by itself (a client redirect): its
   // latest visit is removed, as only the end of a redirect chain is kept.
   void RemoveRedirectSource(const ProfileId& profile, std::string url);
+  // A page's favicon (013), as the tab downloaded it (PNG). Not stored for
+  // pages that are not recorded.
+  void SetFavicon(const ProfileId& profile,
+                  std::string page_url,
+                  std::string icon_url,
+                  std::vector<std::uint8_t> png);
+  // The bookmarked pages (011), whose icons stay when they leave the
+  // history; applied to every profile.
+  void SetKeptIconPages(std::vector<std::string> urls);
+  using IconsDone =
+      std::function<void(std::map<std::string, std::vector<std::uint8_t>>)>;
+  // The icons of `urls` in `profile`'s history (the page's own, else its
+  // host's), by URL; pages without one are left out. `done` runs on the UI
+  // thread.
+  void Favicons(const ProfileId& profile,
+                std::vector<std::string> urls,
+                IconsDone done);
   // Closes a profile's database before its folder is deleted (005).
   void CloseProfile(const ProfileId& profile);
 

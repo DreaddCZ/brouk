@@ -3,6 +3,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
@@ -237,6 +238,70 @@ bool BookmarksPageHandler::OnQuery(CefRefPtr<CefBrowser> /*browser*/,
     answer->SetDictionary(
         "other", NodeJson(model, *model.Find(BookmarkModel::kOtherId)));
     callback->Success(ToJson(answer));
+    return true;
+  }
+  if (*type == "bookmarks.icons") {
+    // Each bookmark's icon from its profile's history; general bookmarks
+    // use the manager tab's profile, where they open (011).
+    std::map<ProfileId, std::map<std::string, std::vector<BookmarkId>>> wanted;
+    ProfileId current = delegate.CurrentProfile();
+    std::vector<BookmarkId> stack = {BookmarkModel::kBarId,
+                                     BookmarkModel::kOtherId};
+    while (!stack.empty()) {
+      const BookmarkItem* item = model.Find(stack.back());
+      stack.pop_back();
+      if (item == nullptr) {
+        continue;
+      }
+      if (item->folder) {
+        stack.insert(stack.end(), item->children.begin(), item->children.end());
+        continue;
+      }
+      ProfileId profile = model.EffectiveProfile(item->id);
+      wanted[profile.empty() ? current : profile][item->url].push_back(
+          item->id);
+    }
+    struct Shared {
+      CefRefPtr<CefDictionaryValue> icons = CefDictionaryValue::Create();
+      std::size_t pending = 0;
+    };
+    auto shared = std::make_shared<Shared>();
+    shared->pending = wanted.size();
+    auto finish = [shared, callback] {
+      CefRefPtr<CefDictionaryValue> answer = CefDictionaryValue::Create();
+      answer->SetDictionary("icons", shared->icons);
+      callback->Success(ToJson(answer));
+    };
+    if (wanted.empty()) {
+      finish();
+      return true;
+    }
+    for (auto& [profile, by_url] : wanted) {
+      std::vector<std::string> urls;
+      for (const auto& [url, ids] : by_url) {
+        urls.push_back(url);
+      }
+      delegate.Favicons(
+          profile, std::move(urls),
+          [shared, finish, ids_by_url = std::move(by_url)](
+              std::map<std::string, std::vector<std::uint8_t>> icons) {
+            for (const auto& [url, png] : icons) {
+              auto ids = ids_by_url.find(url);
+              if (ids == ids_by_url.end() || png.empty()) {
+                continue;
+              }
+              std::string data =
+                  "data:image/png;base64," +
+                  CefBase64Encode(png.data(), png.size()).ToString();
+              for (BookmarkId id : ids->second) {
+                shared->icons->SetString(std::to_string(id), data);
+              }
+            }
+            if (--shared->pending == 0) {
+              finish();
+            }
+          });
+    }
     return true;
   }
   if (*type == "bookmarks.add") {

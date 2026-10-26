@@ -350,6 +350,17 @@ class AppBookmarksPage : public BookmarksPageDelegate {
     return [controller_ profileOfTab:tab_];
   }
   const BookmarkModel& Model() override { return [store_ model]; }
+  void Favicons(const ProfileId& profile,
+                std::vector<std::string> urls,
+                IconsDone done) override {
+    BRAppDelegate* app = app_;
+    HistoryService* history = app ? [app historyService] : nullptr;
+    if (!history) {
+      done({});
+      return;
+    }
+    history->Favicons(profile, std::move(urls), std::move(done));
+  }
   void Change(const std::function<void(BookmarkModel&)>& change) override {
     [store_ change:change];
   }
@@ -812,6 +823,8 @@ class AppSettingsPage : public SettingsPageDelegate {
   std::unique_ptr<brouk::AutofillManager> _autofill;
   // Downloads of all profiles (014), same lifetime.
   std::unique_ptr<brouk::DownloadService> _downloads;
+  // Site icons from the history for native views (013).
+  BRFaviconCache* _favicons;
   NSProgressIndicator* _dockProgress;
   // History menu (013): tabs and windows closed in this run, and each
   // profile's recently visited pages (fetched from its history).
@@ -901,6 +914,14 @@ class AppSettingsPage : public SettingsPageDelegate {
       [profilesDir](const brouk::ProfileId& profile) {
         return profilesDir / profile / "history.db";
       });
+  _favicons = [[BRFaviconCache alloc] initWithHistory:_history.get()];
+  // Bookmarked pages keep their icons when they leave the history.
+  [self keepBookmarkIcons];
+  [NSNotificationCenter.defaultCenter
+      addObserver:self
+         selector:@selector(keepBookmarkIcons)
+             name:BRBookmarksDidChangeNotification
+           object:nil];
   NSString* resources = [NSString
       stringWithContentsOfFile:[NSBundle.mainBundle
                                    pathForResource:@"adblock-resources"
@@ -1564,6 +1585,7 @@ class AppSettingsPage : public SettingsPageDelegate {
   _downloads.reset();  // Before the history it records into.
   _passwords.reset();  // Finishes queued work, closes the databases.
   _autofill.reset();
+  [_favicons detach];
   _history.reset();  // Finishes queued history work, closes the databases.
   _settingsWatcher = nil;
   _profileManager = nil;
@@ -2061,6 +2083,21 @@ class AppSettingsPage : public SettingsPageDelegate {
   return _history.get();
 }
 
+- (nullable BRFaviconCache*)faviconCache {
+  return _favicons;
+}
+
+- (void)faviconChangedForURL:(const std::string&)url
+                     profile:(const brouk::ProfileId&)profile {
+  [_favicons iconChangedForURL:url profile:profile];
+}
+
+- (void)keepBookmarkIcons {
+  if (_history) {
+    _history->SetKeptIconPages([_bookmarks model].AllUrls());
+  }
+}
+
 - (std::vector<brouk::ProfileInfo>)allProfiles {
   return _profiles->profiles();
 }
@@ -2488,6 +2525,9 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
           [menu addItemWithTitle:title.length ? title : url
                           action:@selector(openBookmarkFromMenu:)
                    keyEquivalent:@""];
+      entry.image = [_favicons iconForURL:item->url profile:profile]
+                        ?: [NSImage imageWithSystemSymbolName:@"globe"
+                                     accessibilityDescription:nil];
       entry.target = self;
       entry.tag = static_cast<NSInteger>(id);
       entry.toolTip = url;

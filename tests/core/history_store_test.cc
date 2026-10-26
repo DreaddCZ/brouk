@@ -2,6 +2,7 @@
 
 #include "core/history_query.h"
 
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -348,6 +349,90 @@ TEST_F(HistoryStoreTest, ClearVisitsSince) {
   EXPECT_FALSE(store_->FindPage("https://b.com/"));
   EXPECT_EQ(store_->DeleteVisitsSince(0), 1);
   EXPECT_FALSE(store_->FindPage("https://a.com/"));
+}
+
+std::vector<std::uint8_t> Png(std::uint8_t tag) {
+  return {0x89, 'P', 'N', 'G', tag};
+}
+
+TEST_F(HistoryStoreTest, FaviconsAreSharedAndFallBackToTheHost) {
+  Visit("https://a.com/1", "", kNow - 60);
+  Visit("https://a.com/2", "", kNow - 30);
+  ASSERT_FALSE(store_->SetFavicon("https://a.com/1", "https://a.com/i.png",
+                                  Png(1), kNow));
+  ASSERT_FALSE(store_->SetFavicon("https://a.com/2", "https://a.com/i.png",
+                                  Png(1), kNow));
+  std::int64_t icon = store_->PageIcon("https://a.com/1");
+  ASSERT_NE(icon, 0);
+  EXPECT_EQ(store_->PageIcon("https://a.com/2"), icon);
+  EXPECT_EQ(store_->IconImage(icon), Png(1));
+  // A page without its own icon (a bookmark never opened) uses its host's.
+  EXPECT_EQ(store_->PageIcon("https://a.com/never-visited"), icon);
+  EXPECT_EQ(store_->HostIcon("a.com"), icon);
+  EXPECT_EQ(store_->PageIcon("https://b.com/"), 0);
+  // A changed image replaces the stored one.
+  ASSERT_FALSE(store_->SetFavicon("https://a.com/1", "https://a.com/i.png",
+                                  Png(2), kNow));
+  EXPECT_EQ(store_->IconImage(icon), Png(2));
+}
+
+TEST_F(HistoryStoreTest, FaviconsRejectEmptyAndLargeImages) {
+  EXPECT_TRUE(
+      store_->SetFavicon("https://a.com/", "https://a.com/i.png", {}, kNow));
+  std::vector<std::uint8_t> large(65 * 1024, 1);
+  EXPECT_TRUE(
+      store_->SetFavicon("https://a.com/", "https://a.com/i.png", large, kNow));
+  EXPECT_EQ(store_->PageIcon("https://a.com/"), 0);
+}
+
+TEST_F(HistoryStoreTest, FaviconsLeaveWithTheirPages) {
+  Visit("https://a.com/", "", kNow - 60);
+  Visit("https://b.com/", "", kNow - 60);
+  ASSERT_FALSE(store_->SetFavicon("https://a.com/", "https://a.com/a.png",
+                                  Png(1), kNow));
+  ASSERT_FALSE(store_->SetFavicon("https://b.com/", "https://b.com/b.png",
+                                  Png(2), kNow));
+  std::int64_t a = store_->PageIcon("https://a.com/");
+  ASSERT_TRUE(store_->DeletePage("https://a.com/"));
+  EXPECT_EQ(store_->PageIcon("https://a.com/"), 0);
+  EXPECT_TRUE(store_->IconImage(a).empty());
+  // Clearing all history removes the rest.
+  store_->DeleteVisitsSince(0);
+  EXPECT_EQ(store_->PageIcon("https://b.com/"), 0);
+}
+
+TEST_F(HistoryStoreTest, BookmarkedPagesKeepTheirFavicons) {
+  Visit("https://a.com/", "", kNow - 60);
+  ASSERT_FALSE(store_->SetFavicon("https://a.com/", "https://a.com/a.png",
+                                  Png(1), kNow));
+  std::vector<std::string> kept = {"https://a.com/"};
+  store_->SetKeptIconPages(kept);
+  store_->DeleteVisitsSince(0);
+  EXPECT_FALSE(store_->FindPage("https://a.com/"));
+  std::int64_t icon = store_->PageIcon("https://a.com/");
+  ASSERT_NE(icon, 0);
+  EXPECT_EQ(store_->IconImage(icon), Png(1));
+  // Once the bookmark is gone, so is the icon.
+  store_->SetKeptIconPages({});
+  EXPECT_EQ(store_->PageIcon("https://a.com/"), 0);
+  EXPECT_TRUE(store_->IconImage(icon).empty());
+}
+
+TEST_F(HistoryStoreTest, FaviconsOfPagesNeverRecordedArePruned) {
+  // The icon arrives before the visit is recorded; the page then fails.
+  ASSERT_FALSE(store_->SetFavicon("https://a.com/", "https://a.com/a.png",
+                                  Png(1), kNow));
+  EXPECT_NE(store_->PageIcon("https://a.com/"), 0);
+  store_->DeleteVisitsBefore(kNow - 90 * kDay);
+  EXPECT_EQ(store_->PageIcon("https://a.com/"), 0);
+}
+
+TEST_F(HistoryStoreTest, FaviconsSurviveReopening) {
+  Visit("https://a.com/", "", kNow - 60);
+  ASSERT_FALSE(store_->SetFavicon("https://a.com/", "https://a.com/a.png",
+                                  Png(7), kNow));
+  store_ = OpenStore();
+  EXPECT_EQ(store_->IconImage(store_->PageIcon("https://a.com/")), Png(7));
 }
 
 }  // namespace

@@ -7,6 +7,8 @@ export interface Site {
   readonly pages: number;
   /** Seconds since 1970. */
   readonly lastVisit: number;
+  /** The site's icon as a data: URL, if the history has one. */
+  readonly icon?: string;
 }
 
 export interface Visit {
@@ -17,6 +19,7 @@ export interface Visit {
   readonly host: string;
   readonly time: number;
   readonly transition: string;
+  readonly icon?: string;
 }
 
 export type SiteSort = 'lastVisit' | 'visits' | 'host';

@@ -3,6 +3,7 @@
  * checked before the page uses it.
  */
 import { BridgeError, isRecord, send, subscribe, type Subscriber, type Transport } from '../shared/bridge.js';
+import { parseIcons } from '../shared/icons.js';
 import type { BookmarkNode, BookmarkTree } from './logic.js';
 
 export interface Profile {
@@ -155,6 +156,11 @@ export class BookmarksApi {
 
   async importHtml(): Promise<ImportResult> {
     return parseImport(await send('bookmarks.import', {}, this.#transport));
+  }
+
+  /** Site icons (013) by bookmark id, as data: URLs. */
+  async icons(): Promise<ReadonlyMap<string, string>> {
+    return parseIcons(await send('bookmarks.icons', {}, this.#transport));
   }
 
   /** Calls `changed` whenever bookmarks change anywhere in the app. */

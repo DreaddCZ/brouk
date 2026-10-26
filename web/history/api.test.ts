@@ -13,6 +13,12 @@ test('state, sites, pages and visits are checked', () => {
   assert.equal(sites[0]?.pages, 2);
   assert.throws(() => parseSites({ sites: [{ profile: 'default', host: 'a.com', visits: -1, pages: 2, lastVisit: 10 }] }), BridgeError);
   assert.throws(() => parseSites({}), BridgeError);
+  const withIcon = parseSites({
+    sites: [{ profile: 'default', host: 'a.com', visits: 1, pages: 1, lastVisit: 1, icon: 'default:4' }],
+    icons: { 'default:4': 'data:image/png;base64,AAAA' },
+  });
+  assert.equal(withIcon[0]?.icon, 'data:image/png;base64,AAAA');
+  assert.equal(sites[0]?.icon, undefined);
 
   assert.equal(parsePages({ pages: [{ url: 'https://a.com/', title: 'A', visits: 1, lastVisit: 5 }] })[0]?.title, 'A');
   const visits = parseVisits({ visits: [{ profile: 'p', id: 7, url: 'u', title: '', host: '', time: 9, transition: 'typed' }] });

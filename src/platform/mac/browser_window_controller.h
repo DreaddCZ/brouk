@@ -9,6 +9,7 @@
 #import "platform/mac/bookmark_store.h"
 #import "platform/mac/command_palette_panel.h"
 #import "platform/mac/devtools_dock.h"
+#import "platform/mac/favicon_cache.h"
 
 #include "cef/adblock_service.h"
 #include "cef/devtools_preferences.h"
@@ -99,6 +100,11 @@ NS_ASSUME_NONNULL_BEGIN
 - (nullable brouk::HistoryService*)historyService;
 // A page was recorded or removed: Recently Visited may have changed.
 - (void)historyChangedForProfile:(const brouk::ProfileId&)profile;
+// Site icons for native views (013): null before CEF is ready.
+- (nullable BRFaviconCache*)faviconCache;
+// A page of `profile` got its favicon (013), already sent to the history.
+- (void)faviconChangedForURL:(const std::string&)url
+                     profile:(const brouk::ProfileId&)profile;
 // Reopen Closed Tab (013): a tab closed on its own, or a window closed with
 // its tabs (left to right).
 - (void)browserWindow:(BRBrowserWindowController*)controller

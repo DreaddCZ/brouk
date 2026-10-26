@@ -8,6 +8,7 @@
 #include <cstddef>
 
 #import "platform/mac/bookmark_store.h"
+#import "platform/mac/favicon_cache.h"
 
 #include "core/bookmark_model.h"
 #include "core/profile_id.h"
@@ -47,6 +48,8 @@ extern NSPasteboardType const BRBookmarkPasteboardType;
 @interface BRBookmarksBar : NSView <NSDraggingSource>
 
 @property(nonatomic, weak) id<BRBookmarksBarDelegate> delegate;
+// Site icons of the bookmarks (013).
+@property(nonatomic, weak, nullable) BRFaviconCache* favicons;
 
 // Shows `store`'s bar folder as seen in `profile`; rebuilt only when the
 // bookmarks or the profile changed.

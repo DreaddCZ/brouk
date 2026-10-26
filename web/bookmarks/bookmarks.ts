@@ -43,6 +43,8 @@ let anchor: number | null = null;
 /** Row ids in the order shown (for Shift ranges and ⌘A). */
 let order: number[] = [];
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
+/** Site icons (013) by bookmark id. */
+let icons: ReadonlyMap<string, string> = new Map();
 
 function showError(message: string | null): void {
   const box = byId<HTMLParagraphElement>('error');
@@ -87,6 +89,17 @@ async function load(): Promise<void> {
   selected = new Set([...selected].filter((id) => index.has(id)));
   renderFilter();
   render();
+  void loadIcons();
+}
+
+/** Icons come after the list, so it never waits for the history. */
+async function loadIcons(): Promise<void> {
+  try {
+    icons = await api.icons();
+  } catch {
+    return; // The generic icons stay.
+  }
+  renderList();
 }
 
 let reloadPending = false;
@@ -189,6 +202,13 @@ function renderRow(node: BookmarkNode): HTMLElement {
   row.setAttribute('aria-selected', String(selected.has(node.id)));
   row.draggable = true;
   const icon = element('span', { className: 'icon', text: node.type === 'folder' ? '📁' : '🌐' });
+  const site = node.type === 'url' ? icons.get(String(node.id)) : undefined;
+  if (site !== undefined) {
+    const image = element('img');
+    image.src = site;
+    image.alt = '';
+    icon.replaceChildren(image);
+  }
   const main = element('div', { className: 'main' });
   main.append(element('span', { className: 'name', text: displayName(node) }));
   if (query !== '') {

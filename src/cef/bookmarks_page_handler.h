@@ -34,6 +34,13 @@ class BookmarksPageDelegate {
   // Opens a bookmark by the opening rules of 011: in the manager tab when
   // it may, or (with `new_tab`) in a new background tab.
   virtual void Open(BookmarkId id, bool new_tab) = 0;
+  // The site icons (013) of `urls` from `profile`'s history, by URL (PNG);
+  // `done` runs on the UI thread, with nothing if there is no history.
+  using IconsDone =
+      std::function<void(std::map<std::string, std::vector<std::uint8_t>>)>;
+  virtual void Favicons(const ProfileId& profile,
+                        std::vector<std::string> urls,
+                        IconsDone done) = 0;
   // Calls `changed` whenever the bookmarks change, until the page goes.
   virtual void Watch(std::function<void()> changed) = 0;
   // Export: asks where to save `html`; `done` gets false when cancelled,

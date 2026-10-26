@@ -6,9 +6,11 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace brouk {
 
@@ -86,6 +88,11 @@ void SqliteStatement::Bind(int index, std::string_view value) {
                     static_cast<int>(value.size()), SQLITE_TRANSIENT);
 }
 
+void SqliteStatement::BindBlob(int index, std::span<const std::uint8_t> value) {
+  sqlite3_bind_blob(statement_, index, value.data(),
+                    static_cast<int>(value.size()), SQLITE_TRANSIENT);
+}
+
 bool SqliteStatement::Step() {
   int status = sqlite3_step(statement_);
   if (status == SQLITE_ROW) {
@@ -117,6 +124,14 @@ std::string SqliteStatement::ColumnText(int index) const {
   return text ? std::string(reinterpret_cast<const char*>(text),
                             static_cast<std::size_t>(size))
               : std::string();
+}
+
+std::vector<std::uint8_t> SqliteStatement::ColumnBlob(int index) const {
+  const auto* data =
+      static_cast<const std::uint8_t*>(sqlite3_column_blob(statement_, index));
+  int size = sqlite3_column_bytes(statement_, index);
+  return data ? std::vector<std::uint8_t>(data, data + size)
+              : std::vector<std::uint8_t>();
 }
 
 }  // namespace brouk

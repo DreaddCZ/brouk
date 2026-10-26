@@ -3,6 +3,7 @@
  * before the page uses it.
  */
 import { BridgeError, isRecord, send, type Transport } from '../shared/bridge.js';
+import { iconOf, parseIcons } from '../shared/icons.js';
 import type { Site, Visit } from './logic.js';
 
 export interface Profile {
@@ -64,6 +65,7 @@ export interface Page {
   readonly title: string;
   readonly visits: number;
   readonly lastVisit: number;
+  readonly icon?: string;
 }
 
 /** A part of the search the browser did not understand (string indices). */
@@ -173,6 +175,7 @@ export function parseSql(value: unknown): SqlResult {
 }
 
 export function parseSites(value: unknown): Site[] {
+  const icons = parseIcons(value);
   return list(value, 'sites').map((s) => {
     const item = record(s);
     return {
@@ -181,11 +184,13 @@ export function parseSites(value: unknown): Site[] {
       visits: count(item, 'visits'),
       pages: count(item, 'pages'),
       lastVisit: count(item, 'lastVisit'),
+      ...iconOf(item, icons),
     };
   });
 }
 
 export function parsePages(value: unknown): Page[] {
+  const icons = parseIcons(value);
   return list(value, 'pages').map((p) => {
     const item = record(p);
     return {
@@ -193,11 +198,13 @@ export function parsePages(value: unknown): Page[] {
       title: text(item, 'title'),
       visits: count(item, 'visits'),
       lastVisit: count(item, 'lastVisit'),
+      ...iconOf(item, icons),
     };
   });
 }
 
 export function parseVisits(value: unknown): Visit[] {
+  const icons = parseIcons(value);
   return list(value, 'visits').map((v) => {
     const item = record(v);
     return {
@@ -208,6 +215,7 @@ export function parseVisits(value: unknown): Visit[] {
       host: text(item, 'host'),
       time: count(item, 'time'),
       transition: text(item, 'transition'),
+      ...iconOf(item, icons),
     };
   });
 }

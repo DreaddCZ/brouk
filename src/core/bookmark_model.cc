@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <optional>
 #include <ranges>
+#include <set>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -404,6 +405,16 @@ std::vector<BookmarkId> BookmarkModel::BookmarksWithUrl(
     stack.insert(stack.end(), item->children.rbegin(), item->children.rend());
   }
   return found;
+}
+
+std::vector<std::string> BookmarkModel::AllUrls() const {
+  std::set<std::string> urls;
+  for (const auto& [id, item] : items_) {
+    if (!item.folder && !item.url.empty()) {
+      urls.insert(item.url);
+    }
+  }
+  return {urls.begin(), urls.end()};
 }
 
 std::vector<BookmarkId> BookmarkModel::Search(std::string_view query,

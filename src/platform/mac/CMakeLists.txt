@@ -41,6 +41,8 @@ add_executable(brouk_app
   devtools_dock.mm
   devtools_window.h
   devtools_window.mm
+  favicon_cache.h
+  favicon_cache.mm
   downloads_popover.h
   downloads_popover.mm
   export_password_dialog.h

@@ -78,7 +78,16 @@ function dot(profile: string): HTMLSpanElement {
   return node;
 }
 
-function initial(host: string): HTMLSpanElement {
+/** The site's icon (013), else the first letter of its host. */
+function initial(host: string, icon?: string): HTMLSpanElement {
+  if (icon !== undefined) {
+    const node = element('span', { className: 'icon' });
+    const image = element('img');
+    image.src = icon;
+    image.alt = '';
+    node.append(image);
+    return node;
+  }
   const label = hostLabel(host);
   return element('span', { className: 'icon', text: (label[0] ?? '?').toUpperCase() });
 }
@@ -159,7 +168,7 @@ function siteRows(site: Site, now: Date): HTMLElement[] {
     row('row', key, [
       checkbox(key, label, item),
       dot(site.profile),
-      initial(site.host),
+      initial(site.host, site.icon),
       main,
       meta,
       element('span', { className: 'when', text: lastVisitLabel(site.lastVisit, now) }),
@@ -184,7 +193,7 @@ function siteRows(site: Site, now: Date): HTMLElement[] {
             ? includedCheckbox(page.title || page.url)
             : checkbox(pageKey, page.title || page.url, pageItem),
           element('span'),
-          element('span'),
+          page.icon === undefined ? element('span') : initial('', page.icon),
           pageMain,
           element('span', { className: 'meta', text: page.visits === 1 ? '1 visit' : `${page.visits} visits` }),
           element('span', { className: 'when', text: lastVisitLabel(page.lastVisit, now) }),
@@ -205,7 +214,7 @@ function visitRow(visit: Visit): HTMLElement {
   return row('row', key, [
     checkbox(key, visit.title || visit.url, item),
     dot(visit.profile),
-    initial(visit.host),
+    initial(visit.host, visit.icon),
     main,
     element('span'),
     element('span', { className: 'when', text: time }),
