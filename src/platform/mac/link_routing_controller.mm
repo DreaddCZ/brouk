@@ -1,5 +1,7 @@
 #import "platform/mac/link_routing_controller.h"
 
+#include <os/log.h>
+
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -234,6 +236,7 @@ NSScreen* ScreenWithMouse() {
 - (void)route:(BRLinkRequest*)request {
   brouk::ProfileDecision decision =
       [self decideProfileFor:request realURL:request.realURL.UTF8String ?: ""];
+  [self logRouting:request decision:decision];
   if (decision.stays_in_source) {
     [self openInSource:request];
     return;
@@ -247,6 +250,27 @@ NSScreen* ScreenWithMouse() {
     }
   }
   [self showPickerFor:request decision:decision];
+}
+
+// One line in the macOS log per routed link, so a link that opens in an
+// unexpected profile can be explained (Console, process "brouk"). Never
+// query values: LinkForLog leaves them out.
+- (void)logRouting:(BRLinkRequest*)request
+          decision:(const brouk::ProfileDecision&)decision {
+  std::string profiles;
+  for (const brouk::ProfileId& profile : decision.profiles) {
+    profiles += (profiles.empty() ? "" : ", ") + profile;
+  }
+  std::string rule = decision.rule_pattern ? "rule " + *decision.rule_pattern
+                                           : std::string("no rule");
+  std::string line =
+      std::string(request.sourceName.UTF8String ?: "") + ": " +
+      brouk::LinkForLog(request.url.UTF8String ?: "") + ", via " +
+      (request.wrapper ? request.wrapper.UTF8String : "no wrapper") +
+      ", routed by " + brouk::LinkForLog(request.realURL.UTF8String ?: "") +
+      ": " + rule + " -> " + profiles;
+  // Public: macOS hides NSLog's arguments, and the line holds no secrets.
+  os_log(OS_LOG_DEFAULT, "Link routing: %{public}s", line.c_str());
 }
 
 - (std::vector<brouk::RoutingWindow>)

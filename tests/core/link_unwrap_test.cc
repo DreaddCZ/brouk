@@ -34,6 +34,21 @@ TEST(LinkUnwrapTest, PlainLinksStayAsTheyAre) {
             UnwrappedLink::Kind::kPlain);
 }
 
+// What the log may show of a link: never query values, user info or the
+// fragment, as they can hold tokens.
+TEST(LinkUnwrapTest, LinkForLog) {
+  EXPECT_EQ(LinkForLog("https://user:pw@Statics.Teams.cdn.office.net:443/"
+                       "evergreen-assets/safelinks/2/atp-safelinks.html"
+                       "?url=https%3A%2F%2Fx&locale=en&sd=secret#frag"),
+            "statics.teams.cdn.office.net/evergreen-assets/safelinks/2/"
+            "atp-safelinks.html ?url&locale&sd");
+  EXPECT_EQ(LinkForLog("https://example.com"), "example.com/");
+  EXPECT_EQ(LinkForLog("https://example.com/" + std::string(100, 'a')),
+            "example.com/" + std::string(59, 'a') + "…");
+  EXPECT_EQ(LinkForLog("https://example.com/?=1&a=2&&b"), "example.com/ ?a&b");
+  EXPECT_EQ(LinkForLog("mailto:x@example.com"), "(not an http(s) link)");
+}
+
 TEST(LinkUnwrapTest, SafeLinks) {
   ExpectDecoded(
       "https://eur02.safelinks.protection.outlook.com/"
@@ -45,6 +60,19 @@ TEST(LinkUnwrapTest, SafeLinks) {
       "atp-safelinks.html?url=https%3A%2F%2Fexample.com%2Fa%3Fb%3D1"
       "&locale=en-us&dest=https%3A%2F%2Fteams.microsoft.com",
       "https://example.com/a?b=1", "Safe Links");
+  // The page's newer host, with the parameters the user's Teams sends.
+  ExpectDecoded(
+      "https://teams.public.onecdn.static.microsoft/evergreen-assets/"
+      "safelinks/2/atp-safelinks.html?url=https%3A%2F%2Fcompanya.atlassian.net"
+      "%2Fbrowse%2FX-1&locale=en-gb&dest=https%3A%2F%2Fteams.microsoft.com"
+      "%2Fv2%2F&pc=x&wau=https%3A%2F%2FEUR01.safelinks.protection.outlook.com"
+      "%2FGetUrlReputation&si=1&sd=x&ce=1&cv=x&ssid=x&ring=general"
+      "&clickparams=x&bg=x&fg=x&fg2=x",
+      "https://companya.atlassian.net/browse/X-1", "Safe Links");
+  EXPECT_EQ(Unwrap("https://teams.public.onecdn.static.microsoft/other"
+                   "?url=https%3A%2F%2Fexample.com")
+                .kind,
+            UnwrappedLink::Kind::kPlain);
 }
 
 TEST(LinkUnwrapTest, ProofpointV1AndV2) {
