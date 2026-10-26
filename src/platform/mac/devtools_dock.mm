@@ -243,7 +243,7 @@ NSButton* HeaderButton(NSString* symbol,
     _bridge = std::make_unique<brouk::DevToolsDockBridge>(self);
     _client = new brouk::DevToolsFrontendClient(_bridge.get(), inspected,
                                                 preferences);
-    if (point.x != NSNotFound) {
+    if (point.x != static_cast<CGFloat>(NSNotFound)) {
       _client->InspectAt(static_cast<int>(point.x), static_cast<int>(point.y));
     }
     NSRect bounds = _content.bounds;
