@@ -1,7 +1,33 @@
 /* Settings (004). Colours, layout and controls: shared/base.css. */
-main { max-width: 680px; }
-h2.scope { font-size: 13px; text-transform: uppercase; letter-spacing: 0.04em;
-  color: var(--muted); margin: 28px 0 8px; }
+/* Topics on the left, the chosen topic on the right. */
+.layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); min-height: 100vh; }
+.sidebar { position: sticky; top: 0; align-self: start; height: 100vh; overflow-y: auto;
+  box-sizing: border-box; padding: 20px 12px; border-right: 1px solid var(--line); }
+.sidebar h1 { padding: 0 8px; margin-bottom: 12px; }
+.sidebar ul { list-style: none; margin: 0 0 16px; padding: 0; }
+.sidebar li button { display: block; width: 100%; text-align: left; border: 0; background: none;
+  padding: 5px 8px; border-radius: 6px; }
+.sidebar li button:hover { background: color-mix(in srgb, var(--text) 7%, transparent); }
+.sidebar li button[aria-current=page] { background: color-mix(in srgb, var(--accent) 18%, transparent);
+  font-weight: 600; }
+.sidebar .hint { padding: 0 8px; }
+main { max-width: 760px; width: 100%; box-sizing: border-box; margin: 0; }
+[data-topic][hidden] { display: none; }
+.topic-title { font-size: 20px; margin: 0 0 12px; }
+h3.scope { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--muted); margin: 20px 0 8px; }
+.profile-tabs { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 1px solid var(--line);
+  margin-bottom: 12px; }
+.profile-tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 6px 6px 0 0;
+  background: none; padding: 6px 12px; }
+.profile-tabs button[aria-selected=true] { border-bottom-color: var(--accent); font-weight: 600; }
+.files-topic { padding: 12px 14px; }
+@media (max-width: 640px) {
+  .layout { grid-template-columns: minmax(0, 1fr); align-content: start; }
+  .sidebar { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  .sidebar ul { display: flex; flex-wrap: wrap; gap: 2px; }
+  .sidebar li button { width: auto; }
+}
 section.group { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
   margin-bottom: 12px; padding: 4px 14px; }
 section.group h3 { font-size: 14px; margin: 10px 0 2px; }
@@ -19,9 +45,6 @@ section.group h3 { font-size: 14px; margin: 10px 0 2px; }
   border: 1px solid var(--line); background: var(--bg); color: var(--text); width: 100%;
   box-sizing: border-box; }
 .setting input[type=checkbox] { width: 18px; height: 18px; }
-.profile-pick { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
-.profile-pick select { font: inherit; padding: 4px 8px; border-radius: 7px;
-  border: 1px solid var(--line); background: var(--card); color: var(--text); }
 .files { display: flex; gap: 8px; flex-wrap: wrap; }
 .hint { color: var(--muted); font-size: 12px; }
 #problems ul, .notice ul { margin: 6px 0 0; padding-left: 20px; }

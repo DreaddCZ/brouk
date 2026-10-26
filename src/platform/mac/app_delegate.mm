@@ -2564,7 +2564,7 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
       initWithOwner:self
                 url:url
               title:@"Settings"
-               size:NSMakeSize(720, 680)
+               size:NSMakeSize(980, 720)
             handler:std::make_unique<brouk::SettingsHandler>(
                         _settingsPageDelegate.get())
             context:[self internalContext]];

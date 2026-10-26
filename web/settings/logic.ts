@@ -21,6 +21,48 @@ export function sections(items: readonly SettingItem[]): Section[] {
 }
 
 /**
+ * A topic in the settings sidebar: the settings for all profiles and those
+ * set per profile (shown with a tab per profile) on one page.
+ */
+export interface Topic {
+  readonly title: string;
+  readonly global: readonly SettingItem[];
+  readonly profile: readonly SettingItem[];
+}
+
+/** Profile sections shown under a global topic of another name. */
+const kTopicOfSection: Readonly<Record<string, string>> = { Profile: 'Profiles' };
+
+/** The sidebar topic a section of settings belongs to. */
+export function topicOfSection(section: string): string {
+  return kTopicOfSection[section] ?? section;
+}
+
+/**
+ * The topics, in the order of the global sections, then topics only a
+ * profile has. Hidden items (see isShown) are left out.
+ */
+export function topics(global: readonly SettingItem[], profile: readonly SettingItem[]): Topic[] {
+  const result: { title: string; global: SettingItem[]; profile: SettingItem[] }[] = [];
+  const topicFor = (section: string): { global: SettingItem[]; profile: SettingItem[] } => {
+    const title = topicOfSection(section);
+    let topic = result.find((t) => t.title === title);
+    if (topic === undefined) {
+      topic = { title, global: [], profile: [] };
+      result.push(topic);
+    }
+    return topic;
+  };
+  for (const item of global) {
+    if (isShown(item, global)) topicFor(item.section).global.push(item);
+  }
+  for (const item of profile) {
+    if (isShown(item, profile)) topicFor(item.section).profile.push(item);
+  }
+  return result;
+}
+
+/**
  * Whether an item is shown: the custom search address only matters when
  * "Custom" is the search engine.
  */
