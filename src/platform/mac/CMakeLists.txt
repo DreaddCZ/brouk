@@ -126,6 +126,7 @@ add_custom_command(OUTPUT "${_web_stamp}"
           "${PROJECT_SOURCE_DIR}/web/package-lock.json"
           "${PROJECT_SOURCE_DIR}/scripts/vendor_modules.mjs"
   COMMENT "Building internal pages"
+  JOB_POOL brouk_web
   VERBATIM)
 
 # Copy the CEF framework. (CEF's COPY_MAC_FRAMEWORK macro uses "ln -sf", which

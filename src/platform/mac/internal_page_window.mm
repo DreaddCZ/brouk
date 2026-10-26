@@ -173,7 +173,7 @@ class InternalPageBridge : public InternalPageDelegate {
 // the element there is selected.
 - (void)openDevToolsInspecting:(NSPoint)point {
   if (_devTools) {
-    if (point.x != NSNotFound) {
+    if (point.x != static_cast<CGFloat>(NSNotFound)) {
       [_devTools inspectAt:point];
     }
     [_devTools showWindow:nil];
@@ -206,17 +206,20 @@ class InternalPageBridge : public InternalPageDelegate {
   if (_devTools) {
     [_devTools closeDevTools];
   } else {
-    [self openDevToolsInspecting:NSMakePoint(NSNotFound, NSNotFound)];
+    [self openDevToolsInspecting:NSMakePoint(static_cast<CGFloat>(NSNotFound),
+                                             static_cast<CGFloat>(NSNotFound))];
   }
 }
 
 - (IBAction)showDevToolsConsole:(id)sender {
-  [self openDevToolsInspecting:NSMakePoint(NSNotFound, NSNotFound)];
+  [self openDevToolsInspecting:NSMakePoint(static_cast<CGFloat>(NSNotFound),
+                                           static_cast<CGFloat>(NSNotFound))];
   [_devTools showPanel:@"console"];
 }
 
 - (IBAction)pickElementToInspect:(id)sender {
-  [self openDevToolsInspecting:NSMakePoint(NSNotFound, NSNotFound)];
+  [self openDevToolsInspecting:NSMakePoint(static_cast<CGFloat>(NSNotFound),
+                                           static_cast<CGFloat>(NSNotFound))];
   [_devTools enterInspectElementMode];
 }
 

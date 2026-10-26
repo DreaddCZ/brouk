@@ -485,7 +485,8 @@ class TabInternalPageBridge : public InternalPageDelegate {
     [_tabView addSubview:_containerView];
     _dockPosition = @"bottom";
     _dockSize = 320;
-    _inspectWhenCreated = NSMakePoint(NSNotFound, NSNotFound);
+    _inspectWhenCreated = NSMakePoint(static_cast<CGFloat>(NSNotFound),
+                                      static_cast<CGFloat>(NSNotFound));
     _bridge = std::make_unique<brouk::TabDelegateBridge>(self);
     _client = new brouk::TabClient(_bridge.get());
     // Ad blocking (007) for the tab's requests; internal pages have none.
@@ -1261,7 +1262,8 @@ class TabInternalPageBridge : public InternalPageDelegate {
   }
   _devToolsOn = on;
   if (on) {
-    [self openDockInspecting:NSMakePoint(NSNotFound, NSNotFound)];
+    [self openDockInspecting:NSMakePoint(static_cast<CGFloat>(NSNotFound),
+                                         static_cast<CGFloat>(NSNotFound))];
   } else {
     _devToolsWhenCreated = NO;
     [_dock close];  // devToolsDockDidClose: finishes.
