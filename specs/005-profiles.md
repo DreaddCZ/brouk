@@ -32,25 +32,25 @@ A profile is a completely separate set of browser data: cookies and logins, hist
 
 ## Acceptance criteria
 
-- [ ] User can create, rename and delete profiles, and set a name and colour.
-- [ ] Creating or using a profile never requires signing in to any online account.
-- [ ] Logging into a site in profile A does not log in profile B, including when tabs of A and B are in the same window.
-- [ ] History, passwords, extensions and settings are separate per profile. (History after 013, passwords after 008; cookies, cache, storage and settings now.)
-- [ ] Bookmarks linked to a profile appear only in that profile; general bookmarks appear in all profiles. (after 011)
-- [ ] Autofill entries are shared: an entry saved in one profile is offered in every profile. (after 009)
-- [ ] Two or more profiles can be open simultaneously, both in separate windows and in the same window.
-- [ ] In each window, a profile's tabs form exactly one group, shown with the profile's name and colour.
-- [ ] A new window or tab opened without choosing a profile opens in the default profile; a group's "+" button opens a new tab in that group's profile.
-- [ ] Dragging a tab into another profile's group first shows a "continue / cancel" dialog; on continue, the tab's URL reopens in the target profile; on cancel, nothing changes.
-- [ ] The bookmarks bar and password filling use the active tab's profile. (after 011 and 008)
-- [ ] A specific profile can be started from the command line.
-- [ ] The profile manager can be set to appear at startup or be skipped (opening a default profile).
-- [ ] Deleting a profile removes all of its data, after confirmation; if it has open tabs, the confirmation says so and the tabs close. Bookmarks linked to it become general, and the confirmation says how many (after 011).
-- [ ] The default profile cannot be deleted while it is the default.
+- [x] User can create, rename and delete profiles, and set a name and colour.
+- [x] Creating or using a profile never requires signing in to any online account.
+- [x] Logging into a site in profile A does not log in profile B, including when tabs of A and B are in the same window.
+- [x] History, passwords, extensions and settings are separate per profile. (History after 013, passwords after 008; cookies, cache, storage and settings now.)
+- [x] Bookmarks linked to a profile appear only in that profile; general bookmarks appear in all profiles. (after 011)
+- [x] Autofill entries are shared: an entry saved in one profile is offered in every profile. (after 009)
+- [x] Two or more profiles can be open simultaneously, both in separate windows and in the same window.
+- [x] In each window, a profile's tabs form exactly one group, shown with the profile's name and colour.
+- [x] A new window or tab opened without choosing a profile opens in the default profile; a group's "+" button opens a new tab in that group's profile.
+- [x] Dragging a tab into another profile's group first shows a "continue / cancel" dialog; on continue, the tab's URL reopens in the target profile; on cancel, nothing changes.
+- [x] The bookmarks bar and password filling use the active tab's profile. (after 011 and 008)
+- [x] A specific profile can be started from the command line.
+- [x] The profile manager can be set to appear at startup or be skipped (opening a default profile).
+- [x] Deleting a profile removes all of its data, after confirmation; if it has open tabs, the confirmation says so and the tabs close. Bookmarks linked to it become general, and the confirmation says how many (after 011).
+- [x] The default profile cannot be deleted while it is the default.
 - [ ] A profile can be exported to a single file and imported on another device, keeping its name, colour, settings, bookmarks and passwords. (Name, colour and settings now; bookmarks after 011; passwords after 008.)
 - [ ] Passwords in the export file are encrypted with a user-chosen export password; the file cannot be imported without it. (after 008)
 - [ ] When exporting, the user chooses whether to include history and can limit it by age or by number of visited pages. (after 022)
-- [ ] The export contains no cookies, sessions or cache.
+- [x] The export contains no cookies, sessions or cache.
 
 ## Out of scope
 
