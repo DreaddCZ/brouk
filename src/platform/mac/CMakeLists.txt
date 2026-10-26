@@ -80,6 +80,8 @@ add_executable(brouk_app
   tab_dialog_view.mm
   tab_strip_view.h
   tab_strip_view.mm
+  window_screen.h
+  window_screen.mm
 )
 brouk_target_options(brouk_app CEF APP)
 target_link_libraries(brouk_app PRIVATE brouk_cef brouk_core

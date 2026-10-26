@@ -9,6 +9,7 @@
 #import "platform/mac/sad_tab_view.h"
 #import "platform/mac/screen_share_picker.h"
 #import "platform/mac/tab_dialog_view.h"
+#import "platform/mac/window_screen.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -664,6 +665,11 @@ class TabInternalPageBridge : public InternalPageDelegate {
 
 - (BOOL)hasDialog {
   return _dialog != nil && _dialog.superview != nil;
+}
+
+- (void)screenChanged {
+  brouk::mac::NotifyScreenChanged(_browser);
+  [_dock screenChanged];
 }
 
 - (void)focusContent {

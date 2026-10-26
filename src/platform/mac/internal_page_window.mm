@@ -8,6 +8,7 @@
 #include "include/cef_browser.h"
 #include "include/wrapper/cef_helpers.h"
 #import "platform/mac/devtools_window.h"
+#import "platform/mac/window_screen.h"
 
 @interface BRInternalPageWindowController () <BRDevToolsWindowOwner,
                                               NSWindowDelegate>
@@ -235,6 +236,16 @@ class InternalPageBridge : public InternalPageDelegate {
 }
 
 #pragma mark - NSWindowDelegate
+
+// See BRBrowserWindowController.
+- (void)windowDidChangeScreen:(NSNotification*)notification {
+  brouk::mac::FitWindowToItsScreen(self.window);
+  [self windowDidChangeBackingProperties:notification];
+}
+
+- (void)windowDidChangeBackingProperties:(NSNotification*)notification {
+  brouk::mac::NotifyScreenChanged(_browser);
+}
 
 - (BOOL)windowShouldClose:(NSWindow*)sender {
   // Close the page first; the window goes when the browser has closed.

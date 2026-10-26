@@ -230,6 +230,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)reloadIgnoringCache;
 - (void)stopLoading;
 - (void)focusContent;
+// The window moved to another display (see window_screen.h).
+- (void)screenChanged;
 
 // Find in page; an empty text stops finding.
 - (void)findText:(NSString*)text forward:(BOOL)forward findNext:(BOOL)findNext;

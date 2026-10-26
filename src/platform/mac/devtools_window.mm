@@ -1,6 +1,7 @@
 #import "platform/mac/devtools_window.h"
 
 #include "include/wrapper/cef_helpers.h"
+#import "platform/mac/window_screen.h"
 
 @interface BRDevToolsWindowController () <BRDevToolsDockDelegate,
                                           NSWindowDelegate>
@@ -126,6 +127,16 @@
 }
 
 #pragma mark - NSWindowDelegate
+
+// See BRBrowserWindowController.
+- (void)windowDidChangeScreen:(NSNotification*)notification {
+  brouk::mac::FitWindowToItsScreen(self.window);
+  [_dock screenChanged];
+}
+
+- (void)windowDidChangeBackingProperties:(NSNotification*)notification {
+  [_dock screenChanged];
+}
 
 - (BOOL)windowShouldClose:(NSWindow*)sender {
   [self closeDevTools];
