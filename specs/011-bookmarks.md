@@ -127,7 +127,7 @@ Per the hybrid UI decision in 001: the bar, the menu, the star and its dialog, a
 **Visibility and opening**
 - [x] An item linked to profile A appears in the bar, the Bookmarks menu, address bar suggestions and the command palette only when the active tab belongs to A; general items appear in every profile.
 - [x] A general bookmark opens in the profile of the tab it is opened from.
-- [ ] A linked bookmark opened from the manager page in another profile's tab opens in its own profile, in the window chosen by the rules of 010. (after 010)
+- [x] A linked bookmark opened from the manager page in another profile's tab opens in its own profile, in the window chosen by the rules of 010. (after 010)
 
 **Bookmarks bar and menu**
 - [x] By default the bar is shown on the new tab page and hidden on tabs with a loaded page.
