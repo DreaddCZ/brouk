@@ -5,3 +5,11 @@ export PATH="$_brouk_root/.tools/bin:$PATH"
 # Cargo keeps its downloads inside the repository's tools, not in ~/.cargo.
 export CARGO_HOME="$_brouk_root/.tools/cargo"
 unset _brouk_root
+# Build against the SDK of the selected Xcode (xcode-select), whose linker can
+# read it. Without this, a Mac whose Command Line Tools are newer than its
+# Xcode compiles against the newer SDK, and the older linker fails on it.
+if [[ "$(uname -s)" == Darwin && -z "${SDKROOT:-}" ]]; then
+  _brouk_sdk="$(xcrun --sdk macosx --show-sdk-path 2>/dev/null || true)"
+  [[ -n "$_brouk_sdk" ]] && export SDKROOT="$_brouk_sdk"
+  unset _brouk_sdk
+fi

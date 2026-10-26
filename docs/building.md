@@ -3,7 +3,10 @@
 ## macOS (phase 1: local builds)
 
 Requirements: macOS 15 or later, Xcode (full Xcode, not only the Command Line
-Tools), about 2 GB of free disk space.
+Tools), about 2 GB of free disk space. Any Xcode that can build for macOS 15
+works, old or new; the build uses the SDK of the Xcode selected with
+`xcode-select`, even when newer Command Line Tools are installed next to it.
+(Set `SDKROOT` to build against another SDK.)
 
 One command builds the app:
 
