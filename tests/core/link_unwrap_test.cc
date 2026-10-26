@@ -60,6 +60,19 @@ TEST(LinkUnwrapTest, SafeLinks) {
       "atp-safelinks.html?url=https%3A%2F%2Fexample.com%2Fa%3Fb%3D1"
       "&locale=en-us&dest=https%3A%2F%2Fteams.microsoft.com",
       "https://example.com/a?b=1", "Safe Links");
+  // The page's newer host, with the parameters the user's Teams sends.
+  ExpectDecoded(
+      "https://teams.public.onecdn.static.microsoft/evergreen-assets/"
+      "safelinks/2/atp-safelinks.html?url=https%3A%2F%2Fcompanya.atlassian.net"
+      "%2Fbrowse%2FX-1&locale=en-gb&dest=https%3A%2F%2Fteams.microsoft.com"
+      "%2Fv2%2F&pc=x&wau=https%3A%2F%2FEUR01.safelinks.protection.outlook.com"
+      "%2FGetUrlReputation&si=1&sd=x&ce=1&cv=x&ssid=x&ring=general"
+      "&clickparams=x&bg=x&fg=x&fg2=x",
+      "https://companya.atlassian.net/browse/X-1", "Safe Links");
+  EXPECT_EQ(Unwrap("https://teams.public.onecdn.static.microsoft/other"
+                   "?url=https%3A%2F%2Fexample.com")
+                .kind,
+            UnwrappedLink::Kind::kPlain);
 }
 
 TEST(LinkUnwrapTest, ProofpointV1AndV2) {

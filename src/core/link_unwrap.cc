@@ -351,7 +351,9 @@ constexpr std::array<BuiltInWrapper, 7> kBuiltInWrappers = {{
      DecodeUrlParameter},
     {"Safe Links",
      [](const LinkParts& parts) {
-       return HostIs(parts, "statics.teams.cdn.office.net") &&
+       // Teams moved the page to the .microsoft domain (seen 2026-10).
+       return (HostIs(parts, "statics.teams.cdn.office.net") ||
+               HostIs(parts, "teams.public.onecdn.static.microsoft")) &&
               parts.path.starts_with("/evergreen-assets/safelinks/");
      },
      DecodeUrlParameter},
