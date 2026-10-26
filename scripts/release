@@ -1,0 +1,377 @@
+#!/usr/bin/env bash
+# Builds, tests and publishes a release of Brouk (spec 019). Runs on the
+# Intel Mac; see docs/releasing.md.
+#
+#   scripts/release <version> [--beta]     release and publish
+#   scripts/release <version> --no-publish  trial run: build and test only,
+#                                           nothing committed or published
+#
+# Steps: check preconditions, set the version and write the changelog, build
+# both architectures, sign, notarize and package them, check them, smoke-test
+# the Intel build, then publish (push and tag the source repository, create
+# the release in the releases repository, add it to the update feeds).
+# Nothing leaves the Mac before the last step. Running the same command
+# again after an interrupted publish continues it with the tested files.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+RELEASES_REPO="DreaddCZ/brouk-releases"
+SPARKLE_ACCOUNT="brouk"  # Keychain account of the update signing key.
+
+VERSION=""
+BETA=0
+PUBLISH=1
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --beta) BETA=1 ;;
+    --no-publish) PUBLISH=0 ;;
+    -*) echo "Unknown option: $1" >&2; exit 2 ;;
+    *) VERSION="$1" ;;
+  esac
+  shift
+done
+if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "Usage: scripts/release <version, e.g. 0.4.0> [--beta] [--no-publish]" >&2
+  exit 2
+fi
+TAG="v$VERSION"
+OUT="$ROOT/build/release/$VERSION"
+DMGS=("Brouk-$VERSION-arm64.dmg" "Brouk-$VERSION-x86_64.dmg")
+
+step() { printf '\n==> %s\n' "$*"; }
+fail() { printf '\nRelease stopped: %s\n' "$*" >&2; exit 1; }
+
+# shellcheck source=/dev/null
+source "$ROOT/scripts/env.sh"
+"$ROOT/scripts/install_tools" >/dev/null
+"$ROOT/scripts/fetch_sparkle"
+GH="$ROOT/.tools/bin/gh"
+SPARKLE_BIN="$ROOT/third_party/sparkle/bin"
+
+cmake_var() { sed -n "s/^set($1 \"\(.*\)\")$/\1/p" "$ROOT/CMakeLists.txt"; }
+
+# Highest of two versions ("0.10.0" > "0.9.0").
+version_gt() {
+  [[ "$1" != "$2" ]] &&
+    [[ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n 1)" == "$1" ]]
+}
+
+# ---------------------------------------------------------------------------
+# 1. Preconditions
+# ---------------------------------------------------------------------------
+
+check_preconditions() {
+  step "Checking preconditions"
+  [[ "$(git rev-parse --abbrev-ref HEAD)" == main ]] || fail "not on main."
+  [[ -z "$(git status --porcelain)" ]] || fail "there are uncommitted changes."
+  git fetch -q origin main
+  [[ "$(git rev-parse HEAD)" == "$(git rev-parse origin/main)" ]] ||
+    fail "main differs from origin/main; push or pull first."
+  if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null ||
+      [[ -n "$(git ls-remote --tags origin "refs/tags/$TAG")" ]]; then
+    fail "tag $TAG exists already."
+  fi
+
+  "$GH" auth status >/dev/null 2>&1 || fail "gh is not signed in (gh auth login)."
+  [[ "$("$GH" api "repos/$RELEASES_REPO" --jq .permissions.push 2>/dev/null)" == true ]] ||
+    fail "gh cannot write to $RELEASES_REPO."
+  local last
+  last="$("$GH" release list -R "$RELEASES_REPO" --limit 200 --json tagName \
+    --jq '.[].tagName' | sed 's/^v//' | sort -V | tail -n 1)"
+  if [[ -n "$last" ]] && ! version_gt "$VERSION" "$last"; then
+    fail "$VERSION is not higher than the last published version $last."
+  fi
+  command -v claude >/dev/null && claude --version >/dev/null 2>&1 ||
+    fail "the claude CLI is not available (it writes the changelog)."
+
+  DEVELOPER_ID="$(security find-identity -v -p codesigning |
+    sed -n 's/.*"\(Developer ID Application: .*\)"$/\1/p' | head -n 1)"
+  [[ -n "$DEVELOPER_ID" ]] || fail "no Developer ID Application certificate in the keychain."
+  xcrun notarytool history --keychain-profile "${BROUK_NOTARY_PROFILE:-brouk-notary}" \
+    >/dev/null 2>&1 || fail "no notarization credentials (see docs/building.md)."
+  local key
+  key="$("$SPARKLE_BIN/generate_keys" --account "$SPARKLE_ACCOUNT" -p 2>/dev/null || true)"
+  [[ -n "$key" ]] ||
+    fail "no update signing key in the keychain (see docs/releasing.md)."
+  [[ "$key" == "$(cmake_var APP_UPDATE_PUBLIC_KEY)" ]] ||
+    fail "the update signing key does not match APP_UPDATE_PUBLIC_KEY in CMakeLists.txt."
+}
+
+# ---------------------------------------------------------------------------
+# 2. Version and changelog
+# ---------------------------------------------------------------------------
+
+# The version's changelog section, for testers (public): written by Claude
+# Code from the commits since the last release, else a plain list.
+write_changelog() {
+  local previous range log section
+  previous="$(git describe --tags --abbrev=0 --match 'v*' 2>/dev/null || true)"
+  range="${previous:+$previous..}HEAD"
+  log="$(git log --no-merges --format='- %s%n%b' "$range")"
+  section="$OUT/changelog-section.md"
+  local prompt="You write release notes for Brouk, a web browser, version $VERSION.
+Below are the git commits since the previous release (Conventional Commits; the
+scope is a spec number). Write the notes for beta testers in plain, short
+English, as Markdown with up to three sections, in this order and only when
+they have entries: '### New', '### Changed', '### Fixed'. One bullet per
+user-visible change; merge related commits. Leave out build, ci, chore, test,
+docs and refactor commits and anything not visible to users. The notes are
+public: never mention client or company names, people, internal URLs or file
+paths. Print only the Markdown sections, nothing else.
+
+Commits:
+$log"
+  if printf '%s' "$prompt" | claude -p > "$section.tmp" 2>"$OUT/claude.log" &&
+      grep -q '^### ' "$section.tmp"; then
+    mv "$section.tmp" "$section"
+  else
+    echo "Claude Code did not write the notes (see $OUT/claude.log); using the commit list."
+    {
+      for type in feat fix perf; do
+        local lines
+        lines="$(git log --no-merges --format='%s' "$range" |
+          sed -n "s/^$type([^)]*): \(.*\)$/- \1/p; s/^$type: \(.*\)$/- \1/p")"
+        if [[ -n "$lines" ]]; then
+          case "$type" in
+            feat) echo "### New" ;;
+            fix) echo "### Fixed" ;;
+            perf) echo "### Changed" ;;
+          esac
+          echo "$lines"
+          echo
+        fi
+      done
+    } > "$section"
+  fi
+  local date
+  date="$(date +%Y-%m-%d)"
+  python3 - "$ROOT/CHANGELOG.md" "$section" "$VERSION" "$date" "$BETA" <<'PY'
+import sys
+path, section_file, version, date, beta = sys.argv[1:]
+section = open(section_file).read().strip()
+title = f"## {version}{' (beta)' if beta == '1' else ''} – {date}"
+try:
+    text = open(path).read()
+except FileNotFoundError:
+    text = "# Changelog\n\nWhat changed in each release of Brouk.\n"
+head, sep, rest = text.partition("\n## ")
+new = head.rstrip("\n") + "\n\n" + title + "\n\n" + section + "\n"
+if sep:
+    new += "\n## " + rest
+open(path, "w").write(new)
+PY
+}
+
+set_version() {
+  step "Setting the version to $VERSION and writing the changelog"
+  sed -i '' "s/^set(APP_VERSION \".*\")$/set(APP_VERSION \"$VERSION\")/" CMakeLists.txt
+  [[ "$(cmake_var APP_VERSION)" == "$VERSION" ]] || fail "could not set APP_VERSION."
+  write_changelog
+}
+
+# ---------------------------------------------------------------------------
+# 3–5. Build, package and check
+# ---------------------------------------------------------------------------
+
+build_and_check() {
+  step "Building, signing and notarizing both architectures"
+  rm -f "$OUT"/*.dmg "$OUT"/*.sha256 "$OUT/SHA256SUMS.txt"
+  "$ROOT/scripts/package_mac" --all --updates --dist "$OUT"
+  step "Running the core tests (Intel build)"
+  ctest --test-dir "$ROOT/build/release-x86_64" --output-on-failure
+
+  step "Checking both images"
+  (cd "$OUT" && shasum -a 256 "${DMGS[@]}" > SHA256SUMS.txt)
+  local arch dmg mount app exe
+  for arch in arm64 x86_64; do
+    dmg="$OUT/Brouk-$VERSION-$arch.dmg"
+    (cd "$OUT" && shasum -a 256 -c "$(basename "$dmg").sha256" >/dev/null) ||
+      fail "$dmg: checksum mismatch."
+    xcrun stapler validate -q "$dmg" || fail "$dmg is not notarized."
+    spctl --assess --type open --context context:primary-signature "$dmg" ||
+      fail "Gatekeeper rejects $dmg."
+    mount="$(mktemp -d)"
+    hdiutil attach -quiet -nobrowse -readonly -mountpoint "$mount" "$dmg"
+    app="$mount/Brouk.app"
+    exe="$app/Contents/MacOS/$(defaults read "$app/Contents/Info" CFBundleExecutable)"
+    local ok=1
+    codesign --verify --deep --strict "$app" || ok=0
+    xcrun stapler validate -q "$app" || ok=0
+    spctl --assess --type execute "$app" || ok=0
+    [[ "$(lipo -archs "$exe")" == "$arch" ]] || ok=0
+    [[ "$(lipo -archs "$app/Contents/Frameworks/Sparkle.framework/Sparkle")" == "$arch" ]] || ok=0
+    [[ "$(plutil -extract SUFeedURL raw -o - "$app/Contents/Info.plist")" == */appcast-$arch.xml ]] || ok=0
+    [[ "$(plutil -extract CFBundleVersion raw -o - "$app/Contents/Info.plist")" == "$VERSION" ]] || ok=0
+    if [[ "$arch" == x86_64 && $ok -eq 1 ]]; then
+      rm -rf "$OUT/smoke-app"
+      mkdir -p "$OUT/smoke-app"
+      ditto "$app" "$OUT/smoke-app/Brouk.app"
+    fi
+    hdiutil detach -quiet "$mount"
+    rmdir "$mount" 2>/dev/null || true
+    [[ $ok -eq 1 ]] || fail "$dmg: signature, notarization, architecture or feed check failed."
+    echo "$dmg: checksum, signature, notarization, architecture and feed OK"
+  done
+}
+
+# ---------------------------------------------------------------------------
+# 6. Smoke tests (Intel build)
+# ---------------------------------------------------------------------------
+
+smoke_test() {
+  step "Smoke-testing the Intel build"
+  local commit
+  commit="$(git rev-parse --short=7 HEAD)"
+  node "$ROOT/tests/smoke/smoke.mjs" "$OUT/smoke-app/Brouk.app" "$VERSION" \
+    "$commit" x86_64 "$OUT/smoke" || fail "smoke tests failed; see $OUT/smoke/."
+  rm -rf "$OUT/smoke-app"
+}
+
+# ---------------------------------------------------------------------------
+# 7. Publish
+# ---------------------------------------------------------------------------
+
+# A feed item for one architecture, newest first in the feed.
+add_to_feed() {
+  local feed="$1" arch="$2" dmg="$OUT/Brouk-$VERSION-$arch.dmg"
+  if grep -q "<sparkle:version>$VERSION</sparkle:version>" "$feed"; then
+    return
+  fi
+  local signature
+  signature="$("$SPARKLE_BIN/sign_update" --account "$SPARKLE_ACCOUNT" "$dmg")"
+  python3 - "$feed" "$VERSION" "$arch" "$BETA" "$signature" \
+    "$OUT/changelog-section.md" "$RELEASES_REPO" <<'PY'
+import html, re, sys
+from email.utils import formatdate
+feed, version, arch, beta, signature, notes_file, repo = sys.argv[1:]
+notes = open(notes_file).read() if notes_file else ""
+# The notes as simple HTML for Sparkle's update window.
+parts, in_list = [], False
+for line in notes.splitlines():
+    if line.startswith("- "):
+        if not in_list:
+            parts.append("<ul>"); in_list = True
+        parts.append("<li>" + html.escape(line[2:]) + "</li>")
+        continue
+    if in_list:
+        parts.append("</ul>"); in_list = False
+    if line.startswith("### "):
+        parts.append("<h3>" + html.escape(line[4:]) + "</h3>")
+    elif line.strip():
+        parts.append("<p>" + html.escape(line) + "</p>")
+if in_list:
+    parts.append("</ul>")
+base = f"https://github.com/{repo}/releases"
+channel = "\n      <sparkle:channel>beta</sparkle:channel>" if beta == "1" else ""
+item = f"""    <item>
+      <title>Version {version}</title>
+      <pubDate>{formatdate(usegmt=True)}</pubDate>
+      <sparkle:version>{version}</sparkle:version>
+      <sparkle:shortVersionString>{version}</sparkle:shortVersionString>
+      <sparkle:minimumSystemVersion>15.0</sparkle:minimumSystemVersion>{channel}
+      <sparkle:fullReleaseNotesLink>{base}/tag/v{version}</sparkle:fullReleaseNotesLink>
+      <description><![CDATA[{''.join(parts)}]]></description>
+      <enclosure url="{base}/download/v{version}/Brouk-{version}-{arch}.dmg" type="application/octet-stream" {signature} />
+    </item>
+"""
+text = open(feed).read()
+marker = "<title>Brouk</title>\n"
+if marker not in text:
+    sys.exit(f"{feed}: unexpected format")
+open(feed, "w").write(text.replace(marker, marker + item, 1))
+PY
+}
+
+publish() {
+  step "Publishing $TAG"
+  # The files to publish are the tested ones.
+  (cd "$OUT" && shasum -a 256 -c SHA256SUMS.txt >/dev/null) ||
+    fail "the images changed since they were tested."
+
+  if [[ "$(git rev-parse origin/main)" != "$(git rev-parse HEAD)" ]]; then
+    git push origin main
+  fi
+  if ! git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+    git tag -a "$TAG" -m "Brouk $VERSION"
+  fi
+  if [[ -z "$(git ls-remote --tags origin "refs/tags/$TAG")" ]]; then
+    git push origin "$TAG"
+  fi
+
+  if ! "$GH" release view "$TAG" -R "$RELEASES_REPO" >/dev/null 2>&1; then
+    local flags=()
+    [[ $BETA -eq 1 ]] && flags+=(--prerelease)
+    "$GH" release create "$TAG" -R "$RELEASES_REPO" --title "Brouk $VERSION" \
+      --notes-file "$OUT/changelog-section.md" ${flags[@]+"${flags[@]}"} \
+      "$OUT/${DMGS[0]}" "$OUT/${DMGS[1]}" "$OUT/SHA256SUMS.txt"
+  else
+    # Interrupted upload: add what is missing, never replace (019).
+    local have file
+    have="$("$GH" release view "$TAG" -R "$RELEASES_REPO" --json assets --jq '.assets[].name')"
+    for file in "${DMGS[@]}" SHA256SUMS.txt; do
+      if ! grep -qx "$file" <<<"$have"; then
+        "$GH" release upload "$TAG" -R "$RELEASES_REPO" "$OUT/$file"
+      fi
+    done
+  fi
+
+  # The feeds last, so they never point to a file that is not uploaded.
+  local feeds="$ROOT/build/release/brouk-releases"
+  if [[ -d "$feeds/.git" ]]; then
+    git -C "$feeds" pull -q --ff-only
+  else
+    "$GH" repo clone "$RELEASES_REPO" "$feeds" -- -q
+  fi
+  add_to_feed "$feeds/appcast-arm64.xml" arm64
+  add_to_feed "$feeds/appcast-x86_64.xml" x86_64
+  if [[ -n "$(git -C "$feeds" status --porcelain)" ]]; then
+    git -C "$feeds" add appcast-arm64.xml appcast-x86_64.xml
+    git -C "$feeds" commit -q -m "feat: add $TAG to the update feeds"
+    git -C "$feeds" push -q origin main
+  fi
+  echo "published" > "$OUT/published"
+}
+
+# ---------------------------------------------------------------------------
+
+mkdir -p "$OUT"
+RESUME=0
+if [[ $PUBLISH -eq 1 && -f "$OUT/tested" &&
+      "$(cat "$OUT/tested")" == "$(git rev-parse HEAD)" ]]; then
+  RESUME=1
+  [[ -f "$OUT/beta" ]] && BETA=1
+fi
+
+if [[ $RESUME -eq 1 ]]; then
+  echo "Continuing the publishing of $TAG with the tested files in $OUT."
+else
+  check_preconditions
+  rm -f "$OUT/tested" "$OUT/published" "$OUT/beta"
+  set_version
+  if [[ $PUBLISH -eq 1 ]]; then
+    git add CMakeLists.txt CHANGELOG.md
+    git commit -q -m "chore(release): $TAG"
+    # A release that fails before it is tested is undone, so the version
+    # can be used again (019).
+    RELEASE_COMMIT="$(git rev-parse HEAD)"
+    trap '[[ -f "$OUT/tested" || "$(git rev-parse HEAD)" != "$RELEASE_COMMIT" ]] || git reset -q --hard HEAD~1' EXIT
+  else
+    # A trial run leaves the source as it was.
+    trap 'git checkout -q -- CMakeLists.txt; git checkout -q -- CHANGELOG.md 2>/dev/null || rm -f CHANGELOG.md' EXIT
+  fi
+  build_and_check
+  smoke_test
+  if [[ $PUBLISH -eq 0 ]]; then
+    step "Trial run finished: nothing was committed or published"
+    echo "Tested images: $OUT"
+    exit 0
+  fi
+  git rev-parse HEAD > "$OUT/tested"
+  if [[ $BETA -eq 1 ]]; then touch "$OUT/beta"; fi
+fi
+
+publish
+step "Released Brouk $VERSION$([[ $BETA -eq 1 ]] && echo ' (beta)')"
+echo "https://github.com/$RELEASES_REPO/releases/tag/$TAG"
+echo "Test logs and screenshots: $OUT/smoke/"

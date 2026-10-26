@@ -4,3 +4,4 @@ out/
 third_party/cef/
 node_modules/
 .DS_Store
+third_party/sparkle/

@@ -2,6 +2,7 @@
 #   <APP_NAME>.app/Contents/MacOS/<APP_EXECUTABLE_NAME>        browser process
 #   <APP_NAME>.app/Contents/Frameworks/Chromium Embedded Framework.framework
 #   <APP_NAME>.app/Contents/Frameworks/<APP_NAME> Helper*.app  child processes
+#   <APP_NAME>.app/Contents/Frameworks/Sparkle.framework        updater (019)
 # The bundle is assembled here directly (not with MACOSX_BUNDLE) so the bundle
 # name and the executable name can differ ("Brouk.app" / "brouk").
 
@@ -82,6 +83,8 @@ add_executable(brouk_app
   tab_dialog_view.mm
   tab_strip_view.h
   tab_strip_view.mm
+  update_controller.h
+  update_controller.mm
   window_screen.h
   window_screen.mm
 )
@@ -96,6 +99,39 @@ target_link_libraries(brouk_app PRIVATE brouk_cef brouk_core
 set_target_properties(brouk_app PROPERTIES
   OUTPUT_NAME "${APP_EXECUTABLE_NAME}"
   RUNTIME_OUTPUT_DIRECTORY "${APP_BUNDLE}/Contents/MacOS")
+
+# Sparkle, the updater (019; scripts/fetch_sparkle). Every build links it;
+# only builds with BROUK_UPDATES get a feed address and key, and without
+# them the app never starts the updater.
+set(_sparkle_dir "${PROJECT_SOURCE_DIR}/third_party/sparkle")
+if(NOT EXISTS "${_sparkle_dir}/Sparkle.framework")
+  message(FATAL_ERROR "Sparkle is missing; run scripts/fetch_sparkle.")
+endif()
+target_compile_options(brouk_app PRIVATE "-F${_sparkle_dir}")
+target_link_options(brouk_app PRIVATE "-F${_sparkle_dir}" "-framework" "Sparkle"
+  "-Wl,-rpath,@executable_path/../Frameworks")
+
+option(BROUK_UPDATES "Automatic updates: feed address and key (scripts/release)" OFF)
+set(BROUK_UPDATE_PLIST "")
+if(BROUK_UPDATES)
+  if(APP_UPDATE_PUBLIC_KEY STREQUAL "")
+    message(FATAL_ERROR "APP_UPDATE_PUBLIC_KEY is not set in CMakeLists.txt.")
+  endif()
+  # Checks every 5 hours, no system profile (019, Chrome-like); whether
+  # updates download and install by themselves is set at run time from
+  # updates.mode.
+  string(CONCAT BROUK_UPDATE_PLIST
+    "\t<key>SUFeedURL</key>\n"
+    "\t<string>${APP_UPDATE_FEED_BASE}/appcast-${CMAKE_OSX_ARCHITECTURES}.xml</string>\n"
+    "\t<key>SUPublicEDKey</key>\n"
+    "\t<string>${APP_UPDATE_PUBLIC_KEY}</string>\n"
+    "\t<key>SUEnableAutomaticChecks</key>\n"
+    "\t<true/>\n"
+    "\t<key>SUScheduledCheckInterval</key>\n"
+    "\t<integer>18000</integer>\n"
+    "\t<key>SUEnableSystemProfiling</key>\n"
+    "\t<false/>\n")
+endif()
 configure_file(Info.plist.in "${APP_BUNDLE}/Contents/Info.plist" @ONLY)
 
 # One helper executable, copied into each helper bundle CEF expects. No
@@ -147,6 +183,15 @@ list(APPEND _bundle_commands
           "${_framework}/Chromium Embedded Framework"
   COMMAND ln -sfn Versions/Current/Libraries "${_framework}/Libraries"
   COMMAND ln -sfn Versions/Current/Resources "${_framework}/Resources")
+
+# Sparkle, only this build's architecture (019: each app holds only its
+# own). Its XPC services are only for sandboxed apps; Brouk is not.
+set(_sparkle "${APP_BUNDLE}/Contents/Frameworks/Sparkle.framework")
+list(APPEND _bundle_commands
+  COMMAND rm -rf "${_sparkle}"
+  COMMAND ditto --arch "${CMAKE_OSX_ARCHITECTURES}"
+          "${_sparkle_dir}/Sparkle.framework" "${_sparkle}"
+  COMMAND rm -rf "${_sparkle}/Versions/B/XPCServices" "${_sparkle}/XPCServices")
 
 # Ad blocking resources (007), the first copy (see BroukAdblock.cmake).
 list(APPEND _bundle_commands
@@ -228,7 +273,7 @@ if(BROUK_HARDENED_RUNTIME)
 endif()
 # Re-sign when the identity changes, not only when the code does.
 file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/signing_identity.txt"
-     CONTENT "${_identity} ${BROUK_HARDENED_RUNTIME}\n")
+     CONTENT "${_identity} ${BROUK_HARDENED_RUNTIME} ${BROUK_UPDATES}\n")
 list(APPEND _signing_inputs "${CMAKE_CURRENT_BINARY_DIR}/signing_identity.txt")
 
 # Inner code first, then the app.
@@ -237,7 +282,10 @@ list(APPEND _bundle_commands
           "${_framework}/Libraries/libcef_sandbox.dylib"
           "${_framework}/Libraries/libvk_swiftshader.dylib"
           "${_framework}/Libraries/libvulkan.dylib"
-  COMMAND ${_sign} "${_framework}")
+  COMMAND ${_sign} "${_framework}"
+  COMMAND ${_sign} "${_sparkle}/Versions/B/Autoupdate"
+  COMMAND ${_sign} "${_sparkle}/Versions/B/Updater.app"
+  COMMAND ${_sign} "${_sparkle}")
 foreach(_helper_app _kind IN ZIP_LISTS _signed_helpers _helper_kinds)
   set(_helper_sign ${_sign})
   if(BROUK_HARDENED_RUNTIME AND EXISTS "${_entitlements_dir}/${_kind}.entitlements")

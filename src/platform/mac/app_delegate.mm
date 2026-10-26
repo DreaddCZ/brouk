@@ -28,8 +28,10 @@
 #import "platform/mac/menu_shortcuts.h"
 #import "platform/mac/profile_colors.h"
 #import "platform/mac/settings_watcher.h"
+#import "platform/mac/update_controller.h"
 
 #include "brouk/app_info.h"
+#include "brouk/build_info.h"
 #include "cef/adblock_service.h"
 #include "cef/autofill_manager.h"
 #include "cef/bookmarks_page_handler.h"
@@ -825,6 +827,8 @@ class AppSettingsPage : public SettingsPageDelegate {
   std::unique_ptr<brouk::DownloadService> _downloads;
   // Site icons from the history for native views (013).
   BRFaviconCache* _favicons;
+  // Automatic updates (019).
+  BRUpdateController* _updates;
   NSProgressIndicator* _dockProgress;
   // History menu (013): tabs and windows closed in this run, and each
   // profile's recently visited pages (fetched from its history).
@@ -897,6 +901,10 @@ class AppSettingsPage : public SettingsPageDelegate {
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification*)notification {
+  const brouk::Settings& global = _profiles->global_settings();
+  _updates = [[BRUpdateController alloc]
+      initWithChannel:global.GetString("updates.channel")
+                 mode:global.GetString("updates.mode")];
   NSApp.mainMenu = [self buildMainMenu];
   // The settings may have been read already (CEF can be ready first).
   brouk::mac::ApplyShortcutsToMenu(NSApp.mainMenu);
@@ -1830,6 +1838,8 @@ class AppSettingsPage : public SettingsPageDelegate {
         keep == "forever" ? std::nullopt
                           : std::optional<int>(std::atoi(keep.c_str())));
   }
+  [_updates setChannel:global.GetString("updates.channel")
+                  mode:global.GetString("updates.mode")];
   const std::string& theme = global.GetString("appearance.theme");
   NSApp.appearance =
       theme == "light" ? [NSAppearance appearanceNamed:NSAppearanceNameAqua]
@@ -3394,6 +3404,15 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
   return item;
 }
 
+// The version with the commit it was built from (019), e.g.
+// "Version 0.4.0 (a1b2c3d)".
+- (void)showAbout:(nullable id)sender {
+  [NSApp orderFrontStandardAboutPanelWithOptions:@{
+    NSAboutPanelOptionApplicationVersion : @(brouk::kAppVersion),
+    NSAboutPanelOptionVersion : @(brouk::kAppCommit),
+  }];
+}
+
 - (NSMenu*)submenu:(NSString*)title in:(NSMenu*)bar {
   NSMenuItem* holder = [bar addItemWithTitle:title
                                       action:nil
@@ -3415,9 +3434,24 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
   NSMenu* app = [self submenu:appName in:bar];
   [self addItem:app
           title:[@"About " stringByAppendingString:appName]
-         action:@selector(orderFrontStandardAboutPanel:)
+         action:@selector(showAbout:)
             key:@""
       modifiers:0];
+  // Automatic updates (019); Restart to Update shows once one is ready.
+  [self addItem:app
+          title:@"Check for Updates…"
+         action:@selector(checkForUpdates:)
+            key:@""
+      modifiers:0]
+      .target = _updates;
+  NSMenuItem* restart = [self addItem:app
+                                title:@"Restart to Update"
+                               action:@selector(restartToUpdate:)
+                                  key:@""
+                            modifiers:0];
+  restart.target = _updates;
+  restart.hidden = !_updates.updateReady;
+  _updates.restartItem = restart;
   [app addItem:NSMenuItem.separatorItem];
   [self addItem:app
           title:@"Settings…"

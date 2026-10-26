@@ -71,7 +71,17 @@ constexpr std::array<std::string_view, 7> kSecureDnsLabels = {
     "Off (system DNS)", "Cloudflare", "Quad9", "AdGuard DNS (blocks ads)",
     "NextDNS",          "Control D",  "Custom"};
 
-constexpr std::array<SettingDef, 51> kSettings = {{
+constexpr std::array<std::string_view, 2> kUpdateChannels = {"stable", "beta"};
+constexpr std::array<std::string_view, 2> kUpdateChannelLabels = {
+    "Stable", "Beta (early versions for testing)"};
+
+constexpr std::array<std::string_view, 3> kUpdateModes = {"install", "notify",
+                                                          "off"};
+constexpr std::array<std::string_view, 3> kUpdateModeLabels = {
+    "Download and install automatically", "Ask before downloading",
+    "Do not check automatically"};
+
+constexpr std::array<SettingDef, 53> kSettings = {{
     // Global.
     {.key = "appearance.theme",
      .scope = SettingScope::kGlobal,
@@ -82,6 +92,26 @@ constexpr std::array<SettingDef, 51> kSettings = {{
      .section = "Appearance",
      .label = "Theme",
      .description = "Light or dark windows; by default as set in macOS."},
+    {.key = "updates.channel",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kChoice,
+     .default_value = "stable",
+     .choices = kUpdateChannels,
+     .choice_labels = kUpdateChannelLabels,
+     .section = "Updates",
+     .label = "Update channel",
+     .description = "Beta also gets versions for testing, before they "
+                    "become stable. Only releases update themselves."},
+    {.key = "updates.mode",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kChoice,
+     .default_value = "install",
+     .choices = kUpdateModes,
+     .choice_labels = kUpdateModeLabels,
+     .section = "Updates",
+     .label = "Updates",
+     .description = "Updates are installed when Brouk restarts. Brouk → "
+                    "Check for Updates… checks at any time."},
     {.key = "startup.restore",
      .scope = SettingScope::kGlobal,
      .type = SettingDef::Type::kChoice,

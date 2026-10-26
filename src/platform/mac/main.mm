@@ -5,12 +5,22 @@
 #import "platform/mac/app_delegate.h"
 #import "platform/mac/data_paths.h"
 
+#include <cstdio>
+#include <cstring>
+
 #include "brouk/app_info.h"
+#include "brouk/build_info.h"
 #include "cef/browser_app.h"
 #include "include/cef_app.h"
 #include "include/wrapper/cef_library_loader.h"
 
 int main(int argc, char* argv[]) {
+  // "Brouk 0.4.0 (a1b2c3d)": every report points to an exact build (019).
+  if (argc == 2 && std::strcmp(argv[1], "--version") == 0) {
+    std::printf("%s %s (%s)\n", brouk::kAppName, brouk::kAppVersion,
+                brouk::kAppCommit);
+    return 0;
+  }
   // The CEF framework is loaded at runtime, as the macOS sandbox requires.
   CefScopedLibraryLoader library_loader;
   if (!library_loader.LoadInMain()) {

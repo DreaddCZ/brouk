@@ -6,6 +6,9 @@
 #   scripts/package_mac --arch arm64     for Apple Silicon (also from Intel)
 #   scripts/package_mac --arch x86_64    for Intel (also from Apple Silicon)
 #   scripts/package_mac --all            both
+#   ... --dist DIR                       put the images in DIR
+#   ... --updates                        with automatic updates (only
+#                                        scripts/release, spec 019)
 #
 # The images end up in build/dist/, each with a .sha256 file.
 #
@@ -21,10 +24,14 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 ARCHS=()
+DIST="$ROOT/build/dist"
+BUILD_OPTIONS=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --arch) ARCHS+=("$2"); shift ;;
     --all) ARCHS+=(arm64 x86_64) ;;
+    --dist) DIST="$2"; shift ;;
+    --updates) BUILD_OPTIONS+=(--updates) ;;
     *) echo "Unknown option: $1" >&2; exit 2 ;;
   esac
   shift
@@ -40,7 +47,6 @@ fi
 cmake_var() { sed -n "s/^set($1 \"\(.*\)\")$/\1/p" "$ROOT/CMakeLists.txt"; }
 APP_NAME="$(cmake_var APP_NAME)"
 APP_VERSION="$(cmake_var APP_VERSION)"
-DIST="$ROOT/build/dist"
 mkdir -p "$DIST"
 
 DEVELOPER_ID="$(security find-identity -v -p codesigning |
@@ -84,7 +90,8 @@ for arch in "${ARCHS[@]}"; do
 
   SIGN=()
   [[ -n "$DEVELOPER_ID" ]] && SIGN=(--sign "$DEVELOPER_ID" --notarizable)
-  "$ROOT/scripts/build" --release --arch "$arch" ${SIGN[@]+"${SIGN[@]}"}
+  "$ROOT/scripts/build" --release --arch "$arch" ${SIGN[@]+"${SIGN[@]}"} \
+    ${BUILD_OPTIONS[@]+"${BUILD_OPTIONS[@]}"}
   APP="$ROOT/build/release-$arch/$APP_NAME.app"
 
   # Never hand out a broken or mixed-architecture bundle.

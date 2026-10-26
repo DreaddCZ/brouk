@@ -1,6 +1,6 @@
 # 019 – Release pipeline and automatic updates
 
-- **Status:** ready
+- **Status:** in-progress
 - **Priority:** P2
 - **Depends on:** 001, 002, 004 (settings), 006 (remote debugging flag), 012 (crash page), 014 (quit question for running downloads), 015 (session restore)
 
@@ -199,3 +199,4 @@ None.
   - **Version numbers:** `CFBundleVersion` must grow with each release for Sparkle's version comparison; derive it from `APP_VERSION`.
   - **Gatekeeper:** an update from Sparkle is not quarantined, but it is notarized and stapled anyway.
 - If Apple Silicon testing is needed later without the M2, GitHub's free macOS runners for public repositories could test builds from the public releases repository.
+- 2026-10-26 (implementation, first part): the releases repository `DreaddCZ/brouk-releases` is created (public, Pages on `main`, empty feeds) with the user's approval. Sparkle 2.10.0 (2.10.1 was a day old). The update signing key is in the login keychain under the account `brouk` (not Sparkle's default `ed25519`, so it cannot be mixed up with another app's key). Builds embed Sparkle thinned to their architecture (`ditto --arch`) and without its XPC services; `--version` and About show `0.1.0 (a1b2c3d)` from a separate generated header (`brouk/build_info.h`), so a new commit recompiles only the files that show it. Test runs with their own data folder (`BROUK_DEV_DATA_DIR`) never start the updater, so the smoke tests do not touch the updater state that Sparkle keeps in the user's defaults. Sparkle's standard update window shows found updates and the result of Check for Updates…. The quit question for running downloads (014) is asked when Restart to Update quits, as for any quit. Settings → Updates shows the channel and the mode; the version, last check and a "Check now" button in Settings follow later (Brouk → Check for Updates… and About cover them now).
