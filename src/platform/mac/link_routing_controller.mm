@@ -53,6 +53,10 @@ NSScreen* ScreenWithMouse() {
 @property(nonatomic, copy) NSString* realURL;
 @property(nonatomic, copy) NSString* openURL;
 @property(nonatomic, copy, nullable) NSString* wrapper;
+// Set when the profile is already known (openURL:inProfile:…): only the
+// window is chosen.
+@property(nonatomic) brouk::ProfileId knownProfile;
+@property(nonatomic) BOOL bookmark;
 @end
 
 @implementation BRLinkRequest
@@ -156,6 +160,26 @@ NSScreen* ScreenWithMouse() {
   return YES;
 }
 
+- (void)openURL:(NSString*)url
+      inProfile:(const brouk::ProfileId&)profile
+     sourceName:(NSString*)sourceName
+       inWindow:(BRBrowserWindowController*)controller
+     foreground:(BOOL)foreground
+       bookmark:(BOOL)bookmark {
+  BRLinkRequest* request = [[BRLinkRequest alloc] init];
+  request.url = url;
+  request.realURL = url;
+  request.openURL = url;
+  request.source = brouk::LinkSource::kNewTab;
+  request.sourceName = sourceName;
+  request.knownProfile = profile;
+  request.window = controller;
+  request.foreground = foreground;
+  request.bookmark = bookmark;
+  request.screen = controller.window.screen;
+  [self enqueueResolved:request];
+}
+
 - (void)cancelPending {
   [_queue removeAllObjects];
   [_resolver cancelAll];
@@ -234,9 +258,14 @@ NSScreen* ScreenWithMouse() {
 }
 
 - (void)route:(BRLinkRequest*)request {
-  brouk::ProfileDecision decision =
-      [self decideProfileFor:request realURL:request.realURL.UTF8String ?: ""];
-  [self logRouting:request decision:decision];
+  brouk::ProfileDecision decision;
+  if (!request.knownProfile.empty()) {
+    decision.profiles.push_back(request.knownProfile);
+  } else {
+    decision = [self decideProfileFor:request
+                              realURL:request.realURL.UTF8String ?: ""];
+    [self logRouting:request decision:decision];
+  }
   if (decision.stays_in_source) {
     [self openInSource:request];
     return;
@@ -549,7 +578,10 @@ NSScreen* ScreenWithMouse() {
   // A background tab (Cmd-click) stays in the background in its own
   // window; anywhere else it is shown, so it can be found.
   BOOL activateTab = request.foreground || target != source;
-  [target openTabWithURL:request.openURL profile:profile activate:activateTab];
+  [target openTabWithURL:request.openURL
+                 profile:profile
+                activate:activateTab
+                bookmark:request.bookmark];
   if (request.foreground || newWindow) {
     [self bringToFront:target];
   }

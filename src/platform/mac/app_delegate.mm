@@ -1414,6 +1414,30 @@ class AppSettingsPage : public SettingsPageDelegate {
                      foreground:foreground];
 }
 
+- (void)openURL:(NSString*)url
+      inProfile:(const brouk::ProfileId&)profile
+     sourceName:(NSString*)sourceName
+       inWindow:(BRBrowserWindowController*)controller
+     foreground:(BOOL)foreground
+       bookmark:(BOOL)bookmark {
+  if (_quitting) {
+    return;
+  }
+  if (!_linkRouting) {
+    [controller openTabWithURL:url
+                       profile:profile
+                      activate:foreground
+                      bookmark:bookmark];
+    return;
+  }
+  [_linkRouting openURL:url
+              inProfile:profile
+             sourceName:sourceName
+               inWindow:controller
+             foreground:foreground
+               bookmark:bookmark];
+}
+
 - (nullable BRLinkRoutingController*)linkRouting {
   return _linkRouting;
 }
