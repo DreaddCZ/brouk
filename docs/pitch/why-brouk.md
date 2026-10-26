@@ -56,7 +56,7 @@ Many client accounts in one window · full control over every page · nothing yo
 
 ## Links open in the right profile
 
-- Simple rules: `*.atlassian.net/clientA` → Client A, `github.com/our-org/*` → Internal
+- Simple rules: `*.atlassian.net/clientA` → Client A, `github.com/our-org/*` → Internal, `portal.azure.com/#@clientb.onmicrosoft.com/*` → Client B
 - One profile in the rule → it just opens there. Several → a quick picker (press `1`, `2`, `3`)
 - Works for links from **Outlook and Teams**, including **Safe Links**, Proofpoint and Mimecast wrappers — routed by the real address, while the company link check still runs
 - Several windows? The picker shows thumbnails of each window and its profile groups

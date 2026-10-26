@@ -80,7 +80,7 @@ std::vector<std::string> PatternsOfProfile(const LinkRoutingConfig& config,
 // longer listed loses the profile (and goes when it has no profile left);
 // a listed pattern joins the rule for the same pattern (written in any
 // equivalent way) at its end, or gets a new rule of its own. Patterns must
-// be valid (UrlPattern::Parse).
+// be valid (UrlPattern::Parse, fragments allowed).
 void SetProfilePatterns(LinkRoutingConfig& config,
                         const ProfileId& profile,
                         std::span<const std::string> patterns);

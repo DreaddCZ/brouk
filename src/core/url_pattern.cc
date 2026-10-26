@@ -30,6 +30,7 @@ struct ParsedUrl {
   std::string host;
   int port = 0;
   std::string path;
+  std::string fragment;
 };
 
 // Scheme, host, port and path of an http(s) or ws(s) URL.
@@ -75,12 +76,16 @@ std::optional<ParsedUrl> ParseUrl(std::string_view url) {
     path = "/";
   }
   parsed.path = std::string(path.substr(0, path.find_first_of("?#")));
+  if (std::size_t hash = rest.find('#'); hash != std::string_view::npos) {
+    parsed.fragment = std::string(rest.substr(hash + 1));
+  }
   return parsed;
 }
 
 }  // namespace
 
-std::optional<UrlPattern> UrlPattern::Parse(std::string_view text) {
+std::optional<UrlPattern> UrlPattern::Parse(std::string_view text,
+                                            Fragment fragment) {
   // Leading and trailing spaces are forgiven; a scheme is ignored.
   while (!text.empty() && text.front() == ' ')
     text.remove_prefix(1);
@@ -97,13 +102,25 @@ std::optional<UrlPattern> UrlPattern::Parse(std::string_view text) {
   std::size_t slash = text.find('/');
   std::string_view authority = text.substr(0, slash);
   if (slash != std::string_view::npos) {
-    pattern.path_prefix = std::string(text.substr(slash));
+    std::string_view path = text.substr(slash);
+    if (std::size_t hash = path.find('#'); hash != std::string_view::npos) {
+      if (fragment != Fragment::kAllowed) {
+        return std::nullopt;
+      }
+      pattern.fragment_prefix = std::string(path.substr(hash + 1));
+      path = path.substr(0, hash);
+    }
+    pattern.path_prefix = std::string(path);
     // "github.com/company-a/*" reads naturally; the "*" adds nothing to a
     // prefix.
-    if (pattern.path_prefix.ends_with("/*")) {
-      pattern.path_prefix.pop_back();
+    std::string& last = pattern.fragment_prefix.empty()
+                            ? pattern.path_prefix
+                            : pattern.fragment_prefix;
+    if (last.ends_with("/*")) {
+      last.pop_back();
     }
-    if (pattern.path_prefix.find_first_of(" ?#") != std::string::npos) {
+    if (pattern.path_prefix.find_first_of(" ?") != std::string::npos ||
+        pattern.fragment_prefix.find(' ') != std::string::npos) {
       return std::nullopt;
     }
   }
@@ -134,7 +151,11 @@ std::string UrlPattern::ToString() const {
   if (port) {
     text += ":" + std::to_string(*port);
   }
-  return text + path_prefix;
+  text += path_prefix;
+  if (!fragment_prefix.empty()) {
+    text += "#" + fragment_prefix;
+  }
+  return text;
 }
 
 bool UrlPattern::Matches(std::string_view url) const {
@@ -148,13 +169,16 @@ bool UrlPattern::Matches(std::string_view url) const {
        parsed->host.ends_with(host) &&
        parsed->host[parsed->host.size() - host.size() - 1] == '.');
   return host_matches && (!port || *port == parsed->port) &&
-         parsed->path.starts_with(path_prefix);
+         parsed->path.starts_with(path_prefix) &&
+         parsed->fragment.starts_with(fragment_prefix);
 }
 
 int UrlPattern::Specificity() const {
-  // Exact host beats wildcard; then port; then the longer path.
+  // Exact host beats wildcard; then port; then the longer path (a fragment
+  // continues it).
   return (subdomains ? 0 : 100000) + (port ? 10000 : 0) +
-         static_cast<int>(std::min<std::size_t>(path_prefix.size(), 9999));
+         static_cast<int>(std::min<std::size_t>(
+             path_prefix.size() + fragment_prefix.size(), 9999));
 }
 
 std::optional<std::vector<UrlPattern>> ParseUrlPatternList(

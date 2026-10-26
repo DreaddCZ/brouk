@@ -132,6 +132,32 @@ TEST(LinkRoutingRulesTest, MostSpecificRuleWins) {
   EXPECT_EQ(profile("https://example.com/"), "none");
 }
 
+// Azure names the tenant in the fragment; each tenant can have a profile.
+TEST(LinkRoutingRulesTest, FragmentPatterns) {
+  LinkRoutingConfig config;
+  config.rules = {{"portal.azure.com", {"p-azure"}},
+                  {"portal.azure.com/#@a.onmicrosoft.com/*", {"p-a"}}};
+  EXPECT_FALSE(ValidateRoutingRule(config.rules[1]));
+  EXPECT_EQ(
+      FindRoutingRule(config, "https://portal.azure.com/#@a.onmicrosoft.com/x")
+          ->profiles.front(),
+      "p-a");
+  EXPECT_EQ(
+      FindRoutingRule(config, "https://portal.azure.com/#@b.onmicrosoft.com/x")
+          ->profiles.front(),
+      "p-azure");
+
+  // Written differently but equal, it joins the rule.
+  std::vector<std::string> patterns = {
+      "https://portal.azure.com/#@a.onmicrosoft.com/"};
+  SetProfilePatterns(config, "p-b", patterns);
+  ASSERT_EQ(config.rules.size(), 2u);
+  EXPECT_EQ(config.rules[1].profiles, (std::vector<ProfileId>{"p-a", "p-b"}));
+
+  // Wrappers are matched by host and path only.
+  EXPECT_TRUE(ValidateLinkWrapperRule({"links.example.com/#x", ""}));
+}
+
 TEST(LinkRoutingRulesTest, EquallySpecificRulesKeepTheirOrder) {
   LinkRoutingConfig config;
   config.rules = {{"example.com", {"p-first"}}, {"example.com", {"p-second"}}};

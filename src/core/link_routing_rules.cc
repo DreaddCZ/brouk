@@ -31,7 +31,8 @@ bool IsParameterChar(char c) {
 
 // Higher is more specific (see FindRoutingRule).
 auto RoutingSpecificity(const UrlPattern& pattern) {
-  return std::make_tuple(pattern.path_prefix.size(), !pattern.subdomains,
+  return std::make_tuple(pattern.path_prefix.size(),
+                         pattern.fragment_prefix.size(), !pattern.subdomains,
                          pattern.host.size(), pattern.port.has_value());
 }
 
@@ -118,7 +119,7 @@ std::vector<LinkWrapperRule> WrappersFromYaml(
 }  // namespace
 
 std::optional<std::string> ValidateRoutingRule(const RoutingRule& rule) {
-  if (!UrlPattern::Parse(rule.pattern)) {
+  if (!UrlPattern::Parse(rule.pattern, UrlPattern::Fragment::kAllowed)) {
     return "\"" + rule.pattern +
            "\" is not a valid pattern (e.g. example.com, *.example.com or "
            "example.com/path/)";
@@ -249,7 +250,8 @@ const RoutingRule* FindRoutingRule(const LinkRoutingConfig& config,
   const RoutingRule* best = nullptr;
   std::optional<UrlPattern> best_pattern;
   for (const RoutingRule& rule : config.rules) {
-    std::optional<UrlPattern> pattern = UrlPattern::Parse(rule.pattern);
+    std::optional<UrlPattern> pattern =
+        UrlPattern::Parse(rule.pattern, UrlPattern::Fragment::kAllowed);
     if (!pattern || !pattern->Matches(url)) {
       continue;
     }
@@ -268,7 +270,8 @@ namespace {
 // The same pattern however it was written ("https://Example.com/a/*" and
 // "example.com/a/").
 std::string NormalPattern(std::string_view pattern) {
-  std::optional<UrlPattern> parsed = UrlPattern::Parse(pattern);
+  std::optional<UrlPattern> parsed =
+      UrlPattern::Parse(pattern, UrlPattern::Fragment::kAllowed);
   return parsed ? parsed->ToString() : std::string(pattern);
 }
 
