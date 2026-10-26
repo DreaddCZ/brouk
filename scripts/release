@@ -234,7 +234,8 @@ smoke_test() {
 
 # A feed item for one architecture, newest first in the feed.
 add_to_feed() {
-  local feed="$1" arch="$2" dmg="$OUT/Brouk-$VERSION-$arch.dmg"
+  local feed="$1" arch="$2"
+  local dmg="$OUT/Brouk-$VERSION-$arch.dmg"
   if grep -q "<sparkle:version>$VERSION</sparkle:version>" "$feed"; then
     return
   fi
@@ -247,19 +248,22 @@ from email.utils import formatdate
 feed, version, arch, beta, signature, notes_file, repo = sys.argv[1:]
 notes = open(notes_file).read() if notes_file else ""
 # The notes as simple HTML for Sparkle's update window.
+def inline(text):
+    return re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", html.escape(text))
 parts, in_list = [], False
 for line in notes.splitlines():
-    if line.startswith("- "):
+    item = re.match(r"\s*[-*] (.*)", line)
+    if item:
         if not in_list:
             parts.append("<ul>"); in_list = True
-        parts.append("<li>" + html.escape(line[2:]) + "</li>")
+        parts.append("<li>" + inline(item.group(1)) + "</li>")
         continue
     if in_list:
         parts.append("</ul>"); in_list = False
     if line.startswith("### "):
         parts.append("<h3>" + html.escape(line[4:]) + "</h3>")
     elif line.strip():
-        parts.append("<p>" + html.escape(line) + "</p>")
+        parts.append("<p>" + inline(line) + "</p>")
 if in_list:
     parts.append("</ul>")
 base = f"https://github.com/{repo}/releases"
