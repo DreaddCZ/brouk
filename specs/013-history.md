@@ -153,34 +153,34 @@ Moved to [022](022-history-export.md).
 ## Acceptance criteria
 
 **Recording**
-- [ ] Visiting a page in profile A records it in A's history only; it is not suggested and not listed under profile B.
-- [ ] Redirects show only the final URL, also when a page forwards to another one by itself; brouk://, data:, blob: and error pages are not recorded.
-- [ ] Pages matching the "never record" list are not recorded, in any profile; adding a site removes its existing pages from the history.
+- [x] Visiting a page in profile A records it in A's history only; it is not suggested and not listed under profile B.
+- [x] Redirects show only the final URL, also when a page forwards to another one by itself; brouk://, data:, blob: and error pages are not recorded.
+- [x] Pages matching the "never record" list are not recorded, in any profile; adding a site removes its existing pages from the history.
 - [ ] Entries older than the retention limit (90 days by default) are removed automatically.
 
 **History page**
-- [ ] ⌘Y opens the history page grouped by exact host (companya.atlassian.net and companyb.atlassian.net are separate rows), with visit counts, last visit and profile colour; a row expands to its pages; it can be filtered by profile and sorted by last visit, visits or host.
-- [ ] The "By day" toggle shows single visits grouped by day.
-- [ ] Clean up in "keep selected" mode deletes every host in the chosen profile and time range except the checked ones, and shows the counts before confirming.
-- [ ] Clean up preselects the profile's remembered keep list plus the 10 most visited hosts; the hosts kept become the new keep list.
-- [ ] Clean up in "delete selected" mode deletes only the checked hosts.
-- [ ] Search with plain words matches title or URL, all words required; the filters `site:`, `host:`, `title:`, `url:`, `after:`/`before:`/`on:` (absolute and relative), `visits:`, `profile:`, `type:`, phrases, `-` and `OR` work as described, alone and combined.
-- [ ] The filter chips add the same filters as typing them.
-- [ ] The SQL editor runs SELECT queries over `pages` and `visits` for all profiles and shows the results as a table, which can be copied as CSV.
+- [x] ⌘Y opens the history page grouped by exact host (companya.atlassian.net and companyb.atlassian.net are separate rows), with visit counts, last visit and profile colour; a row expands to its pages; it can be filtered by profile and sorted by last visit, visits or host.
+- [x] The "By day" toggle shows single visits grouped by day.
+- [x] Clean up in "keep selected" mode deletes every host in the chosen profile and time range except the checked ones, and shows the counts before confirming.
+- [x] Clean up preselects the profile's remembered keep list plus the 10 most visited hosts; the hosts kept become the new keep list.
+- [x] Clean up in "delete selected" mode deletes only the checked hosts.
+- [x] Search with plain words matches title or URL, all words required; the filters `site:`, `host:`, `title:`, `url:`, `after:`/`before:`/`on:` (absolute and relative), `visits:`, `profile:`, `type:`, phrases, `-` and `OR` work as described, alone and combined.
+- [x] The filter chips add the same filters as typing them.
+- [x] The SQL editor runs SELECT queries over `pages` and `visits` for all profiles and shows the results as a table, which can be copied as CSV.
 - [ ] Any statement that would change data is rejected, and queries are stopped after 2 seconds or 1,000 rows.
-- [ ] An entry opened from the history page opens in the profile it was visited in, in the window chosen by the rules of 010.
-- [ ] A page, a site row, or a multi-selection of them can be deleted.
+- [x] An entry opened from the history page opens in the profile it was visited in, in the window chosen by the rules of 010.
+- [x] A page, a site row, or a multi-selection of them can be deleted.
 
 **Menu and closed tabs**
-- [ ] ⇧⌘T reopens the last closed tab (or window) in its profile, at its previous position when possible, up to the last 10 tabs or windows of the current run.
-- [ ] The History menu lists Recently Closed (with profile colours) and Recently Visited (active tab's profile).
+- [x] ⇧⌘T reopens the last closed tab (or window) in its profile, at its previous position when possible, up to the last 10 tabs or windows of the current run.
+- [x] The History menu lists Recently Closed (with profile colours) and Recently Visited (active tab's profile).
 
 **Address bar**
-- [ ] Address bar suggestions from history come only from the active tab's profile; ⇧⌫ removes a history suggestion from that profile's history.
+- [x] Address bar suggestions from history come only from the active tab's profile; ⇧⌫ removes a history suggestion from that profile's history.
 
 **Clearing and profiles**
-- [ ] Clear Browsing Data clears the chosen data types, for the chosen profile or all profiles, within the chosen time range, and leaves other profiles untouched.
-- [ ] Deleting a profile deletes its history.
+- [x] Clear Browsing Data clears the chosen data types, for the chosen profile or all profiles, within the chosen time range, and leaves other profiles untouched.
+- [x] Deleting a profile deletes its history.
 
 ## Out of scope
 
