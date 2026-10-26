@@ -7,6 +7,12 @@ set(APP_EXECUTABLE_NAME "brouk")
 set(APP_BUNDLE_ID "io.github.dreaddcz.brouk")
 set(APP_DATA_DIR_NAME "Brouk")
 set(APP_VERSION "0.1.0")
+# Automatic updates (019): the releases repository's update feeds (one per
+# architecture, appcast-<arch>.xml) and the public EdDSA key that update
+# images must be signed with. Only builds with BROUK_UPDATES (scripts/release)
+# contain them.
+set(APP_UPDATE_FEED_BASE "https://dreaddcz.github.io/brouk-releases")
+set(APP_UPDATE_PUBLIC_KEY "ZJ8QKD4uks699Clq/d/WTsnZUxgor2ngDFuWvL33Tbc=")
 
 # macOS 15 Sequoia is the minimum (002). Must be set before project().
 set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0" CACHE STRING "Minimum macOS version")
@@ -40,6 +46,11 @@ option(BROUK_WITH_CEF "Build the CEF integration and the app" ON)
 
 configure_file(src/app_info.h.in
                "${CMAKE_CURRENT_BINARY_DIR}/generated/brouk/app_info.h" @ONLY)
+# The commit a build was made from (scripts/build passes it), in its own
+# header so that a new commit rebuilds only the few files showing it.
+set(BROUK_COMMIT "unknown" CACHE STRING "Short commit hash shown with the version")
+configure_file(src/build_info.h.in
+               "${CMAKE_CURRENT_BINARY_DIR}/generated/brouk/build_info.h" @ONLY)
 
 # The ad blocking engine (Rust, 007), used by the core.
 include(BroukAdblock)

@@ -12,6 +12,10 @@
 #   scripts/build --notarizable       sign for notarization (hardened runtime,
 #                                     used by scripts/package_mac)
 # Both are kept for later builds in the same build folder.
+#   scripts/build --updates           turn on automatic updates (feed address
+#                                     and key; only scripts/release does this,
+#                                     spec 019). Not kept: every build without
+#                                     it has updates off.
 #
 # The app bundle ends up in build/<config>-<arch>/.
 set -euo pipefail
@@ -21,6 +25,7 @@ ARCH="$(uname -m)"
 RUN_TESTS=0
 SIGN_IDENTITY=""
 HARDENED=OFF
+UPDATES=OFF
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --release) CONFIG=Release ;;
@@ -29,6 +34,7 @@ while [[ $# -gt 0 ]]; do
     --test) RUN_TESTS=1 ;;
     --sign) SIGN_IDENTITY="$2"; shift ;;
     --notarizable) HARDENED=ON ;;
+    --updates) UPDATES=ON ;;
     *) echo "Unknown option: $1" >&2; exit 2 ;;
   esac
   shift
@@ -45,6 +51,9 @@ case "$(uname -s)-$ARCH" in
   *) echo "Unsupported target: $(uname -s) $ARCH" >&2; exit 1 ;;
 esac
 "$ROOT/scripts/fetch_cef" "$CEF_PLATFORM"
+if [[ "$(uname -s)" == Darwin ]]; then
+  "$ROOT/scripts/fetch_sparkle"
+fi
 
 CONFIG_LOWER="$(echo "$CONFIG" | tr '[:upper:]' '[:lower:]')"
 BUILD_DIR="$ROOT/build/$CONFIG_LOWER-$ARCH"
@@ -57,7 +66,10 @@ if [[ "$(uname -s)" == Darwin ]]; then
   if [[ "$HARDENED" == ON ]]; then
     EXTRA+=("-DBROUK_HARDENED_RUNTIME=ON")
   fi
+  EXTRA+=("-DBROUK_UPDATES=$UPDATES")
 fi
+# The commit shown with the version (019), e.g. "0.4.0 (a1b2c3d)".
+EXTRA+=("-DBROUK_COMMIT=$(git -C "$ROOT" rev-parse --short=7 HEAD 2>/dev/null || echo unknown)")
 cmake -S "$ROOT" -B "$BUILD_DIR" -G Ninja -DCMAKE_BUILD_TYPE="$CONFIG" \
   "${EXTRA[@]}"
 cmake --build "$BUILD_DIR"

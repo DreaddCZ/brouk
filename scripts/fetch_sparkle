@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+# Downloads the pinned Sparkle release (the macOS updater, spec 019) into
+# third_party/sparkle/ (git-ignored) and verifies its SHA-256 checksum. It
+# holds Sparkle.framework, which the app embeds, and the tools the release
+# script uses (bin/generate_keys, bin/sign_update).
+#
+# To update Sparkle: change SPARKLE_VERSION and SPARKLE_SHA256 (GitHub shows
+# the asset's SHA-256 on the release page and in its API as "digest").
+set -euo pipefail
+
+SPARKLE_VERSION="2.10.0"
+SPARKLE_SHA256="c2bf58aa8387266ac179357b1415d6f2635f044da8be41042af32425dae6da0c"
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+DEST="$ROOT/third_party/sparkle"
+STAMP="$DEST/.brouk_sparkle_version"
+
+if [[ -f "$STAMP" ]] && [[ "$(cat "$STAMP")" == "$SPARKLE_VERSION" ]]; then
+  exit 0
+fi
+
+CACHE="${BROUK_SPARKLE_CACHE:-$HOME/.cache/brouk/sparkle}"
+mkdir -p "$CACHE"
+ARCHIVE="$CACHE/Sparkle-$SPARKLE_VERSION.tar.xz"
+sha256() { shasum -a 256 "$1" | cut -d' ' -f1; }
+
+if [[ ! -f "$ARCHIVE" ]] || [[ "$(sha256 "$ARCHIVE")" != "$SPARKLE_SHA256" ]]; then
+  echo "Downloading Sparkle $SPARKLE_VERSION ..."
+  curl -fL --retry 3 -o "$ARCHIVE.part" \
+    "https://github.com/sparkle-project/Sparkle/releases/download/$SPARKLE_VERSION/Sparkle-$SPARKLE_VERSION.tar.xz"
+  mv "$ARCHIVE.part" "$ARCHIVE"
+fi
+ACTUAL="$(sha256 "$ARCHIVE")"
+if [[ "$ACTUAL" != "$SPARKLE_SHA256" ]]; then
+  rm -f "$ARCHIVE"
+  echo "Checksum mismatch for Sparkle $SPARKLE_VERSION: expected $SPARKLE_SHA256, got $ACTUAL" >&2
+  exit 1
+fi
+
+rm -rf "$DEST" "$DEST.tmp"
+mkdir -p "$DEST.tmp"
+tar -xJf "$ARCHIVE" -C "$DEST.tmp"
+echo "$SPARKLE_VERSION" > "$DEST.tmp/.brouk_sparkle_version"
+mv "$DEST.tmp" "$DEST"
+echo "Sparkle $SPARKLE_VERSION ready in $DEST"

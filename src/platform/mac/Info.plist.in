@@ -75,5 +75,5 @@
 	<string>Web sites you allow can connect to Bluetooth devices.</string>
 	<key>NSAudioCaptureUsageDescription</key>
 	<string>Web sites you allow can capture audio while sharing your screen.</string>
-</dict>
+@BROUK_UPDATE_PLIST@</dict>
 </plist>
