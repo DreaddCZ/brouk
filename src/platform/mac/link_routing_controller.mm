@@ -1,5 +1,7 @@
 #import "platform/mac/link_routing_controller.h"
 
+#include <os/log.h>
+
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -261,12 +263,14 @@ NSScreen* ScreenWithMouse() {
   }
   std::string rule = decision.rule_pattern ? "rule " + *decision.rule_pattern
                                            : std::string("no rule");
-  NSLog(@"Link routing: %@: %s, via %@, routed by %s: %s -> %s",
-        request.sourceName,
-        brouk::LinkForLog(request.url.UTF8String ?: "").c_str(),
-        request.wrapper ?: @"no wrapper",
-        brouk::LinkForLog(request.realURL.UTF8String ?: "").c_str(),
-        rule.c_str(), profiles.c_str());
+  std::string line =
+      std::string(request.sourceName.UTF8String ?: "") + ": " +
+      brouk::LinkForLog(request.url.UTF8String ?: "") + ", via " +
+      (request.wrapper ? request.wrapper.UTF8String : "no wrapper") +
+      ", routed by " + brouk::LinkForLog(request.realURL.UTF8String ?: "") +
+      ": " + rule + " -> " + profiles;
+  // Public: macOS hides NSLog's arguments, and the line holds no secrets.
+  os_log(OS_LOG_DEFAULT, "Link routing: %{public}s", line.c_str());
 }
 
 - (std::vector<brouk::RoutingWindow>)
