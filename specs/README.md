@@ -37,7 +37,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 010 | [Link routing and window picker](010-link-routing.md) | in-progress — rules, picker with window thumbnails, wrappers (built-in, own, opaque with "Checking link"), default browser, Settings → Links in review; real Outlook/Teams links to check | P1 |
 | 011 | [Bookmark manager](011-bookmarks.md) | done — window choice after 010 | P1 |
 | 012 | [Web platform basics](012-web-platform-basics.md) | in-progress | P1 |
-| 013 | [History](013-history.md) | in-progress — storage, recording, retention, address bar suggestions, History menu with closed tabs, history limits, the history page as a tab with search, SQL editor, Clean up and Clear browsing data (merged); history in profile export postponed | P1 |
+| 013 | [History](013-history.md) | in-progress — storage, recording, retention, address bar suggestions, History menu with closed tabs, history limits, the history page as a tab with search, SQL editor, Clean up and Clear browsing data (merged); window choice and favicons next; history in profile export moved to 022 | P1 |
 | 014 | [Downloads](014-downloads.md) | in-progress — folders per profile, button and popup, downloads page, Dock, quit question, automatic downloads in review | P2 |
 | 015 | [Session restore](015-session-restore.md) | done | P1 |
 | 016 | [Help](016-help.md) | ready | P2 |
@@ -46,6 +46,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 019 | [Release pipeline and automatic updates](019-release-pipeline.md) | ready | P2 |
 | 020 | [Task manager](020-task-manager.md) | ready | P2 |
 | 021 | [File viewers for text formats](021-file-viewers.md) | idea | P3 |
+| 022 | [History in profile export](022-history-export.md) | ready | P3 |
 
 ## Roadmap
 
@@ -75,6 +76,8 @@ Build order. Each milestone ends with a build the user tests on their Macs.
 2026-10-25 (user's decision): the release pipeline (019) is built together with 018 at the start of phase 2.
 
 2026-10-26 (user's decision): 019 rewritten: releases are built, notarized and smoke-tested on the user's Intel Mac (no GitHub Actions minutes), published in a public releases repository, and installed copies update themselves with Sparkle (stable/beta channel).
+
+2026-10-26 (user's decision): history in profile export moved from 013 and 005 to its own spec, 022, kept for later; 013 is finished without it. Next: the window choice of 010 for the bookmark and history pages, then favicons (013), then acceptance testing of 005, 013 and 014.
 
 2026-10-25 (user's decision): file viewers for text formats (021) are recorded at a high level for a later phase.
 

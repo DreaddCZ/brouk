@@ -24,7 +24,7 @@ A profile is a completely separate set of browser data: cookies and logins, hist
 - A profile can be exported to a file and imported on another device. The export contains:
   - name, colour and icon, settings, and the bookmarks linked to the profile (see 011);
   - saved passwords, encrypted with a password the user enters when exporting (and again when importing);
-  - history, if the user chooses: when exporting, the user decides whether to include it and how much — e.g. the last N days or the last N visited pages.
+  - history, if the user chooses (spec 022): when exporting, the user decides whether to include it and how much — e.g. the last N days or the last N visited pages.
   - It does not contain cookies or logged-in sessions, or cache: after importing, the user logs in to sites again.
 - Deleting a profile that has open tabs is allowed: after the user confirms, its tabs close and its data is removed. The default profile cannot be deleted; the user first makes another profile the default.
 - A profile can be launched directly, e.g. from the command line (`--profile <name>`) or a dock/desktop shortcut.
@@ -49,7 +49,7 @@ A profile is a completely separate set of browser data: cookies and logins, hist
 - [ ] The default profile cannot be deleted while it is the default.
 - [ ] A profile can be exported to a single file and imported on another device, keeping its name, colour, settings, bookmarks and passwords. (Name, colour and settings now; bookmarks after 011; passwords after 008.)
 - [ ] Passwords in the export file are encrypted with a user-chosen export password; the file cannot be imported without it. (after 008)
-- [ ] When exporting, the user chooses whether to include history and can limit it by age or by number of visited pages. (after 013)
+- [ ] When exporting, the user chooses whether to include history and can limit it by age or by number of visited pages. (after 022)
 - [ ] The export contains no cookies, sessions or cache.
 
 ## Out of scope
@@ -87,3 +87,4 @@ None.
 - 2026-10-22 (implementation, part 3): export and import from the profile manager ("Export…" per profile, "Import…"). The file (`.brouk-profile`) is YAML with `format: brouk-profile`, `version: 1`, the export time and the profile's settings (name, colour, ...); it contains no cookies, sessions or cache. Bookmarks (011), encrypted passwords (008) and optional history (013) will be added as further sections; `version` is raised only for changes older versions cannot read, and such files are refused with "exported by a newer version". Sections a version cannot import are listed after the import. An imported profile gets a new id; if its name exists, " 2", " 3", ... is added.
 - 2026-10-22 (bookmarks review, 011, approved by the user): bookmarks are no longer separate per profile. There is one shared tree; a bookmark or folder can be linked to a profile and then shows and opens only in that profile. The profile export carries the linked bookmarks; deleting a profile makes its linked bookmarks general.
 - 2026-10-23 (passwords and autofill review, 008/009): each profile chooses its password source, built-in or Bitwarden. A Bitwarden profile's passwords live in Bitwarden and are not exported, only the source setting is. Autofill has no payment cards.
+- 2026-10-26 (user's decision): history in profile export is its own spec, 022; the criterion waits for it.

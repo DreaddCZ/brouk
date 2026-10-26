@@ -12,7 +12,7 @@ Record visited pages per profile, so the user can find them again, the address b
 
 ### What is recorded
 
-- History is stored **per profile** (005). Each profile's history is separate data. It is deleted with the profile and can be included in its export.
+- History is stored **per profile** (005). Each profile's history is separate data. It is deleted with the profile. Including it in a profile export is spec 022.
 - **Recorded:**
   - Every top-level navigation to an `http`, `https` or `file` URL, with URL, page title, visit time and how the visit started (typed, link, bookmark, reload…).
   - Through a redirect chain, only the final URL is shown. This covers redirects by the server and pages that forward to another page by themselves right after loading (meta refresh, script); the page that forwarded is not kept.
@@ -142,7 +142,7 @@ Clearing cookies logs the profile out of sites. The checkbox says so.
 
 ### Profile export
 
-As specified in 005, history can be included in a profile export, limited to the last N days or the last N pages. On import, it becomes the imported profile's history.
+Moved to [022](022-history-export.md).
 
 ### Storage
 
@@ -181,7 +181,6 @@ As specified in 005, history can be included in a profile export, limited to the
 **Clearing and profiles**
 - [ ] Clear Browsing Data clears the chosen data types, for the chosen profile or all profiles, within the chosen time range, and leaves other profiles untouched.
 - [ ] Deleting a profile deletes its history.
-- [ ] History can be included in a profile export, limited by days or number of pages, and is restored by the import. (Completes the history criterion of 005.) (Later: postponed by the user on 2026-10-23.)
 
 ## Out of scope
 
@@ -192,6 +191,7 @@ As specified in 005, history can be included in a profile export, limited to the
 - SQL that changes data, or SQL over other data (bookmarks, downloads, passwords).
 - Session restore at startup and keeping closed tabs after quitting (003, left for testing).
 - Import of history from other browsers (in line with 005).
+- History in profile export: moved to 022.
 - A private/incognito mode.
 
 ## Configuration
@@ -225,3 +225,4 @@ None.
 - 2026-10-23 (implementation, Clean up): "Clean up…" on the history page opens a dialog. Profile: the history tab's profile is preselected; another profile or "All profiles" (then each row shows its profile's colour and each profile uses its own keep list and suggestions). Time: last 24 hours, 7 days, 4 weeks or all time (preselected). Rows: every site with visits in that time, most visited first, with visits and last visit; a filter box narrows the list. Modes: "Keep selected sites, delete everything else" (default; preselected are the keep list and the 10 most visited sites, marked "suggested") and "Delete selected sites" (nothing preselected). The summary always says how many visits from how many sites will be deleted; the first click on Clean up asks again ("…? This cannot be undone."), the second deletes. Only visits inside the chosen time are deleted, so a site keeps its older visits; pages left without visits go. In keep mode the checked sites become the profile's keep list (`history.keep_list`, an advanced per-profile setting); sites on the old list that had no visits in the chosen time stay on it. Delete mode leaves the keep list as it is.
 - 2026-10-23 (user's decision and implementation, Clear browsing data): CEF cannot do everything Chrome does; the user chose "closest possible". History and cookies are cleared by the chosen time range (cookies by their creation time). Site data (local storage, IndexedDB, Cache Storage, service workers, file systems…) is cleared through the DevTools protocol (`Storage.clearDataForOrigin`) for the sites visited in the time range plus the sites whose cookies were deleted, http and https. The HTTP cache is always cleared whole (CEF has no time range for it); the dialog says so. Download history follows with 014. A profile's cookies can be read only while a browser of that profile runs, so a hidden helper browser (about:blank) is used when the profile has no tab; if the cookie store does not answer within 10 seconds, the cookie count shows as unknown and clearing reports that cookies were not cleared (the rest is cleared). The dialog is on the history page ("Clear browsing data…"), opened also by History → Clear Browsing Data… (⇧⌘⌫, remappable) and a button in Settings → History (both open the history tab with `#clear`). Profile: this tab's profile (preselected), another, or all; time: last hour, 24 hours (preselected, as Chrome), 7 days, 4 weeks, all time. It shows visits and sites, cookies and cache size (per profile with "All profiles"), and asks again before clearing.
 - 2026-10-23 (user's decision): history in profile export is postponed; bookmarks (011) and ad blocking (007) come first, so the browser can be used day to day. 013 stays in-progress until it is built.
+- 2026-10-26 (user's decision): history in profile export is moved to its own spec, 022, so this spec can be finished without it. Its acceptance criterion moved there.
