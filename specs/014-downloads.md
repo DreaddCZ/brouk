@@ -1,6 +1,6 @@
 # 014 – Downloads
 
-- **Status:** in-progress
+- **Status:** done
 - **Priority:** P2
 - **Depends on:** 001, 003, 005, 010, 012, 013
 
@@ -137,3 +137,4 @@ None.
   - Automatic downloads, like Chrome: the first download of a page and downloads the user started (a navigation with a user gesture, within 5 seconds) go through; further downloads are held and the permission prompt asks; the answer is stored as Chromium's automatic-downloads site setting per profile, and held downloads start after Allow.
   - The Downloads stack bounces through the `com.apple.DownloadFileFinished` distributed notification, as Chrome does. The Dock badge shows the number of running downloads, the progress bar their combined progress (indeterminate when a size is unknown).
   - Shortcut ⌥⌘L (`shortcuts.show_downloads`); the interim download notice of 012 is removed.
+- 2026-10-26 (user's decision): spec set to `done`; the acceptance criteria are tested by the beta testers.

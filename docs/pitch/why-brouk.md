@@ -161,7 +161,7 @@ Dev tools are switched **per tab** with an always-visible toggle — rules never
 | Developer tools | 🔧 being built |
 | Passwords (built-in manager) | 🔧 built, in testing; Bitwarden next |
 | Form autofill (Czech and EU company details) | 🔧 built, in testing |
-| Downloads (one list for all profiles) | 🔧 built, in testing |
+| Downloads (one list for all profiles) | ✅ in use |
 | Link routing (rules, picker, Safe Links and other wrappers) | 🔧 built, in testing |
 | VPN per profile | 🔍 being investigated |
 

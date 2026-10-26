@@ -29,7 +29,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 002 | [Platform support](002-platform-support.md) | ready (macOS) | P1 |
 | 003 | [Browser UI](003-browser-ui.md) | done — bookmark suggestions follow with 011 | P1 |
 | 004 | [Configuration system](004-configuration.md) | in-progress | P1 |
-| 005 | [Profiles](005-profiles.md) | in-progress | P1 |
+| 005 | [Profiles](005-profiles.md) | done — history in export with 022 | P1 |
 | 006 | [Developer tools](006-developer-tools.md) | in-progress | P1 |
 | 007 | [Ad and tracker blocking](007-adblock.md) | done — routing hosts after 010 | P1 |
 | 008 | [Password manager](008-password-manager.md) | in-progress — built-in source (forms, saving and filling, generator, 2FA codes and QR reading, passwords page, checkup, import/export, encrypted profile export) in review; Bitwarden next | P1 |
@@ -37,8 +37,8 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 010 | [Link routing and window picker](010-link-routing.md) | in-progress — rules, picker with window thumbnails, wrappers (built-in, own, opaque with "Checking link"), default browser, Settings → Links in review; real Outlook/Teams links to check | P1 |
 | 011 | [Bookmark manager](011-bookmarks.md) | done | P1 |
 | 012 | [Web platform basics](012-web-platform-basics.md) | in-progress | P1 |
-| 013 | [History](013-history.md) | in-progress — storage, recording, retention, address bar suggestions, History menu with closed tabs, history limits, the history page as a tab with search, SQL editor, Clean up and Clear browsing data (merged); window choice of 010 (merged); favicons in review; history in profile export moved to 022 | P1 |
-| 014 | [Downloads](014-downloads.md) | in-progress — folders per profile, button and popup, downloads page, Dock, quit question, automatic downloads in review | P2 |
+| 013 | [History](013-history.md) | done — history in profile export is 022 | P1 |
+| 014 | [Downloads](014-downloads.md) | done | P2 |
 | 015 | [Session restore](015-session-restore.md) | done | P1 |
 | 016 | [Help](016-help.md) | ready | P2 |
 | 017 | [VPN per profile](017-profile-vpn.md) | draft | P2 |
@@ -78,6 +78,8 @@ Build order. Each milestone ends with a build the user tests on their Macs.
 2026-10-26 (user's decision): 019 rewritten: releases are built, notarized and smoke-tested on the user's Intel Mac (no GitHub Actions minutes), published in a public releases repository, and installed copies update themselves with Sparkle (stable/beta channel).
 
 2026-10-26 (user's decision): history in profile export moved from 013 and 005 to its own spec, 022, kept for later; 013 is finished without it. Next: the window choice of 010 for the bookmark and history pages, then favicons (013), then acceptance testing of 005, 013 and 014.
+
+2026-10-26 (user's decision): profiles (005), bookmarks (011), history (013) and downloads (014) are done; criteria not yet tested by the user are left for the beta testers.
 
 2026-10-25 (user's decision): file viewers for text formats (021) are recorded at a high level for a later phase.
 

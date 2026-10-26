@@ -1,6 +1,6 @@
 # 005 – Profiles
 
-- **Status:** in-progress
+- **Status:** done
 - **Priority:** P1
 - **Depends on:** 001, 004
 
@@ -88,3 +88,4 @@ None.
 - 2026-10-22 (bookmarks review, 011, approved by the user): bookmarks are no longer separate per profile. There is one shared tree; a bookmark or folder can be linked to a profile and then shows and opens only in that profile. The profile export carries the linked bookmarks; deleting a profile makes its linked bookmarks general.
 - 2026-10-23 (passwords and autofill review, 008/009): each profile chooses its password source, built-in or Bitwarden. A Bitwarden profile's passwords live in Bitwarden and are not exported, only the source setting is. Autofill has no payment cards.
 - 2026-10-26 (user's decision): history in profile export is its own spec, 022; the criterion waits for it.
+- 2026-10-26 (user's decision): tested and accepted; spec set to `done`. Export and import with passwords (the two unticked criteria) are left for the beta testers; history in the export waits for 022.

@@ -1,6 +1,6 @@
 # 013 – History
 
-- **Status:** in-progress
+- **Status:** done
 - **Priority:** P1
 - **Depends on:** 001, 003, 005, 010
 
@@ -228,3 +228,4 @@ None.
 - 2026-10-26 (user's decision): history in profile export is moved to its own spec, 022, so this spec can be finished without it. Its acceptance criterion moved there.
 - 2026-10-26 (implementation, window choice of 010): an entry opened from the history page (or the SQL results) in a profile other than the history tab's goes to the window 010 chooses for that profile, as bookmarks do (011 notes). An entry in the history tab's own profile still opens in that tab, or next to it with ⌘.
 - 2026-10-26 (implementation, favicons): history schema version 3 stores favicons as Chrome's History does: `favicons` (one row per icon URL, the 32 px PNG the tab downloaded, at most 64 KB) and `icon_mapping` (page URL → icon), so pages with the same icon share it. A page's icon is saved whenever a tab shows it, also when the next page has the same icon; not for pages that are not recorded (brouk://, never-record sites). A page without its own icon uses the icon of the most recently visited page of its host. Icons leave with their pages (deleting, Clean up, Clear browsing data, retention), except pages that are bookmarked (011), whose icons stay as in Chrome; an icon no page uses is removed. The history page shows the icons on site rows, page rows and visits (the first letter of the host when there is none); they are sent with each answer as data: URLs.
+- 2026-10-26 (user's decision): tested and accepted, including favicons; spec set to `done`. Retention and the SQL editor's limits (the unticked criteria, covered by core tests) are left for the beta testers.
