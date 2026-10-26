@@ -222,6 +222,11 @@ class TabClientDelegate : public PasswordTabDelegate,
   // macOS). Return true if the UI handled it (e.g. as a menu shortcut).
   virtual bool OnUnhandledKeyEvent(const CefKeyEvent& event,
                                    CefEventHandle os_event) = 0;
+
+  // The page asks for keyboard focus because it started loading (a new
+  // tab's first page). Return true to keep focus where it is: in the address
+  // bar the user is typing in, as Chrome does.
+  virtual bool KeepsFocusOnNavigation() = 0;
 };
 
 // CefClient for one tab's browser. Translates CEF callbacks into calls on a
@@ -231,6 +236,7 @@ class TabClient : public CefClient,
                   public CefDisplayHandler,
                   public CefDownloadHandler,
                   public CefFindHandler,
+                  public CefFocusHandler,
                   public CefJSDialogHandler,
                   public CefKeyboardHandler,
                   public CefLifeSpanHandler,
@@ -284,6 +290,7 @@ class TabClient : public CefClient,
   CefRefPtr<CefDisplayHandler> GetDisplayHandler() override { return this; }
   CefRefPtr<CefDownloadHandler> GetDownloadHandler() override { return this; }
   CefRefPtr<CefFindHandler> GetFindHandler() override { return this; }
+  CefRefPtr<CefFocusHandler> GetFocusHandler() override { return this; }
   CefRefPtr<CefJSDialogHandler> GetJSDialogHandler() override { return this; }
   CefRefPtr<CefKeyboardHandler> GetKeyboardHandler() override { return this; }
   CefRefPtr<CefLifeSpanHandler> GetLifeSpanHandler() override { return this; }
@@ -352,6 +359,9 @@ class TabClient : public CefClient,
                             bool is_reload,
                             CefRefPtr<CefJSDialogCallback> callback) override;
   void OnResetDialogState(CefRefPtr<CefBrowser> browser) override;
+
+  // CefFocusHandler:
+  bool OnSetFocus(CefRefPtr<CefBrowser> browser, FocusSource source) override;
 
   // CefKeyboardHandler:
   bool OnPreKeyEvent(CefRefPtr<CefBrowser> browser,

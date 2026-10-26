@@ -105,6 +105,18 @@
   return ok;
 }
 
+// The first click into the field selects everything, as in Chrome; the
+// click itself would otherwise put the cursor where it landed. Dragging
+// still selects part of the text, and later clicks place the cursor.
+- (void)mouseDown:(NSEvent*)event {
+  BOOL wasEditing = _isEditing;
+  [super mouseDown:event];  // Returns when the mouse button is released.
+  NSText* editor = self.currentEditor;
+  if (!wasEditing && editor && editor.selectedRange.length == 0) {
+    [editor selectAll:nil];
+  }
+}
+
 - (void)focusAndSelectAll {
   if (_isEditing && self.currentEditor) {
     [self.currentEditor selectAll:nil];

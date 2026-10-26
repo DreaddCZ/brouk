@@ -314,6 +314,10 @@ class TabDelegateBridge : public TabClientDelegate {
     return IsKeyDown(event, ns_event) && [tab.delegate tab:tab
                                              handleUnhandledKeyEvent:ns_event];
   }
+  bool KeepsFocusOnNavigation() override {
+    BRTab* tab = tab_;
+    return [tab.delegate tabKeepsFocusOnNavigation:tab];
+  }
 
  private:
   static bool IsKeyDown(const CefKeyEvent& event, NSEvent* os_event) {

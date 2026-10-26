@@ -1492,6 +1492,10 @@ NSButton* ToolbarButton(NSString* symbol,
   return [NSApp.mainMenu performKeyEquivalent:event];
 }
 
+- (BOOL)tabKeepsFocusOnNavigation:(BRTab*)tab {
+  return tab == [self activeTab] && _addressField.isEditing;
+}
+
 - (void)tab:(BRTab*)opener
         openURL:(NSString*)url
     disposition:(brouk::OpenDisposition)disposition {
