@@ -135,6 +135,8 @@ set(BROUK_CORE_SOURCES
   url_pattern.h
   web_origin.cc
   web_origin.h
+  window_frame.cc
+  window_frame.h
   yaml_io.cc
   yaml_io.h
   yaml_value.cc

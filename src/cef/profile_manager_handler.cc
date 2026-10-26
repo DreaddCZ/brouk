@@ -4,14 +4,15 @@
 #include <cstddef>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "cef/json_util.h"
+#include "cef/profile_links.h"
 #include "core/internal_pages.h"
 #include "core/link_routing_rules.h"
 #include "core/profile_id.h"
 #include "core/settings_schema.h"
-#include "core/url_pattern.h"
 #include "include/cef_parser.h"
 #include "include/cef_values.h"
 #include "include/wrapper/cef_helpers.h"
@@ -22,7 +23,6 @@ namespace {
 
 constexpr std::size_t kMaxRequestBytes = std::size_t{16} * 1024;
 constexpr std::size_t kMaxFieldBytes = 1024;
-constexpr std::size_t kMaxLinks = 200;
 // Error codes for the page (it shows the message).
 constexpr int kBadRequest = 400;
 constexpr int kFailed = 500;
@@ -80,49 +80,23 @@ CefRefPtr<CefListValue> LinksJson(
   return links;
 }
 
-// "profiles.setLinks": nothing is saved while a pattern is not valid; the
-// answer lists the problems by position.
+// "profiles.setLinks" (see SaveProfileLinks).
 void SetLinks(
     const CefRefPtr<CefDictionaryValue>& message,
     ProfileManagerDelegate& delegate,
     const CefRefPtr<CefMessageRouterBrowserSide::Callback>& callback) {
   std::optional<ProfileId> id = IdField(message);
-  CefRefPtr<CefListValue> list = message->GetType("patterns") == VTYPE_LIST
-                                     ? message->GetList("patterns")
-                                     : nullptr;
   const LinkRoutingConfig* current = delegate.LinkRouting();
-  if (!id || !list || list->GetSize() > kMaxLinks || !current) {
+  if (!id || message->GetType("patterns") != VTYPE_LIST || !current) {
     callback->Failure(kBadRequest, "Invalid request.");
     return;
   }
-  std::vector<std::string> patterns;
-  CefRefPtr<CefListValue> problems = CefListValue::Create();
-  for (std::size_t i = 0; i < list->GetSize(); ++i) {
-    std::string pattern =
-        list->GetType(i) == VTYPE_STRING ? list->GetString(i).ToString() : "";
-    if (pattern.size() > kMaxFieldBytes ||
-        !UrlPattern::Parse(pattern, UrlPattern::Fragment::kAllowed)) {
-      CefRefPtr<CefDictionaryValue> problem = CefDictionaryValue::Create();
-      problem->SetInt("index", static_cast<int>(i));
-      problem->SetString("message",
-                         "Not a valid pattern (e.g. example.com, "
-                         "*.example.com or example.com/path/*).");
-      problems->SetDictionary(problems->GetSize(), problem);
-      continue;
-    }
-    patterns.push_back(std::move(pattern));
-  }
-  if (problems->GetSize() == 0) {
-    LinkRoutingConfig config = *current;
-    SetProfilePatterns(config, *id, patterns);
-    if (std::optional<Error> error = delegate.SetLinkRouting(config)) {
-      callback->Failure(kFailed, error->message);
-      return;
-    }
-  }
-  CefRefPtr<CefDictionaryValue> answer = CefDictionaryValue::Create();
-  answer->SetList("problems", problems);
-  callback->Success(ToJson(answer));
+  SaveProfileLinks(
+      message->GetList("patterns"), *id, *current,
+      [&delegate](LinkRoutingConfig config) {
+        return delegate.SetLinkRouting(std::move(config));
+      },
+      callback);
 }
 
 std::string StateJson(ProfileManagerDelegate& delegate) {

@@ -71,6 +71,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)setRequestRules:(const brouk::RequestRuleSet&)rules;
 // Closes DevTools; the delegate hears devToolsDockDidClose: when done.
 - (void)close;
+// The window moved to another display (see window_screen.h).
+- (void)screenChanged;
 // The inspected tab is going away: no more delegate calls; the DevTools
 // browser closes (the dock stays alive until it has).
 - (void)detach;

@@ -30,6 +30,7 @@
 
 #include "cef/site_info.h"
 #import "platform/mac/tab_strip_view.h"
+#import "platform/mac/window_screen.h"
 
 #include "cef/search_suggest_request.h"
 #include "core/address_input.h"
@@ -1490,6 +1491,10 @@ NSButton* ToolbarButton(NSString* symbol,
   // Keys the page did not use go to the menu bar, as in any Mac app; this is
   // how Cmd+C, Cmd+L and other menu shortcuts work while a page has focus.
   return [NSApp.mainMenu performKeyEquivalent:event];
+}
+
+- (BOOL)tabKeepsFocusOnNavigation:(BRTab*)tab {
+  return tab == [self activeTab] && _addressField.isEditing;
 }
 
 - (void)tab:(BRTab*)opener
@@ -3362,6 +3367,19 @@ static std::int64_t Now() {
 
 - (void)windowDidResize:(NSNotification*)notification {
   [_owner browserWindowSessionChanged];
+}
+
+// macOS keeps a window's size when it moves it to another display, e.g. to
+// a Space there: a window from a larger display would stick out of it.
+- (void)windowDidChangeScreen:(NSNotification*)notification {
+  brouk::mac::FitWindowToItsScreen(self.window);
+  [self windowDidChangeBackingProperties:notification];
+}
+
+- (void)windowDidChangeBackingProperties:(NSNotification*)notification {
+  for (BRTab* tab in _tabs.allValues) {
+    [tab screenChanged];
+  }
 }
 
 - (void)windowWillClose:(NSNotification*)notification {

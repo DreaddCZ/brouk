@@ -1,20 +1,25 @@
 /**
  * The settings page (004). Shows every setting the browser lists (all but
- * the advanced ones), grouped by section; settings for all profiles and for
- * one chosen profile are separate. Each change is saved at once; the
- * browser checks it and the page shows any problem next to the setting.
+ * the advanced ones): the topics on the left, the chosen one on the right
+ * with its settings for all profiles first and its per-profile settings
+ * under a tab per profile. Each change is saved at once; the browser checks
+ * it and the page shows any problem next to the setting.
  */
 import { cefTransport } from '../shared/bridge.js';
 import { button, byId, element, errorText } from '../shared/dom.js';
 import { SettingsApi, type SettingItem, type SettingsState } from './api.js';
-import { isShown, parseSettingTarget, sections, shortcutFromKey } from './logic.js';
+import { parseSettingTarget, sections, shortcutFromKey, topicOfSection, topics, type Topic } from './logic.js';
 import { startAdblockPanel } from './adblock_panel.js';
 import { startAutofillPanel } from './autofill_panel.js';
-import { startLinksPanel } from './links_panel.js';
+import { showProfileLinks, startLinksPanel } from './links_panel.js';
 
 const api = new SettingsApi(cefTransport());
 let state: SettingsState | null = null;
 let profileId: string | null = null;
+/** The topic shown on the right; the first one until the user picks one. */
+let topicTitle: string | null = null;
+/** The topic that only holds the settings files' buttons. */
+const kFilesTopic = 'Settings files';
 /** Problems from the last change, by "<scope>:<key>". */
 const problems = new Map<string, string>();
 const restartNeeded = new Set<string>();
@@ -142,12 +147,11 @@ function settingRow(scopeProfile: string | null, item: SettingItem): HTMLDivElem
   return row;
 }
 
-function renderItems(container: HTMLElement, scopeProfile: string | null, items: readonly SettingItem[]): void {
+function renderGroups(container: HTMLElement, scopeProfile: string | null, items: readonly SettingItem[]): void {
   container.replaceChildren(
-    ...sections(items.filter((item) => isShown(item, items))).map((section) => {
+    ...sections(items).map((section) => {
       const group = element('section', { className: 'group' });
       group.setAttribute('aria-label', section.title);
-      group.append(element('h3', { text: section.title }));
       group.append(...section.items.map((item) => settingRow(scopeProfile, item)));
       if (section.title === 'History' && scopeProfile === null) {
         const row = element('div', { className: 'setting' });
@@ -164,6 +168,58 @@ function renderItems(container: HTMLElement, scopeProfile: string | null, items:
   );
 }
 
+/** Shows the topic `title` on the right, from its top. */
+function selectTopic(title: string): void {
+  topicTitle = title;
+  render();
+  window.scrollTo({ top: 0 });
+}
+
+function renderSidebar(titles: readonly string[], current: string): void {
+  byId('topics').replaceChildren(
+    ...titles.map((title) => {
+      const item = element('li');
+      const node = button(title, () => selectTopic(title));
+      if (title === current) node.setAttribute('aria-current', 'page');
+      item.append(node);
+      return item;
+    }),
+  );
+}
+
+/** A tab per profile; Left/Right move between them, as tabs do. */
+function renderProfileTabs(current: string): void {
+  if (state === null) return;
+  const tabs = byId('profile-tabs');
+  const profiles = state.profiles;
+  tabs.replaceChildren(
+    ...profiles.map((p, index) => {
+      const tab = button(p.name, () => void chooseProfile(p.id));
+      tab.id = `profile-tab-${p.id}`;
+      tab.setAttribute('role', 'tab');
+      tab.setAttribute('aria-controls', 'profile-settings');
+      const selected = p.id === current;
+      tab.setAttribute('aria-selected', String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+      tab.addEventListener('keydown', (event) => {
+        const step = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+        if (step === 0) return;
+        event.preventDefault();
+        const next = profiles[(index + step + profiles.length) % profiles.length];
+        if (next !== undefined) void chooseProfile(next.id, true);
+      });
+      return tab;
+    }),
+  );
+  byId('profile-settings').setAttribute('aria-labelledby', `profile-tab-${current}`);
+}
+
+async function chooseProfile(id: string, focusTab = false): Promise<void> {
+  profileId = id;
+  await refresh();
+  if (focusTab) document.getElementById(`profile-tab-${id}`)?.focus();
+}
+
 function render(): void {
   if (state === null) return;
   const box = byId<HTMLDivElement>('problems');
@@ -175,18 +231,26 @@ function render(): void {
     list.append(...state.problems.map((p) => element('li', { text: p })));
     box.append(list);
   }
-  renderItems(byId('global'), null, state.global);
 
-  const picker = byId<HTMLSelectElement>('profile');
-  picker.replaceChildren(
-    ...state.profiles.map((p) => {
-      const option = element('option', { text: p.name });
-      option.value = p.id;
-      option.selected = p.id === state?.profile.id;
-      return option;
-    }),
-  );
-  renderItems(byId('profile-settings'), state.profile.id, state.profile.items);
+  const all: Topic[] = topics(state.global, state.profile.items);
+  const titles = [...all.map((t) => t.title), kFilesTopic];
+  const current = topicTitle !== null && titles.includes(topicTitle) ? topicTitle : (titles[0] ?? kFilesTopic);
+  const topic = all.find((t) => t.title === current);
+  renderSidebar(titles, current);
+  byId('topic-title').textContent = current;
+  renderGroups(byId('topic-global'), null, topic?.global ?? []);
+  for (const panel of document.querySelectorAll<HTMLElement>('[data-topic]')) {
+    panel.hidden = panel.dataset['topic'] !== current;
+  }
+
+  const perProfile = topic?.profile ?? [];
+  const profileBox = byId('topic-profile');
+  profileBox.hidden = perProfile.length === 0;
+  // The heading only separates the two parts when both are there.
+  byId('topic-profile-title').hidden = (topic?.global.length ?? 0) === 0;
+  renderProfileTabs(state.profile.id);
+  renderGroups(byId('profile-settings-groups'), state.profile.id, perProfile);
+  showProfileLinks(current === 'Profiles' ? state.profile.id : null);
 }
 
 async function refresh(): Promise<void> {
@@ -207,24 +271,20 @@ async function refresh(): Promise<void> {
 async function showTarget(): Promise<void> {
   const target = parseSettingTarget(window.location.hash);
   if (target === null) return;
-  if (target.key === 'links') {
-    // Settings → Links (010): the section, not one setting.
-    history.replaceState(null, '', window.location.pathname);
-    document.getElementById('links')?.scrollIntoView({ block: 'start' });
-    return;
-  }
-  if (target.key === 'autofill') {
-    // Settings → Autofill (009): the section, not one setting.
-    history.replaceState(null, '', window.location.pathname);
-    document.getElementById('autofill')?.scrollIntoView({ block: 'start' });
-    return;
-  }
   // Cleared, so choosing the same setting again changes the hash again.
   history.replaceState(null, '', window.location.pathname);
+  if (target.key === 'links' || target.key === 'autofill') {
+    // Settings → Links (010) and Autofill (009): the topic, not one setting.
+    selectTopic(target.key === 'links' ? 'Links' : 'Autofill');
+    return;
+  }
   if (target.profile !== null && target.profile !== profileId) {
     profileId = target.profile;
     await refresh();
   }
+  const items = target.profile === null ? state?.global : state?.profile.items;
+  const item = items?.find((i) => i.key === target.key);
+  if (item !== undefined) selectTopic(topicOfSection(item.section));
   const input = document.getElementById(`setting-${target.profile ?? 'global'}-${target.key}`);
   const row = input?.closest('.setting');
   if (input === null || !(row instanceof HTMLElement)) return;
@@ -248,13 +308,6 @@ async function fileAction(action: () => Promise<{ finished: boolean; problems: r
 }
 
 function start(): void {
-  byId<HTMLSelectElement>('profile').addEventListener('change', (event) => {
-    const select = event.currentTarget;
-    if (select instanceof HTMLSelectElement) {
-      profileId = select.value;
-      void refresh();
-    }
-  });
   byId('open-folder').addEventListener('click', () => {
     api.openFolder().catch((error: unknown) => showError(errorText(error)));
   });

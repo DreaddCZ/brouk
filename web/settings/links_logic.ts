@@ -81,6 +81,26 @@ export function profilesToAdd(row: RuleRow, profiles: readonly LinkProfile[]): L
   return profiles.filter((p) => !row.profiles.includes(p.id));
 }
 
+/** One of the links that open in a profile, with the other profiles its rule offers. */
+export interface ProfileLink {
+  readonly pattern: string;
+  readonly sharedWith: readonly string[];
+}
+
+/** The links that open in `profile`: its rules' patterns, in the rules' order. */
+export function profileLinks(
+  rules: readonly LinkRule[],
+  profile: string,
+  profiles: readonly LinkProfile[],
+): ProfileLink[] {
+  return rules
+    .filter((rule) => rule.profiles.includes(profile))
+    .map((rule) => ({
+      pattern: rule.pattern,
+      sharedWith: rule.profiles.filter((id) => id !== profile).map((id) => profileName(id, profiles)),
+    }));
+}
+
 /** Moves a rule's profile one place earlier (the picker's order). */
 export function moveProfileUp(row: RuleRow, index: number): void {
   if (index <= 0 || index >= row.profiles.length) return;

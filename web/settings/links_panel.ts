@@ -13,6 +13,7 @@ import {
   completeWrappers,
   moveProfileUp,
   problemsByRow,
+  profileLinks,
   profileName,
   profilesToAdd,
   rowsFromRules,
@@ -26,6 +27,10 @@ let state: LinksState | null = null;
 let rules: RuleRow[] = [];
 let wrappers: WrapperRow[] = [];
 let rowProblems = new Map<string, string>();
+/** "Links that open in this profile" (Settings → Profiles): whose, and the rows. */
+let linksProfile: string | null = null;
+let profileRows: string[] = [];
+let profileProblems = new Map<number, string>();
 
 function showError(message: string | null): void {
   const box = byId<HTMLParagraphElement>('links-error');
@@ -197,17 +202,120 @@ function render(): void {
   byId('links-wrappers').replaceChildren(...wrappers.map(wrapperRow));
 }
 
+function profileLinksBox(): HTMLElement {
+  return byId('profile-links');
+}
+
+async function saveProfileLinks(): Promise<void> {
+  if (linksProfile === null) return;
+  const sent: number[] = [];
+  const patterns: string[] = [];
+  profileRows.forEach((pattern, index) => {
+    if (pattern.trim() === '') return;
+    sent.push(index);
+    patterns.push(pattern.trim());
+  });
+  try {
+    const problems = await api.setProfileLinks(linksProfile, patterns);
+    profileProblems = new Map();
+    for (const problem of problems) {
+      const row = sent[problem.index];
+      if (row !== undefined) profileProblems.set(row, problem.message);
+    }
+    showProfileLinksError(null);
+    if (problems.length === 0) {
+      byId('profile-links-saved').textContent = 'Saved.';
+      await load();  // The rules (Settings → Links) changed too.
+      return;
+    }
+    byId('profile-links-saved').textContent = 'Not saved: fix the marked links.';
+  } catch (error) {
+    showProfileLinksError(errorText(error));
+  }
+  renderProfileLinks();
+}
+
+function showProfileLinksError(message: string | null): void {
+  const box = byId<HTMLParagraphElement>('profile-links-error');
+  box.textContent = message ?? '';
+  box.hidden = message === null;
+}
+
+function renderProfileLinks(): void {
+  const box = profileLinksBox();
+  box.hidden = linksProfile === null || state === null || !state.ready;
+  if (box.hidden || state === null || linksProfile === null) return;
+  const shared = new Map(profileLinks(state.rules, linksProfile, state.profiles).map((l) => [l.pattern, l.sharedWith]));
+  byId('profile-links-rows').replaceChildren(
+    ...profileRows.map((pattern, index) => {
+      const row = element('div', { className: 'profile-link' });
+      const input = element('input');
+      input.type = 'text';
+      input.value = pattern;
+      input.placeholder = 'companya.atlassian.net, *.sharepoint.com or github.com/company-a/*';
+      input.spellcheck = false;
+      input.autocomplete = 'off';
+      input.setAttribute('aria-label', 'Links matching');
+      input.addEventListener('change', () => {
+        profileRows[index] = input.value;
+        void saveProfileLinks();
+      });
+      const remove = button('Remove', () => {
+        profileRows.splice(index, 1);
+        void saveProfileLinks();
+      });
+      remove.setAttribute('aria-label', `Remove ${pattern || 'this link'}`);
+      row.append(input, remove);
+      const others = shared.get(pattern) ?? [];
+      if (others.length > 0) {
+        row.append(element('p', { className: 'hint', text: `Shared with ${others.join(', ')}: Brouk asks which profile.` }));
+      }
+      const problem = profileProblems.get(index);
+      if (problem !== undefined) {
+        input.setAttribute('aria-invalid', 'true');
+        const line = element('p', { className: 'problem', text: problem });
+        line.setAttribute('role', 'alert');
+        row.append(line);
+      }
+      return row;
+    }),
+  );
+  byId('profile-links-empty').hidden = profileRows.length > 0;
+}
+
+/** Rows from the saved rules, unless the user is still fixing some. */
+function resetProfileRows(): void {
+  if (state === null || linksProfile === null) return;
+  profileRows = profileLinks(state.rules, linksProfile, state.profiles).map((l) => l.pattern);
+  profileProblems = new Map();
+}
+
+/**
+ * Shows "Links that open in this profile" for `profile` under the profile's
+ * tab in Settings → Profiles; null hides it (another topic).
+ */
+export function showProfileLinks(profile: string | null): void {
+  if (profile !== linksProfile) {
+    linksProfile = profile;
+    byId('profile-links-saved').textContent = '';
+    resetProfileRows();
+  }
+  renderProfileLinks();
+}
+
 async function load(): Promise<void> {
   try {
     state = await api.state();
     rules = rowsFromRules(state.rules);
     wrappers = rowsFromWrappers(state.wrappers);
     rowProblems = new Map();
+    if (profileProblems.size === 0) resetProfileRows();
     showError(null);
   } catch (error) {
     showError(errorText(error));
   }
   render();
+  renderProfileLinks();
 }
 
 /** Rows being filled in are kept; otherwise the files may have changed. */
@@ -229,6 +337,12 @@ export function startLinksPanel(): void {
   byId('links-add-wrapper').addEventListener('click', () => {
     wrappers.push({ pattern: '', opaque: false, parameter: '' });
     render();
+  });
+  byId('profile-links-add').addEventListener('click', () => {
+    profileRows.push('');
+    renderProfileLinks();
+    const inputs = byId('profile-links-rows').querySelectorAll('input');
+    inputs[inputs.length - 1]?.focus();
   });
   window.addEventListener('focus', reloadIfSaved);
   void load();

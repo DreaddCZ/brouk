@@ -13,6 +13,8 @@
   NSString* _typedText;
   // The last edit added text at the end: inline completion is allowed.
   BOOL _allowInline;
+  // The field got the focus from the mouse click being handled.
+  BOOL _focusedByClick;
 }
 
 - (instancetype)initWithFrame:(NSRect)frame {
@@ -90,6 +92,7 @@
   BOOL ok = [super becomeFirstResponder];
   if (ok) {
     _isEditing = YES;
+    _focusedByClick = NSApp.currentEvent.type == NSEventTypeLeftMouseDown;
     _typedText = @"";
     _allowInline = NO;
     if (!_hasPendingText) {
@@ -105,6 +108,22 @@
   return ok;
 }
 
+// The first click into the field selects everything, as in Chrome; the
+// click itself would otherwise put the cursor where it landed. Dragging
+// still selects part of the text, and later clicks place the cursor. The
+// window focuses the field before it passes on the click, so whether this
+// click focused it is remembered in becomeFirstResponder.
+- (void)mouseDown:(NSEvent*)event {
+  BOOL wasEditing = _isEditing && !_focusedByClick;
+  [super mouseDown:event];  // Returns when the mouse button is released.
+  BOOL firstClick = !wasEditing || _focusedByClick;
+  _focusedByClick = NO;
+  NSText* editor = self.currentEditor;
+  if (firstClick && editor && editor.selectedRange.length == 0) {
+    [editor selectAll:nil];
+  }
+}
+
 - (void)focusAndSelectAll {
   if (_isEditing && self.currentEditor) {
     [self.currentEditor selectAll:nil];
@@ -115,6 +134,7 @@
 
 - (void)controlTextDidEndEditing:(NSNotification*)notification {
   _isEditing = NO;
+  _focusedByClick = NO;
   if ([_addressDelegate
           respondsToSelector:@selector(addressFieldDidEndEditing:)]) {
     [_addressDelegate addressFieldDidEndEditing:self];

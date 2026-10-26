@@ -9,7 +9,7 @@ The first start downloads the lists (about 15 MB) about 15 seconds after launch;
 3. A page using a script blocked with a `$redirect` (e.g. Google Analytics on a news site). Expected: the page still works (a neutral script is served instead).
 4. A link with `utm_source=…` parameters. Expected: the page opens without them (URL tracking parameters list).
 5. Cookie banners on a typical EU news site. Expected: hidden by default.
-6. Settings → For one profile → Kinds of lists used: add `annoyances` (and/or `domains`). Expected: newsletter pop-ups / social widgets are hidden after reload; with `domains` the domain lists apply (turn them on in the list section first, e.g. OISD small).
+6. Settings → Ad blocking → For each profile (the profile's tab) → Kinds of lists used: add `annoyances` (and/or `domains`). Expected: newsletter pop-ups / social widgets are hidden after reload; with `domains` the domain lists apply (turn them on in the list section first, e.g. OISD small).
 7. My filters: add `||example.com^` and open https://example.com. Expected: "Brouk blocked this page" with the list "My filters" and the rule; "Allow this site" opens it (and adds it to the profile's allowlist); "Go back" closes the message.
 8. Open http://localhost:… or a 192.168.x.x device page. Expected: not blocked by broad rules.
 

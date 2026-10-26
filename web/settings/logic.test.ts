@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { SettingItem } from './api.js';
-import { isShown, parseSettingTarget, sections, shortcutFromKey, type KeyPress } from './logic.js';
+import { isShown, parseSettingTarget, sections, shortcutFromKey, topics, type KeyPress } from './logic.js';
 
 function item(key: string, section: string, value: string | boolean = ''): SettingItem {
   return {
@@ -25,6 +25,27 @@ test('sections keep the order of first appearance', () => {
     grouped.map((s) => [s.title, s.items.map((i) => i.key)]),
     [['One', ['a', 'c']], ['Two', ['b']]],
   );
+});
+
+test('topics put global and per-profile settings of a subject together', () => {
+  const result = topics(
+    [item('a', 'Search'), item('b', 'Ad blocking'), item('c', 'Profiles'), item('d', 'Search')],
+    [item('e', 'Ad blocking'), item('f', 'Profile'), item('g', 'Downloads')],
+  );
+  assert.deepEqual(
+    result.map((t) => [t.title, t.global.map((i) => i.key), t.profile.map((i) => i.key)]),
+    [
+      ['Search', ['a', 'd'], []],
+      ['Ad blocking', ['b'], ['e']],
+      ['Profiles', ['c'], ['f']],
+      ['Downloads', [], ['g']],
+    ],
+  );
+});
+
+test('topics leave out hidden settings', () => {
+  const result = topics([item('search.engine', 'Search', 'google'), item('search.custom_template', 'Search')], []);
+  assert.deepEqual(result[0]?.global.map((i) => i.key), ['search.engine']);
 });
 
 test('the custom search address shows only for a custom engine', () => {

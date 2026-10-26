@@ -760,6 +760,13 @@ bool TabClient::OnPreKeyEvent(CefRefPtr<CefBrowser> browser,
          delegate_->HandlePasswordMenuKey(event.windows_key_code);
 }
 
+bool TabClient::OnSetFocus(CefRefPtr<CefBrowser> /*browser*/,
+                           FocusSource source) {
+  CEF_REQUIRE_UI_THREAD();
+  return source == FOCUS_SOURCE_NAVIGATION && delegate_ &&
+         delegate_->KeepsFocusOnNavigation();
+}
+
 bool TabClient::OnKeyEvent(CefRefPtr<CefBrowser> /*browser*/,
                            const CefKeyEvent& event,
                            CefEventHandle os_event) {

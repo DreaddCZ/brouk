@@ -9,18 +9,20 @@
 <script type="module" src="settings.js"></script>
 </head>
 <body>
+<div class="layout">
+<nav class="sidebar" aria-label="Settings sections">
+  <h1>Settings</h1>
+  <ul id="topics"></ul>
+  <p class="hint">Changes apply at once and are saved in the settings
+    files. More settings can be changed in the files directly.</p>
+</nav>
 <main>
-  <header>
-    <h1>Settings</h1>
-    <p class="intro">Changes apply at once and are saved in the settings
-      files. More settings can be changed in the files directly.</p>
-  </header>
   <div id="problems" class="error" role="alert" hidden></div>
   <p id="error" class="error" role="alert" hidden></p>
   <div id="notice" class="notice" role="status" hidden></div>
-  <h2 class="scope">For all profiles</h2>
-  <div id="global"></div>
-  <section class="group adblock" aria-labelledby="adblock-title">
+  <h2 id="topic-title" class="topic-title"></h2>
+  <div id="topic-global"></div>
+  <section class="group adblock" data-topic="Ad blocking" aria-labelledby="adblock-title">
     <h3 id="adblock-title">Ad blocking: filter lists</h3>
     <p class="hint">Lists are shared by all profiles; each profile chooses the
       kinds it uses below. They update by themselves.</p>
@@ -43,10 +45,10 @@
     <p><button type="button" id="adblock-filters-save">Save My filters</button>
       <span id="adblock-filters-saved" class="hint" role="status"></span></p>
   </section>
-  <section class="group autofill" id="autofill" aria-labelledby="autofill-title">
+  <section class="group autofill" id="autofill" data-topic="Autofill" aria-labelledby="autofill-title">
     <h3 id="autofill-title">Autofill: saved entries</h3>
     <p class="hint">Contact, address and company details for forms, shared by all
-      profiles. The switches are in the Autofill section above.</p>
+      profiles. The switches are above.</p>
     <p id="autofill-error" class="error" role="alert" hidden></p>
     <div class="autofill-tools">
       <input type="search" id="autofill-search" placeholder="Search entries" aria-label="Search entries"
@@ -73,7 +75,7 @@
     <p><button type="button" id="autofill-add-custom">Add custom field</button></p>
     <div id="autofill-toast" class="autofill-toast" role="status" hidden></div>
   </section>
-  <section class="group links" id="links" aria-labelledby="links-title">
+  <section class="group links" id="links" data-topic="Links" aria-labelledby="links-title">
     <h3 id="links-title">Links: routing rules</h3>
     <p class="hint">Links from other apps, new tabs opened from pages and addresses typed into a
       new tab open in the profile their rule names. With several profiles, Brouk asks, in this
@@ -95,20 +97,36 @@
     <div id="links-wrappers"></div>
     <p><button type="button" id="links-add-wrapper">Add wrapper</button></p>
   </section>
-  <h2 class="scope">For one profile</h2>
-  <label class="profile-pick">Profile
-    <select id="profile"></select>
-  </label>
-  <div id="profile-settings"></div>
-  <h2 class="scope">Settings files</h2>
-  <div class="files">
-    <button type="button" id="open-folder">Show in Finder</button>
-    <button type="button" id="export">Export Settings…</button>
-    <button type="button" id="import">Import Settings…</button>
+  <div id="topic-profile" class="topic-profile" hidden>
+    <h3 id="topic-profile-title" class="scope">For each profile</h3>
+    <div id="profile-tabs" class="profile-tabs" role="tablist"
+      aria-labelledby="topic-profile-title"></div>
+    <div id="profile-settings" role="tabpanel">
+      <div id="profile-settings-groups"></div>
+      <section id="profile-links" class="group profile-links" aria-labelledby="profile-links-title" hidden>
+        <h3 id="profile-links-title">Links that open in this profile</h3>
+        <p class="hint">Links from other apps, new tabs opened from pages and addresses typed into a
+          new tab open here when they match, e.g. companya.atlassian.net, *.sharepoint.com or
+          github.com/company-a/*. All rules are under Links.</p>
+        <p id="profile-links-error" class="error" role="alert" hidden></p>
+        <div id="profile-links-rows"></div>
+        <p id="profile-links-empty" class="hint" hidden>No links open in this profile by a rule.</p>
+        <p><button type="button" id="profile-links-add">Add link</button>
+          <span id="profile-links-saved" class="hint" role="status"></span></p>
+      </section>
+    </div>
   </div>
-  <p class="hint">Profiles are exported and imported in the profile manager
-    (Profiles &gt; Manage Profiles).</p>
+  <section class="group files-topic" data-topic="Settings files" aria-label="Settings files">
+    <div class="files">
+      <button type="button" id="open-folder">Show in Finder</button>
+      <button type="button" id="export">Export Settings…</button>
+      <button type="button" id="import">Import Settings…</button>
+    </div>
+    <p class="hint">Profiles are exported and imported in the profile manager
+      (Profiles &gt; Manage Profiles).</p>
+  </section>
 </main>
+</div>
 <div id="autofill-editor" class="modal" hidden>
   <form class="dialog wide" id="autofill-editor-form" role="dialog" aria-modal="true"
     aria-labelledby="autofill-editor-title">

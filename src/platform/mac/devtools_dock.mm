@@ -1,5 +1,7 @@
 #import "platform/mac/devtools_dock.h"
 
+#import "platform/mac/window_screen.h"
+
 #include <iterator>
 #include <memory>
 #include <optional>
@@ -358,6 +360,11 @@ NSButton* HeaderButton(NSString* symbol,
   if (_client) {
     _client->EnterInspectElementMode();
   }
+}
+
+- (void)screenChanged {
+  brouk::mac::NotifyScreenChanged(_frontend);
+  brouk::mac::NotifyScreenChanged(_tools);
 }
 
 - (void)close {

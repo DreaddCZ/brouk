@@ -59,6 +59,8 @@ add_library(brouk_cef STATIC
   permission_mapping.cc
   permission_mapping.h
   profile_prefs.cc
+  profile_links.cc
+  profile_links.h
   profile_manager_handler.cc
   profile_manager_handler.h
   profile_prefs.h

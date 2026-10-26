@@ -32,6 +32,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)tabCloseReady:(BRTab*)tab;
 - (void)tabDidClose:(BRTab*)tab;
 - (BOOL)tab:(BRTab*)tab handleUnhandledKeyEvent:(NSEvent*)event;
+// YES keeps keyboard focus out of the page when it starts loading (the
+// address bar of a new tab keeps it).
+- (BOOL)tabKeepsFocusOnNavigation:(BRTab*)tab;
 - (brouk::DownloadTarget)tab:(BRTab*)tab
          reserveDownloadPath:(const std::string&)suggested;
 - (void)tab:(BRTab*)tab releaseDownloadPath:(const std::string&)path;
@@ -227,6 +230,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)reloadIgnoringCache;
 - (void)stopLoading;
 - (void)focusContent;
+// The window moved to another display (see window_screen.h).
+- (void)screenChanged;
 
 // Find in page; an empty text stops finding.
 - (void)findText:(NSString*)text forward:(BOOL)forward findNext:(BOOL)findNext;

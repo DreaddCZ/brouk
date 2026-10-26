@@ -6,10 +6,11 @@ import {
   moveProfileUp,
   problemsByRow,
   profileName,
+  profileLinks,
   profilesToAdd,
   rowsFromWrappers,
 } from './links_logic.js';
-import { parseLinksState, parseSaveProblems } from './links_api.js';
+import { parseLinksState, parsePatternProblems, parseSaveProblems } from './links_api.js';
 
 const profiles = [
   { id: 'default', name: 'Main', color: 'grey' },
@@ -84,4 +85,24 @@ test('answers are checked', () => {
   assert.throws(() => parseLinksState({ rules: 'x' }));
   assert.throws(() => parseSaveProblems({ problems: [{ kind: 'other', index: 0, message: '' }] }));
   assert.deepEqual(parseSaveProblems({ problems: [] }), []);
+});
+
+test("a profile's links are its rules' patterns, with the other profiles they offer", () => {
+  const rules = [
+    { pattern: 'a.com', profiles: ['p-a'] },
+    { pattern: 'b.com', profiles: ['default'] },
+    { pattern: 'c.com', profiles: ['default', 'p-a', 'p-gone'] },
+  ];
+  assert.deepEqual(profileLinks(rules, 'p-a', profiles), [
+    { pattern: 'a.com', sharedWith: [] },
+    { pattern: 'c.com', sharedWith: ['Main', 'Deleted profile'] },
+  ]);
+  assert.deepEqual(profileLinks(rules, 'p-none', profiles), []);
+});
+
+test('pattern problems are read from the answer', () => {
+  assert.deepEqual(parsePatternProblems({ problems: [{ index: 1, message: 'Not valid' }] }), [
+    { index: 1, message: 'Not valid' },
+  ]);
+  assert.throws(() => parsePatternProblems({ problems: [{ index: -1, message: 'x' }] }));
 });

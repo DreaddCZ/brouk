@@ -79,6 +79,7 @@ add_executable(brouk_core_tests
   core/url_display_test.cc
   core/url_pattern_test.cc
   core/web_origin_test.cc
+  core/window_frame_test.cc
   core/yaml_io_test.cc
   core/zoom_test.cc
 )
