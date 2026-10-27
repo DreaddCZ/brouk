@@ -105,6 +105,7 @@ const kPatterns = [
   /openHelp\(\s*['"]([a-z0-9-]+)['"]/g,
   /data-help="([a-z0-9-]+)"/g, // static HTML
   /openHelpAt:@"([a-z0-9-]+)"/g, // native code
+  /BRHelpButton\(@"([a-z0-9-]+)"/g,
   /brouk:\/\/help\/#([a-z0-9-]+)/g,
 ];
 function walk(dir, out) {

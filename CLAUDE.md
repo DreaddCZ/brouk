@@ -34,7 +34,7 @@ All features and requirements live in [`specs/`](specs/README.md).
 4. **Unspecified standard browser behaviour: do what Chrome does** (or Firefox, where Chrome has nothing comparable). If Chrome and Firefox differ and it matters, or you are unsure, ask the user. Record the choice under "Notes" in the relevant spec.
 5. When starting a spec, set its status to `in-progress`; when finished, set it to `done` — in both the spec file and the index.
 6. Do not change a spec's goal, description or acceptance criteria without the user's approval. Add findings under "Notes" instead.
-7. **Every user-visible change updates help** (`specs/016-help.md`): add or update the feature's help section and its "?" links in the same pull request. Until 016 is built, list the help text the change needs in the pull request instead.
+7. **Every user-visible change updates help** (`specs/016-help.md`): add or update the feature's section in `web/help/content/` (Markdown, with explicit `{#anchor}`s) and its "?" links in the same pull request. "?" links are `helpButton('<anchor>')` / `data-help="<anchor>"` in pages and `BRHelpButton(@"<anchor>")` in native UI; the build fails on an anchor help does not have.
 8. **Keep the pitch deck current** (`docs/pitch/why-brouk.md`): when a spec or a user-visible part of one is finished, update the "Where it stands" slide and any slide describing that feature in the same pull request, so the deck never promises more or less than the browser does.
 
 ## Decisions

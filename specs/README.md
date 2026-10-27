@@ -40,7 +40,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 013 | [History](013-history.md) | done — history in profile export is 022 | P1 |
 | 014 | [Downloads](014-downloads.md) | done | P2 |
 | 015 | [Session restore](015-session-restore.md) | done | P1 |
-| 016 | [Help](016-help.md) | ready | P2 |
+| 016 | [Help](016-help.md) | done | P2 |
 | 017 | [VPN per profile](017-profile-vpn.md) | draft | P2 |
 | 018 | [Feedback and issue reporting](018-feedback.md) | draft | P2 |
 | 019 | [Release pipeline and automatic updates](019-release-pipeline.md) | in-progress — releases repository, Sparkle, release script and smoke tests in review | P2 |

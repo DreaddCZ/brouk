@@ -19,7 +19,11 @@ CMake 4.4.4, Ninja 1.13.2, Node.js 24.21.0 LTS, GitHub CLI 2.102.0,
 clang-format and clang-tidy 22.1.8, Rust 1.98.0 (rustc and cargo, only for
 the ad blocking engine; specs 007 and 001). The TypeScript compiler (`tsc`, chosen in
 spec 001) is pinned in `web/package-lock.json` with its integrity hash:
-TypeScript 6.0.3 (Apache-2.0), installed by `scripts/web`. The only package the
+TypeScript 6.0.3 (Apache-2.0), installed by `scripts/web`. The help page's
+Markdown is converted at build time with markdown-it 15.0.2 (MIT, spec 016,
+approved by the user 2026-10-23; nothing of it ships in the app), with its
+dependencies argparse, entities, linkify-it, mdurl, punycode.js and uc.micro
+(MIT/BSD-2-Clause/Python-2.0 for argparse), pinned in the same lockfile. The only package the
 pages use at run time is the password strength estimate of the passwords page
 (008, approved by the user 2026-10-24): `@zxcvbn-ts/core` 4.2.0,
 `@zxcvbn-ts/language-common` 4.1.3 and `@zxcvbn-ts/language-en` 4.1.1 (MIT),

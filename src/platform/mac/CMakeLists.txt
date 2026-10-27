@@ -50,6 +50,8 @@ add_executable(brouk_app
   export_password_dialog.mm
   find_bar.h
   find_bar.mm
+  help_button.h
+  help_button.mm
   internal_page_window.h
   internal_page_window.mm
   keychain.h

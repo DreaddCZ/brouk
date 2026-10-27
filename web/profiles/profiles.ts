@@ -6,7 +6,7 @@
  */
 import { cefTransport } from '../shared/bridge.js';
 import { button, byId, element, errorText } from '../shared/dom.js';
-import { wireHelpButtons } from '../shared/help.js';
+import { helpButton, wireHelpButtons } from '../shared/help.js';
 import { ProfilesApi, type ImportResult, type LinkProblem, type Profile, type ProfilesState } from './api.js';
 import { colorLabel, nameProblem, tabsLabel } from './logic.js';
 
@@ -173,7 +173,9 @@ function editForm(profile: Profile | null): HTMLFormElement {
 function linksField(profile: Profile | null): { box: HTMLFieldSetElement; patterns: () => string[] } | null {
   if (!state.linksReady) return null;
   const box = element('fieldset', { className: 'links' });
-  box.append(element('legend', { text: 'Links that open in this profile' }));
+  const legend = element('legend', { text: 'Links that open in this profile' });
+  legend.append(helpButton('link-routing-patterns', 'Link routing patterns'));
+  box.append(legend);
   box.append(
     element('p', {
       className: 'hint',

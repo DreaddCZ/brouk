@@ -32,9 +32,6 @@
 
 #include "brouk/app_info.h"
 #include "brouk/build_info.h"
-#include "cef/help_link.h"
-#include "cef/help_page_handler.h"
-#include "core/help.h"
 #include "cef/adblock_service.h"
 #include "cef/autofill_manager.h"
 #include "cef/bookmarks_page_handler.h"
@@ -43,6 +40,8 @@
 #include "cef/devtools_preferences.h"
 #include "cef/download_service.h"
 #include "cef/downloads_page_handler.h"
+#include "cef/help_link.h"
+#include "cef/help_page_handler.h"
 #include "cef/history_page_handler.h"
 #include "cef/history_service.h"
 #include "cef/internal_scheme.h"
@@ -55,6 +54,7 @@
 #include "core/bookmark_profile.h"
 #include "core/crypto.h"
 #include "core/download_paths.h"
+#include "core/help.h"
 #include "core/password_generator.h"
 #include "core/password_profile.h"
 #include "core/profile_export.h"
@@ -2690,8 +2690,16 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
 
 #pragma mark - Help (016)
 
-- (IBAction)showHelp:(nullable id)sender {
+// Not showHelp:, which NSApplication answers itself (Help Viewer).
+- (IBAction)showBroukHelp:(nullable id)sender {
   [self openHelpAt:nil];
+}
+
+// The "?" buttons of native UI (help_button.h).
+- (IBAction)openHelpForButton:(nullable id)sender {
+  if ([sender isKindOfClass:NSButton.class]) {
+    [self openHelpAt:[(NSButton*)sender identifier]];
+  }
 }
 
 - (IBAction)showKeyboardShortcutsHelp:(nullable id)sender {
@@ -2713,9 +2721,8 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
     if (!section.empty()) {
       // Checked above: only letters, digits and '-'.
       [_helpWindow
-          executeJavaScript:[NSString
-                                stringWithFormat:@"showHelpSection('%s')",
-                                                 section.c_str()]];
+          executeJavaScript:[NSString stringWithFormat:@"showHelpSection('%s')",
+                                                       section.c_str()]];
     }
     [_helpWindow showWindow:nil];
     return;
@@ -3883,7 +3890,7 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
   NSMenu* help = [self submenu:@"Help" in:bar];
   [self addItem:help
           title:[appName stringByAppendingString:@" Help"]
-         action:@selector(showHelp:)
+         action:@selector(showBroukHelp:)
        shortcut:@"help"];
   [self addItem:help
           title:@"Keyboard Shortcuts"
