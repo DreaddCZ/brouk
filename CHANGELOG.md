@@ -2,6 +2,17 @@
 
 What changed in each release of Brouk. Written by `scripts/release` (spec 019).
 
+## 0.1.1 (beta) – 2026-10-27
+
+### New
+
+- Help: open the built-in help from the Help menu to read how Brouk's features work. Settings and other parts of the app have "?" buttons that open the matching help section.
+
+### Fixed
+
+- Automatic updates now find new releases. The previous release was published without its update information, so the browser couldn't see it.
+- Bold text in release notes now appears correctly in the update window.
+
 ## 0.1.0 (beta) – 2026-10-26
 
 ### New
