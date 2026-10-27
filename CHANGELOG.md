@@ -2,6 +2,17 @@
 
 What changed in each release of Brouk. Written by `scripts/release` (spec 019).
 
+## 0.1.2 (beta) – 2026-10-27
+
+### New
+
+- Profiles can now use your Bitwarden vault for passwords, through the official Bitwarden command-line tool. Brouk finds, fills, saves and updates logins in the vault. New logins can go to a folder or collection you choose.
+- While the vault is locked, the key icon shows a lock. To unlock, click the key icon or a login field, then use Touch ID or your master password. A spinner shows while the vault unlocks. If you type the wrong master password, the sheet stays open so you can try again.
+- Logins marked "master password re-prompt" are never filled automatically. Brouk asks before filling them.
+- The vault locks after a set idle time, when your Mac sleeps or the screen locks, and when you lock it from the passwords page.
+- Bitwarden logins work the way they do in Bitwarden. A login saved for a site's base domain fills on every host of that site, whether the page uses http or https. On http pages, logins still fill only when you click a login field.
+- Self-hosted Bitwarden servers that use certificates your Mac trusts work out of the box.
+
 ## 0.1.1 (beta) – 2026-10-27
 
 ### New
