@@ -4,6 +4,7 @@
  */
 import { cefTransport } from '../shared/bridge.js';
 import { byId } from '../shared/dom.js';
+import { openHelp } from '../shared/help.js';
 import { ToolsApi } from './api.js';
 import { RequestsTool } from './requests.js';
 import { RulesTool } from './rules.js';
@@ -41,6 +42,15 @@ function show(): void {
     void siteData.refresh();
   }
 }
+
+// Help for the tool shown (016).
+byId<HTMLButtonElement>('tool-help').addEventListener('click', () => {
+  const tool = location.hash.slice(1) || 'site-data';
+  if (tool === 'requests') openHelp('devtools-requests');
+  else if (tool === 'rules') openHelp('devtools-request-rules');
+  else if (tool === 'tokens') openHelp('devtools-tokens');
+  else openHelp('devtools-site-data');
+});
 
 window.addEventListener('hashchange', show);
 // The tab may have navigated meanwhile: refresh when shown again.

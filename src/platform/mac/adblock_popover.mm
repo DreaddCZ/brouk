@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "core/adblock_lists.h"
+#import "platform/mac/help_button.h"
 
 namespace {
 
@@ -217,7 +218,10 @@ struct DomainStats {
   }
   NSStackView* links = [NSStackView stackViewWithViews:@[ pick, list ]];
   links.spacing = 6;
-  NSStackView* more = [NSStackView stackViewWithViews:@[ report, settings ]];
+  NSButton* help = BRHelpButton(@"adblock-shield");
+  help.controlSize = NSControlSizeSmall;
+  NSStackView* more =
+      [NSStackView stackViewWithViews:@[ report, settings, help ]];
   more.spacing = 6;
 
   NSStackView* stack = [NSStackView stackViewWithViews:@[

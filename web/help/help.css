@@ -1,0 +1,40 @@
+/* Help (016). Colours and controls: shared/base.css. */
+body { display: grid; grid-template-columns: 250px 1fr; height: 100vh; overflow: hidden; }
+aside { border-right: 1px solid var(--line); padding: 14px 10px; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 8px; }
+aside input { font: inherit; padding: 5px 9px; border-radius: 7px; border: 1px solid var(--line);
+  background: var(--card); color: var(--text); }
+.search-status { color: var(--muted); font-size: 12px; margin: 0 2px; min-height: 1em; }
+nav a { display: block; padding: 3px 8px; border-radius: 6px; color: var(--text);
+  text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+nav a.sub { padding-left: 22px; color: var(--muted); font-size: 13px; }
+nav a:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+nav a.current { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--text); }
+nav a[hidden] { display: none; }
+main { max-width: 760px; margin: 0; padding: 8px 32px 64px; overflow-y: auto; height: 100vh;
+  box-sizing: border-box; }
+main h2 { font-size: 21px; margin: 28px 0 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+main section:first-child h2 { border-top: 0; }
+main h3 { font-size: 16px; margin: 20px 0 6px; }
+main h4 { font-size: 14px; margin: 14px 0 4px; }
+main p, main li { line-height: 1.5; }
+main code { font: 12.5px ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: color-mix(in srgb, var(--text) 8%, transparent); padding: 1px 4px; border-radius: 4px; }
+main pre { background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+  padding: 8px 12px; overflow-x: auto; }
+main pre code { background: none; padding: 0; }
+main table { border-collapse: collapse; margin: 8px 0; width: 100%; }
+main th, main td { text-align: left; vertical-align: top; padding: 4px 8px;
+  border-bottom: 1px solid var(--line); }
+main th { color: var(--muted); font-weight: 600; font-size: 12px; }
+main kbd { font: 12px -apple-system, sans-serif; border: 1px solid var(--line); border-radius: 4px;
+  padding: 0 4px; background: var(--card); white-space: nowrap; }
+main a { color: var(--accent); }
+main a.external::after { content: " ↗"; font-size: 11px; }
+.help-section[hidden] { display: none; }
+mark { background: color-mix(in srgb, #ffd400 55%, transparent); color: inherit; border-radius: 2px; }
+.flash { animation: flash 2.4s ease-out; border-radius: 6px; }
+@keyframes flash { 0%, 40% { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+  100% { background: transparent; } }
+.muted { color: var(--muted); }
+.generated .scope { white-space: nowrap; color: var(--muted); }

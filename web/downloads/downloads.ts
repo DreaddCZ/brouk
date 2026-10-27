@@ -5,6 +5,7 @@
  */
 import { cefSubscriber, cefTransport } from '../shared/bridge.js';
 import { button, byId, element, errorText } from '../shared/dom.js';
+import { wireHelpButtons } from '../shared/help.js';
 import { DownloadsApi, type Download, type Profile } from './api.js';
 import { actionsFor, dayLabel, kActionLabels, searchDownloads, statusOf } from './logic.js';
 
@@ -107,3 +108,5 @@ async function start(): Promise<void> {
 }
 
 void start();
+
+wireHelpButtons();

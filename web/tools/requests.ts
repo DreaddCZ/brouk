@@ -5,6 +5,7 @@
  * Postman Collection v2.1 (Postman and Bruno import it).
  */
 import { button, element, errorText } from '../shared/dom.js';
+import { helpButton } from '../shared/help.js';
 import type { ToolsApi } from './api.js';
 import {
   exportFileNames, matchesFilters, parseSecretHeaders, toPostman, type Filters, type RequestDetails,
@@ -111,7 +112,7 @@ export class RequestsTool {
     box.addEventListener('change', () => { this.#withEnvironment = box.checked; });
     environment.append(box, ' with environment file (secrets)');
     this.#exportButton = button('Export to Postman…', () => void this.#export(), 'primary');
-    bar.append(text, type, method, status, this.#count, clear, this.#exportButton, environment);
+    bar.append(text, type, method, status, this.#count, clear, this.#exportButton, environment, helpButton('devtools-api-export', 'Export to Postman or Bruno'));
 
     this.#list = element('div', { className: 'request-list' });
     this.#details = element('div', { className: 'request-details' });

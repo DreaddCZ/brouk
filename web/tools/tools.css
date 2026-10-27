@@ -54,3 +54,6 @@ form.rule-form input[type=text], form.rule-form select { font: inherit; padding:
 form.rule-form input[type=text] { flex: 1 1 160px; }
 .error-text { color: var(--danger); }
 th.check, td.check { width: 30px; }
+
+/* Help for the tool shown (016). */
+.tool-help { position: fixed; top: 8px; right: 10px; z-index: 5; }

@@ -243,7 +243,8 @@ TEST(SettingsTest, FileFormat) {
             "  close_tabs_left: \"\"\n"
             "  close_tabs_right: \"\"\n"
             "  site_info: \"\"\n"
-            "  manage_profiles: \"\"\n");
+            "  manage_profiles: \"\"\n"
+            "  help: \"shift+cmd+?\"\n");
 }
 
 TEST(SettingsTest, WritesAndReadsBack) {

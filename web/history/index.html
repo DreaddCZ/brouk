@@ -11,13 +11,14 @@
 <body>
 <main>
   <header>
-    <h1>History</h1>
+    <h1>History<button type="button" class="help-button" data-help="history-page">?</button></h1>
   </header>
   <div class="search">
     <div class="search-row">
     <input type="search" id="query" placeholder="Search history — words, &quot;phrases&quot;, site:, after:7d, visits:&gt;3, -word, a OR b"
       aria-label="Search history" aria-describedby="query-hint" spellcheck="false" autocomplete="off">
     <button type="button" id="sql-toggle" aria-pressed="false" title="Read-only SQL over the history of all profiles">SQL</button>
+    <button type="button" class="help-button" data-help="history-search">?</button>
     </div>
     <p id="query-hint" class="hint" aria-live="polite" hidden></p>
     <div class="chips" role="group" aria-label="Add a filter">
@@ -35,6 +36,7 @@
         placeholder="SELECT title, url, visit_count FROM pages ORDER BY visit_count DESC LIMIT 20"></textarea>
       <div class="sql-actions">
         <button type="button" id="sql-run" class="primary">Run</button>
+        <button type="button" class="help-button" data-help="history-sql">?</button>
         <span class="hint">⌘↩ runs. Only SELECT; at most 1,000 rows and 2 seconds.</span>
         <span class="spacer"></span>
         <button type="button" id="sql-copy" disabled>Copy as CSV</button>
@@ -77,7 +79,7 @@
 </main>
 <div id="clear" class="modal" hidden>
   <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="clear-title">
-    <h2 id="clear-title">Clear browsing data</h2>
+    <h2 id="clear-title">Clear browsing data<button type="button" class="help-button" data-help="history-clear-data">?</button></h2>
     <div class="cleanup-scope">
       <label>Profile <select id="clear-profile"></select></label>
       <label>Time <select id="clear-range">
@@ -108,7 +110,7 @@
 </div>
 <div id="cleanup" class="modal" hidden>
   <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="cleanup-title">
-    <h2 id="cleanup-title">Clean up history</h2>
+    <h2 id="cleanup-title">Clean up history<button type="button" class="help-button" data-help="history-clean-up">?</button></h2>
     <div class="cleanup-scope">
       <label>Profile <select id="cleanup-profile"></select></label>
       <label>Time <select id="cleanup-range">

@@ -31,10 +31,13 @@ compile() {  # compile <dir>
   # The password checkup's strength estimate (008), flattened for the page.
   node "$ROOT/scripts/vendor_modules.mjs" node_modules "$1/passwords" zx \
     @zxcvbn-ts/core @zxcvbn-ts/language-common @zxcvbn-ts/language-en
-  find shared bookmarks downloads history passwords profiles settings tools -name '*.html' -o -name '*.css' | while read -r f; do
+  find shared bookmarks downloads help history passwords profiles settings tools -name '*.html' -o -name '*.css' | while read -r f; do
     mkdir -p "$1/$(dirname "$f")"
     cp "$f" "$1/$f"
   done
+  # Help (016): the Markdown content into the page; checks every help link.
+  node help/build.mjs "$1"
+  rm -f "$1/help/template.html"
 }
 
 case "${1:-}" in

@@ -40,6 +40,8 @@
 #include "cef/devtools_preferences.h"
 #include "cef/download_service.h"
 #include "cef/downloads_page_handler.h"
+#include "cef/help_link.h"
+#include "cef/help_page_handler.h"
 #include "cef/history_page_handler.h"
 #include "cef/history_service.h"
 #include "cef/internal_scheme.h"
@@ -52,6 +54,7 @@
 #include "core/bookmark_profile.h"
 #include "core/crypto.h"
 #include "core/download_paths.h"
+#include "core/help.h"
 #include "core/password_generator.h"
 #include "core/password_profile.h"
 #include "core/profile_export.h"
@@ -862,6 +865,9 @@ class AppSettingsPage : public SettingsPageDelegate {
   std::unique_ptr<brouk::AppProfileManager> _profileManagerDelegate;
   BRInternalPageWindowController* _profileManager;
   BRInternalPageWindowController* _settingsWindow;
+  // Help (016): one window, reused.
+  BRInternalPageWindowController* _helpWindow;
+  NSArray<NSDictionary<NSString*, NSString*>*>* _helpSections;
   std::unique_ptr<brouk::AppSettingsPage> _settingsPageDelegate;
   // Shown instead of a window at startup: opening a profile closes it.
   BOOL _profileManagerAtStartup;
@@ -918,6 +924,18 @@ class AppSettingsPage : public SettingsPageDelegate {
   std::filesystem::path profilesDir =
       std::filesystem::path(brouk::mac::AppDataDirectory().UTF8String) /
       "profiles";
+  // Help (016): "?" buttons of every internal page, web links in help.
+  __weak BRAppDelegate* helpSelf = self;
+  brouk::SetHelpLinkOpeners({
+      .open_help =
+          [helpSelf](const std::string& anchor) {
+            [helpSelf openHelpAt:@(anchor.c_str())];
+          },
+      .open_web_link =
+          [helpSelf](const std::string& url) {
+            [helpSelf openURLFromDevTools:@(url.c_str())];
+          },
+  });
   _history = std::make_unique<brouk::HistoryService>(
       [profilesDir](const brouk::ProfileId& profile) {
         return profilesDir / profile / "history.db";
@@ -1581,6 +1599,7 @@ class AppSettingsPage : public SettingsPageDelegate {
   [_bookmarks saveNow];
   [_profileManager closePage];
   [_settingsWindow closePage];
+  [_helpWindow closePage];
   for (BRBrowserWindowController* controller in [_windows copy]) {
     [controller closeAllTabs];
   }
@@ -1598,6 +1617,7 @@ class AppSettingsPage : public SettingsPageDelegate {
   _settingsWatcher = nil;
   _profileManager = nil;
   _settingsWindow = nil;
+  _helpWindow = nil;
   [_windows removeAllObjects];
   _requestContexts.clear();
   _internalContext = nullptr;
@@ -1606,7 +1626,7 @@ class AppSettingsPage : public SettingsPageDelegate {
 
 - (void)quitIfDone {
   if (_quitting && _browserCount <= 0 && _windows.count == 0 &&
-      !_profileManager && !_settingsWindow) {
+      !_profileManager && !_settingsWindow && !_helpWindow) {
     CefQuitMessageLoop();
   }
 }
@@ -2658,11 +2678,99 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
   if (_settingsWindow == controller) {
     _settingsWindow = nil;
   }
+  if (_helpWindow == controller) {
+    _helpWindow = nil;
+  }
   [self quitIfDone];
 }
 
 - (BOOL)internalPageHandleKeyEvent:(NSEvent*)event {
   return [NSApp.mainMenu performKeyEquivalent:event];
+}
+
+#pragma mark - Help (016)
+
+// Not showHelp:, which NSApplication answers itself (Help Viewer).
+- (IBAction)showBroukHelp:(nullable id)sender {
+  [self openHelpAt:nil];
+}
+
+// The "?" buttons of native UI (help_button.h).
+- (IBAction)openHelpForButton:(nullable id)sender {
+  if ([sender isKindOfClass:NSButton.class]) {
+    [self openHelpAt:[(NSButton*)sender identifier]];
+  }
+}
+
+- (IBAction)showKeyboardShortcutsHelp:(nullable id)sender {
+  [self openHelpAt:@"keyboard-shortcuts"];
+}
+
+// One help window: opening help again brings it to the front at the
+// section asked for, highlighted.
+- (void)openHelpAt:(nullable NSString*)anchor {
+  CEF_REQUIRE_UI_THREAD();
+  if (_quitting || !_profilesLoaded) {
+    return;
+  }
+  std::string section = anchor.UTF8String ?: "";
+  if (!section.empty() && !brouk::IsHelpAnchor(section)) {
+    return;
+  }
+  if (_helpWindow) {
+    if (!section.empty()) {
+      // Checked above: only letters, digits and '-'.
+      [_helpWindow
+          executeJavaScript:[NSString stringWithFormat:@"showHelpSection('%s')",
+                                                       section.c_str()]];
+    }
+    [_helpWindow showWindow:nil];
+    return;
+  }
+  brouk::ProfileRegistry* registry = _profiles.get();
+  NSString* url = section.empty()
+                      ? @"brouk://help/"
+                      : [@"brouk://help/#" stringByAppendingString:anchor];
+  _helpWindow = [[BRInternalPageWindowController alloc]
+      initWithOwner:self
+                url:url
+              title:@"Brouk Help"
+               size:NSMakeSize(980, 720)
+          frameName:@"BroukHelpWindow"
+            handler:std::make_unique<brouk::HelpPageHandler>(
+                        [registry]() -> const brouk::Settings& {
+                          return registry->global_settings();
+                        })
+            context:[self internalContext]];
+  [_helpWindow showWindow:nil];
+}
+
+// The sections of the help page, written by its build (web/help/build.mjs).
+- (NSArray<NSDictionary<NSString*, NSString*>*>*)helpSections {
+  if (!_helpSections) {
+    NSString* path = [NSBundle.mainBundle.resourcePath
+        stringByAppendingPathComponent:@"web/help/sections.json"];
+    NSData* data = [NSData dataWithContentsOfFile:path];
+    id parsed = data ? [NSJSONSerialization JSONObjectWithData:data
+                                                       options:0
+                                                         error:nil]
+                     : nil;
+    NSMutableArray* sections = [NSMutableArray array];
+    if ([parsed isKindOfClass:NSArray.class]) {
+      for (id item in parsed) {
+        if ([item isKindOfClass:NSDictionary.class] &&
+            [item[@"anchor"] isKindOfClass:NSString.class] &&
+            [item[@"title"] isKindOfClass:NSString.class]) {
+          [sections addObject:@{
+            @"anchor" : item[@"anchor"],
+            @"title" : item[@"title"]
+          }];
+        }
+      }
+    }
+    _helpSections = sections;
+  }
+  return _helpSections;
 }
 
 // A link in DevTools of an internal page (006): a tab of the default
@@ -3778,6 +3886,18 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
             key:@""
       modifiers:0];
   NSApp.windowsMenu = window;
+
+  NSMenu* help = [self submenu:@"Help" in:bar];
+  [self addItem:help
+          title:[appName stringByAppendingString:@" Help"]
+         action:@selector(showBroukHelp:)
+       shortcut:@"help"];
+  [self addItem:help
+          title:@"Keyboard Shortcuts"
+         action:@selector(showKeyboardShortcutsHelp:)
+            key:@""
+      modifiers:0];
+  NSApp.helpMenu = help;
 
   return bar;
 }

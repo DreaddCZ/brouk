@@ -119,6 +119,10 @@ NS_ASSUME_NONNULL_BEGIN
 // "" when search suggestions are off or the engine has none.
 - (std::string)searchSuggestTemplate;
 - (void)openSettingsAtKey:(NSString*)key profile:(nullable NSString*)profileId;
+// Help (016): the help window at a section (nil: the top), and the sections
+// for the command palette (dictionaries with "anchor" and "title").
+- (void)openHelpAt:(nullable NSString*)anchor;
+- (NSArray<NSDictionary<NSString*, NSString*>*>*)helpSections;
 // Bookmarks (011): the app's one tree, and the profiles for its dialogs.
 - (BRBookmarkStore*)bookmarkStore;
 - (std::vector<brouk::ProfileInfo>)profileList;

@@ -72,6 +72,23 @@ class InternalPageBridge : public InternalPageDelegate {
              size:(NSSize)size
           handler:(std::unique_ptr<CefMessageRouterBrowserSide::Handler>)handler
           context:(CefRefPtr<CefRequestContext>)context {
+  return [self initWithOwner:owner
+                         url:url
+                       title:title
+                        size:size
+                   frameName:nil
+                     handler:std::move(handler)
+                     context:context];
+}
+
+- (instancetype)
+    initWithOwner:(id<BRInternalPageOwner>)owner
+              url:(NSString*)url
+            title:(NSString*)title
+             size:(NSSize)size
+        frameName:(nullable NSString*)frameName
+          handler:(std::unique_ptr<CefMessageRouterBrowserSide::Handler>)handler
+          context:(CefRefPtr<CefRequestContext>)context {
   CEF_REQUIRE_UI_THREAD();
   NSWindow* window = [[NSWindow alloc]
       initWithContentRect:NSMakeRect(0, 0, size.width, size.height)
@@ -87,6 +104,11 @@ class InternalPageBridge : public InternalPageDelegate {
   window.restorable = NO;
   window.tabbingMode = NSWindowTabbingModeDisallowed;
   [window center];
+  if (frameName) {
+    // Before the page's view exists, so the view is made at this size.
+    [window setFrameUsingName:frameName];
+    window.frameAutosaveName = frameName;
+  }
   if ((self = [super initWithWindow:window])) {
     _owner = owner;
     window.delegate = self;
@@ -118,6 +140,12 @@ class InternalPageBridge : public InternalPageDelegate {
     _browser->GetHost()->CloseBrowser(false);
   } else {
     _closeWhenCreated = YES;
+  }
+}
+
+- (void)executeJavaScript:(NSString*)code {
+  if (_browser) {
+    _browser->GetMainFrame()->ExecuteJavaScript(code.UTF8String, "", 0);
   }
 }
 

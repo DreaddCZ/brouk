@@ -7,6 +7,7 @@
  */
 import { cefTransport } from '../shared/bridge.js';
 import { button, byId, element, errorText } from '../shared/dom.js';
+import { helpButton, settingsSectionAnchor, wireHelpButtons } from '../shared/help.js';
 import { SettingsApi, type SettingItem, type SettingsState } from './api.js';
 import { parseSettingTarget, sections, shortcutFromKey, topicOfSection, topics, type Topic } from './logic.js';
 import { startAdblockPanel } from './adblock_panel.js';
@@ -123,6 +124,14 @@ function control(scopeProfile: string | null, item: SettingItem, inputId: string
   return input;
 }
 
+/** Where help explains a topic (016). */
+function topicHelpAnchor(topic: string): string {
+  if (topic === kFilesTopic) return 'settings-files';
+  if (topic === 'Links') return 'link-routing';
+  if (topic === 'Shortcuts') return 'keyboard-shortcuts';
+  return settingsSectionAnchor(topic);
+}
+
 function settingRow(scopeProfile: string | null, item: SettingItem): HTMLDivElement {
   const row = element('div', { className: item.type === 'bool' ? 'setting toggle' : 'setting' });
   const inputId = `setting-${scopeProfile ?? 'global'}-${item.key}`;
@@ -134,6 +143,7 @@ function settingRow(scopeProfile: string | null, item: SettingItem): HTMLDivElem
   } else if (item.restart) {
     title.append(element('span', { className: 'restart', text: 'Needs a restart' }));
   }
+  if (item.format === 'urlPatterns') title.append(helpButton('url-patterns', 'URL patterns'));
   row.append(title, control(scopeProfile, item, inputId));
   if (item.description !== '') {
     row.append(element('p', { className: 'description', text: item.description }));
@@ -237,7 +247,7 @@ function render(): void {
   const current = topicTitle !== null && titles.includes(topicTitle) ? topicTitle : (titles[0] ?? kFilesTopic);
   const topic = all.find((t) => t.title === current);
   renderSidebar(titles, current);
-  byId('topic-title').textContent = current;
+  byId('topic-title').replaceChildren(current, helpButton(topicHelpAnchor(current), current));
   renderGroups(byId('topic-global'), null, topic?.global ?? []);
   for (const panel of document.querySelectorAll<HTMLElement>('[data-topic]')) {
     panel.hidden = panel.dataset['topic'] !== current;
@@ -324,3 +334,5 @@ function start(): void {
 }
 
 start();
+
+wireHelpButtons();

@@ -7,6 +7,7 @@
  */
 import { cefTransport } from '../shared/bridge.js';
 import { button, byId, element, errorText } from '../shared/dom.js';
+import { wireHelpButtons } from '../shared/help.js';
 import { LockedError, PasswordsApi, type Entry, type PageState, type Profile } from './api.js';
 import { ago, checkupResult, displayHost, filterEntries, parseOthers } from './logic.js';
 import { strengthScores } from './strength.js';
@@ -496,3 +497,5 @@ async function start(): Promise<void> {
 }
 
 void start();
+
+wireHelpButtons();

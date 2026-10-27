@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <string>
 
+#import "platform/mac/help_button.h"
 #import "platform/mac/profile_colors.h"
 
 namespace {
@@ -419,8 +420,9 @@ BRLinkPickerResult CancelledResult() {
                                         target:self
                                         action:@selector(cancel)];
   cancel.bezelStyle = NSBezelStylePush;
-  NSStackView* footer =
-      [NSStackView stackViewWithViews:@[ _hint, _backButton, cancel ]];
+  NSStackView* footer = [NSStackView stackViewWithViews:@[
+    BRHelpButton(@"link-routing-picker"), _hint, _backButton, cancel
+  ]];
   footer.orientation = NSUserInterfaceLayoutOrientationHorizontal;
   [_hint setContentHuggingPriority:NSLayoutPriorityDefaultLow
                     forOrientation:NSLayoutConstraintOrientationHorizontal];

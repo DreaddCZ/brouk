@@ -163,6 +163,8 @@ Dev tools are switched **per tab** with an always-visible toggle — rules never
 | Form autofill (Czech and EU company details) | 🔧 built, in testing |
 | Downloads (one list for all profiles) | ✅ in use |
 | Link routing (rules, picker, Safe Links and other wrappers) | 🔧 built, in testing |
+| Built-in help, with "?" links from every page | ✅ in use |
+| Signed releases with automatic updates (beta) | ✅ in use |
 | VPN per profile | 🔍 being investigated |
 
 <!-- Update this slide before each presentation. -->
@@ -171,7 +173,7 @@ Dev tools are switched **per tab** with an always-visible toggle — rules never
 
 ## Try it
 
-- Early builds for colleagues come with **signed releases and automatic updates**
+- Beta builds are signed by Apple and **update themselves**: download from [the releases page](https://github.com/DreaddCZ/brouk-releases/releases)
 - Bring your worst case: the most accounts, the most clients, the most tabs
 - Tell us what breaks and what is missing — features are specified together with the people who use them
 

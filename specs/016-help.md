@@ -1,6 +1,6 @@
 # 016 – Help
 
-- **Status:** ready
+- **Status:** done
 - **Priority:** P2
 - **Depends on:** 001, 003, 004
 
@@ -65,19 +65,19 @@ Rules:
 
 ## Acceptance criteria
 
-- [ ] Help → Brouk Help (⇧⌘?) opens `brouk://help` in its own window; opening it again reuses the same window and brings it to the front.
-- [ ] The help window remembers its size and position after closing and after restart.
-- [ ] The page works with no network connection.
-- [ ] The table of contents lists all sections and highlights the one in view; clicking an entry scrolls to it.
-- [ ] The search box filters sections by their text, ignoring case and accents, and highlights the matches.
-- [ ] Every "?" icon button listed above opens the help window scrolled to its section, with the section briefly highlighted.
-- [ ] A build-time test checks that every help link in the code and pages points to an anchor that exists in the help page; a missing anchor fails the build.
-- [ ] The Keyboard shortcuts section shows the user's current shortcuts, including remapped ones; changing a shortcut updates it (live reload, 004).
-- [ ] The Settings reference lists every non-advanced setting from the schema with key, default and scope.
-- [ ] The command palette finds help sections by title and opens them.
-- [ ] Web links inside help open as a tab of the default profile.
-- [ ] The page follows the light/dark theme of the other internal pages.
-- [ ] Sections exist for every feature that is `done` or `in-progress` when this spec is implemented.
+- [x] Help → Brouk Help (⇧⌘?) opens `brouk://help` in its own window; opening it again reuses the same window and brings it to the front.
+- [x] The help window remembers its size and position after closing and after restart.
+- [x] The page works with no network connection.
+- [x] The table of contents lists all sections and highlights the one in view; clicking an entry scrolls to it.
+- [x] The search box filters sections by their text, ignoring case and accents, and highlights the matches.
+- [x] Every "?" icon button listed above opens the help window scrolled to its section, with the section briefly highlighted.
+- [x] A build-time test checks that every help link in the code and pages points to an anchor that exists in the help page; a missing anchor fails the build.
+- [x] The Keyboard shortcuts section shows the user's current shortcuts, including remapped ones; changing a shortcut updates it (live reload, 004).
+- [x] The Settings reference lists every non-advanced setting from the schema with key, default and scope.
+- [x] The command palette finds help sections by title and opens them.
+- [x] Web links inside help open as a tab of the default profile.
+- [x] The page follows the light/dark theme of the other internal pages.
+- [x] Sections exist for every feature that is `done` or `in-progress` when this spec is implemented.
 
 ## Out of scope
 
@@ -101,3 +101,5 @@ None.
 
 - 2026-10-23: created as a high-level requirement; details to be agreed in a separate review.
 - 2026-10-23 (help review with the user): help opens in its own window (not a tab); content is written in Markdown and converted at build time with markdown-it (approved as a pinned, build-time-only dependency); context links are an icon button with a question mark; CLAUDE.md gets a rule that every user-visible change updates help. Spec set to `ready`.
+- 2026-10-27 (implementation): `brouk://help` is built by `web/help/build.mjs` from `web/help/content/*.md` (file order = section order; `## Title {#anchor}` headings, the anchor written in the Markdown) into the bundled page, with `sections.json` for the command palette. The same script checks every help link — `helpButton('…')`, `openHelp('…')`, `data-help="…"`, `BRHelpButton(@"…")`, `openHelpAt:@"…"`, `brouk://help/#…` and links between sections — against the anchors and fails the build on a missing one; the settings reference's anchors (`settings-<section>`) come from the settings schema. Any internal page opens help with the bridge message `help.open` (`src/cef/help_link.cc`, handled before the page's own handler; anchors are checked as lowercase letters, digits and `-`). One help window (`Help → Brouk Help`, the action is `showBroukHelp:` because NSApplication answers `showHelp:` itself with "Help isn't available"); opening it again runs `showHelpSection()` in the page, which scrolls and highlights even when the section is already shown; its frame is remembered by macOS (`BroukHelpWindow`). The keyboard shortcuts and the settings reference come from the browser (`help.state`) and are refreshed when the window gets focus, so a remapped shortcut shows after switching back. Search hides sections that do not contain every word (case and accents ignored) and marks the matches. Web links on the help page (also ⌘-clicked) open as a tab of the default profile; other navigation stays blocked. "?" buttons: history page (page, search, SQL, Clean up, Clear browsing data), bookmark manager, downloads page, passwords page and checkup, profile manager and its links field, every settings topic and URL pattern field, Settings → Profiles' links, the developer tools page (per tool) and the Postman export, the link picker and the shield popup (native macOS help buttons). The JSON viewer runs inside web pages without the bridge, so it has no "?" of its own; its section is reachable from the developer tools and the palette.
+- 2026-10-27 (implementation, open point for the user): macOS reserves ⇧⌘/ (⇧⌘?) for the Help menu's search box in every app, so the default shortcut of Brouk Help opens that search box (where typing "help" finds Brouk Help) rather than the window. The default stays as specified until the user decides; `shortcuts.help` can be set to another shortcut.

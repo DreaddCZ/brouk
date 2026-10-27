@@ -6,6 +6,7 @@
  */
 import { cefTransport } from '../shared/bridge.js';
 import { button, byId, element, errorText } from '../shared/dom.js';
+import { wireHelpButtons } from '../shared/help.js';
 import { HistoryApi, type ClearPreview, type CleanupRow, type DeleteItem, type Page, type Profile, type QueryProblem, type SqlResult, type View } from './api.js';
 import {
   addFilter,
@@ -895,3 +896,5 @@ async function start(): Promise<void> {
 }
 
 void start();
+
+wireHelpButtons();
