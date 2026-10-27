@@ -137,6 +137,8 @@ set(BROUK_CORE_SOURCES
   tab_strip_layout.h
   tab_strip_model.cc
   tab_strip_model.h
+  task_list.cc
+  task_list.h
   totp.cc
   totp.h
   url_display.cc

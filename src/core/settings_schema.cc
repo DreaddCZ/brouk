@@ -81,7 +81,13 @@ constexpr std::array<std::string_view, 3> kUpdateModeLabels = {
     "Download and install automatically", "Ask before downloading",
     "Do not check automatically"};
 
-constexpr std::array<SettingDef, 53> kSettings = {{
+constexpr std::array<std::string_view, 5> kTaskRefresh = {"0.5s", "1s", "2s",
+                                                          "5s", "10s"};
+constexpr std::array<std::string_view, 5> kTaskRefreshLabels = {
+    "Every half second", "Every second", "Every 2 seconds", "Every 5 seconds",
+    "Every 10 seconds"};
+
+constexpr std::array<SettingDef, 58> kSettings = {{
     // Global.
     {.key = "appearance.theme",
      .scope = SettingScope::kGlobal,
@@ -477,6 +483,56 @@ constexpr std::array<SettingDef, 53> kSettings = {{
      .label = "Updates",
      .description = "Updates are installed when Brouk restarts. Brouk → "
                     "Check for Updates… checks at any time."},
+    {.key = "task_manager.refresh_interval",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kChoice,
+     .default_value = "1s",
+     .choices = kTaskRefresh,
+     .choice_labels = kTaskRefreshLabels,
+     .section = "Task manager",
+     .label = "Update values",
+     .description = "How often the task manager measures CPU, memory and "
+                    "network use while it is open."},
+    {.key = "task_manager.history_length",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kInteger,
+     .default_value = "5",
+     .min_value = 1,
+     .max_value = 60,
+     .section = "Task manager",
+     .label = "Graph history (minutes)",
+     .description = "How far back the graph goes. Kept only while the task "
+                    "manager is open."},
+    {.key = "task_manager.columns",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kString,
+     .default_value = "task, profile, memory, cpu, status, pid",
+     .max_length = 256,
+     .advanced = true,
+     .section = "Task manager",
+     .label = "Columns",
+     .description = "The columns shown, in order: task, profile, memory, "
+                    "cpu, status, pid, gpu, js_memory, network, address, "
+                    "type, shared, window. Changed by right-clicking the "
+                    "table's header."},
+    {.key = "task_manager.sort",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kString,
+     .default_value = "memory, descending",
+     .max_length = 64,
+     .advanced = true,
+     .section = "Task manager",
+     .label = "Sort order",
+     .description = "A column and \"ascending\" or \"descending\". Changed "
+                    "by clicking the table's header."},
+    {.key = "task_manager.graph",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kBool,
+     .default_value = "true",
+     .advanced = true,
+     .section = "Task manager",
+     .label = "Show the graph",
+     .description = "Whether the graph pane below the table is open."},
     {.key = "profile.name",
      .scope = SettingScope::kProfile,
      .type = SettingDef::Type::kString,
