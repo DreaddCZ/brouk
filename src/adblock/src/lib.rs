@@ -464,3 +464,28 @@ pub unsafe extern "C" fn brouk_registrable_domain(host: *const c_char) -> *mut c
     }))
     .unwrap_or(ptr::null_mut())
 }
+
+/// Whether `pattern`, a regular expression, matches anywhere in `text`,
+/// ignoring case (the "regular expression" URI match of Bitwarden items,
+/// 008): 1 if it does, 0 if not, 2 if the pattern is not valid. The `regex`
+/// crate runs in linear time, so a hostile pattern cannot hang the browser.
+///
+/// # Safety
+/// `pattern` and `text` are NUL-terminated.
+#[no_mangle]
+pub unsafe extern "C" fn brouk_regex_is_match(pattern: *const c_char, text: *const c_char) -> u8 {
+    let (Some(pattern), Some(text)) = (borrow_str(pattern), borrow_str(text)) else {
+        return 2;
+    };
+    catch_unwind(AssertUnwindSafe(|| {
+        match regex::RegexBuilder::new(pattern)
+            .case_insensitive(true)
+            .size_limit(1 << 20)
+            .build()
+        {
+            Ok(regex) => u8::from(regex.is_match(text)),
+            Err(_) => 2,
+        }
+    }))
+    .unwrap_or(2)
+}

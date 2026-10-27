@@ -28,6 +28,7 @@ std::string ToString(NSString* s) {
   NSSecureTextField* _secret;
   NSTextField* _plain;  // The password, shown.
   NSButton* _reveal;
+  NSPopUpButton* _location;  // Bitwarden: where a new login goes.
   brouk::PasswordPromptDone _done;
   BRPasswordPrompt* _keepAlive;  // Until the popover closes.
 }
@@ -54,26 +55,29 @@ std::string ToString(NSString* s) {
           done:(brouk::PasswordPromptDone)done {
   _done = std::move(done);
   _keepAlive = self;
-  NSView* content = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 340, 210)];
+  // Room for "Save in" (Bitwarden folders and collections).
+  CGFloat extra = prompt.locations.empty() ? 0 : 34;
+  NSView* content =
+      [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 340, 210 + extra)];
 
   NSTextField* title =
       [self label:prompt.update ? @"Update password?" : @"Save password?"
              bold:YES];
-  title.frame = NSMakeRect(16, 176, 308, 20);
+  title.frame = NSMakeRect(16, 176 + extra, 308, 20);
   NSTextField* host = [self label:ToNSString(prompt.host) bold:NO];
-  host.frame = NSMakeRect(16, 156, 308, 16);
+  host.frame = NSMakeRect(16, 156 + extra, 308, 16);
 
   NSTextField* userLabel = [self label:@"User name" bold:NO];
-  userLabel.frame = NSMakeRect(16, 126, 80, 16);
+  userLabel.frame = NSMakeRect(16, 126 + extra, 80, 16);
   _username = [NSTextField textFieldWithString:ToNSString(prompt.username)];
-  _username.frame = NSMakeRect(100, 122, 224, 24);
+  _username.frame = NSMakeRect(100, 122 + extra, 224, 24);
   _username.accessibilityLabel = @"User name";
 
   NSTextField* passwordLabel = [self label:@"Password" bold:NO];
-  passwordLabel.frame = NSMakeRect(16, 92, 80, 16);
+  passwordLabel.frame = NSMakeRect(16, 92 + extra, 80, 16);
   NSString* password = ToNSString(prompt.password);
-  _secret =
-      [[NSSecureTextField alloc] initWithFrame:NSMakeRect(100, 88, 194, 24)];
+  _secret = [[NSSecureTextField alloc]
+      initWithFrame:NSMakeRect(100, 88 + extra, 194, 24)];
   _secret.stringValue = password;
   _secret.accessibilityLabel = @"Password";
   _plain = [NSTextField textFieldWithString:password];
@@ -86,7 +90,7 @@ std::string ToString(NSString* s) {
                target:self
                action:@selector(toggleReveal:)];
   _reveal.bordered = NO;
-  _reveal.frame = NSMakeRect(298, 88, 26, 24);
+  _reveal.frame = NSMakeRect(298, 88 + extra, 26, 24);
   _reveal.toolTip = @"Show password";
 
   NSButton* save = [NSButton buttonWithTitle:prompt.update ? @"Update" : @"Save"
@@ -109,6 +113,18 @@ std::string ToString(NSString* s) {
   [content addSubview:_reveal];
   [content addSubview:save];
   [content addSubview:notNow];
+  if (!prompt.locations.empty()) {
+    NSTextField* locationLabel = [self label:@"Save in" bold:NO];
+    locationLabel.frame = NSMakeRect(16, 92, 80, 16);
+    _location = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(97, 86, 230, 26)
+                                           pullsDown:NO];
+    for (const std::string& location : prompt.locations) {
+      [_location addItemWithTitle:ToNSString(location)];
+    }
+    _location.accessibilityLabel = @"Save in";
+    [content addSubview:locationLabel];
+    [content addSubview:_location];
+  }
   if (!prompt.update) {
     NSButton* never = [NSButton buttonWithTitle:@"Never for this site"
                                          target:self
@@ -156,6 +172,8 @@ std::string ToString(NSString* s) {
     answer.username = ToString(_username.stringValue);
     answer.password =
         ToString(_plain.hidden ? _secret.stringValue : _plain.stringValue);
+    answer.location =
+        _location ? static_cast<int>(_location.indexOfSelectedItem) : 0;
     done(std::move(answer));
   }
   _secret.stringValue = @"";

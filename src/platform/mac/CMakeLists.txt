@@ -16,6 +16,8 @@ add_executable(brouk_app
   adblock_popover.mm
   address_field.h
   address_field.mm
+  bitwarden_dialogs.h
+  bitwarden_dialogs.mm
   bookmark_dialogs.h
   bookmark_dialogs.mm
   bookmark_store.h

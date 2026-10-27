@@ -12,7 +12,10 @@ test('answers are checked', () => {
   assert.throws(() => parseEntry({ ...row, id: -1 }));
   assert.throws(() => parseEntry({ ...row, others: [1] }));
   assert.equal(parseState({ profiles: [{ id: 'p', name: 'P', color: 'blue', bitwarden: false }], currentProfile: 'p',
-    unlockedFor: 0, breachCheck: true }).profiles.length, 1);
+    unlockedFor: 0, breachCheck: true, bitwardenUnlocked: false }).profiles.length, 1);
+  assert.equal(parseState({ profiles: [], currentProfile: '', unlockedFor: 0, breachCheck: true,
+    bitwardenUnlocked: true }).bitwardenUnlocked, true);
+  assert.throws(() => parseState({ profiles: [], currentProfile: '', unlockedFor: 0, breachCheck: true }));
   assert.equal(parseImport(null), null);
   assert.throws(() => parseCheckup({ entries: [{ ...row, password: 'x', breached: 0 }], reused: [[0, 5]] }));
 });

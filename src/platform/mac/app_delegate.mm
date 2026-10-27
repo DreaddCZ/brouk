@@ -16,6 +16,7 @@
 
 #include <unistd.h>
 
+#import "platform/mac/bitwarden_dialogs.h"
 #import "platform/mac/bookmark_store.h"
 #import "platform/mac/browser_window_controller.h"
 #import "platform/mac/data_paths.h"
@@ -142,6 +143,7 @@
 - (nullable brouk::PasswordManager*)passwordManager;
 - (nullable brouk::AutofillManager*)autofillManager;
 - (void)downloadsChanged;
+- (void)setUpBitwarden;
 - (BOOL)profileUsesBitwarden:(const brouk::ProfileId&)profile;
 - (BOOL)breachCheckEnabled;
 - (std::vector<std::string>)keepListOfProfile:(const brouk::ProfileId&)profile;
@@ -985,6 +987,7 @@ class AppSettingsPage : public SettingsPageDelegate {
         app->_profiles->ProfileSettings(profile);
     return !settings || settings->GetBool("passwords.offer_to_save");
   });
+  [self setUpBitwarden];
   _autofill = std::make_unique<brouk::AutofillManager>(
       std::filesystem::path(brouk::mac::AppDataDirectory().UTF8String) /
           "autofill.db",
@@ -1897,7 +1900,11 @@ class AppSettingsPage : public SettingsPageDelegate {
          .breach_check = global.GetBool("passwords.breach_check"),
          .rules = brouk::PasswordRulesFromSettings(
              static_cast<int>(global.GetInt("passwords.generated_length")),
-             global.GetString("passwords.generated_characters"))});
+             global.GetString("passwords.generated_characters")),
+         .bitwarden_cli = global.GetString("passwords.bitwarden_cli"),
+         .bitwarden_lock_minutes =
+             global.GetInt("passwords.bitwarden_lock_minutes"),
+         .bitwarden_touch_id = global.GetBool("passwords.bitwarden_touch_id")});
   }
   NSUInteger problems = _profiles->problems().size();
   for (BRBrowserWindowController* controller in _windows) {
@@ -2884,6 +2891,46 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
 
 - (nullable brouk::AutofillManager*)autofillManager {
   return _autofill.get();
+}
+
+// UI thread. Bitwarden profiles (008): which profiles use it, where `bw`
+// may be, the certificates of a company's server, and locking when the Mac
+// sleeps or the screen locks.
+- (void)setUpBitwarden {
+  __weak BRAppDelegate* weakApp = self;
+  std::filesystem::path dataDir(brouk::mac::AppDataDirectory().UTF8String);
+  // Apps start with a minimal PATH; bw may be in Homebrew's folders (the
+  // CLI searches those itself) or where npm installs programs.
+  std::string home = NSHomeDirectory().UTF8String;
+  const char* path = std::getenv("PATH");
+  std::string searchPath = std::string(path ? path : "") + ":" + home +
+                           "/.npm-global/bin:" + home + "/.local/bin:" + home +
+                           "/bin";
+  _passwords->SetBitwarden(
+      [weakApp](const brouk::ProfileId& profile) {
+        BRAppDelegate* app = weakApp;
+        return app && [app profileUsesBitwarden:profile];
+      },
+      [dataDir](const std::string& server) {
+        return brouk::mac::PrepareServerCertificates(server, dataDir);
+      },
+      std::move(searchPath));
+  void (^lock)(NSNotification*) = ^(NSNotification*) {
+    BRAppDelegate* app = weakApp;
+    if (app && app->_passwords) {
+      app->_passwords->LockBitwarden();
+    }
+  };
+  [NSWorkspace.sharedWorkspace.notificationCenter
+      addObserverForName:NSWorkspaceWillSleepNotification
+                  object:nil
+                   queue:NSOperationQueue.mainQueue
+              usingBlock:lock];
+  [NSDistributedNotificationCenter.defaultCenter
+      addObserverForName:@"com.apple.screenIsLocked"
+                  object:nil
+                   queue:NSOperationQueue.mainQueue
+              usingBlock:lock];
 }
 
 - (BOOL)profileUsesBitwarden:(const brouk::ProfileId&)profile {

@@ -19,6 +19,8 @@ export interface PageState {
   /** Seconds the page stays unlocked; 0 when locked. */
   readonly unlockedFor: number;
   readonly breachCheck: boolean;
+  /** The Bitwarden vault is unlocked (shared by every Bitwarden profile). */
+  readonly bitwardenUnlocked: boolean;
 }
 
 /** One saved login, without its secrets. */
@@ -116,6 +118,7 @@ export function parseState(value: unknown): PageState {
     currentProfile: text(answer, 'currentProfile'),
     unlockedFor: number(answer, 'unlockedFor'),
     breachCheck: flag(answer, 'breachCheck'),
+    bitwardenUnlocked: flag(answer, 'bitwardenUnlocked'),
   };
 }
 
@@ -216,6 +219,10 @@ export class PasswordsApi {
 
   async lock(): Promise<void> {
     await this.#send('passwords.lock');
+  }
+
+  async lockBitwarden(): Promise<void> {
+    await this.#send('passwords.lockBitwarden');
   }
 
   async reveal(profile: string, id: number): Promise<Secrets> {

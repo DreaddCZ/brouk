@@ -40,6 +40,8 @@ NSString* SymbolFor(brouk::PasswordMenuItem::Kind kind) {
       return @"gearshape";
     case Kind::kWarning:
       return @"exclamationmark.triangle";
+    case Kind::kUnlock:
+      return @"lock";
   }
   return @"key";
 }

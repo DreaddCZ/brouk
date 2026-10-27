@@ -17,6 +17,9 @@ serde_json = "1"
 # Already in adblock's dependency tree; also gives the password manager (008)
 # registrable domains from the public suffix list.
 psl = "=2.1.245"
+# Also already in adblock's tree: the "regular expression" URI match of
+# Bitwarden items (008), in linear time and without exceptions.
+regex = "=1.13.1"
 
 [profile.release]
 panic = "abort"

@@ -1,6 +1,6 @@
 ## Passwords {#passwords}
 
-Brouk has its own password manager. Each profile keeps its own passwords, encrypted on your Mac; the key is in the macOS keychain.
+Brouk has its own password manager. Each profile keeps its own passwords, encrypted on your Mac; the key is in the macOS keychain. A profile can use your [Bitwarden](#passwords-bitwarden) vault instead.
 
 ### Filling and saving {#passwords-filling}
 
@@ -28,6 +28,27 @@ Showing, copying, editing or exporting passwords asks for **Touch ID** or your M
 ### Password checkup {#passwords-checkup}
 
 The checkup on the passwords page finds **weak**, **reused** (also across profiles) and **breached** passwords. The breach check uses Have I Been Pwned: only the first 5 characters of the password's SHA-1 hash are sent, never the password. Turn it off in Settings → Passwords.
+
+### Bitwarden {#passwords-bitwarden}
+
+Settings → [Passwords](#settings-passwords) → **Passwords** → **Bitwarden** makes a profile fill and save logins from your Bitwarden vault (bitwarden.com or your company's own Bitwarden or Vaultwarden server) instead of the built-in manager.
+
+**Setup, once:**
+
+1. Install the Bitwarden CLI, e.g. `brew install bitwarden-cli` in Terminal. Brouk finds it in Homebrew's folders and your `PATH`; Settings → Passwords → **Bitwarden CLI** sets another path.
+2. Sign in once in Terminal with `bw login` (for a self-hosted or EU server first `bw config server https://…`). If the server uses its own certificates, Brouk shows the exact command to use — it starts with `NODE_EXTRA_CA_CERTS=…` — when you click the lock icon. Brouk prepares that certificate file itself; nothing to export.
+
+**Using it:**
+
+- While the vault is locked, the key icon shows a **lock**, and login fields offer **Unlock Bitwarden…**. Enter your master password; Brouk shows progress while `bw` unlocks, and a wrong password is shown in the same dialog.
+- With **Unlock Bitwarden with Touch ID** on (the default), later unlocks — also after a restart — ask only for Touch ID.
+- The vault locks after 15 minutes without use (**Lock Bitwarden after**), when the Mac sleeps or the screen locks, and with **Lock Bitwarden** on the passwords page.
+- Logins match pages as in Bitwarden, following each item's URI match setting (by default, every host of the site).
+- New logins are saved to Bitwarden; the save prompt's **Save in** chooses the folder or an organisation's collection. Updated passwords change the item in Bitwarden.
+- Items with **Master password re-prompt** are never filled automatically; choosing one asks for Touch ID (or the master password when Touch ID is off).
+- Edit, delete and check Bitwarden logins in Bitwarden itself; the passwords page lists only the built-in manager's logins.
+
+Your master password and the vault's logins are never written to disk; the logins are kept in memory only while the vault is unlocked.
 
 ### Import and export {#passwords-import-export}
 

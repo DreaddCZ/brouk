@@ -27,6 +27,9 @@ add_executable(brouk_core_tests
   core/autofill_forms_test.cc
   core/autofill_rules_test.cc
   core/autofill_store_test.cc
+  core/bitwarden_cli_test.cc
+  core/bitwarden_source_test.cc
+  core/bitwarden_vault_test.cc
   core/bookmark_file_test.cc
   core/bookmark_html_test.cc
   core/bookmark_model_test.cc
@@ -59,6 +62,7 @@ add_executable(brouk_core_tests
   core/password_profile_test.cc
   core/password_store_test.cc
   core/permissions_test.cc
+  core/process_runner_test.cc
   core/profile_export_test.cc
   core/profile_registry_test.cc
   core/request_log_test.cc
