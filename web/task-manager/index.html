@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="color-scheme" content="light dark">
+<title>Task Manager</title>
+<link rel="stylesheet" href="shared/base.css">
+<link rel="stylesheet" href="task_manager.css">
+<script type="module" src="task_manager.js"></script>
+</head>
+<body>
+<main>
+  <header class="top">
+    <h1>Task Manager<button type="button" class="help-button" data-help="task-manager">?</button></h1>
+    <input type="search" id="filter" placeholder="Filter by title, address or profile" aria-label="Filter tasks"
+      spellcheck="false" autocomplete="off">
+    <button type="button" id="freeze" aria-pressed="false" title="Stop updating the values, to read or copy them">Pause updates</button>
+    <button type="button" id="copy-csv" title="Copy the selected rows (or all rows) as CSV">Copy CSV</button>
+    <button type="button" id="copy-json" title="Copy the selected rows (or all rows) as JSON, with the graph's values">Copy JSON</button>
+  </header>
+  <div class="actions" role="toolbar" aria-label="Actions on the selected rows">
+    <button type="button" data-action="goto" title="Go to the tab (Return or double-click)">Go to tab</button>
+    <button type="button" data-action="end" class="danger" title="End the process (⌘⌫)">End process</button>
+    <button type="button" data-action="pause" title="Freeze or continue the page (P)">Pause</button>
+    <button type="button" data-action="unload" title="Free the tab's memory; it loads again when shown (U)">Unload tab</button>
+    <button type="button" data-action="mute" title="Mute or unmute the tab (M)">Mute</button>
+    <button type="button" data-action="reload" title="Reload the tab (R)">Reload</button>
+    <button type="button" data-action="devtools" title="Open developer tools for the tab (D)">DevTools</button>
+    <span id="status" class="status" role="status"></span>
+  </div>
+  <p id="error" class="error" role="alert" hidden></p>
+  <div class="table-wrap" id="table-wrap">
+    <table id="table" aria-label="Tasks" aria-multiselectable="true">
+      <thead><tr id="head"></tr></thead>
+      <tbody id="rows"></tbody>
+      <tfoot><tr id="totals"></tr></tfoot>
+    </table>
+  </div>
+  <details id="graph-pane" open>
+    <summary>Graph of the selected rows</summary>
+    <div id="graph" class="graph"></div>
+    <p id="graph-empty" class="muted">Select one or more rows to see their CPU and memory over time.</p>
+  </details>
+</main>
+<div id="column-menu" class="column-menu" role="menu" aria-label="Columns" hidden></div>
+<dialog id="confirm-end">
+  <form method="dialog">
+    <p id="confirm-text"></p>
+    <ul id="confirm-list"></ul>
+    <div class="dialog-buttons">
+      <button value="cancel" autofocus>Cancel</button>
+      <button value="end" class="danger">End process</button>
+    </div>
+  </form>
+</dialog>
+</body>
+</html>
