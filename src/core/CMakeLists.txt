@@ -24,6 +24,8 @@ set(BROUK_CORE_SOURCES
   autofill_rules.h
   autofill_store.cc
   autofill_store.h
+  bitwarden_vault.cc
+  bitwarden_vault.h
   bookmark_file.cc
   bookmark_file.h
   bookmark_html.cc

@@ -25,6 +25,12 @@ std::string HostOfOrigin(std::string_view origin);
 // addresses, single-label names and public suffixes.
 std::string SiteOfHost(std::string_view host);
 
+// Whether a login saved for `entry_origin` is offered on `page_origin` as
+// another host of the same site: same site, and the same scheme or an http
+// entry on an https page (never the other way round, as in Chrome).
+bool IsSameSiteOrUpgrade(std::string_view entry_origin,
+                         std::string_view page_origin);
+
 }  // namespace brouk
 
 #endif  // BROUK_CORE_WEB_ORIGIN_H_

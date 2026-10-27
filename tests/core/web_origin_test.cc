@@ -36,5 +36,16 @@ TEST(WebOriginTest, SiteUsesPublicSuffixList) {
   EXPECT_EQ(SiteOfHost("[::1]"), "[::1]");
 }
 
+TEST(WebOriginTest, SameSiteOrUpgrade) {
+  EXPECT_TRUE(IsSameSiteOrUpgrade("https://login.example.com",
+                                  "https://www.example.com"));
+  EXPECT_TRUE(
+      IsSameSiteOrUpgrade("http://www.example.com", "https://www.example.com"));
+  EXPECT_FALSE(
+      IsSameSiteOrUpgrade("https://www.example.com", "http://www.example.com"));
+  EXPECT_FALSE(
+      IsSameSiteOrUpgrade("https://example.com", "https://example.org"));
+}
+
 }  // namespace
 }  // namespace brouk

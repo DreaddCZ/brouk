@@ -99,4 +99,16 @@ std::string SiteOfHost(std::string_view host) {
   return site;
 }
 
+bool IsSameSiteOrUpgrade(std::string_view entry_origin,
+                         std::string_view page_origin) {
+  std::string entry_scheme = SchemeOfOrigin(entry_origin);
+  std::string page_scheme = SchemeOfOrigin(page_origin);
+  if (entry_scheme != page_scheme &&
+      !(entry_scheme == "http" && page_scheme == "https")) {
+    return false;
+  }
+  return SiteOfHost(HostOfOrigin(entry_origin)) ==
+         SiteOfHost(HostOfOrigin(page_origin));
+}
+
 }  // namespace brouk

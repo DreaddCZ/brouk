@@ -27,6 +27,10 @@ struct PasswordEntry {
   std::string password;
   std::string note;
   std::string totp;  // An otpauth:// URI (TotpSecretToUri) or "".
+  // Bitwarden's "master password re-prompt": never filled automatically,
+  // and the user confirms who they are before each fill. Built-in entries
+  // never have it.
+  bool reprompt = false;
   // Seconds since 1970 (UTC).
   std::int64_t created = 0;
   std::int64_t last_used = 0;
