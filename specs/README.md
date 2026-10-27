@@ -32,7 +32,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 005 | [Profiles](005-profiles.md) | done — history in export with 022 | P1 |
 | 006 | [Developer tools](006-developer-tools.md) | in-progress | P1 |
 | 007 | [Ad and tracker blocking](007-adblock.md) | done — routing hosts after 010 | P1 |
-| 008 | [Password manager](008-password-manager.md) | in-progress — built-in source done; Bitwarden source (unlock with Touch ID, filling, saving to folders and collections, re-prompt, idle lock) in review | P1 |
+| 008 | [Password manager](008-password-manager.md) | done | P1 |
 | 009 | [Form autofill](009-autofill.md) | in-progress — entries, custom fields, filling, saving without duplicates, validation, Settings → Autofill with duplicates and JSON export/import in review | P1 |
 | 010 | [Link routing and window picker](010-link-routing.md) | in-progress — rules, picker with window thumbnails, wrappers (built-in, own, opaque with "Checking link"), default browser, Settings → Links in review; real Outlook/Teams links to check | P1 |
 | 011 | [Bookmark manager](011-bookmarks.md) | done | P1 |
@@ -43,7 +43,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 016 | [Help](016-help.md) | done | P2 |
 | 017 | [VPN per profile](017-profile-vpn.md) | draft | P2 |
 | 018 | [Feedback and issue reporting](018-feedback.md) | draft | P2 |
-| 019 | [Release pipeline and automatic updates](019-release-pipeline.md) | in-progress — releases repository, release script, smoke tests and Sparkle updates in use (0.1.0 → 0.1.1 beta updated itself); remaining checks and Settings → Updates details later | P2 |
+| 019 | [Release pipeline and automatic updates](019-release-pipeline.md) | done — in use since 0.1.0 | P2 |
 | 020 | [Task manager](020-task-manager.md) | ready | P2 |
 | 021 | [File viewers for text formats](021-file-viewers.md) | idea | P3 |
 | 022 | [History in profile export](022-history-export.md) | ready | P3 |
@@ -82,6 +82,8 @@ Build order. Each milestone ends with a build the user tests on their Macs.
 2026-10-27 (user's decision): help (016) tested on both Macs with the 0.1.1 beta and done.
 
 2026-10-26 (user's decision): profiles (005), bookmarks (011), history (013) and downloads (014) are done; criteria not yet tested by the user are left for the beta testers.
+
+2026-10-27 (user's decision): the Bitwarden source (008) and the release pipeline with automatic updates (019) are tested by the user; both specs are done.
 
 2026-10-25 (user's decision): file viewers for text formats (021) are recorded at a high level for a later phase.
 
