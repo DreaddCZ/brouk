@@ -79,6 +79,8 @@ Build order. Each milestone ends with a build the user tests on their Macs.
 
 2026-10-26 (user's decision): history in profile export moved from 013 and 005 to its own spec, 022, kept for later; 013 is finished without it. Next: the window choice of 010 for the bookmark and history pages, then favicons (013), then acceptance testing of 005, 013 and 014.
 
+2026-10-27 (user's decision): help (016) tested on both Macs with the 0.1.1 beta and done.
+
 2026-10-26 (user's decision): profiles (005), bookmarks (011), history (013) and downloads (014) are done; criteria not yet tested by the user are left for the beta testers.
 
 2026-10-25 (user's decision): file viewers for text formats (021) are recorded at a high level for a later phase.
