@@ -3,6 +3,7 @@
 #import <Vision/Vision.h>
 
 #import "platform/mac/adblock_blocked_view.h"
+#import "platform/mac/bitwarden_dialogs.h"
 #import "platform/mac/devtools_dock.h"
 #import "platform/mac/password_menu.h"
 #import "platform/mac/permission_prompt_view.h"
@@ -230,6 +231,14 @@ class TabDelegateBridge : public TabClientDelegate {
     } else {
       [alert runModal];
     }
+  }
+  void AskBitwardenPassword(const BitwardenPasswordRequest& request,
+                            BitwardenPasswordDone done) override {
+    mac::AskBitwardenPassword(tab_.tabView.window, request, std::move(done));
+  }
+  void ConfirmWithTouchId(const std::string& reason,
+                          TouchIdDone done) override {
+    mac::ConfirmWithTouchId(reason, std::move(done));
   }
   void ShowAutofillPrompt(const AutofillPrompt& prompt,
                           AutofillPromptDone done) override {

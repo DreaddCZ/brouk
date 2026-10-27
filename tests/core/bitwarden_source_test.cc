@@ -261,5 +261,25 @@ TEST(BitwardenSourceTest, NothingWorksWhileLocked) {
   EXPECT_TRUE(f.source.Sync(0));
 }
 
+TEST(BitwardenSourceTest, SetupSteps) {
+  BitwardenSource::Status status;
+  status.state = BitwardenSource::State::kNoCli;
+  EXPECT_NE(BitwardenSetupSteps(status, "").find("brew install bitwarden-cli"),
+            std::string::npos);
+
+  status.state = BitwardenSource::State::kLoggedOut;
+  std::string steps = BitwardenSetupSteps(status, "");
+  EXPECT_NE(steps.find("bw config server"), std::string::npos);
+  EXPECT_NE(steps.find("bw login"), std::string::npos);
+
+  status.server_url = "https://vault.example.com";
+  steps = BitwardenSetupSteps(status, "/data/certificates.pem");
+  EXPECT_NE(steps.find("https://vault.example.com"), std::string::npos);
+  EXPECT_NE(
+      steps.find("NODE_EXTRA_CA_CERTS=\"/data/certificates.pem\" bw login"),
+      std::string::npos);
+  EXPECT_EQ(steps.find("bw config server"), std::string::npos);
+}
+
 }  // namespace
 }  // namespace brouk

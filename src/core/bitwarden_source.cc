@@ -85,7 +85,7 @@ std::optional<Error> BitwardenSource::Load() {
   return std::nullopt;
 }
 
-std::optional<Error> BitwardenSource::Failed(const Error& error) {
+Error BitwardenSource::Failed(const Error& error) {
   if (error.message == kBitwardenLockedError) {
     Lock(false);
   }
@@ -175,7 +175,7 @@ Result<std::vector<BitwardenSaveLocation>> BitwardenSource::SaveLocations(
   last_use_ = now;
   Result<std::vector<BitwardenFolder>> folders = cli_->ListFolders(session_);
   if (!folders) {
-    return *Failed(folders.error());
+    return Failed(folders.error());
   }
   std::vector<BitwardenSaveLocation> locations;
   locations.push_back({"No folder", "", "", ""});
@@ -214,7 +214,7 @@ Result<std::int64_t> BitwardenSource::Add(const PasswordEntry& entry,
   Result<std::string> item_id = cli_->CreateItem(session_, json);
   Wipe(json);
   if (!item_id) {
-    return *Failed(item_id.error());
+    return Failed(item_id.error());
   }
   // The new item is in `bw`'s copy already; a failed sync only delays
   // other devices' changes.
@@ -256,6 +256,44 @@ std::optional<Error> BitwardenSource::Update(const PasswordEntry& entry,
   }
   cli_->Sync(session_);
   return Load();
+}
+
+std::string BitwardenSetupSteps(const BitwardenSource::Status& status,
+                                const std::filesystem::path& certificates) {
+  std::string login = "bw login";
+  if (!certificates.empty()) {
+    // Node.js, which runs bw, does not use the certificates macOS trusts.
+    login = "NODE_EXTRA_CA_CERTS=\"" + certificates.string() + "\" bw login";
+  }
+  if (status.state == BitwardenSource::State::kNoCli) {
+    return "This profile's passwords come from Bitwarden, through the "
+           "Bitwarden CLI (bw), which is not installed.\n\n"
+           "1. Install it in Terminal: brew install bitwarden-cli\n"
+           "2. For a self-hosted or EU server, set it: bw config server "
+           "https://your-server\n"
+           "3. Sign in once: bw login\n"
+           "4. Come back and click the key icon again.\n\n"
+           "If bw is installed elsewhere, set its path in Settings → "
+           "Passwords → Bitwarden CLI.";
+  }
+  std::string steps =
+      "This profile's passwords come from Bitwarden, but the Bitwarden CLI "
+      "(bw) is not signed in.\n\n";
+  if (status.server_url.empty()) {
+    steps +=
+        "1. For a self-hosted or EU server, set it in Terminal: bw config "
+        "server https://your-server\n"
+        "2. Sign in once: " +
+        login + "\n";
+  } else {
+    steps += "1. Sign in once in Terminal (server " + status.server_url +
+             "):\n   " + login + "\n";
+  }
+  steps += "Then come back and click the key icon again.";
+  if (!status.problem.empty()) {
+    steps += "\n\nBitwarden said: " + status.problem;
+  }
+  return steps;
 }
 
 }  // namespace brouk

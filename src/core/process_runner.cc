@@ -3,10 +3,10 @@
 #include <fcntl.h>
 #include <poll.h>
 #include <pthread.h>
-#include <signal.h>
 #include <spawn.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <csignal>
 
 #include <algorithm>
 #include <array>
@@ -114,7 +114,9 @@ std::vector<std::string> ChildEnvironment(const ProcessRequest& request) {
     }
   }
   for (const auto& [name, value] : request.environment) {
-    variables.push_back(name + "=" + value);
+    std::string& variable = variables.emplace_back(name);
+    variable += '=';
+    variable += value;
   }
   return variables;
 }
@@ -187,12 +189,14 @@ Result<ProcessOutput> RunProcess(const ProcessRequest& request) {
   arguments.insert(arguments.end(), request.arguments.begin(),
                    request.arguments.end());
   std::vector<char*> argv;
+  argv.reserve(arguments.size() + 1);
   for (std::string& argument : arguments) {
     argv.push_back(argument.data());
   }
   argv.push_back(nullptr);
   std::vector<std::string> variables = ChildEnvironment(request);
   std::vector<char*> envp;
+  envp.reserve(variables.size() + 1);
   for (std::string& variable : variables) {
     envp.push_back(variable.data());
   }

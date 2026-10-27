@@ -85,29 +85,41 @@ void PasswordTab::OnForms(const CefRefPtr<CefFrame>& frame,
     return;
   }
   std::string id = FrameId(frame);
+  std::string url = frame->GetURL().ToString();
   Frame& state = frames_[id];
   if (state.origin != *origin) {
     state = Frame{};
     state.origin = *origin;
   }
+  if (state.url != url) {
+    state.url = url;
+    // Bitwarden's match settings may look at the path.
+    if (manager_->UsesBitwarden(profile_)) {
+      state.lookup.reset();
+    }
+  }
   state.main = frame->IsMain();
   state.forms = std::move(*forms);
-  if (!state.lookup) {
+  if (!state.lookup || Stale(state)) {
     LookUp(id);
   } else {
     TryAutofill(id);
   }
 }
 
-void PasswordTab::LookUp(const std::string& frame_id) {
+void PasswordTab::LookUp(const std::string& frame_id,
+                         std::function<void()> then) {
   auto it = frames_.find(frame_id);
   if (it == frames_.end()) {
     return;
   }
   std::string origin = it->second.origin;
+  int generation = manager_->bitwarden_generation();
   std::weak_ptr<PasswordTab> weak = weak_from_this();
   manager_->Lookup(
-      profile_, origin, [weak, frame_id, origin](PasswordLookup lookup) {
+      profile_, origin, it->second.url,
+      [weak, frame_id, origin, generation,
+       then = std::move(then)](PasswordLookup lookup) {
         std::shared_ptr<PasswordTab> self = weak.lock();
         if (!self || !self->delegate_) {
           return;
@@ -117,9 +129,29 @@ void PasswordTab::LookUp(const std::string& frame_id) {
           return;
         }
         frame->second.lookup = std::move(lookup);
+        frame->second.generation = generation;
         self->UpdateIcon();
         self->TryAutofill(frame_id);
+        if (then) {
+          then();
+        }
       });
+}
+
+bool PasswordTab::Stale(const Frame& frame) const {
+  return frame.lookup && manager_->UsesBitwarden(profile_) &&
+         frame.generation != manager_->bitwarden_generation();
+}
+
+void PasswordTab::LookUpAll() {
+  std::vector<std::string> ids;
+  ids.reserve(frames_.size());
+  for (const auto& [id, frame] : frames_) {
+    ids.push_back(id);
+  }
+  for (const std::string& id : ids) {
+    LookUp(id);
+  }
 }
 
 std::vector<PasswordEntry> PasswordTab::Offered(const Frame& frame) const {
@@ -149,7 +181,14 @@ void PasswordTab::TryAutofill(const std::string& frame_id) {
           frame.filled_forms.end()) {
     return;
   }
-  const std::vector<PasswordEntry>& exact = frame.lookup->matches.exact;
+  // Logins that ask to confirm first ("re-prompt", Bitwarden) are never
+  // filled automatically.
+  std::vector<PasswordEntry> exact;
+  for (const PasswordEntry& entry : frame.lookup->matches.exact) {
+    if (!entry.reprompt) {
+      exact.push_back(entry);
+    }
+  }
   std::optional<std::size_t> choice =
       AutofillChoice(exact, RememberedUsername(frame.origin),
                      IsSecureOriginForPasswords(frame.origin),
@@ -205,6 +244,15 @@ void PasswordTab::OnFocus(const CefRefPtr<CefFrame>& frame,
   if (!focus || it == frames_.end() || !it->second.lookup) {
     return;
   }
+  std::weak_ptr<PasswordTab> weak = weak_from_this();
+  if (Stale(it->second)) {
+    LookUp(frame_id, [weak, frame, json] {
+      if (std::shared_ptr<PasswordTab> self = weak.lock()) {
+        self->OnFocus(frame, json);
+      }
+    });
+    return;
+  }
   const Frame& state = it->second;
   auto form = std::ranges::find_if(
       state.forms, [&](const LoginForm& f) { return f.id == focus->form; });
@@ -221,8 +269,19 @@ void PasswordTab::OnFocus(const CefRefPtr<CefFrame>& frame,
 
   // What each menu item does, in the same order as the items.
   std::vector<std::function<void()>> actions;
-  std::weak_ptr<PasswordTab> weak = weak_from_this();
   const LoginForm& chosen_form = *form;
+
+  if (state.lookup && state.lookup->locked) {
+    menu.items.push_back({PasswordMenuItem::Kind::kUnlock, "Unlock Bitwarden…",
+                          "To fill your logins", 0});
+    delegate_->ShowPasswordMenu(menu, [weak](int index) {
+      std::shared_ptr<PasswordTab> self = weak.lock();
+      if (self && index == 0) {
+        self->UnlockBitwarden();
+      }
+    });
+    return;
+  }
   std::string origin = state.origin;
 
   if (focus->kind == LoginFieldKind::kNewPassword) {
@@ -272,13 +331,22 @@ void PasswordTab::OnFocus(const CefRefPtr<CefFrame>& frame,
                             code, TotpSecondsLeft(*secret, now)});
       int field = focus->field;
       std::string totp = entry.totp;
-      actions.emplace_back([weak, frame_id, field, totp] {
+      bool reprompt = entry.reprompt;
+      actions.emplace_back([weak, frame_id, field, totp, reprompt] {
+        auto fill = [weak, frame_id, field, totp] {
+          std::shared_ptr<PasswordTab> self = weak.lock();
+          std::optional<TotpSecret> current = ParseTotpSecret(totp);
+          if (self && current) {
+            // The code at the time of the choice, not of the menu.
+            self->SendFill(frame_id, FillFieldsMessage(
+                                         {field}, TotpCode(*current, Now())));
+          }
+        };
         std::shared_ptr<PasswordTab> self = weak.lock();
-        std::optional<TotpSecret> current = ParseTotpSecret(totp);
-        if (self && current) {
-          // The code at the time of the choice, not of the menu.
-          self->SendFill(frame_id,
-                         FillFieldsMessage({field}, TotpCode(*current, Now())));
+        if (self && reprompt) {
+          self->ConfirmReprompt(fill);
+        } else {
+          fill();
         }
       });
     }
@@ -294,7 +362,7 @@ void PasswordTab::OnFocus(const CefRefPtr<CefFrame>& frame,
       actions.emplace_back([weak, frame_id, chosen_form, entry] {
         std::shared_ptr<PasswordTab> self = weak.lock();
         if (self && self->delegate_) {
-          self->Fill(frame_id, chosen_form, entry);
+          self->FillChosen(frame_id, chosen_form, entry);
         }
       });
     }
@@ -344,7 +412,8 @@ void PasswordTab::OnSubmit(const CefRefPtr<CefFrame>& frame,
     Wipe(submitted_->login.password);
     Wipe(submitted_->login.new_password);
   }
-  submitted_ = Submitted{FrameId(frame), *origin, std::move(*login), Now()};
+  submitted_ = Submitted{FrameId(frame), *origin, frame->GetURL().ToString(),
+                         std::move(*login), Now()};
 }
 
 void PasswordTab::OnMainFrameLoadStart() {
@@ -381,7 +450,7 @@ void PasswordTab::EvaluateSubmitted() {
   std::weak_ptr<PasswordTab> weak = weak_from_this();
   auto shared = std::make_shared<Submitted>(std::move(submitted));
   manager_->Lookup(
-      profile_, shared->origin,
+      profile_, shared->origin, shared->url,
       [weak, shared, remembered](PasswordLookup lookup) {
         std::shared_ptr<PasswordTab> self = weak.lock();
         SubmittedLogin& login = shared->login;
@@ -389,7 +458,9 @@ void PasswordTab::EvaluateSubmitted() {
           Wipe(login.password);
           Wipe(login.new_password);
         };
-        if (!self || !self->delegate_ || lookup.error) {
+        // A locked Bitwarden vault cannot tell a new login from a changed
+        // one: nothing is offered.
+        if (!self || !self->delegate_ || lookup.error || lookup.locked) {
           wipe();
           return;
         }
@@ -426,15 +497,41 @@ void PasswordTab::EvaluateSubmitted() {
         if (found != lookup.matches.exact.end()) {
           existing = *found;
         }
-        self->prompt_ = Prompt{
-            {decision.offer == SaveDecision::Offer::kUpdate,
-             DisplayHost(shared->origin), decision.username, decision.password},
-            shared->origin,
-            std::move(existing),
-            Now()};
+        bool update = decision.offer == SaveDecision::Offer::kUpdate;
+        self->prompt_ = Prompt{{update,
+                                DisplayHost(shared->origin),
+                                decision.username,
+                                decision.password,
+                                {}},
+                               shared->origin,
+                               std::move(existing),
+                               Now(),
+                               {}};
         Wipe(decision.password);
         self->UpdateIcon();
-        self->ShowPrompt();
+        if (update || !self->manager_->UsesBitwarden(self->profile_)) {
+          self->ShowPrompt();
+          return;
+        }
+        // A new Bitwarden login: the user also chooses where it goes.
+        self->manager_->BitwardenSaveLocations(
+            [weak](Result<std::vector<BitwardenSaveLocation>> locations) {
+              std::shared_ptr<PasswordTab> tab = weak.lock();
+              if (!tab || !tab->prompt_) {
+                return;
+              }
+              if (locations) {
+                tab->prompt_->locations = std::move(locations).value();
+              }
+              if (tab->prompt_->locations.empty()) {
+                tab->prompt_->locations.push_back({"No folder", "", "", ""});
+              }
+              for (const BitwardenSaveLocation& location :
+                   tab->prompt_->locations) {
+                tab->prompt_->prompt.locations.push_back(location.label);
+              }
+              tab->ShowPrompt();
+            });
       });
 }
 
@@ -473,7 +570,12 @@ void PasswordTab::ShowPrompt() {
       entry.origin = prompt.origin;
       entry.username = answer.username;
       entry.password = answer.password;
-      self->manager_->Add(self->profile_, entry, nullptr);
+      BitwardenSaveLocation location;
+      if (answer.location >= 0 &&
+          static_cast<std::size_t>(answer.location) < prompt.locations.size()) {
+        location = prompt.locations[static_cast<std::size_t>(answer.location)];
+      }
+      self->manager_->Add(self->profile_, entry, nullptr, location);
       self->WarnIfBreached(prompt.prompt.host, entry.password);
       Wipe(entry.password);
       Wipe(answer.password);
@@ -497,12 +599,24 @@ void PasswordTab::OnKeyIconClicked() {
     return;
   }
   std::string frame_id = main->first;
+  std::weak_ptr<PasswordTab> weak = weak_from_this();
+  if (Stale(main->second)) {
+    LookUp(frame_id, [weak] {
+      if (std::shared_ptr<PasswordTab> self = weak.lock()) {
+        self->OnKeyIconClicked();
+      }
+    });
+    return;
+  }
+  if (main->second.lookup && main->second.lookup->locked) {
+    UnlockBitwarden();
+    return;
+  }
   std::vector<PasswordEntry> entries = Offered(main->second);
   std::optional<LoginForm> form = FormToFill(main->second.forms);
   PasswordMenu menu;
   menu.at_key_icon = true;
   std::vector<std::function<void()>> actions;
-  std::weak_ptr<PasswordTab> weak = weak_from_this();
   for (const PasswordEntry& entry : entries) {
     bool other_host = entry.origin != main->second.origin;
     menu.items.push_back(
@@ -512,7 +626,7 @@ void PasswordTab::OnKeyIconClicked() {
     actions.emplace_back([weak, frame_id, form, entry] {
       std::shared_ptr<PasswordTab> self = weak.lock();
       if (self && self->delegate_ && form) {
-        self->Fill(frame_id, *form, entry);
+        self->FillChosen(frame_id, *form, entry);
       }
     });
   }
@@ -677,6 +791,11 @@ void PasswordTab::UpdateIcon() {
     return;
   }
   for (const auto& [id, frame] : frames_) {
+    if (frame.main && frame.lookup && frame.lookup->locked &&
+        !frame.forms.empty()) {
+      delegate_->OnPasswordIconChanged(PasswordIcon::kLocked);
+      return;
+    }
     if (frame.main && frame.lookup &&
         (!frame.lookup->matches.exact.empty() ||
          !frame.lookup->matches.same_site.empty())) {
@@ -693,6 +812,176 @@ std::string PasswordTab::RememberedUsername(const std::string& origin) const {
     return {};
   }
   return remembered_->username;
+}
+
+void PasswordTab::FillChosen(const std::string& frame_id,
+                             const LoginForm& form,
+                             const PasswordEntry& entry) {
+  if (!entry.reprompt) {
+    Fill(frame_id, form, entry);
+    return;
+  }
+  std::weak_ptr<PasswordTab> weak = weak_from_this();
+  ConfirmReprompt([weak, frame_id, form, entry] {
+    std::shared_ptr<PasswordTab> self = weak.lock();
+    if (self && self->delegate_) {
+      self->Fill(frame_id, form, entry);
+    }
+  });
+}
+
+void PasswordTab::UnlockBitwarden() {
+  if (unlocking_ || !delegate_) {
+    return;
+  }
+  unlocking_ = true;
+  std::weak_ptr<PasswordTab> weak = weak_from_this();
+  manager_->BitwardenState([weak](const BitwardenUnlockState& state) {
+    std::shared_ptr<PasswordTab> self = weak.lock();
+    if (!self || !self->delegate_) {
+      return;
+    }
+    switch (state.status.state) {
+      case BitwardenSource::State::kNoCli:
+      case BitwardenSource::State::kLoggedOut:
+        self->unlocking_ = false;
+        self->delegate_->ShowPasswordMessage("Set up Bitwarden",
+                                             state.setup_steps);
+        return;
+      case BitwardenSource::State::kUnlocked:
+        self->unlocking_ = false;
+        self->LookUpAll();
+        return;
+      case BitwardenSource::State::kLocked:
+        break;
+    }
+    if (!state.stored_session ||
+        !self->manager_->options().bitwarden_touch_id) {
+      self->AskMasterPassword(state, "");
+      return;
+    }
+    self->delegate_->ConfirmWithTouchId(
+        "unlock Bitwarden", [weak, state](TouchIdResult result) {
+          std::shared_ptr<PasswordTab> tab = weak.lock();
+          if (!tab || !tab->delegate_) {
+            return;
+          }
+          if (result != TouchIdResult::kPassed) {
+            // As in Bitwarden: the master password instead.
+            tab->AskMasterPassword(state, "");
+            return;
+          }
+          tab->manager_->UnlockBitwardenWithStoredSession(
+              [weak, state](const std::optional<Error>& error) {
+                std::shared_ptr<PasswordTab> again = weak.lock();
+                if (!again || !again->delegate_) {
+                  return;
+                }
+                if (error) {
+                  again->AskMasterPassword(state, "");
+                  return;
+                }
+                again->unlocking_ = false;
+                again->LookUpAll();
+              });
+        });
+  });
+}
+
+void PasswordTab::AskMasterPassword(const BitwardenUnlockState& state,
+                                    const std::string& error) {
+  BitwardenPasswordRequest request;
+  request.account = state.status.user_email;
+  request.server = state.status.server_url;
+  request.error = error;
+  std::weak_ptr<PasswordTab> weak = weak_from_this();
+  delegate_->AskBitwardenPassword(
+      request, [weak, state](std::optional<std::string> password) {
+        std::shared_ptr<PasswordTab> self = weak.lock();
+        if (!self) {
+          if (password) {
+            Wipe(*password);
+          }
+          return;
+        }
+        if (!password || !self->delegate_) {
+          self->unlocking_ = false;
+          return;
+        }
+        self->manager_->UnlockBitwarden(
+            std::move(*password),
+            [weak, state](const std::optional<Error>& failed) {
+              std::shared_ptr<PasswordTab> tab = weak.lock();
+              if (!tab || !tab->delegate_) {
+                return;
+              }
+              if (failed) {
+                tab->AskMasterPassword(state, failed->message);
+                return;
+              }
+              tab->unlocking_ = false;
+              tab->LookUpAll();
+            });
+      });
+}
+
+void PasswordTab::ConfirmReprompt(std::function<void()> then) {
+  if (!delegate_) {
+    return;
+  }
+  std::weak_ptr<PasswordTab> weak = weak_from_this();
+  if (!manager_->options().bitwarden_touch_id) {
+    AskRepromptPassword(std::move(then), "");
+    return;
+  }
+  delegate_->ConfirmWithTouchId(
+      "fill a protected Bitwarden login",
+      [weak, then = std::move(then)](TouchIdResult result) {
+        std::shared_ptr<PasswordTab> self = weak.lock();
+        if (!self || !self->delegate_) {
+          return;
+        }
+        if (result == TouchIdResult::kPassed) {
+          then();
+        } else if (result == TouchIdResult::kUnavailable) {
+          self->AskRepromptPassword(then, "");
+        }
+      });
+}
+
+void PasswordTab::AskRepromptPassword(std::function<void()> then,
+                                      const std::string& error) {
+  BitwardenPasswordRequest request;
+  request.reprompt = true;
+  request.error = error;
+  std::weak_ptr<PasswordTab> weak = weak_from_this();
+  delegate_->AskBitwardenPassword(
+      request,
+      [weak, then = std::move(then)](std::optional<std::string> password) {
+        std::shared_ptr<PasswordTab> self = weak.lock();
+        if (!password) {
+          return;
+        }
+        if (!self || !self->delegate_) {
+          Wipe(*password);
+          return;
+        }
+        // Checking the master password means unlocking again (a new
+        // session); the logins stay the same.
+        self->manager_->UnlockBitwarden(
+            std::move(*password),
+            [weak, then](const std::optional<Error>& failed) {
+              std::shared_ptr<PasswordTab> tab = weak.lock();
+              if (!tab || !tab->delegate_) {
+                return;
+              }
+              if (failed) {
+                tab->AskRepromptPassword(then, failed->message);
+                return;
+              }
+              then();
+            });
+      });
 }
 
 }  // namespace brouk

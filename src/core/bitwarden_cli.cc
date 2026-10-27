@@ -1,5 +1,6 @@
 #include "core/bitwarden_cli.h"
 
+#include <array>
 #include <utility>
 
 #include "core/crypto.h"
@@ -10,12 +11,12 @@ namespace brouk {
 namespace {
 
 // Where Homebrew puts programs (Apple silicon, Intel).
-constexpr std::string_view kHomebrewFolders[] = {"/opt/homebrew/bin",
-                                                 "/usr/local/bin"};
+constexpr std::array<std::string_view, 2> kHomebrewFolders = {
+    "/opt/homebrew/bin", "/usr/local/bin"};
 
 // Variables Brouk's environment must not pass on to `bw`: other sessions
 // and credentials, and Node.js options that would change how it runs.
-constexpr std::string_view kRemovedVariables[] = {
+constexpr std::array<std::string_view, 6> kRemovedVariables = {
     "BW_SESSION",      "BW_PASSWORD",  "BW_CLIENTID",
     "BW_CLIENTSECRET", "NODE_OPTIONS", "NODE_EXTRA_CA_CERTS"};
 
@@ -87,8 +88,8 @@ std::optional<std::filesystem::path> FindBitwardenCli(
     }
     return std::nullopt;
   }
-  std::vector<std::filesystem::path> folders(std::begin(kHomebrewFolders),
-                                             std::end(kHomebrewFolders));
+  std::vector<std::filesystem::path> folders(kHomebrewFolders.begin(),
+                                             kHomebrewFolders.end());
   while (!search_path.empty()) {
     std::size_t end = search_path.find(':');
     std::string_view folder = search_path.substr(0, end);
@@ -120,8 +121,8 @@ Result<std::string> BitwardenCli::Run(
   request.program = program_;
   request.arguments = std::move(arguments);
   request.arguments.emplace_back("--nointeraction");
-  request.remove_environment.assign(std::begin(kRemovedVariables),
-                                    std::end(kRemovedVariables));
+  request.remove_environment.assign(kRemovedVariables.begin(),
+                                    kRemovedVariables.end());
   request.environment = std::move(secret_environment);
   if (!session.empty()) {
     request.environment.emplace_back("BW_SESSION", std::string(session));

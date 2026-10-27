@@ -25,6 +25,7 @@ struct PasswordMenuItem {
     kReadQrCode,
     kManage,
     kWarning,
+    kUnlock,  // "Unlock Bitwarden…" while the vault is locked.
     // Autofill (009) uses the same drop-down.
     kAutofillEntry,
     kCustomField,
@@ -58,17 +59,35 @@ struct PasswordPrompt {
   std::string host;
   std::string username;
   std::string password;
+  // Bitwarden profiles, for a new login: the folders and collections to
+  // choose from (the first is the default). Empty otherwise.
+  std::vector<std::string> locations;
 };
 struct PasswordPromptAnswer {
   enum class Choice { kSave, kNever, kNotNow };
   Choice choice = Choice::kNotNow;
   std::string username;
   std::string password;
+  int location = 0;  // Index into PasswordPrompt::locations.
 };
 using PasswordPromptDone = std::function<void(PasswordPromptAnswer)>;
 
 // The key icon in the address bar.
-enum class PasswordIcon { kHidden, kLogins, kSavePending };
+enum class PasswordIcon { kHidden, kLogins, kSavePending, kLocked };
+
+// The master password dialog of Bitwarden profiles (008).
+struct BitwardenPasswordRequest {
+  std::string account;  // The user's email.
+  std::string server;   // Empty: Bitwarden's US cloud.
+  // Why: "unlock" or "re-prompt" (an item asks to confirm before filling).
+  bool reprompt = false;
+  std::string error;  // From the previous try, e.g. a wrong password.
+};
+// The master password, or nullopt when the user cancelled.
+using BitwardenPasswordDone =
+    std::function<void(std::optional<std::string> password)>;
+enum class TouchIdResult { kPassed, kCancelled, kUnavailable };
+using TouchIdDone = std::function<void(TouchIdResult result)>;
 
 // What the password logic of a tab needs from the platform UI. UI thread.
 class PasswordTabDelegate {
@@ -93,6 +112,12 @@ class PasswordTabDelegate {
   // A short message about a password action, e.g. "2FA code added".
   virtual void ShowPasswordMessage(const std::string& title,
                                    const std::string& text) = 0;
+  // Bitwarden (008).
+  virtual void AskBitwardenPassword(const BitwardenPasswordRequest& request,
+                                    BitwardenPasswordDone done) = 0;
+  // Touch ID, with `reason` completing "Brouk wants to …".
+  virtual void ConfirmWithTouchId(const std::string& reason,
+                                  TouchIdDone done) = 0;
 };
 
 // The password manager's work in one tab (008): looks up the logins of the
@@ -124,14 +149,18 @@ class PasswordTab : public std::enable_shared_from_this<PasswordTab> {
  private:
   struct Frame {
     std::string origin;
+    std::string url;
     bool main = false;
     std::vector<LoginForm> forms;
     std::optional<PasswordLookup> lookup;
+    // PasswordManager::bitwarden_generation() of the lookup.
+    int generation = 0;
     std::vector<int> filled_forms;  // Filled automatically already.
   };
   struct Submitted {
     std::string frame_id;
     std::string origin;
+    std::string url;
     SubmittedLogin login;
     std::int64_t time = 0;
   };
@@ -139,7 +168,26 @@ class PasswordTab : public std::enable_shared_from_this<PasswordTab> {
   void OnForms(const CefRefPtr<CefFrame>& frame, const std::string& json);
   void OnFocus(const CefRefPtr<CefFrame>& frame, const std::string& json);
   void OnSubmit(const CefRefPtr<CefFrame>& frame, const std::string& json);
-  void LookUp(const std::string& frame_id);
+  // Looks up the frame's logins, then runs `then` (if given).
+  void LookUp(const std::string& frame_id, std::function<void()> then = {});
+  // Whether a Bitwarden lookup is out of date (the vault locked or
+  // unlocked since): then it is looked up again before use.
+  bool Stale(const Frame& frame) const;
+  // Unlocks Bitwarden (Touch ID or the master password), then looks up
+  // every frame again.
+  void UnlockBitwarden();
+  void AskMasterPassword(const BitwardenUnlockState& state,
+                         const std::string& error);
+  // Confirms who the user is before filling a "re-prompt" item.
+  void ConfirmReprompt(std::function<void()> then);
+  void AskRepromptPassword(std::function<void()> then,
+                           const std::string& error);
+  // Looks up every frame's logins again (the vault was unlocked).
+  void LookUpAll();
+  // Fills `entry`, after the re-prompt check if it asks for one.
+  void FillChosen(const std::string& frame_id,
+                  const LoginForm& form,
+                  const PasswordEntry& entry);
   void TryAutofill(const std::string& frame_id);
   void Fill(const std::string& frame_id,
             const LoginForm& form,
@@ -188,8 +236,10 @@ class PasswordTab : public std::enable_shared_from_this<PasswordTab> {
     std::string origin;
     std::optional<PasswordEntry> existing;  // For an update.
     std::int64_t time = 0;
+    std::vector<BitwardenSaveLocation> locations;  // Bitwarden.
   };
   std::optional<Prompt> prompt_;
+  bool unlocking_ = false;  // The unlock flow is showing.
 };
 
 }  // namespace brouk

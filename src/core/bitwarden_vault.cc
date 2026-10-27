@@ -54,10 +54,9 @@ BitwardenUriMatch MatchOf(const JsonValue& uri) {
       return BitwardenUriMatch::kExact;
     case 4:
       return BitwardenUriMatch::kRegularExpression;
-    case 5:
-      return BitwardenUriMatch::kNever;
     default:
-      // Unknown (newer Bitwarden): never matched rather than guessed.
+      // 5 is "never"; an unknown setting (newer Bitwarden) is never
+      // matched either, rather than guessed.
       return BitwardenUriMatch::kNever;
   }
 }

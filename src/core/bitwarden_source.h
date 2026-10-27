@@ -50,7 +50,7 @@ class BitwardenSource {
   struct Options {
     std::string cli_setting;  // "Bitwarden CLI": a path, or "" to search.
     std::string search_path;  // PATH, for the search.
-    std::int64_t lock_seconds = 15 * 60;
+    std::int64_t lock_seconds = std::int64_t{15} * 60;
   };
 
   // Called for the server before `bw` connects to it: the file of its
@@ -107,7 +107,7 @@ class BitwardenSource {
   // Reads the vault's logins into memory.
   std::optional<Error> Load();
   // A command failed: a locked vault forgets the session.
-  std::optional<Error> Failed(const Error& error);
+  Error Failed(const Error& error);
   void PrepareCertificates(const std::string& server_url);
 
   BitwardenCli::Runner run_;
@@ -120,6 +120,12 @@ class BitwardenSource {
   BitwardenVault vault_;
   std::int64_t last_use_ = 0;
 };
+
+// What the user does when `bw` is missing or signed out (008): the steps
+// shown instead of the unlock dialog. `certificates` is the file Brouk made
+// for a company server's certificates (for `bw login`), or empty.
+std::string BitwardenSetupSteps(const BitwardenSource::Status& status,
+                                const std::filesystem::path& certificates);
 
 }  // namespace brouk
 

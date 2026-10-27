@@ -14,7 +14,7 @@ import { strengthScores } from './strength.js';
 
 const api = new PasswordsApi(cefTransport());
 
-let state: PageState = { profiles: [], currentProfile: '', unlockedFor: 0, breachCheck: true };
+let state: PageState = { profiles: [], currentProfile: '', unlockedFor: 0, breachCheck: true, bitwardenUnlocked: false };
 let entries: Entry[] = [];
 let unlockedUntil = 0;
 /** Revealed secrets by "<profile>:<id>", hidden again when the page locks. */
@@ -134,8 +134,22 @@ function renderBitwarden(): void {
     if (!profile.bitwarden || (filter.value !== '' && filter.value !== profile.id)) continue;
     const row = element('div', { className: 'row' });
     const site = element('div', { className: 'site', text: profile.name });
-    const user = element('div', { className: 'user', text: 'Uses Bitwarden — manage in Bitwarden' });
-    row.append(dot(profile.id), site, user, element('div', { className: 'actions' }));
+    const user = element('div', {
+      className: 'user',
+      text: `Uses Bitwarden (${state.bitwardenUnlocked ? 'unlocked' : 'locked'}) — manage logins in Bitwarden`,
+    });
+    const actions = element('div', { className: 'actions' });
+    if (state.bitwardenUnlocked) {
+      actions.append(
+        button('Lock Bitwarden', () => {
+          void api.lockBitwarden().then(async () => {
+            state = await api.state();
+            renderList();
+          });
+        }),
+      );
+    }
+    row.append(dot(profile.id), site, user, actions);
     box.append(row);
   }
 }

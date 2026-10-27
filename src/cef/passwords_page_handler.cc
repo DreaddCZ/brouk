@@ -267,7 +267,13 @@ bool PasswordsPageHandler::OnQuery(CefRefPtr<CefBrowser> /*browser*/,
     answer->SetInt("unlockedFor", static_cast<int>(std::max<std::int64_t>(
                                       0, state->unlocked_until - Now())));
     answer->SetBool("breachCheck", state->delegate->BreachCheckEnabled());
+    answer->SetBool("bitwardenUnlocked", manager->bitwarden_unlocked());
     callback->Success(ToJson(answer));
+    return true;
+  }
+  if (*type == "passwords.lockBitwarden") {
+    manager->LockBitwarden();
+    callback->Success("");
     return true;
   }
   if (*type == "passwords.unlock") {

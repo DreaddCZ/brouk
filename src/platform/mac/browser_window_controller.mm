@@ -2874,12 +2874,15 @@ static std::int64_t Now() {
   brouk::PasswordIcon icon = [self activeTab].passwordIcon;
   _keyButton.hidden = icon == brouk::PasswordIcon::kHidden;
   BOOL pending = icon == brouk::PasswordIcon::kSavePending;
-  _keyButton.image =
-      [NSImage imageWithSystemSymbolName:pending ? @"key.fill" : @"key"
-                accessibilityDescription:@"Passwords"];
+  BOOL locked = icon == brouk::PasswordIcon::kLocked;
+  NSString* symbol = pending ? @"key.fill" : locked ? @"lock" : @"key";
+  _keyButton.image = [NSImage imageWithSystemSymbolName:symbol
+                               accessibilityDescription:@"Passwords"];
   _keyButton.contentTintColor =
       pending ? NSColor.controlAccentColor : NSColor.secondaryLabelColor;
-  _keyButton.toolTip = pending ? @"Save password" : @"Saved passwords";
+  _keyButton.toolTip = pending  ? @"Save password"
+                       : locked ? @"Unlock Bitwarden"
+                                : @"Saved passwords";
   _keyButton.accessibilityValue = _keyButton.toolTip;
 }
 
