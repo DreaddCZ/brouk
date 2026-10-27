@@ -229,4 +229,5 @@ None.
   - The CLI has one signed-in account, so all Bitwarden profiles share it and its unlock.
   - While the vault is locked a submitted login is not offered for saving (a locked vault cannot tell a new login from a changed one). "Never for this site" is kept in the profile's own passwords database also for Bitwarden profiles.
   - New items are named after the host and saved with the page's origin as their URI, as Bitwarden's extension names them; the save prompt offers "No folder", the folders, and the organisations' collections (those `bw` does not mark read-only).
+  - Unlock progress (user's feedback): the master password dialog stays open with a spinner while `bw` unlocks and shows a wrong password in place; during a Touch ID unlock the key icon shows a spinner. Help section `passwords-bitwarden`, linked from the Bitwarden row of the passwords page.
 

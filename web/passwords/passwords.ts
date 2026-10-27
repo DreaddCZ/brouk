@@ -7,7 +7,7 @@
  */
 import { cefTransport } from '../shared/bridge.js';
 import { button, byId, element, errorText } from '../shared/dom.js';
-import { wireHelpButtons } from '../shared/help.js';
+import { helpButton, wireHelpButtons } from '../shared/help.js';
 import { LockedError, PasswordsApi, type Entry, type PageState, type Profile } from './api.js';
 import { ago, checkupResult, displayHost, filterEntries, parseOthers } from './logic.js';
 import { strengthScores } from './strength.js';
@@ -138,6 +138,7 @@ function renderBitwarden(): void {
       className: 'user',
       text: `Uses Bitwarden (${state.bitwardenUnlocked ? 'unlocked' : 'locked'}) — manage logins in Bitwarden`,
     });
+    user.append(helpButton('passwords-bitwarden', 'Bitwarden'));
     const actions = element('div', { className: 'actions' });
     if (state.bitwardenUnlocked) {
       actions.append(
