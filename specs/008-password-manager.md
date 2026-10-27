@@ -1,6 +1,6 @@
 # 008 – Password manager
 
-- **Status:** in-progress
+- **Status:** done
 - **Priority:** P1
 - **Depends on:** 001, 003, 005
 
@@ -157,11 +157,11 @@ Bitwarden entries are not part of the checkup; Bitwarden has its own reports.
 - [ ] A profile export contains its built-in passwords, encrypted with the export password; it cannot be imported without it. (Completes the password criteria of 005.)
 
 **Bitwarden source**
-- [ ] A profile set to Bitwarden fills, saves and updates logins in the user's Bitwarden vault, matching by the items' URIs and match settings.
-- [ ] A new login can be saved into a chosen folder or organisation collection.
-- [ ] The vault unlocks with the master password in Brouk's dialog, later with Touch ID; it locks after the timeout, on sleep and on screen lock.
-- [ ] No Bitwarden secret is written to disk by Brouk or passed to `bw` as a command-line argument, and `bw serve` is not used.
-- [ ] If the CLI is missing or logged out, Brouk explains how to install it or sign in.
+- [x] A profile set to Bitwarden fills, saves and updates logins in the user's Bitwarden vault, matching by the items' URIs and match settings.
+- [x] A new login can be saved into a chosen folder or organisation collection.
+- [x] The vault unlocks with the master password in Brouk's dialog, later with Touch ID; it locks after the timeout, on sleep and on screen lock.
+- [x] No Bitwarden secret is written to disk by Brouk or passed to `bw` as a command-line argument, and `bw serve` is not used.
+- [x] If the CLI is missing or logged out, Brouk explains how to install it or sign in.
 
 ## Out of scope
 
@@ -230,4 +230,4 @@ None.
   - While the vault is locked a submitted login is not offered for saving (a locked vault cannot tell a new login from a changed one). "Never for this site" is kept in the profile's own passwords database also for Bitwarden profiles.
   - New items are named after the host and saved with the page's origin as their URI, as Bitwarden's extension names them; the save prompt offers "No folder", the folders, and the organisations' collections (those `bw` does not mark read-only).
   - Unlock progress (user's feedback): the master password dialog stays open with a spinner while `bw` unlocks and shows a wrong password in place; during a Touch ID unlock the key icon shows a spinner. Help section `passwords-bitwarden`, linked from the Bitwarden row of the passwords page.
-
+- 2026-10-27 (user's decision): the Bitwarden source is tested by the user and the spec is done. As for 005, 013 and 014, criteria of the built-in source not yet ticked are left for the beta testers.

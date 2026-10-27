@@ -1,6 +1,6 @@
 # 019 – Release pipeline and automatic updates
 
-- **Status:** in-progress
+- **Status:** done
 - **Priority:** P2
 - **Depends on:** 001, 002, 004 (settings), 006 (remote debugging flag), 012 (crash page), 014 (quit question for running downloads), 015 (session restore)
 
@@ -201,4 +201,4 @@ None.
 - If Apple Silicon testing is needed later without the M2, GitHub's free macOS runners for public repositories could test builds from the public releases repository.
 - 2026-10-26 (implementation, first part): the releases repository `DreaddCZ/brouk-releases` is created (public, Pages on `main`, empty feeds) with the user's approval. Sparkle 2.10.0 (2.10.1 was a day old). The update signing key is in the login keychain under the account `brouk` (not Sparkle's default `ed25519`, so it cannot be mixed up with another app's key). Builds embed Sparkle thinned to their architecture (`ditto --arch`) and without its XPC services; `--version` and About show `0.1.0 (a1b2c3d)` from a separate generated header (`brouk/build_info.h`), so a new commit recompiles only the files that show it. Test runs with their own data folder (`BROUK_DEV_DATA_DIR`) never start the updater, so the smoke tests do not touch the updater state that Sparkle keeps in the user's defaults. Sparkle's standard update window shows found updates and the result of Check for Updates…. The quit question for running downloads (014) is asked when Restart to Update quits, as for any quit. Settings → Updates shows the channel and the mode; the version, last check and a "Check now" button in Settings follow later (Brouk → Check for Updates… and About cover them now).
 - 2026-10-27 (releases 0.1.0 and 0.1.1): the first run of 0.1.0 stopped at a core test and undid its release commit, nothing published; the second published the images, and an interrupted publish (no feed items, a script bug) was finished by running the command again without rebuilding. 0.1.1 went through in one run. The user's installed 0.1.0 (beta channel) found 0.1.1, downloaded it and restarted into it (Check for Updates…, Restart to Update); the beta also runs on the M2 Mac. Still to verify: the precondition refusals, `--no-publish`, the stable channel (no stable release yet), a rejected signature, `notify`/`off`, switching from beta to stable, and that local builds never check; Settings → Updates still lacks the version, last check and "Check now".
-
+- 2026-10-27 (user's decision): the release pipeline and automatic updates are tested by the user and the spec is done. Criteria not yet ticked (precondition messages, `--no-publish`, stable channel, bad signatures, `notify`/`off` modes, channel switch, local builds not checking) are left for later releases and the beta testers.

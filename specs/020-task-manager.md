@@ -1,6 +1,6 @@
 # 020 – Task manager
 
-- **Status:** in-progress
+- **Status:** done
 - **Priority:** P2
 - **Depends on:** 003, 005, 012 (audio indicator); works with 006 (DevTools), 015 (tabs that load when shown), 016 (help)
 
