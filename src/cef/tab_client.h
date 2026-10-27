@@ -12,6 +12,7 @@
 #include "cef/adblock_request_handler.h"
 #include "cef/autofill_tab.h"
 #include "cef/download_service.h"
+#include "cef/network_counter.h"
 #include "cef/password_tab.h"
 #include "core/dialog_spam_guard.h"
 #include "core/permissions.h"
@@ -174,6 +175,9 @@ class TabClientDelegate : public PasswordTabDelegate,
 
   // Whether the page plays sound (reported by the page script; an estimate).
   virtual void OnAudibleChanged(bool audible) = 0;
+  // The page's access to a camera or screen (video) and a microphone
+  // (audio) started or ended (020).
+  virtual void OnMediaAccessChanged(bool video, bool audio) = 0;
 
   // The page asked to share a screen or window: show the picker. `done` gets
   // the user's choice, or nullopt if cancelled or no picker can be shown;
@@ -279,6 +283,12 @@ class TabClient : public CefClient,
     downloads_profile_ = profile;
   }
 
+  // Task manager (020), UI thread: the process ID the page's renderer
+  // reported (0 until it does), and the bytes of response bodies received
+  // while network counting was on.
+  int renderer_pid() const { return renderer_pid_; }
+  std::int64_t received_bytes() const { return received_bytes_->load(); }
+
   // The settings a tab's renderer follows (kRendererConfigMessage), sent
   // when they change.
   static CefRefPtr<CefDictionaryValue> RendererConfig(bool json_viewer);
@@ -327,6 +337,9 @@ class TabClient : public CefClient,
                           const std::vector<CefString>& icon_urls) override;
   void OnFullscreenModeChange(CefRefPtr<CefBrowser> browser,
                               bool fullscreen) override;
+  void OnMediaAccessChange(CefRefPtr<CefBrowser> browser,
+                           bool has_video_access,
+                           bool has_audio_access) override;
 
   // CefDownloadHandler:
   bool CanDownload(CefRefPtr<CefBrowser> browser,
@@ -511,6 +524,9 @@ class TabClient : public CefClient,
   void DownloadFavicon(const CefRefPtr<CefBrowser>& browser,
                        const std::string& url);
 
+  int renderer_pid_ = 0;  // UI thread.
+  ByteCounter received_bytes_ =
+      std::make_shared<std::atomic<std::int64_t>>(0);  // Any thread.
   TabClientDelegate* delegate_;  // Not owned. Null after DetachDelegate().
   std::string favicon_url_;      // URL of the favicon being shown.
   std::vector<std::uint8_t> favicon_png_;  // Its image, once downloaded.

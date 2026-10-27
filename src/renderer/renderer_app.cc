@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <string>
 
+#include <unistd.h>
+
 #include "brouk/adblock_cosmetic_script.h"
 #include "brouk/adblock_picker_script.h"
 #include "brouk/forms_script.h"
@@ -467,6 +469,13 @@ void RendererApp::OnContextCreated(CefRefPtr<CefBrowser> browser,
                                    CefRefPtr<CefFrame> frame,
                                    CefRefPtr<CefV8Context> context) {
   CEF_REQUIRE_RENDERER_THREAD();
+  if (frame->IsMain()) {
+    // The task manager's Process ID column (020).
+    CefRefPtr<CefProcessMessage> message =
+        CefProcessMessage::Create(std::string(kRendererProcessMessage));
+    message->GetArgumentList()->SetInt(0, static_cast<int>(getpid()));
+    frame->SendProcessMessage(PID_BROWSER, message);
+  }
   if (IsInternalPageUrl(frame->GetURL().ToString())) {
     // Internal pages get the bridge, web pages never; the browser checks
     // the sender of every message again.

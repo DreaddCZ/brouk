@@ -86,10 +86,12 @@ TEST(TaskListTest, ProcessIdGoesToEveryRowOfTheProcess) {
 }
 
 TEST(TaskListTest, UnmeasuredTasksAreNotGrouped) {
-  std::vector<RawTask> tasks = {Task(10, TaskKind::kRenderer, -1),
-                                Task(11, TaskKind::kRenderer, -1)};
+  std::vector<RawTask> tasks = {
+      Task(10, TaskKind::kRenderer, -1), Task(11, TaskKind::kRenderer, -1),
+      Task(12, TaskKind::kUtility, 0), Task(13, TaskKind::kUtility, 0)};
   std::vector<TaskRow> rows = BuildTaskRows(tasks, {Page(10), Page(11)});
   EXPECT_NE(rows[0].process, rows[1].process);
+  EXPECT_NE(rows[2].process, rows[3].process);
 }
 
 TEST(TaskListTest, SubframeInItsOwnProcessBelongsToThePageBeforeIt) {

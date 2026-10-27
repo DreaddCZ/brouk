@@ -55,6 +55,11 @@ inline constexpr std::string_view kAdblockPicked = "brouk.adblock.picked";
 // The page script's classes request is cut off beyond this.
 inline constexpr std::size_t kMaxAdblockClassesBytes = std::size_t{256} * 1024;
 
+// Task manager (020): renderer -> browser, the renderer's process ID (an
+// int), sent when a main frame's script context is created. Untrusted: it
+// is only shown, and used to tell processes apart.
+inline constexpr std::string_view kRendererProcessMessage = "brouk.process";
+
 struct PageEvent {
   enum class Type { kPopupBlocked, kAudible, kInaudible, kDisplayMedia };
   Type type;

@@ -8,6 +8,7 @@
 #include "cef/help_link.h"
 #include "core/context_menu.h"
 #include "core/internal_pages.h"
+#include "core/page_events.h"
 #include "include/wrapper/cef_helpers.h"
 
 namespace brouk {
@@ -41,6 +42,16 @@ bool InternalPageClient::OnProcessMessageReceived(
     CefProcessId source_process,
     CefRefPtr<CefProcessMessage> message) {
   CEF_REQUIRE_UI_THREAD();
+  if (source_process == PID_RENDERER && frame &&
+      message->GetName() == std::string(kRendererProcessMessage)) {
+    // Task manager (020): untrusted, only shown and compared.
+    CefRefPtr<CefListValue> args = message->GetArgumentList();
+    if (frame->IsMain() && args && args->GetSize() == 1 &&
+        args->GetType(0) == VTYPE_INT && args->GetInt(0) > 0) {
+      renderer_pid_ = args->GetInt(0);
+    }
+    return true;
+  }
   return router_->OnProcessMessageReceived(browser, frame, source_process,
                                            message);
 }
