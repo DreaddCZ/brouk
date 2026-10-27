@@ -24,6 +24,8 @@ set(BROUK_CORE_SOURCES
   autofill_rules.h
   autofill_store.cc
   autofill_store.h
+  bitwarden_cli.cc
+  bitwarden_cli.h
   bitwarden_vault.cc
   bitwarden_vault.h
   bookmark_file.cc
@@ -91,6 +93,8 @@ set(BROUK_CORE_SOURCES
   password_store.h
   permissions.cc
   permissions.h
+  process_runner.cc
+  process_runner.h
   profile_export.cc
   profile_export.h
   profile_id.h
