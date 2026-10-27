@@ -46,6 +46,18 @@ std::vector<std::string> SplitLines(std::string_view text) {
   return lines;
 }
 
+bool SameSiteOrUpgrade(std::string_view entry_origin, std::string_view page) {
+  std::string entry_scheme = SchemeOfOrigin(entry_origin);
+  std::string page_scheme = SchemeOfOrigin(page);
+  // An http entry is offered on the https page, never the other way round.
+  if (entry_scheme != page_scheme &&
+      !(entry_scheme == "http" && page_scheme == "https")) {
+    return false;
+  }
+  return SiteOfHost(HostOfOrigin(entry_origin)) ==
+         SiteOfHost(HostOfOrigin(page));
+}
+
 }  // namespace
 
 PasswordStore::PasswordStore(Key /*key*/,
@@ -332,10 +344,10 @@ PasswordMatches PasswordStore::Find(std::string_view origin) {
                  std::ranges::find(entry.other_origins, origin) !=
                      entry.other_origins.end();
     bool same_site =
-        !exact && (IsSameSiteOrUpgrade(entry.origin, origin) ||
+        !exact && (SameSiteOrUpgrade(entry.origin, origin) ||
                    std::ranges::any_of(
                        entry.other_origins, [&](const std::string& other) {
-                         return IsSameSiteOrUpgrade(other, origin);
+                         return SameSiteOrUpgrade(other, origin);
                        }));
     if (exact || same_site) {
       Unseal(entry);

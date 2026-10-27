@@ -62,13 +62,10 @@ BitwardenUriMatch MatchOf(const JsonValue& uri) {
   }
 }
 
-// The origin of a URI as Bitwarden reads it: without a scheme, the page's
-// scheme is assumed (Bitwarden assumes http, which on an https page would
-// only offer the login instead of filling it).
-std::optional<std::string> UriOrigin(std::string_view uri,
-                                     std::string_view page_origin) {
+// The origin of a URI as Bitwarden reads it: http:// when it has no scheme.
+std::optional<std::string> UriOrigin(std::string_view uri) {
   if (uri.find("://") == std::string_view::npos) {
-    return WebOriginOf(SchemeOfOrigin(page_origin) + "://" + std::string(uri));
+    return WebOriginOf("http://" + std::string(uri));
   }
   return WebOriginOf(uri);
 }
@@ -85,9 +82,9 @@ bool RegexMatches(const std::string& pattern, std::string_view text) {
   return brouk_regex_is_match(pattern.c_str(), subject.c_str()) == 1;
 }
 
-BitwardenMatchResult MatchUri(const BitwardenUri& uri,
-                              std::string_view page_url,
-                              std::string_view page_origin) {
+bool UriMatches(const BitwardenUri& uri,
+                std::string_view page_url,
+                std::string_view page_origin) {
   std::string_view text = uri.uri;
   while (!text.empty() && text.front() == ' ') {
     text.remove_prefix(1);
@@ -96,47 +93,33 @@ BitwardenMatchResult MatchUri(const BitwardenUri& uri,
     text.remove_suffix(1);
   }
   if (text.empty()) {
-    return {};
+    return false;
   }
   switch (uri.match) {
     case BitwardenUriMatch::kNever:
-      return {};
+      return false;
     case BitwardenUriMatch::kExact:
-      return {page_url == text ? BitwardenFit::kExact : BitwardenFit::kNone,
-              ""};
+      return page_url == text;
     case BitwardenUriMatch::kStartsWith:
-      return {page_url.starts_with(text) ? BitwardenFit::kExact
-                                         : BitwardenFit::kNone,
-              ""};
+      return page_url.starts_with(text);
     case BitwardenUriMatch::kRegularExpression:
-      return {RegexMatches(std::string(text), page_url) ? BitwardenFit::kExact
-                                                        : BitwardenFit::kNone,
-              ""};
+      return RegexMatches(std::string(text), page_url);
     case BitwardenUriMatch::kHost:
     case BitwardenUriMatch::kDomain:
     case BitwardenUriMatch::kDefault:
       break;
   }
-  std::optional<std::string> origin = UriOrigin(text, page_origin);
+  // Like Bitwarden, the scheme does not count. (On http pages Brouk fills
+  // only on click, whatever the source; 008.)
+  std::optional<std::string> origin = UriOrigin(text);
   if (!origin) {
-    return {};
+    return false;
   }
-  if (*origin == page_origin) {
-    return {BitwardenFit::kExact, ""};
-  }
-  bool same_host = HostAndPort(*origin) == HostAndPort(page_origin);
-  bool upgrade = SchemeOfOrigin(*origin) == "http" &&
-                 SchemeOfOrigin(page_origin) == "https";
   if (uri.match == BitwardenUriMatch::kHost) {
-    // Same host and port; an http URI is offered on the https page.
-    return {
-        same_host && upgrade ? BitwardenFit::kSameSite : BitwardenFit::kNone,
-        *origin};
+    return HostAndPort(*origin) == HostAndPort(page_origin);
   }
-  // The base domain. Other hosts of the site are only offered (008).
-  return {IsSameSiteOrUpgrade(*origin, page_origin) ? BitwardenFit::kSameSite
-                                                    : BitwardenFit::kNone,
-          *origin};
+  return SiteOfHost(HostOfOrigin(*origin)) ==
+         SiteOfHost(HostOfOrigin(page_origin));
 }
 
 // Sets `key` of a JSON object, replacing an existing member.
@@ -285,24 +268,13 @@ ParseBitwardenOrganizations(std::string_view json) {
   return organizations;
 }
 
-BitwardenMatchResult MatchBitwardenLogin(const BitwardenLogin& login,
-                                         std::string_view page_url) {
+bool BitwardenLoginMatches(const BitwardenLogin& login,
+                           std::string_view page_url) {
   std::optional<std::string> page_origin = WebOriginOf(page_url);
-  if (!page_origin) {
-    return {};
-  }
-  BitwardenMatchResult best;
-  for (const BitwardenUri& uri : login.uris) {
-    BitwardenMatchResult result = MatchUri(uri, page_url, *page_origin);
-    if (result.fit == BitwardenFit::kExact) {
-      return result;
-    }
-    if (result.fit == BitwardenFit::kSameSite &&
-        best.fit == BitwardenFit::kNone) {
-      best = std::move(result);
-    }
-  }
-  return best;
+  return page_origin &&
+         std::ranges::any_of(login.uris, [&](const BitwardenUri& uri) {
+           return UriMatches(uri, page_url, *page_origin);
+         });
 }
 
 std::string NewBitwardenItemJson(const PasswordEntry& entry,
@@ -403,26 +375,22 @@ PasswordMatches BitwardenVault::Find(std::string_view page_url) const {
     return matches;
   }
   for (const BitwardenLogin& login : logins_) {
-    BitwardenMatchResult result = MatchBitwardenLogin(login, page_url);
-    if (result.fit == BitwardenFit::kNone) {
+    if (!BitwardenLoginMatches(login, page_url)) {
       continue;
     }
     PasswordEntry entry;
     entry.id = numbers_.find(login.id)->second;
-    entry.origin =
-        result.fit == BitwardenFit::kExact ? *page_origin : result.origin;
+    entry.origin = *page_origin;
     entry.username = login.username;
     entry.password = login.password;
     entry.totp = login.totp;
     entry.reprompt = login.reprompt;
-    (result.fit == BitwardenFit::kExact ? matches.exact : matches.same_site)
-        .push_back(std::move(entry));
+    matches.exact.push_back(std::move(entry));
   }
   auto by_username = [](const PasswordEntry& a, const PasswordEntry& b) {
     return std::tie(a.username, a.id) < std::tie(b.username, b.id);
   };
   std::ranges::sort(matches.exact, by_username);
-  std::ranges::sort(matches.same_site, by_username);
   return matches;
 }
 

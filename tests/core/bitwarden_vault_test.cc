@@ -35,8 +35,8 @@ BitwardenLogin Login(std::vector<BitwardenUri> uris) {
   return login;
 }
 
-BitwardenFit Fit(const BitwardenLogin& login, std::string_view url) {
-  return MatchBitwardenLogin(login, url).fit;
+bool Matches(const BitwardenLogin& login, std::string_view url) {
+  return BitwardenLoginMatches(login, url);
 }
 
 TEST(BitwardenVaultTest, ParsesStatus) {
@@ -90,94 +90,89 @@ TEST(BitwardenVaultTest, UnknownMatchSettingNeverMatches) {
   EXPECT_EQ(logins.value()[0].uris[0].match, BitwardenUriMatch::kNever);
 }
 
-TEST(BitwardenVaultTest, BaseDomainFillsOnlyItsOwnHost) {
+TEST(BitwardenVaultTest, BaseDomainMatchesEveryHostOfTheSite) {
   BitwardenLogin login = Login({{"https://www.example.com/login", {}}});
-  EXPECT_EQ(Fit(login, "https://www.example.com/anything?x=1"),
-            BitwardenFit::kExact);
-  // Other hosts of the site: offered, never filled automatically (008).
-  BitwardenMatchResult other =
-      MatchBitwardenLogin(login, "https://shop.example.com/");
-  EXPECT_EQ(other.fit, BitwardenFit::kSameSite);
-  EXPECT_EQ(other.origin, "https://www.example.com");
-  EXPECT_EQ(Fit(login, "https://example.org/"), BitwardenFit::kNone);
-  EXPECT_EQ(Fit(login, "https://wwwexample.com/"), BitwardenFit::kNone);
-  // Never an https login on an http page.
-  EXPECT_EQ(Fit(login, "http://www.example.com/"), BitwardenFit::kNone);
-  // An http login is offered on the https page.
-  EXPECT_EQ(
-      Fit(Login({{"http://www.example.com", {}}}), "https://www.example.com/"),
-      BitwardenFit::kSameSite);
-  EXPECT_EQ(
-      Fit(Login({{"https://www.example.com", BitwardenUriMatch::kDomain}}),
-          "https://www.example.com/"),
-      BitwardenFit::kExact);
+  EXPECT_TRUE(Matches(login, "https://www.example.com/anything?x=1"));
+  EXPECT_TRUE(Matches(login, "https://shop.example.com/"));
+  EXPECT_TRUE(Matches(login, "https://example.com:8443/"));
+  EXPECT_FALSE(Matches(login, "https://example.org/"));
+  EXPECT_FALSE(Matches(login, "https://wwwexample.com/"));
+  EXPECT_FALSE(Matches(login, "https://example.com.evil.org/"));
+  // The scheme does not count (http pages are fill-on-click anyway).
+  EXPECT_TRUE(Matches(login, "http://www.example.com/"));
+  EXPECT_TRUE(Matches(
+      Login({{"https://www.example.co.uk", BitwardenUriMatch::kDomain}}),
+      "https://login.example.co.uk/"));
+  EXPECT_FALSE(
+      Matches(Login({{"https://a.example.co.uk", BitwardenUriMatch::kDomain}}),
+              "https://other.co.uk/"));
 }
 
-TEST(BitwardenVaultTest, UriWithoutSchemeTakesThePagesScheme) {
+TEST(BitwardenVaultTest, UriWithoutScheme) {
   BitwardenLogin login = Login({{" www.example.com ", {}}});
-  EXPECT_EQ(Fit(login, "https://www.example.com/"), BitwardenFit::kExact);
-  EXPECT_EQ(Fit(login, "http://www.example.com/"), BitwardenFit::kExact);
+  EXPECT_TRUE(Matches(login, "https://www.example.com/"));
+  EXPECT_TRUE(Matches(login, "http://login.example.com/"));
 }
 
 TEST(BitwardenVaultTest, HostMatchNeedsTheSameHostAndPort) {
   BitwardenLogin login =
       Login({{"https://app.example.com:8443", BitwardenUriMatch::kHost}});
-  EXPECT_EQ(Fit(login, "https://app.example.com:8443/x"), BitwardenFit::kExact);
-  EXPECT_EQ(Fit(login, "https://app.example.com/x"), BitwardenFit::kNone);
-  EXPECT_EQ(Fit(login, "https://other.example.com:8443/"), BitwardenFit::kNone);
+  EXPECT_TRUE(Matches(login, "https://app.example.com:8443/x"));
+  EXPECT_FALSE(Matches(login, "https://app.example.com/x"));
+  EXPECT_FALSE(Matches(login, "https://other.example.com:8443/"));
+  EXPECT_TRUE(Matches(Login({{"app.example.com", BitwardenUriMatch::kHost}}),
+                      "https://app.example.com/"));
 }
 
 TEST(BitwardenVaultTest, StartsWithExactAndNever) {
   BitwardenLogin starts =
       Login({{"https://example.com/admin/", BitwardenUriMatch::kStartsWith}});
-  EXPECT_EQ(Fit(starts, "https://example.com/admin/users"),
-            BitwardenFit::kExact);
-  EXPECT_EQ(Fit(starts, "https://example.com/shop"), BitwardenFit::kNone);
+  EXPECT_TRUE(Matches(starts, "https://example.com/admin/users"));
+  EXPECT_FALSE(Matches(starts, "https://example.com/shop"));
 
   BitwardenLogin exact =
       Login({{"https://example.com/login", BitwardenUriMatch::kExact}});
-  EXPECT_EQ(Fit(exact, "https://example.com/login"), BitwardenFit::kExact);
-  EXPECT_EQ(Fit(exact, "https://example.com/login?next=/"),
-            BitwardenFit::kNone);
+  EXPECT_TRUE(Matches(exact, "https://example.com/login"));
+  EXPECT_FALSE(Matches(exact, "https://example.com/login?next=/"));
 
-  EXPECT_EQ(Fit(Login({{"https://example.com", BitwardenUriMatch::kNever}}),
-                "https://example.com/"),
-            BitwardenFit::kNone);
+  EXPECT_FALSE(
+      Matches(Login({{"https://example.com", BitwardenUriMatch::kNever}}),
+              "https://example.com/"));
 }
 
 TEST(BitwardenVaultTest, RegularExpressions) {
   BitwardenLogin login = Login({{R"(^https://[a-z]+\.example\.com/app)",
                                  BitwardenUriMatch::kRegularExpression}});
-  EXPECT_EQ(Fit(login, "https://eu.example.com/app/x"), BitwardenFit::kExact);
-  EXPECT_EQ(Fit(login, "https://EU.example.com/app"), BitwardenFit::kExact);
-  EXPECT_EQ(Fit(login, "https://eu.example.org/app"), BitwardenFit::kNone);
+  EXPECT_TRUE(Matches(login, "https://eu.example.com/app/x"));
+  EXPECT_TRUE(Matches(login, "https://EU.example.com/app"));
+  EXPECT_FALSE(Matches(login, "https://eu.example.org/app"));
   // An invalid pattern matches nothing (and does not crash).
-  EXPECT_EQ(Fit(Login({{"([", BitwardenUriMatch::kRegularExpression}}),
-                "https://example.com/"),
-            BitwardenFit::kNone);
+  EXPECT_FALSE(Matches(Login({{"([", BitwardenUriMatch::kRegularExpression}}),
+                       "https://example.com/"));
   // A pattern that is slow in backtracking engines runs in linear time.
-  EXPECT_EQ(Fit(Login({{"(a+)+$", BitwardenUriMatch::kRegularExpression}}),
-                "https://example.com/" + std::string(5000, 'a') + "!"),
-            BitwardenFit::kNone);
+  EXPECT_FALSE(
+      Matches(Login({{"(a+)+$", BitwardenUriMatch::kRegularExpression}}),
+              "https://example.com/" + std::string(5000, 'a') + "!"));
 }
 
-TEST(BitwardenVaultTest, ExactUriWinsOverOtherHosts) {
-  BitwardenLogin login = Login(
-      {{"https://login.example.com", {}}, {"https://www.example.com", {}}});
-  EXPECT_EQ(Fit(login, "https://www.example.com/"), BitwardenFit::kExact);
-  EXPECT_EQ(Fit(Login({{"", {}}, {"not a url", {}}}), "https://example.com/"),
-            BitwardenFit::kNone);
-  EXPECT_EQ(Fit(login, "brouk://settings"), BitwardenFit::kNone);
+TEST(BitwardenVaultTest, AnyUriMayMatch) {
+  BitwardenLogin login =
+      Login({{"https://example.org", BitwardenUriMatch::kHost},
+             {"https://www.example.com", {}}});
+  EXPECT_TRUE(Matches(login, "https://www.example.com/"));
+  EXPECT_FALSE(
+      Matches(Login({{"", {}}, {"not a url", {}}}), "https://example.com/"));
+  EXPECT_FALSE(Matches(login, "brouk://settings"));
 }
 
 TEST(BitwardenVaultTest, VaultFindsAndKeepsNumbers) {
   BitwardenVault vault;
   vault.Replace(ParseBitwardenLogins(kItems).value());
-  PasswordMatches matches = vault.Find("https://www.example.com/login");
+  PasswordMatches matches = vault.Find("https://shop.example.com/login");
   ASSERT_EQ(matches.exact.size(), 1U);
   EXPECT_EQ(matches.exact[0].username, "alice ");
   EXPECT_EQ(matches.exact[0].password, "pw-a");
-  EXPECT_EQ(matches.exact[0].origin, "https://www.example.com");
+  EXPECT_EQ(matches.exact[0].origin, "https://shop.example.com");
   EXPECT_TRUE(matches.same_site.empty());
   std::int64_t number = matches.exact[0].id;
   EXPECT_EQ(vault.ItemId(number), "11111111-1111-1111-1111-111111111111");

@@ -81,17 +81,12 @@ Result<std::vector<BitwardenCollection>> ParseBitwardenCollections(
 Result<std::map<std::string, std::string, std::less<>>>
 ParseBitwardenOrganizations(std::string_view json);
 
-// How well a login fits a page: kExact may be filled automatically; kSameSite
-// is only offered (another host of the page's site, as for built-in
-// entries); kNone is not offered.
-enum class BitwardenFit { kNone, kSameSite, kExact };
-struct BitwardenMatchResult {
-  BitwardenFit fit = BitwardenFit::kNone;
-  // kSameSite: the origin of the URI that matched, shown in the list.
-  std::string origin;
-};
-BitwardenMatchResult MatchBitwardenLogin(const BitwardenLogin& login,
-                                         std::string_view page_url);
+// Whether one of the login's URIs matches the page (its full URL: some
+// match settings look at the path), following each URI's match setting as
+// Bitwarden does: the base domain matches every host of the site, and the
+// scheme does not count.
+bool BitwardenLoginMatches(const BitwardenLogin& login,
+                           std::string_view page_url);
 
 // The JSON for `bw create item` (before base64 encoding): a login for
 // `entry`'s origin, user name, password and 2FA secret, named after its host
@@ -121,8 +116,9 @@ class BitwardenVault {
   void Clear();
   bool empty() const { return logins_.empty(); }
 
-  // The logins for a page (its full URL: some match settings look at the
-  // path), ordered by user name.
+  // The logins for a page (its full URL), ordered by user name. All are
+  // "exact" matches, filled automatically where the page allows it: the
+  // item's match settings decide where it belongs.
   PasswordMatches Find(std::string_view page_url) const;
   // The Bitwarden id of an entry, or nullopt if it is not in the vault.
   std::optional<std::string> ItemId(std::int64_t id) const;
