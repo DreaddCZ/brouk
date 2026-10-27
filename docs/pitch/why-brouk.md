@@ -111,6 +111,7 @@ Dev tools are switched **per tab** with an always-visible toggle — rules never
 - **Ad, tracker and cookie-banner blocking** built in (Brave's engine), allowlist per profile
 - **History you can search properly:** by host, with filters, even with read-only SQL — and a clean-up that keeps only what you choose
 - **Session restore,** command palette, every shortcut remappable
+- **Task manager:** which tab eats the CPU or memory, its process ID for Activity Monitor; end, pause or unload it
 - Tabs that never get so small you close the wrong one
 - Settings in plain YAML files: back them up, share them, version them
 - Updates itself automatically
@@ -164,6 +165,7 @@ Dev tools are switched **per tab** with an always-visible toggle — rules never
 | Downloads (one list for all profiles) | ✅ in use |
 | Link routing (rules, picker, Safe Links and other wrappers) | 🔧 built, in testing |
 | Built-in help, with "?" links from every page | ✅ in use |
+| Task manager (pause, unload, end tabs; graph) | 🔧 built, in testing |
 | Signed releases with automatic updates (beta) | ✅ in use |
 | VPN per profile | 🔍 being investigated |
 
