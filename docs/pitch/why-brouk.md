@@ -100,7 +100,7 @@ Dev tools are switched **per tab** with an always-visible toggle — rules never
 ## Passwords and company tools
 
 - Each profile chooses its password source: **built-in** or the company **Bitwarden** vault (through the official CLI)
-- Exact-origin filling, a password generator, and **2FA codes** — even read from the QR code on the page
+- Exact-origin filling (Bitwarden profiles follow the vault's match settings), a password generator, and **2FA codes** — even read from the QR code on the page
 - **Autofill** made for us: Czech/EU company fields (IČO, DIČ, VAT, IBAN), custom fields, and no duplicate addresses
 - One shared **bookmark** tree; a bookmark can belong to a profile and only show there
 
@@ -159,7 +159,7 @@ Dev tools are switched **per tab** with an always-visible toggle — rules never
 | Browsing, tabs, profiles side by side, session restore | ✅ in use |
 | History, bookmarks, ad blocking | ✅ in use |
 | Developer tools | 🔧 being built |
-| Passwords (built-in manager) | 🔧 built, in testing; Bitwarden next |
+| Passwords (built-in manager and Bitwarden) | 🔧 built, in testing |
 | Form autofill (Czech and EU company details) | 🔧 built, in testing |
 | Downloads (one list for all profiles) | ✅ in use |
 | Link routing (rules, picker, Safe Links and other wrappers) | 🔧 built, in testing |
