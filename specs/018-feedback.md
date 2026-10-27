@@ -124,6 +124,7 @@ Drafts and the attachments saved for email are kept in the data folder (`feedbac
 ## Notes
 
 - 2026-10-25 (proposal, from discussion with the user): built-in form → relay → GitHub issues, so testers need no GitHub account; must work for future Windows users as well as macOS. Planned for phase 2, together with signed builds and the update feed.
+- 2026-10-27 (user's decision, interim): until this form exists, beta testers report through GitHub issues in the public releases repository `DreaddCZ/brouk-releases`, with two issue forms (Bug report, Feature idea; blank issues off) that warn the repository is public and ask for no client data. Recommended for this spec (open question 2 still to be decided): reports from the form go to a **private** repository, and issues in `brouk-releases` are switched off once the form works.
 - Implementation hints:
   - The form is an internal HTML page (`web/feedback/`) and talks to the browser through `web/shared/bridge.ts`; diagnostics, the screenshot and the cleaned log are gathered by the browser process (C++), not by the page, and the browser process sends the report, so the page never gets network access of its own.
   - Platform-specific parts (OS version, architecture, opening the mail app, revealing a file, log location) go through interfaces in `src/core/` with macOS and Windows implementations; the report builder and the log cleaner are portable core code, tested on Linux.
