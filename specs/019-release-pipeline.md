@@ -132,23 +132,23 @@ Only builds made by the release script contain the updater's feed address and ke
   - a version not higher than the last published one, or an existing tag;
   - `gh` or `claude` not signed in, or no access to the releases repository;
   - no Developer ID certificate, notarization credentials or update signing key.
-- [ ] `scripts/release` sets `APP_VERSION`, writes the version's `CHANGELOG.md` section without asking anything, and commits both. Without Claude Code it falls back to a grouped list of commits.
-- [ ] Both architectures are built, signed with Developer ID, notarized and stapled. Their checksum, signature, notarization and architecture checks pass, or the release stops.
-- [ ] The smoke tests run on the Intel build with a temporary data folder and the mock keychain. They leave the user's running Brouk, data and keychain untouched, and keep screenshots and logs whether they pass or fail.
-- [ ] When any check or smoke test fails, nothing is pushed, tagged or published.
-- [ ] When all pass, the release appears in the releases repository with both images, `SHA256SUMS.txt` and the changelog section as notes, as a pre-release with `--beta`. The tag `v<version>` is in the source repository, and both feeds list the version.
-- [ ] The published images are byte-identical to the tested ones (checksums match).
+- [x] `scripts/release` sets `APP_VERSION`, writes the version's `CHANGELOG.md` section without asking anything, and commits both. Without Claude Code it falls back to a grouped list of commits.
+- [x] Both architectures are built, signed with Developer ID, notarized and stapled. Their checksum, signature, notarization and architecture checks pass, or the release stops.
+- [x] The smoke tests run on the Intel build with a temporary data folder and the mock keychain. They leave the user's running Brouk, data and keychain untouched, and keep screenshots and logs whether they pass or fail.
+- [x] When any check or smoke test fails, nothing is pushed, tagged or published.
+- [x] When all pass, the release appears in the releases repository with both images, `SHA256SUMS.txt` and the changelog section as notes, as a pre-release with `--beta`. The tag `v<version>` is in the source repository, and both feeds list the version.
+- [x] The published images are byte-identical to the tested ones (checksums match).
 - [ ] `--no-publish` builds and tests without committing or publishing anything.
-- [ ] Running the script again after an interrupted step 7 finishes publishing without rebuilding.
-- [ ] `brouk --version` and About show the version and the short commit hash.
+- [x] Running the script again after an interrupted step 7 finishes publishing without rebuilding.
+- [x] `brouk --version` and About show the version and the short commit hash.
 
 **Updates**
 
 - [ ] An installed Brouk of the previous version, on the stable channel, finds a newer stable release within a minute of starting, downloads it, and runs the new version after the next restart. Its windows and tabs are restored.
 - [ ] On the stable channel, a beta release is not offered; on the beta channel it is.
 - [ ] An update whose EdDSA signature does not match, or that is signed by another team, is not installed.
-- [ ] Brouk → Check for Updates… reports "up to date", a found update, or an error.
-- [ ] "Restart to Update" appears once an update is downloaded, and restarts into the new version.
+- [x] Brouk → Check for Updates… reports "up to date", a found update, or an error.
+- [x] "Restart to Update" appears once an update is downloaded, and restarts into the new version.
 - [ ] With `updates.mode: notify`, an update is announced but downloaded and installed only when the user chooses. With `off`, Brouk does not check by itself.
 - [ ] Switching from beta to stable does not install an older version.
 - [ ] Builds from `scripts/build` and `scripts/package_mac` never check for updates.
@@ -200,3 +200,5 @@ None.
   - **Gatekeeper:** an update from Sparkle is not quarantined, but it is notarized and stapled anyway.
 - If Apple Silicon testing is needed later without the M2, GitHub's free macOS runners for public repositories could test builds from the public releases repository.
 - 2026-10-26 (implementation, first part): the releases repository `DreaddCZ/brouk-releases` is created (public, Pages on `main`, empty feeds) with the user's approval. Sparkle 2.10.0 (2.10.1 was a day old). The update signing key is in the login keychain under the account `brouk` (not Sparkle's default `ed25519`, so it cannot be mixed up with another app's key). Builds embed Sparkle thinned to their architecture (`ditto --arch`) and without its XPC services; `--version` and About show `0.1.0 (a1b2c3d)` from a separate generated header (`brouk/build_info.h`), so a new commit recompiles only the files that show it. Test runs with their own data folder (`BROUK_DEV_DATA_DIR`) never start the updater, so the smoke tests do not touch the updater state that Sparkle keeps in the user's defaults. Sparkle's standard update window shows found updates and the result of Check for Updates…. The quit question for running downloads (014) is asked when Restart to Update quits, as for any quit. Settings → Updates shows the channel and the mode; the version, last check and a "Check now" button in Settings follow later (Brouk → Check for Updates… and About cover them now).
+- 2026-10-27 (releases 0.1.0 and 0.1.1): the first run of 0.1.0 stopped at a core test and undid its release commit, nothing published; the second published the images, and an interrupted publish (no feed items, a script bug) was finished by running the command again without rebuilding. 0.1.1 went through in one run. The user's installed 0.1.0 (beta channel) found 0.1.1, downloaded it and restarted into it (Check for Updates…, Restart to Update); the beta also runs on the M2 Mac. Still to verify: the precondition refusals, `--no-publish`, the stable channel (no stable release yet), a rejected signature, `notify`/`off`, switching from beta to stable, and that local builds never check; Settings → Updates still lacks the version, last check and "Check now".
+

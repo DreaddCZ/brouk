@@ -43,7 +43,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 016 | [Help](016-help.md) | done | P2 |
 | 017 | [VPN per profile](017-profile-vpn.md) | draft | P2 |
 | 018 | [Feedback and issue reporting](018-feedback.md) | draft | P2 |
-| 019 | [Release pipeline and automatic updates](019-release-pipeline.md) | in-progress — releases repository, Sparkle, release script and smoke tests in review | P2 |
+| 019 | [Release pipeline and automatic updates](019-release-pipeline.md) | in-progress — releases repository, release script, smoke tests and Sparkle updates in use (0.1.0 → 0.1.1 beta updated itself); remaining checks and Settings → Updates details later | P2 |
 | 020 | [Task manager](020-task-manager.md) | ready | P2 |
 | 021 | [File viewers for text formats](021-file-viewers.md) | idea | P3 |
 | 022 | [History in profile export](022-history-export.md) | ready | P3 |
