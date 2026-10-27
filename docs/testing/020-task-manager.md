@@ -85,6 +85,9 @@ and one tab of another profile, in two windows.
     values and time. Settings → Task manager → Graph history 1 minute →
     the graph covers 1 minute. *(graph)*
 21. Collapse the graph, reopen the window. → It stays collapsed.
+21a. Cover the task manager window completely with a browser window, then
+    open Mission Control. → The task manager window shows its table, not
+    an empty window.
 
 ## Shortcuts, idle cost, accessibility
 

@@ -10,6 +10,18 @@
 #import "platform/mac/devtools_window.h"
 #import "platform/mac/window_screen.h"
 
+// Reports itself as visible even when other windows cover it. Chromium stops
+// drawing pages of occluded windows, and Mission Control then shows them empty;
+// internal pages (the task manager above all) should stay readable there.
+@interface BRInternalPageNSWindow : NSWindow
+@end
+
+@implementation BRInternalPageNSWindow
+- (NSWindowOcclusionState)occlusionState {
+  return super.occlusionState | NSWindowOcclusionStateVisible;
+}
+@end
+
 @interface BRInternalPageWindowController () <BRDevToolsWindowOwner,
                                               NSWindowDelegate>
 - (void)handleBrowserCreated:(CefRefPtr<CefBrowser>)browser;
@@ -90,7 +102,7 @@ class InternalPageBridge : public InternalPageDelegate {
           handler:(std::unique_ptr<CefMessageRouterBrowserSide::Handler>)handler
           context:(CefRefPtr<CefRequestContext>)context {
   CEF_REQUIRE_UI_THREAD();
-  NSWindow* window = [[NSWindow alloc]
+  NSWindow* window = [[BRInternalPageNSWindow alloc]
       initWithContentRect:NSMakeRect(0, 0, size.width, size.height)
                 styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
                           NSWindowStyleMaskMiniaturizable |
