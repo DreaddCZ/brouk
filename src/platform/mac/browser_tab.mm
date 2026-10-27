@@ -20,6 +20,7 @@
 #include <utility>
 #include <vector>
 
+#include "cef/devtools_call.h"
 #include "cef/internal_page_client.h"
 #include "core/address_input.h"
 #include "include/cef_browser.h"
@@ -61,6 +62,7 @@ NSString* StripFragment(NSString* url) {
 - (void)handlePageBlocked:(const brouk::AdblockRequestInfo&)info;
 - (void)removeBlockedView;
 - (void)handleAudible:(BOOL)audible;
+- (void)handleMediaVideo:(BOOL)video audio:(BOOL)audio;
 - (void)chooseDesktopSource:(brouk::TabClientDelegate::DesktopSourceDone)done;
 - (void)showJsDialog:(const brouk::JsDialogRequest&)request
                 done:(brouk::JsDialogDone)done;
@@ -316,6 +318,9 @@ class TabDelegateBridge : public TabClientDelegate {
     [tab.delegate tab:tab fullscreenChanged:fullscreen];
   }
   void OnAudibleChanged(bool audible) override { [tab_ handleAudible:audible]; }
+  void OnMediaAccessChanged(bool video, bool audio) override {
+    [tab_ handleMediaVideo:video audio:audio];
+  }
   void ChooseDesktopSource(DesktopSourceDone done) override {
     [tab_ chooseDesktopSource:std::move(done)];
   }
@@ -481,6 +486,15 @@ class TabInternalPageBridge : public InternalPageDelegate {
   // Permission prompts of this tab; the first one is shown.
   NSMutableArray<BRPermissionPromptView*>* _permissionPrompts;
   BRPasswordMenu* _passwordMenu;  // Created on first use (008).
+  // Task manager (020): the browser is closing for Unload, in this
+  // context; the page asked to share a screen; the paused page's bar.
+  BOOL _unloading;
+  CefRefPtr<CefRequestContext> _unloadContext;
+  BOOL _screenRequested;
+  NSView* _pausedBar;
+  // The page as it was when paused, shown in its place: Chromium would wake
+  // a frozen page that is shown, so its view stays hidden while paused.
+  NSImageView* _pausedSnapshot;
 }
 
 - (instancetype)initWithId:(brouk::TabId)tabId
@@ -510,19 +524,26 @@ class TabInternalPageBridge : public InternalPageDelegate {
     _inspectWhenCreated = NSMakePoint(static_cast<CGFloat>(NSNotFound),
                                       static_cast<CGFloat>(NSNotFound));
     _bridge = std::make_unique<brouk::TabDelegateBridge>(self);
-    _client = new brouk::TabClient(_bridge.get());
-    // Ad blocking (007) for the tab's requests; internal pages have none.
-    if (const brouk::AdblockService* adblock = [delegate adblockService]) {
-      _client->SetAdblock(adblock, profileId);
-    }
-    // The password manager (008) for the tab's login forms.
-    _client->SetPasswords([delegate passwordManager], profileId);
-    // Form autofill (009), the same data in every profile.
-    _client->SetAutofill([delegate autofillManager]);
-    // Downloads (014) go to the app's list.
-    _client->SetDownloads([delegate downloadService], profileId);
+    [self makeClient];
   }
   return self;
+}
+
+// The web client; again after Unload, as the old one is detached.
+- (void)makeClient {
+  id<BRTabDelegate> delegate = _delegate;
+  _client = new brouk::TabClient(_bridge.get());
+  _clientDetached = NO;
+  // Ad blocking (007) for the tab's requests; internal pages have none.
+  if (const brouk::AdblockService* adblock = [delegate adblockService]) {
+    _client->SetAdblock(adblock, _profileId);
+  }
+  // The password manager (008) for the tab's login forms.
+  _client->SetPasswords([delegate passwordManager], _profileId);
+  // Form autofill (009), the same data in every profile.
+  _client->SetAutofill([delegate autofillManager]);
+  // Downloads (014) go to the app's list.
+  _client->SetDownloads([delegate downloadService], _profileId);
 }
 
 - (void)dealloc {
@@ -639,6 +660,7 @@ class TabInternalPageBridge : public InternalPageDelegate {
 
 - (void)loadURL:(NSString*)url {
   [self removeBlockedView];
+  [self setPaused:NO];
   if (_deferred) {
     _url = [url copy];
     [self createDeferredBrowser];
@@ -651,24 +673,28 @@ class TabInternalPageBridge : public InternalPageDelegate {
 }
 
 - (void)goBack {
+  [self setPaused:NO];
   if (_browser) {
     _browser->GoBack();
   }
 }
 
 - (void)goForward {
+  [self setPaused:NO];
   if (_browser) {
     _browser->GoForward();
   }
 }
 
 - (void)reload {
+  [self setPaused:NO];
   if (_browser) {
     _browser->Reload();
   }
 }
 
 - (void)reloadIgnoringCache {
+  [self setPaused:NO];
   if (_browser) {
     _browser->ReloadIgnoreCache();
   }
@@ -751,6 +777,9 @@ class TabInternalPageBridge : public InternalPageDelegate {
 
 - (void)requestClose {
   _isClosing = YES;
+  if (_unloading) {
+    return;  // Closing already; handleBrowserClosed finishes the close.
+  }
   if (_deferred) {
     [self closeDeferred];
   } else if (_browser) {
@@ -762,6 +791,9 @@ class TabInternalPageBridge : public InternalPageDelegate {
 
 - (void)forceClose {
   _isClosing = YES;
+  if (_unloading) {
+    return;  // Closing already; handleBrowserClosed finishes the close.
+  }
   if (_deferred) {
     [self closeDeferred];
   } else if (_browser) {
@@ -942,6 +974,11 @@ class TabInternalPageBridge : public InternalPageDelegate {
 - (void)handleRendererGone:(brouk::RendererGoneReason)reason
                  errorCode:(NSString*)errorCode {
   [self dismissJsDialog];
+  _isPaused = NO;  // The new page starts running.
+  [self removePausedViews];
+  _usesCamera = NO;
+  _usesMicrophone = NO;
+  _sharesScreen = NO;
   [self handleResponsive];
   [_sadTab removeFromSuperview];
   NSString* message =
@@ -1126,6 +1163,9 @@ class TabInternalPageBridge : public InternalPageDelegate {
         // window, where the user continues.
         [NSApp activateIgnoringOtherApps:YES];
         [strongSelf->_tabView.window makeKeyAndOrderFront:nil];
+        if (source) {
+          strongSelf->_screenRequested = YES;
+        }
         answer(source);
       }];
 }
@@ -1133,6 +1173,192 @@ class TabInternalPageBridge : public InternalPageDelegate {
 - (void)handleAudible:(BOOL)audible {
   _isAudible = audible;
   [_delegate tabDidChangeState:self];
+}
+
+// Chromium reports a shared screen as video access too; the page asked for
+// one through the picker, so video then means the screen.
+- (void)handleMediaVideo:(BOOL)video audio:(BOOL)audio {
+  _sharesScreen = video && _screenRequested;
+  _usesCamera = video && !_screenRequested;
+  _usesMicrophone = audio;
+  if (!video) {
+    _screenRequested = NO;
+  }
+  [_delegate tabDidChangeState:self];
+}
+
+- (BOOL)hasCrashed {
+  return _sadTab != nil;
+}
+
+#pragma mark - Task manager (020)
+
+- (int)rendererPid {
+  return _client && !_clientDetached ? _client->renderer_pid() : 0;
+}
+
+- (std::int64_t)receivedBytes {
+  return _client && !_clientDetached ? _client->received_bytes() : 0;
+}
+
+- (BOOL)canUnload {
+  return _browser && !_isInternalPage && !_isClosing && !_unloading;
+}
+
+- (void)unload {
+  CEF_REQUIRE_UI_THREAD();
+  if (!self.canUnload) {
+    return;
+  }
+  _unloading = YES;
+  _unloadContext = _browser->GetHost()->GetRequestContext();
+  [self setPaused:NO];
+  if (_devToolsOn) {
+    // The dock closes with the browser; the page loads again without it.
+    _devToolsOn = NO;
+    [_delegate tabDevToolsChanged:self];
+  }
+  // As Chrome discards a tab: no beforeunload question.
+  _browser->GetHost()->CloseBrowser(true);
+}
+
+- (void)setPaused:(BOOL)paused {
+  CEF_REQUIRE_UI_THREAD();
+  if (paused == _isPaused ||
+      (paused && (!_browser || _isInternalPage || _sadTab || _unloading))) {
+    return;
+  }
+  _isPaused = paused;
+  if (paused) {
+    [self showPausedBar];
+    // The picture first, while the page still draws; then the page's view
+    // is hidden and the page frozen.
+    __weak BRTab* weakSelf = self;
+    CefRefPtr<CefDictionaryValue> params = CefDictionaryValue::Create();
+    params->SetString("format", "png");
+    brouk::CallDevToolsMethod(
+        _browser, "Page.captureScreenshot", params,
+        [weakSelf](bool ok, const std::string& result) {
+          [weakSelf freezeWithScreenshot:ok ? result : std::string()];
+        });
+  } else {
+    [self removePausedViews];
+    if (_browser) {
+      CefRefPtr<CefDictionaryValue> params = CefDictionaryValue::Create();
+      params->SetString("state", "active");
+      brouk::CallDevToolsMethod(_browser, "Page.setWebLifecycleState", params,
+                                [](bool, const std::string&) {});
+      // Freezing told the page it is hidden; showing its view again makes
+      // Chromium see it as shown.
+      NSView* browserView =
+          (__bridge NSView*)_browser->GetHost()->GetWindowHandle();
+      if (browserView.isHidden) {
+        browserView.hidden = NO;
+      } else {
+        browserView.hidden = YES;
+        browserView.hidden = NO;
+      }
+    }
+  }
+  [_delegate tabDidChangeState:self];
+}
+
+// `result` is Page.captureScreenshot's answer (JSON), or empty.
+- (void)freezeWithScreenshot:(const std::string&)result {
+  if (!_isPaused || !_browser) {
+    return;  // Resumed or gone meanwhile.
+  }
+  NSImage* image = nil;
+  NSData* json = [NSData dataWithBytes:result.data() length:result.size()];
+  id answer = json.length ? [NSJSONSerialization JSONObjectWithData:json
+                                                            options:0
+                                                              error:nil]
+                          : nil;
+  if ([answer isKindOfClass:NSDictionary.class] &&
+      [answer[@"data"] isKindOfClass:NSString.class]) {
+    NSData* png = [[NSData alloc] initWithBase64EncodedString:answer[@"data"]
+                                                      options:0];
+    image = png ? [[NSImage alloc] initWithData:png] : nil;
+  }
+  NSView* browserView =
+      (__bridge NSView*)_browser->GetHost()->GetWindowHandle();
+  if (image) {
+    // The capture is in device pixels; shown at the page's size.
+    image.size = browserView.bounds.size;
+    NSImageView* snapshot = [NSImageView imageViewWithImage:image];
+    snapshot.imageScaling = NSImageScaleAxesIndependently;
+    snapshot.frame = _containerView.bounds;
+    snapshot.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    snapshot.accessibilityElement = NO;
+    [_containerView addSubview:snapshot
+                    positioned:NSWindowBelow
+                    relativeTo:_pausedBar];
+    _pausedSnapshot = snapshot;
+  }
+  browserView.hidden = YES;
+  CefRefPtr<CefDictionaryValue> params = CefDictionaryValue::Create();
+  params->SetString("state", "frozen");
+  brouk::CallDevToolsMethod(_browser, "Page.setWebLifecycleState", params,
+                            [](bool, const std::string&) {});
+}
+
+- (void)removePausedViews {
+  [_pausedBar removeFromSuperview];
+  _pausedBar = nil;
+  [_pausedSnapshot removeFromSuperview];
+  _pausedSnapshot = nil;
+}
+
+// "This page is paused" with Resume, over the top of the page.
+- (void)showPausedBar {
+  [_pausedBar removeFromSuperview];
+  NSView* bar = [[NSView alloc] initWithFrame:NSZeroRect];
+  bar.wantsLayer = YES;
+  bar.layer.backgroundColor = NSColor.windowBackgroundColor.CGColor;
+  bar.translatesAutoresizingMaskIntoConstraints = NO;
+  NSImageView* icon = [NSImageView
+      imageViewWithImage:[NSImage imageWithSystemSymbolName:@"pause.circle.fill"
+                                   accessibilityDescription:nil]];
+  icon.contentTintColor = NSColor.systemOrangeColor;
+  NSTextField* label =
+      [NSTextField labelWithString:@"This page is paused. Its scripts, timers "
+                                   @"and media are stopped."];
+  NSButton* resume = [NSButton buttonWithTitle:@"Resume"
+                                        target:self
+                                        action:@selector(resumeClicked:)];
+  resume.keyEquivalent = @"";
+  NSBox* line = [[NSBox alloc] initWithFrame:NSZeroRect];
+  line.boxType = NSBoxSeparator;
+  for (NSView* view in @[ icon, label, resume, line ]) {
+    view.translatesAutoresizingMaskIntoConstraints = NO;
+    [bar addSubview:view];
+  }
+  [_containerView addSubview:bar];
+  [NSLayoutConstraint activateConstraints:@[
+    [bar.leadingAnchor constraintEqualToAnchor:_containerView.leadingAnchor],
+    [bar.trailingAnchor constraintEqualToAnchor:_containerView.trailingAnchor],
+    [bar.topAnchor constraintEqualToAnchor:_containerView.topAnchor],
+    [bar.heightAnchor constraintEqualToConstant:36],
+    [icon.leadingAnchor constraintEqualToAnchor:bar.leadingAnchor constant:12],
+    [icon.centerYAnchor constraintEqualToAnchor:bar.centerYAnchor],
+    [label.leadingAnchor constraintEqualToAnchor:icon.trailingAnchor
+                                        constant:8],
+    [label.centerYAnchor constraintEqualToAnchor:bar.centerYAnchor],
+    [resume.leadingAnchor constraintEqualToAnchor:label.trailingAnchor
+                                         constant:12],
+    [resume.centerYAnchor constraintEqualToAnchor:bar.centerYAnchor],
+    [line.leadingAnchor constraintEqualToAnchor:bar.leadingAnchor],
+    [line.trailingAnchor constraintEqualToAnchor:bar.trailingAnchor],
+    [line.bottomAnchor constraintEqualToAnchor:bar.bottomAnchor],
+  ]];
+  bar.accessibilityElement = YES;
+  bar.accessibilityRole = NSAccessibilityGroupRole;
+  bar.accessibilityLabel = @"This page is paused";
+  _pausedBar = bar;
+}
+
+- (void)resumeClicked:(id)sender {
+  [self setPaused:NO];
 }
 
 - (BOOL)isMuted {
@@ -1269,6 +1495,14 @@ class TabInternalPageBridge : public InternalPageDelegate {
 
 - (void)handleCloseReady {
   [self dismissJsDialog];
+  if (_unloading) {
+    // Unload (020): only the browser goes; the tab stays.
+    if (_browser) {
+      [(__bridge NSView*)_browser->GetHost()->GetWindowHandle()
+          removeFromSuperview];
+    }
+    return;
+  }
   // The page may close itself (window.close()) without a request from us.
   _isClosing = YES;
   [_delegate tabCloseReady:self];
@@ -1569,7 +1803,38 @@ class TabInternalPageBridge : public InternalPageDelegate {
   // CefShutdown is an error (CEF asserts in debug builds).
   _client = nullptr;
   _internalClient = nullptr;
+  if (_unloading) {
+    _unloading = NO;
+    [self finishUnload];
+    return;
+  }
   [_delegate tabDidClose:self];
+}
+
+// Unload (020): the browser is gone. The tab becomes like a restored tab,
+// loading when shown; or it closes, if that was asked for meanwhile.
+- (void)finishUnload {
+  CefRefPtr<CefRequestContext> context = std::move(_unloadContext);
+  _hasCreatedBrowser = NO;
+  [_delegate tabDidUnload:self];
+  if (_isClosing) {
+    [_delegate tabCloseReady:self];
+    [_tabView removeFromSuperview];
+    [_delegate tabDidClose:self];
+    return;
+  }
+  [self makeClient];
+  _isLoading = NO;
+  _isAudible = NO;
+  _usesCamera = NO;
+  _usesMicrophone = NO;
+  _sharesScreen = NO;
+  _screenRequested = NO;
+  [_sadTab removeFromSuperview];
+  _sadTab = nil;
+  _deferred = YES;
+  _deferredContext = context;
+  [_delegate tabDidChangeState:self];
 }
 
 @end

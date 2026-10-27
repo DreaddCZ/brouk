@@ -18,6 +18,7 @@
 
 #import "platform/mac/bitwarden_dialogs.h"
 #import "platform/mac/bookmark_store.h"
+#import "platform/mac/browser_tab.h"
 #import "platform/mac/browser_window_controller.h"
 #import "platform/mac/data_paths.h"
 #import "platform/mac/downloads_popover.h"
@@ -50,6 +51,7 @@
 #include "cef/passwords_page_handler.h"
 #include "cef/profile_manager_handler.h"
 #include "cef/settings_handler.h"
+#include "cef/task_manager_handler.h"
 #include "core/adblock_lists.h"
 #include "core/address_input.h"
 #include "core/bookmark_profile.h"
@@ -132,6 +134,8 @@
                                          profile:(std::string_view)profile
                                            value:(brouk::SettingValue)value;
 - (void)revealSettingsFolder;
+// Task manager (020): Brouk's own page windows by name ("settings"…).
+- (NSDictionary<NSString*, BRInternalPageWindowController*>*)pageWindows;
 - (IBAction)clearBrowsingData:(nullable id)sender;
 - (void)exportSettingsWithDone:(brouk::SettingsPageDelegate::FileDone)done;
 - (void)importSettingsWithDone:(brouk::SettingsPageDelegate::FileDone)done;
@@ -555,6 +559,200 @@ class AppDownloadsPage : public DownloadsPageDelegate {
 
 // Answers one passwords page tab (008): Touch ID, the clipboard and file
 // panels through the window holding the tab.
+// Answers the task manager window (020): every tab of every window, and
+// the windows of Brouk's pages; its actions on them.
+class AppTaskManager : public TaskManagerDelegate {
+ public:
+  // `registry` outlives the task manager window.
+  AppTaskManager(BRAppDelegate* app, const ProfileRegistry* registry)
+      : app_(app), registry_(registry) {}
+
+  std::vector<TaskManagerPage> Pages() override {
+    std::vector<TaskManagerPage> pages;
+    BRAppDelegate* app = app_;
+    if (!app) {
+      return pages;
+    }
+    // In the order the windows were opened, so rows do not move around.
+    NSArray<BRBrowserWindowController*>* controllers =
+        [[app browserWindowControllers]
+            sortedArrayUsingComparator:^NSComparisonResult(
+                BRBrowserWindowController* a, BRBrowserWindowController* b) {
+              return a.windowId < b.windowId   ? NSOrderedAscending
+                     : a.windowId > b.windowId ? NSOrderedDescending
+                                               : NSOrderedSame;
+            }];
+    for (BRBrowserWindowController* controller in controllers) {
+      BRTab* active = [controller activeTab];
+      std::string window = "Window " + std::to_string(controller.windowId);
+      for (BRTab* tab in [controller orderedTabs]) {
+        ProfileInfo profile = [app profileInfo:tab.profileId];
+        TaskManagerPage page;
+        page.key = "tab-" + std::to_string(tab.tabId);
+        page.browser = [tab browser];
+        page.pid = [tab rendererPid];
+        page.brouk_page = tab.isInternalPage;
+        page.title = (tab.title.length ? tab.title : tab.url).UTF8String ?: "";
+        page.url = tab.url.UTF8String ?: "";
+        page.icon = IconDataUrl(tab.favicon);
+        page.profile_name = profile.name;
+        page.profile_color = profile.color;
+        page.window = window;
+        page.received_bytes = [tab receivedBytes];
+        page.audible = tab.isAudible;
+        page.muted = tab.isMuted;
+        page.camera = tab.usesCamera;
+        page.microphone = tab.usesMicrophone;
+        page.screen = tab.sharesScreen;
+        page.paused = tab.isPaused;
+        page.loading = tab.isLoading;
+        page.crashed = tab.hasCrashed;
+        page.devtools = tab.devToolsOn;
+        page.shown = tab == active;
+        pages.push_back(std::move(page));
+      }
+    }
+    NSDictionary<NSString*, BRInternalPageWindowController*>* windows =
+        [app pageWindows];
+    for (NSString* name in
+         [windows.allKeys sortedArrayUsingSelector:@selector(compare:)]) {
+      BRInternalPageWindowController* controller = windows[name];
+      TaskManagerPage page;
+      page.key = std::string("window-") + name.UTF8String;
+      page.browser = [controller browser];
+      page.pid = [controller rendererPid];
+      page.brouk_page = true;
+      page.own_window = true;
+      page.title = controller.window.title.UTF8String ?: "";
+      page.url = std::string("brouk://") + name.UTF8String + "/";
+      page.window = page.title;
+      page.shown = true;
+      pages.push_back(std::move(page));
+    }
+    return pages;
+  }
+
+  void Act(const std::string& key, TaskPageAction action) override {
+    BRAppDelegate* app = app_;
+    if (!app) {
+      return;
+    }
+    if (key.starts_with("window-")) {
+      BRInternalPageWindowController* controller =
+          [app pageWindows][@(key.substr(7).c_str())];
+      if (controller && action == TaskPageAction::kGoTo) {
+        [NSApp activateIgnoringOtherApps:YES];
+        [controller showWindow:nil];
+      }
+      return;
+    }
+    std::optional<TabId> id = TabIdOf(key);
+    if (!id) {
+      return;
+    }
+    for (BRBrowserWindowController* controller in
+         [app browserWindowControllers]) {
+      BRTab* tab = [controller tabWithId:*id];
+      if (!tab) {
+        continue;
+      }
+      switch (action) {
+        case TaskPageAction::kGoTo:
+          [controller goToTab:*id];
+          break;
+        case TaskPageAction::kPause:
+          [tab setPaused:YES];
+          break;
+        case TaskPageAction::kResume:
+          [tab setPaused:NO];
+          break;
+        case TaskPageAction::kUnload:
+          // The shown tab stays loaded, as in Chrome.
+          if (tab != [controller activeTab]) {
+            [tab unload];
+          }
+          break;
+        case TaskPageAction::kMute:
+        case TaskPageAction::kUnmute:
+          if (tab.isMuted != (action == TaskPageAction::kMute)) {
+            [tab toggleMute];
+          }
+          break;
+        case TaskPageAction::kReload:
+          [tab reload];
+          break;
+        case TaskPageAction::kDevTools:
+          [controller goToTab:*id];
+          if (!tab.isInternalPage) {
+            [tab setDevToolsOn:YES];
+          }
+          break;
+      }
+      return;
+    }
+  }
+
+  const Settings& GlobalSettings() override {
+    return registry_->global_settings();
+  }
+  std::optional<Error> SetGlobalSetting(std::string_view key,
+                                        SettingValue value) override {
+    BRAppDelegate* app = app_;
+    return app ? [app setGlobalSetting:key value:std::move(value)]
+               : Error{"Brouk is closing."};
+  }
+  void CopyText(const std::string& text) override {
+    NSPasteboard* pasteboard = NSPasteboard.generalPasteboard;
+    [pasteboard clearContents];
+    [pasteboard setString:@(text.c_str()) forType:NSPasteboardTypeString];
+  }
+
+ private:
+  static std::optional<TabId> TabIdOf(const std::string& key) {
+    if (!key.starts_with("tab-") || key.size() > 24) {
+      return std::nullopt;
+    }
+    TabId id = 0;
+    for (char c : key.substr(4)) {
+      if (c < '0' || c > '9') {
+        return std::nullopt;
+      }
+      id = id * 10 + static_cast<TabId>(c - '0');
+    }
+    return id;
+  }
+
+  // The favicon as a PNG data URL; converted once per image.
+  std::string IconDataUrl(NSImage* image) {
+    if (!image) {
+      return "";
+    }
+    NSString* cached = [icons_ objectForKey:image];
+    if (!cached) {
+      CGImageRef cg = [image CGImageForProposedRect:nullptr
+                                            context:nil
+                                              hints:nil];
+      NSData* png = nil;
+      if (cg) {
+        NSBitmapImageRep* rep = [[NSBitmapImageRep alloc] initWithCGImage:cg];
+        png = [rep representationUsingType:NSBitmapImageFileTypePNG
+                                properties:@{}];
+      }
+      cached = png ? [@"data:image/png;base64,"
+                         stringByAppendingString:
+                             [png base64EncodedStringWithOptions:0]]
+                   : @"";
+      [icons_ setObject:cached forKey:image];
+    }
+    return cached.UTF8String ?: "";
+  }
+
+  __weak BRAppDelegate* app_;
+  const ProfileRegistry* registry_;
+  NSMapTable<NSImage*, NSString*>* icons_ =
+      [NSMapTable weakToStrongObjectsMapTable];
+};
+
 class AppPasswordsPage : public PasswordsPageDelegate {
  public:
   AppPasswordsPage(BRAppDelegate* app,
@@ -870,6 +1068,8 @@ class AppSettingsPage : public SettingsPageDelegate {
   // Help (016): one window, reused.
   BRInternalPageWindowController* _helpWindow;
   NSArray<NSDictionary<NSString*, NSString*>*>* _helpSections;
+  // Task manager (020): one window, reused.
+  BRInternalPageWindowController* _taskManagerWindow;
   std::unique_ptr<brouk::AppSettingsPage> _settingsPageDelegate;
   // Shown instead of a window at startup: opening a profile closes it.
   BOOL _profileManagerAtStartup;
@@ -1603,6 +1803,7 @@ class AppSettingsPage : public SettingsPageDelegate {
   [_profileManager closePage];
   [_settingsWindow closePage];
   [_helpWindow closePage];
+  [_taskManagerWindow closePage];
   for (BRBrowserWindowController* controller in [_windows copy]) {
     [controller closeAllTabs];
   }
@@ -1621,6 +1822,7 @@ class AppSettingsPage : public SettingsPageDelegate {
   _profileManager = nil;
   _settingsWindow = nil;
   _helpWindow = nil;
+  _taskManagerWindow = nil;
   [_windows removeAllObjects];
   _requestContexts.clear();
   _internalContext = nullptr;
@@ -1629,7 +1831,8 @@ class AppSettingsPage : public SettingsPageDelegate {
 
 - (void)quitIfDone {
   if (_quitting && _browserCount <= 0 && _windows.count == 0 &&
-      !_profileManager && !_settingsWindow && !_helpWindow) {
+      !_profileManager && !_settingsWindow && !_helpWindow &&
+      !_taskManagerWindow) {
     CefQuitMessageLoop();
   }
 }
@@ -2688,11 +2891,76 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
   if (_helpWindow == controller) {
     _helpWindow = nil;
   }
+  if (_taskManagerWindow == controller) {
+    _taskManagerWindow = nil;
+  }
   [self quitIfDone];
 }
 
 - (BOOL)internalPageHandleKeyEvent:(NSEvent*)event {
   return [NSApp.mainMenu performKeyEquivalent:event];
+}
+
+#pragma mark - Task manager (020)
+
+- (IBAction)showTaskManager:(nullable id)sender {
+  [self openTaskManagerAt:@""];
+}
+
+- (void)showTaskManagerAtTab:(brouk::TabId)tabId {
+  [self openTaskManagerAt:[NSString
+                              stringWithFormat:@"tab-%lld",
+                                               static_cast<long long>(tabId)]];
+}
+
+// One task manager window; `row` ("tab-12") is selected in it.
+- (void)openTaskManagerAt:(NSString*)row {
+  CEF_REQUIRE_UI_THREAD();
+  if (_quitting || !_profilesLoaded) {
+    return;
+  }
+  if (_taskManagerWindow) {
+    if (row.length) {
+      // Only "tab-" and digits (made above).
+      [_taskManagerWindow
+          executeJavaScript:[NSString
+                                stringWithFormat:@"selectTaskRow('%@')", row]];
+    }
+    [_taskManagerWindow showWindow:nil];
+    return;
+  }
+  NSString* url = row.length
+                      ? [@"brouk://task-manager/#" stringByAppendingString:row]
+                      : @"brouk://task-manager/";
+  _taskManagerWindow = [[BRInternalPageWindowController alloc]
+      initWithOwner:self
+                url:url
+              title:@"Task Manager"
+               size:NSMakeSize(920, 640)
+          frameName:@"BroukTaskManagerWindow"
+            handler:std::make_unique<brouk::TaskManagerHandler>(
+                        std::make_unique<brouk::AppTaskManager>(
+                            self, _profiles.get()))
+            context:[self internalContext]];
+  [_taskManagerWindow showWindow:nil];
+}
+
+- (NSDictionary<NSString*, BRInternalPageWindowController*>*)pageWindows {
+  NSMutableDictionary<NSString*, BRInternalPageWindowController*>* windows =
+      [NSMutableDictionary dictionary];
+  if (_settingsWindow) {
+    windows[@"settings"] = _settingsWindow;
+  }
+  if (_profileManager) {
+    windows[@"profiles"] = _profileManager;
+  }
+  if (_helpWindow) {
+    windows[@"help"] = _helpWindow;
+  }
+  if (_taskManagerWindow) {
+    windows[@"task-manager"] = _taskManagerWindow;
+  }
+  return windows;
 }
 
 #pragma mark - Help (016)
@@ -3926,6 +4194,11 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
          action:@selector(performZoom:)
             key:@""
       modifiers:0];
+  [window addItem:NSMenuItem.separatorItem];
+  [self addItem:window
+          title:@"Task Manager"
+         action:@selector(showTaskManager:)
+       shortcut:@"task_manager"];
   [window addItem:NSMenuItem.separatorItem];
   [self addItem:window
           title:@"Bring All to Front"

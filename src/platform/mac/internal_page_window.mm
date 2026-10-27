@@ -151,6 +151,14 @@ class InternalPageBridge : public InternalPageDelegate {
 
 #pragma mark - Page events (UI thread)
 
+- (CefRefPtr<CefBrowser>)browser {
+  return _browser;
+}
+
+- (int)rendererPid {
+  return _client ? _client->renderer_pid() : 0;
+}
+
 - (void)loadURL:(NSString*)url {
   if (_browser) {
     _browser->GetMainFrame()->LoadURL(url.UTF8String);

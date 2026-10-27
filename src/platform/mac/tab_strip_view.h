@@ -49,6 +49,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)tabStripDidCloseTabs:(brouk::TabStripModel::CloseScope)scope
                      fromTab:(brouk::TabId)tabId;
 - (void)tabStripDidToggleMute:(brouk::TabId)tabId;
+// Task manager (020): Pause / Resume Tab and Show in Task Manager.
+- (void)tabStripDidTogglePause:(brouk::TabId)tabId;
+- (void)tabStripDidShowInTaskManager:(brouk::TabId)tabId;
 @end
 
 @interface BRTabStripView : NSView
