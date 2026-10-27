@@ -45,6 +45,8 @@ NS_ASSUME_NONNULL_BEGIN
              controller:(BRBrowserWindowController*)controller;
 // brouk://settings and brouk://profiles open in their own windows.
 - (IBAction)openSettings:(nullable id)sender;
+// brouk://task-manager has its own window too (020).
+- (IBAction)showTaskManager:(nullable id)sender;
 - (IBAction)manageProfiles:(nullable id)sender;
 // Name and colour; a placeholder for a profile that no longer exists.
 - (brouk::ProfileInfo)profileInfo:(const brouk::ProfileId&)profile;
@@ -146,6 +148,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (nullable brouk::DownloadService*)downloadService;
 - (brouk::DownloadTarget)reserveDownloadPath:(const std::string&)suggested
                                   forProfile:(const brouk::ProfileId&)profile;
+// Task manager (020): opens it with the tab's row selected.
+- (void)showTaskManagerAtTab:(brouk::TabId)tabId;
 @end
 
 @interface BRBrowserWindowController : NSWindowController <NSWindowDelegate>
@@ -234,6 +238,12 @@ NS_ASSUME_NONNULL_BEGIN
 // windows without tabs), and filling a new, empty window from a saved one.
 - (std::optional<brouk::SessionWindow>)sessionWindow;
 - (void)restoreSessionWindow:(const brouk::SessionWindow&)window;
+// Task manager (020): this window's tabs left to right (not those
+// closing), one of them by id, and bringing a tab to the front (switching
+// to the window's Space or display).
+- (NSArray<BRTab*>*)orderedTabs;
+- (nullable BRTab*)tabWithId:(brouk::TabId)tabId;
+- (void)goToTab:(brouk::TabId)tabId;
 // "Restore pages?" after a crash (015); `restore` runs on "Restore".
 - (void)showRestorePagesBar:(void (^)(void))restore;
 // A web browser of one of this window's tabs in `profile`, or null.

@@ -161,6 +161,7 @@ file(GLOB_RECURSE _web_sources CONFIGURE_DEPENDS
   "${PROJECT_SOURCE_DIR}/web/help/*"
   "${PROJECT_SOURCE_DIR}/web/profiles/*"
   "${PROJECT_SOURCE_DIR}/web/settings/*" "${PROJECT_SOURCE_DIR}/web/tools/*"
+  "${PROJECT_SOURCE_DIR}/web/task-manager/*"
   "${PROJECT_SOURCE_DIR}/web/jsonview/*")
 set(_web_stamp "${CMAKE_CURRENT_BINARY_DIR}/web.stamp")
 add_custom_command(OUTPUT "${_web_stamp}"

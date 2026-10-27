@@ -132,6 +132,16 @@ bool TabClient::OnProcessMessageReceived(CefRefPtr<CefBrowser> browser,
                                          CefRefPtr<CefProcessMessage> message) {
   CEF_REQUIRE_UI_THREAD();
   std::string name = message->GetName().ToString();
+  if (source_process == PID_RENDERER && frame &&
+      name == kRendererProcessMessage) {
+    // Task manager (020): untrusted, only shown and compared.
+    CefRefPtr<CefListValue> args = message->GetArgumentList();
+    if (frame->IsMain() && args && args->GetSize() == 1 &&
+        args->GetType(0) == VTYPE_INT && args->GetInt(0) > 0) {
+      renderer_pid_ = args->GetInt(0);
+    }
+    return true;
+  }
   if (source_process == PID_RENDERER && frame && name == kFormsMessage) {
     // Login forms (008): untrusted, validated by the password logic.
     CefRefPtr<CefListValue> args = message->GetArgumentList();
@@ -748,6 +758,15 @@ void TabClient::OnFullscreenModeChange(CefRefPtr<CefBrowser> /*browser*/,
   }
 }
 
+void TabClient::OnMediaAccessChange(CefRefPtr<CefBrowser> /*browser*/,
+                                    bool has_video_access,
+                                    bool has_audio_access) {
+  CEF_REQUIRE_UI_THREAD();
+  if (delegate_) {
+    delegate_->OnMediaAccessChanged(has_video_access, has_audio_access);
+  }
+}
+
 bool TabClient::OnPreKeyEvent(CefRefPtr<CefBrowser> browser,
                               const CefKeyEvent& event,
                               CefEventHandle /*os_event*/,
@@ -1268,8 +1287,12 @@ CefRefPtr<CefResourceRequestHandler> TabClient::GetResourceRequestHandler(
     const CefString& request_initiator,
     bool& /*disable_default_handling*/) {
   CEF_REQUIRE_IO_THREAD();
-  if (!adblock_ || is_download) {
+  if (is_download) {
     return nullptr;
+  }
+  if (!adblock_) {
+    return IsNetworkCounting() ? MakeCountingRequestHandler(received_bytes_)
+                               : nullptr;
   }
   cef_resource_type_t type = request->GetResourceType();
   std::string url = request->GetURL().ToString();
@@ -1301,6 +1324,9 @@ CefRefPtr<CefResourceRequestHandler> TabClient::GetResourceRequestHandler(
                   }
                   self->delegate_->OnAdblockRequest(info);
                 }));
+  }
+  if (!handler && IsNetworkCounting()) {
+    return MakeCountingRequestHandler(received_bytes_);
   }
   return handler;
 }

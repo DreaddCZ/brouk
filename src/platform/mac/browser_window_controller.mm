@@ -652,6 +652,8 @@ NSButton* ToolbarButton(NSString* symbol,
     [_owner openSettings:nil];
   } else if ([page isEqualToString:@"profiles"]) {
     [_owner manageProfiles:nil];
+  } else if ([page isEqualToString:@"task-manager"]) {
+    [_owner showTaskManager:nil];
   }
 }
 
@@ -1927,6 +1929,52 @@ NSButton* ToolbarButton(NSString* symbol,
 
 - (void)tabStripDidToggleMute:(brouk::TabId)tabId {
   [_tabs[@(tabId)] toggleMute];
+}
+
+- (void)tabStripDidTogglePause:(brouk::TabId)tabId {
+  BRTab* tab = _tabs[@(tabId)];
+  [tab setPaused:!tab.isPaused];
+}
+
+- (void)tabStripDidShowInTaskManager:(brouk::TabId)tabId {
+  [_owner showTaskManagerAtTab:tabId];
+}
+
+#pragma mark - Task manager (020)
+
+- (NSArray<BRTab*>*)orderedTabs {
+  NSMutableArray<BRTab*>* tabs = [NSMutableArray array];
+  for (std::size_t i = 0; i < _model->count(); ++i) {
+    BRTab* tab = _tabs[@(_model->id_at(i))];
+    if (tab && !tab.isClosing) {
+      [tabs addObject:tab];
+    }
+  }
+  return tabs;
+}
+
+- (nullable BRTab*)tabWithId:(brouk::TabId)tabId {
+  return _tabs[@(tabId)];
+}
+
+- (void)goToTab:(brouk::TabId)tabId {
+  BRTab* tab = _tabs[@(tabId)];
+  if (!tab) {
+    return;
+  }
+  [self activateTab:tab];
+  NSWindow* window = self.window;
+  if (window.isMiniaturized) {
+    [window deminiaturize:nil];
+  }
+  // On another Space, macOS switches there.
+  [NSApp activateIgnoringOtherApps:YES];
+  [window makeKeyAndOrderFront:nil];
+}
+
+- (void)tabDidUnload:(BRTab*)tab {
+  [_owner browserWindowDidCloseBrowser];
+  [self tabDidChangeState:tab];
 }
 
 - (void)tabStripDidRequestNewTabInProfile:(NSString*)profileId {

@@ -23,6 +23,8 @@ add_library(brouk_cef STATIC
   function_task.h
   context_menu_model.cc
   context_menu_model.h
+  devtools_call.cc
+  devtools_call.h
   devtools_channel.cc
   download_service.cc
   download_service.h
@@ -60,6 +62,8 @@ add_library(brouk_cef STATIC
   passwords_page_handler.cc
   passwords_page_handler.h
   own_request_loader.h
+  network_counter.cc
+  network_counter.h
   permission_mapping.cc
   permission_mapping.h
   profile_prefs.cc
@@ -76,6 +80,8 @@ add_library(brouk_cef STATIC
   site_info.h
   tab_client.cc
   tab_client.h
+  task_manager_handler.cc
+  task_manager_handler.h
 )
 brouk_target_options(brouk_cef CEF APP)
 target_link_libraries(brouk_cef PUBLIC brouk_core libcef_dll_wrapper)

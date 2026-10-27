@@ -13,6 +13,9 @@ TEST(InternalPagesTest, KnownPages) {
   EXPECT_FALSE(IsInternalPageUrl("brouk:profiles"));
   EXPECT_EQ(InternalPageOf("brouk://profiles/app.js"), "profiles");
   EXPECT_FALSE(InternalPageOf("brouk://evil/"));
+  EXPECT_EQ(InternalPageOf("brouk://task-manager/"), "task-manager");
+  EXPECT_EQ(InternalResourcePath("brouk://task-manager/"),
+            "task-manager/index.html");
 }
 
 TEST(InternalPagesTest, ResourcePaths) {

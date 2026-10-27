@@ -110,6 +110,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)tabOpenAutofillSettings:(BRTab*)tab;
 // Downloads (014): null before CEF is ready.
 - (nullable brouk::DownloadService*)downloadService;
+// Task manager (020): the tab's browser closed for Unload; it is not
+// counted any more until the tab loads again.
+- (void)tabDidUnload:(BRTab*)tab;
 @end
 
 @interface BRTab : NSObject
@@ -170,6 +173,27 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, readonly) BOOL isAudible;
 @property(nonatomic, readonly) BOOL isMuted;
 - (void)toggleMute;
+
+// The page uses a camera, a microphone, or shares a screen or window.
+@property(nonatomic, readonly) BOOL usesCamera;
+@property(nonatomic, readonly) BOOL usesMicrophone;
+@property(nonatomic, readonly) BOOL sharesScreen;
+// The crash page is shown.
+@property(nonatomic, readonly) BOOL hasCrashed;
+
+// Task manager (020). A paused page is frozen (scripts, timers and media
+// stop) until resumed, also while it is shown; a bar on the page says so.
+// Loading a page resumes it.
+@property(nonatomic, readonly) BOOL isPaused;
+- (void)setPaused:(BOOL)paused;
+// Unload: the browser closes and the tab keeps its title and address; it
+// loads again when shown (like a restored tab, 015). Not for internal pages.
+@property(nonatomic, readonly) BOOL canUnload;
+- (void)unload;
+// The process ID the renderer reported (0 if none), and the bytes of
+// response bodies received while the task manager counted.
+- (int)rendererPid;
+- (std::int64_t)receivedBytes;
 
 // Popups blocked on the current page (newest last).
 @property(nonatomic, readonly) NSArray<NSString*>* blockedPopupURLs;

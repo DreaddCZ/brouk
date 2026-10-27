@@ -72,6 +72,7 @@ NSColor* ActiveTabColor() {
   NSButton* _audio;  // Speaker: shown while playing or muted; click mutes.
   NSImageView* _pin;
   NSString* _title;
+  BOOL _paused;  // Task manager (020): a pause icon and a dimmed title.
   BOOL _hovered;
   NSTrackingArea* _tracking;
 }
@@ -145,10 +146,20 @@ NSColor* ActiveTabColor() {
 
 - (void)updateDescriptions {
   NSString* title = _title ?: @"";
+  NSString* tip =
+      _paused ? [NSString stringWithFormat:@"%@ (paused)", title] : title;
   self.toolTip =
-      _pinned ? [NSString stringWithFormat:@"%@ (pinned)", title] : title;
+      _pinned ? [NSString stringWithFormat:@"%@ (pinned)", tip] : tip;
+  NSString* label =
+      _paused ? [NSString stringWithFormat:@"Paused, %@", title] : title;
   self.accessibilityLabel =
-      _pinned ? [NSString stringWithFormat:@"Pinned, %@", title] : title;
+      _pinned ? [NSString stringWithFormat:@"Pinned, %@", label] : label;
+}
+
+- (void)updateLabelColor {
+  _label.textColor = _paused   ? NSColor.tertiaryLabelColor
+                     : _active ? NSColor.labelColor
+                               : NSColor.secondaryLabelColor;
 }
 
 - (BOOL)isFlipped {
@@ -186,7 +197,7 @@ NSColor* ActiveTabColor() {
 - (void)setActive:(BOOL)active {
   _active = active;
   self.accessibilityValue = @(active);
-  _label.textColor = active ? NSColor.labelColor : NSColor.secondaryLabelColor;
+  [self updateLabelColor];
   self.needsDisplay = YES;
 }
 
@@ -197,11 +208,20 @@ NSColor* ActiveTabColor() {
   }
   _label.stringValue = title;
   _title = title;
+  _paused = tab.isPaused;
   [self updateDescriptions];
+  [self updateLabelColor];
   _close.toolTip = brouk::mac::ToolTip(@"Close tab", "close_tab");
-  _icon.image = tab.favicon
-                    ?: [NSImage imageWithSystemSymbolName:@"globe"
-                                 accessibilityDescription:nil];
+  if (_paused) {
+    _icon.image = [NSImage imageWithSystemSymbolName:@"pause.circle.fill"
+                            accessibilityDescription:@"Paused"];
+    _icon.contentTintColor = NSColor.systemOrangeColor;
+  } else {
+    _icon.image = tab.favicon
+                      ?: [NSImage imageWithSystemSymbolName:@"globe"
+                                   accessibilityDescription:nil];
+    _icon.contentTintColor = nil;
+  }
   BOOL showAudio = tab.isAudible || tab.isMuted;
   if (showAudio) {
     BOOL muted = tab.isMuted;
@@ -806,6 +826,10 @@ NSColor* ActiveTabColor() {
       @selector(menuTogglePin:), YES);
   add(tab.isMuted ? @"Unmute Tab" : @"Mute Tab", @selector(menuToggleMute:),
       YES);
+  // Task manager (020).
+  add(tab.isPaused ? @"Resume Tab" : @"Pause Tab", @selector(menuTogglePause:),
+      tab.isPaused || (tab.browser && !tab.isInternalPage && !tab.hasCrashed));
+  add(@"Show in Task Manager", @selector(menuShowInTaskManager:), YES);
   [menu addItem:NSMenuItem.separatorItem];
   add(@"Close Tab", @selector(menuClose:), YES);
   add(@"Close Other Tabs", @selector(menuCloseOthers:), left + right > 0);
@@ -848,6 +872,14 @@ NSColor* ActiveTabColor() {
 
 - (void)menuToggleMute:(NSMenuItem*)item {
   [_delegate tabStripDidToggleMute:static_cast<brouk::TabId>(item.tag)];
+}
+
+- (void)menuTogglePause:(NSMenuItem*)item {
+  [_delegate tabStripDidTogglePause:static_cast<brouk::TabId>(item.tag)];
+}
+
+- (void)menuShowInTaskManager:(NSMenuItem*)item {
+  [_delegate tabStripDidShowInTaskManager:static_cast<brouk::TabId>(item.tag)];
 }
 
 - (void)menuClose:(NSMenuItem*)item {

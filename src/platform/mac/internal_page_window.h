@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "cef/devtools_preferences.h"
+#include "include/cef_browser.h"
 #include "include/cef_request_context.h"
 #include "include/wrapper/cef_message_router.h"
 #import "platform/mac/devtools_dock.h"
@@ -55,6 +56,10 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)executeJavaScript:(NSString*)code;
 // Navigates the page; only a changed #fragment keeps the page loaded.
 - (void)loadURL:(NSString*)url;
+// For the task manager (020): the page's browser (null before it exists
+// and after it closed) and its renderer's process ID (0 if unknown).
+- (CefRefPtr<CefBrowser>)browser;
+- (int)rendererPid;
 
 @end
 

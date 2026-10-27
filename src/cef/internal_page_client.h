@@ -44,6 +44,8 @@ class InternalPageClient : public CefClient,
 
   // UI thread. The platform window is going away: no more calls to it.
   void DetachDelegate();
+  // UI thread. The process ID the page's renderer reported (020), or 0.
+  int renderer_pid() const { return renderer_pid_; }
 
   // CefClient:
   CefRefPtr<CefContextMenuHandler> GetContextMenuHandler() override {
@@ -113,6 +115,7 @@ class InternalPageClient : public CefClient,
   // "?" buttons of every internal page (016).
   std::unique_ptr<CefMessageRouterBrowserSide::Handler> help_handler_;
   CefRefPtr<CefMessageRouterBrowserSide> router_;
+  int renderer_pid_ = 0;
 
   IMPLEMENT_REFCOUNTING(InternalPageClient);
 };

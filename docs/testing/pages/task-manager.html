@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Task manager test page</title>
+<style>
+  body { font: 15px -apple-system, sans-serif; margin: 40px; }
+  #counter { font-size: 48px; font-variant-numeric: tabular-nums; }
+  button { font: inherit; margin: 4px 4px 4px 0; }
+</style>
+</head>
+<body>
+<h1>Task manager (020)</h1>
+<p>Counter (counts every 100 ms while the page runs):</p>
+<p id="counter">0</p>
+<p>
+  <button id="busy">Start a busy loop</button>
+  <button id="allocate">Allocate 100 MB more</button>
+  <button id="media">Use camera and microphone</button>
+  <button id="download">Fetch a large file</button>
+</p>
+<p id="out"></p>
+<script>
+  let count = 0;
+  const counter = document.getElementById('counter');
+  setInterval(() => { counter.textContent = String(++count); }, 100);
+  const out = document.getElementById('out');
+  const kept = [];
+  document.getElementById('busy').onclick = () => {
+    // The page stops responding: CPU ~100 %. End the process to stop it.
+    setTimeout(() => { for (;;) {} }, 50);
+  };
+  document.getElementById('allocate').onclick = () => {
+    // Plain arrays of numbers live in the JavaScript heap (typed arrays would not).
+    const block = [];
+    for (let i = 0; i < 100 * 1024 * 1024 / 8 / 1024; i++) block.push(Array.from({ length: 1024 }, (_, j) => i + j + 0.5));
+    kept.push(block);
+    out.textContent = `Holding ${kept.length * 100} MB of JavaScript arrays.`;
+  };
+  document.getElementById('media').onclick = async () => {
+    try {
+      await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      out.textContent = 'Camera and microphone in use.';
+    } catch (error) {
+      out.textContent = String(error);
+    }
+  };
+  document.getElementById('download').onclick = async () => {
+    // Pass ?file=<address> for a file of your own (another site must allow it).
+    const url = new URLSearchParams(location.search).get('file') ?? 'large.bin';
+    const response = await fetch(url, { cache: 'no-store' });
+    const reader = response.body.getReader();
+    let total = 0;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      total += value.length;
+      out.textContent = `Received ${(total / 1048576).toFixed(0)} MB`;
+    }
+  };
+</script>
+</body>
+</html>
