@@ -11,6 +11,17 @@
 
 #include "core/crypto.h"
 
+namespace {
+
+NSString* ToNSString(const std::string& s) {
+  return [[NSString alloc] initWithBytes:s.data()
+                                  length:s.size()
+                                encoding:NSUTF8StringEncoding]
+             ?: @"";
+}
+
+}  // namespace
+
 // Records the server's trust when it is asked for, then cancels: the
 // connection is only for the certificate chain.
 @interface BRServerTrustProbe : NSObject <NSURLSessionDelegate>
@@ -38,16 +49,201 @@
 
 @end
 
+// The master password sheet. Keeps itself alive until it closes.
+@interface BRBitwardenPasswordSheet : NSObject
++ (void)showOn:(nullable NSWindow*)window
+       request:(const brouk::BitwardenPasswordRequest&)request
+        submit:(brouk::BitwardenPasswordSubmit)submit
+     cancelled:(std::function<void()>)cancelled;
+@end
+
+@implementation BRBitwardenPasswordSheet {
+  NSWindow* _parent;
+  NSPanel* _panel;
+  NSSecureTextField* _field;
+  NSTextField* _problem;
+  NSProgressIndicator* _spinner;
+  NSTextField* _progress;
+  NSButton* _ok;
+  NSButton* _cancel;
+  brouk::BitwardenPasswordSubmit _submit;
+  std::function<void()> _cancelled;
+  BRBitwardenPasswordSheet* _keepAlive;
+}
+
++ (void)showOn:(nullable NSWindow*)window
+       request:(const brouk::BitwardenPasswordRequest&)request
+        submit:(brouk::BitwardenPasswordSubmit)submit
+     cancelled:(std::function<void()>)cancelled {
+  BRBitwardenPasswordSheet* sheet = [[BRBitwardenPasswordSheet alloc] init];
+  [sheet showOn:window
+        request:request
+         submit:std::move(submit)
+      cancelled:std::move(cancelled)];
+}
+
+- (NSTextField*)wrappingLabel:(NSString*)text {
+  NSTextField* label = [NSTextField wrappingLabelWithString:text];
+  label.preferredMaxLayoutWidth = 340;
+  return label;
+}
+
+- (void)showOn:(nullable NSWindow*)window
+       request:(const brouk::BitwardenPasswordRequest&)request
+        submit:(brouk::BitwardenPasswordSubmit)submit
+     cancelled:(std::function<void()>)cancelled {
+  _keepAlive = self;
+  _parent = window;
+  _submit = std::move(submit);
+  _cancelled = std::move(cancelled);
+
+  NSString* titleText;
+  NSString* infoText;
+  NSString* okTitle;
+  if (request.reprompt) {
+    titleText = @"Confirm it's you";
+    infoText = @"This login is protected in Bitwarden. Enter your master "
+               @"password to fill it.";
+    okTitle = @"Fill";
+  } else {
+    titleText = @"Unlock Bitwarden";
+    NSString* account = ToNSString(request.account);
+    NSString* server = @"";
+    if (!request.server.empty()) {
+      NSString* host = [NSURL URLWithString:ToNSString(request.server)].host;
+      server = [NSString
+          stringWithFormat:@" on %@", host ?: ToNSString(request.server)];
+    }
+    infoText =
+        account.length > 0
+            ? [NSString stringWithFormat:@"Enter the master password of %@%@.",
+                                         account, server]
+            : @"Enter your Bitwarden master password.";
+    okTitle = @"Unlock";
+  }
+  NSTextField* title = [NSTextField labelWithString:titleText];
+  title.font = [NSFont boldSystemFontOfSize:13];
+  NSTextField* info = [self wrappingLabel:infoText];
+  _field = [[NSSecureTextField alloc] init];
+  _field.placeholderString = @"Master password";
+  _field.accessibilityLabel = @"Master password";
+  _field.target = self;
+  _field.action = @selector(ok:);
+  [_field.widthAnchor constraintEqualToConstant:340].active = YES;
+  _problem = [self wrappingLabel:@""];
+  _problem.textColor = NSColor.systemRedColor;
+  _problem.hidden = YES;
+
+  _spinner = [[NSProgressIndicator alloc] init];
+  _spinner.style = NSProgressIndicatorStyleSpinning;
+  _spinner.controlSize = NSControlSizeSmall;
+  _spinner.displayedWhenStopped = NO;
+  _progress = [NSTextField
+      labelWithString:request.reprompt ? @"Checking…" : @"Unlocking…"];
+  _progress.textColor = NSColor.secondaryLabelColor;
+  _progress.hidden = YES;
+  _cancel = [NSButton buttonWithTitle:@"Cancel"
+                               target:self
+                               action:@selector(cancel:)];
+  _cancel.keyEquivalent = @"\033";
+  _ok = [NSButton buttonWithTitle:okTitle target:self action:@selector(ok:)];
+  _ok.keyEquivalent = @"\r";
+  NSView* spacer = [[NSView alloc] init];
+  [spacer setContentHuggingPriority:1
+                     forOrientation:NSLayoutConstraintOrientationHorizontal];
+  NSStackView* buttons = [NSStackView
+      stackViewWithViews:@[ _spinner, _progress, spacer, _cancel, _ok ]];
+  buttons.orientation = NSUserInterfaceLayoutOrientationHorizontal;
+
+  NSStackView* stack = [NSStackView
+      stackViewWithViews:@[ title, info, _field, _problem, buttons ]];
+  stack.orientation = NSUserInterfaceLayoutOrientationVertical;
+  stack.alignment = NSLayoutAttributeLeading;
+  stack.spacing = 10;
+  stack.edgeInsets = NSEdgeInsetsMake(20, 20, 16, 20);
+  [buttons.widthAnchor constraintEqualToAnchor:_field.widthAnchor].active = YES;
+
+  _panel = [[NSPanel alloc] initWithContentRect:NSMakeRect(0, 0, 380, 160)
+                                      styleMask:NSWindowStyleMaskTitled
+                                        backing:NSBackingStoreBuffered
+                                          defer:NO];
+  _panel.title = titleText;
+  _panel.contentView = stack;
+  _panel.initialFirstResponder = _field;
+  if (window) {
+    [window beginSheet:_panel completionHandler:nil];
+  } else {
+    [_panel center];
+    [_panel makeKeyAndOrderFront:nil];
+  }
+}
+
+- (void)setBusy:(BOOL)busy {
+  _field.enabled = !busy;
+  _ok.enabled = !busy;
+  _cancel.enabled = !busy;
+  _progress.hidden = !busy;
+  if (busy) {
+    _problem.hidden = YES;
+    [_spinner startAnimation:nil];
+  } else {
+    [_spinner stopAnimation:nil];
+  }
+}
+
+- (void)ok:(id)sender {
+  if (!_ok.enabled || !_submit) {
+    return;
+  }
+  const char* utf8 = _field.stringValue.UTF8String;
+  std::string password = utf8 ? std::string(utf8) : std::string();
+  [self setBusy:YES];
+  __weak BRBitwardenPasswordSheet* weakSelf = self;
+  _submit(std::move(password), [weakSelf](std::optional<std::string> error) {
+    BRBitwardenPasswordSheet* sheet = weakSelf;
+    if (!sheet) {
+      return;
+    }
+    if (error) {
+      [sheet failed:ToNSString(*error)];
+    } else {
+      [sheet close];
+    }
+  });
+}
+
+- (void)failed:(NSString*)message {
+  [self setBusy:NO];
+  _problem.stringValue = message;
+  _problem.hidden = NO;
+  _field.stringValue = @"";
+  [_panel makeFirstResponder:_field];
+}
+
+- (void)cancel:(id)sender {
+  std::function<void()> cancelled = std::move(_cancelled);
+  _cancelled = nullptr;
+  [self close];
+  if (cancelled) {
+    cancelled();
+  }
+}
+
+- (void)close {
+  _field.stringValue = @"";
+  _submit = nullptr;
+  if (_parent && _panel.sheetParent) {
+    [_parent endSheet:_panel];
+  }
+  [_panel orderOut:nil];
+  _keepAlive = nil;
+}
+
+@end
+
 namespace brouk::mac {
 
 namespace {
-
-NSString* ToNSString(const std::string& s) {
-  return [[NSString alloc] initWithBytes:s.data()
-                                  length:s.size()
-                                encoding:NSUTF8StringEncoding]
-             ?: @"";
-}
 
 std::string Pem(SecCertificateRef certificate) {
   NSData* der = CFBridgingRelease(SecCertificateCopyData(certificate));
@@ -90,60 +286,12 @@ NSArray* _Nullable TrustedChain(NSURL* url) {
 
 void AskBitwardenPassword(NSWindow* _Nullable window,
                           const BitwardenPasswordRequest& request,
-                          BitwardenPasswordDone done) {
-  NSAlert* alert = [[NSAlert alloc] init];
-  NSString* account = ToNSString(request.account);
-  if (request.reprompt) {
-    alert.messageText = @"Confirm it's you";
-    alert.informativeText =
-        @"This login is protected in Bitwarden. Enter your master password "
-        @"to fill it.";
-    [alert addButtonWithTitle:@"Fill"];
-  } else {
-    alert.messageText = @"Unlock Bitwarden";
-    NSString* server =
-        request.server.empty()
-            ? @""
-            : [NSString
-                  stringWithFormat:@" on %@",
-                                   [NSURL
-                                       URLWithString:ToNSString(request.server)]
-                                           .host
-                                       ?: ToNSString(request.server)];
-    alert.informativeText =
-        account.length > 0
-            ? [NSString stringWithFormat:@"Enter the master password of %@%@.",
-                                         account, server]
-            : @"Enter your Bitwarden master password.";
-    [alert addButtonWithTitle:@"Unlock"];
-  }
-  if (!request.error.empty()) {
-    alert.informativeText = [alert.informativeText
-        stringByAppendingFormat:@"\n\n%@", ToNSString(request.error)];
-  }
-  [alert addButtonWithTitle:@"Cancel"];
-  NSSecureTextField* field =
-      [[NSSecureTextField alloc] initWithFrame:NSMakeRect(0, 0, 260, 24)];
-  field.placeholderString = @"Master password";
-  field.accessibilityLabel = @"Master password";
-  alert.accessoryView = field;
-  alert.window.initialFirstResponder = field;
-
-  __block BitwardenPasswordDone answer = std::move(done);
-  void (^finish)(NSModalResponse) = ^(NSModalResponse response) {
-    std::optional<std::string> password;
-    if (response == NSAlertFirstButtonReturn) {
-      const char* utf8 = field.stringValue.UTF8String;
-      password = utf8 ? std::string(utf8) : std::string();
-    }
-    field.stringValue = @"";
-    answer(std::move(password));
-  };
-  if (window) {
-    [alert beginSheetModalForWindow:window completionHandler:finish];
-  } else {
-    finish([alert runModal]);
-  }
+                          BitwardenPasswordSubmit submit,
+                          std::function<void()> cancelled) {
+  [BRBitwardenPasswordSheet showOn:window
+                           request:request
+                            submit:std::move(submit)
+                         cancelled:std::move(cancelled)];
 }
 
 void ConfirmWithTouchId(const std::string& reason, TouchIdDone done) {

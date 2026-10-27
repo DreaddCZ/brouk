@@ -164,6 +164,7 @@ NSButton* ToolbarButton(NSString* symbol,
   NSButton* _starButton;    // Bookmark this tab (011).
   NSButton* _shieldButton;  // Ad blocking (007): count and popup.
   NSButton* _keyButton;     // Passwords (008): saved logins, save prompt.
+  NSProgressIndicator* _keySpinner;  // On the key button: Bitwarden unlocks.
   BRPasswordMenu* _keyMenu;
   BRBookmarksBar* _bookmarksBar;
   BOOL _browserUIHidden;  // Page full screen.
@@ -466,6 +467,12 @@ NSButton* ToolbarButton(NSString* symbol,
                           weight:NSFontWeightMedium];
   _keyButton.hidden = YES;
   [_toolbar addSubview:_keyButton];
+  _keySpinner =
+      [[NSProgressIndicator alloc] initWithFrame:NSMakeRect(5, 4, 16, 16)];
+  _keySpinner.style = NSProgressIndicatorStyleSpinning;
+  _keySpinner.controlSize = NSControlSizeSmall;
+  _keySpinner.displayedWhenStopped = NO;
+  [_keyButton addSubview:_keySpinner];
   [self layoutAddressArea];
 
   _findBar = [[BRFindBar alloc]
@@ -2875,14 +2882,23 @@ static std::int64_t Now() {
   _keyButton.hidden = icon == brouk::PasswordIcon::kHidden;
   BOOL pending = icon == brouk::PasswordIcon::kSavePending;
   BOOL locked = icon == brouk::PasswordIcon::kLocked;
+  BOOL unlocking = icon == brouk::PasswordIcon::kUnlocking;
   NSString* symbol = pending ? @"key.fill" : locked ? @"lock" : @"key";
-  _keyButton.image = [NSImage imageWithSystemSymbolName:symbol
-                               accessibilityDescription:@"Passwords"];
+  _keyButton.image = unlocking
+                         ? nil
+                         : [NSImage imageWithSystemSymbolName:symbol
+                                     accessibilityDescription:@"Passwords"];
+  if (unlocking) {
+    [_keySpinner startAnimation:nil];
+  } else {
+    [_keySpinner stopAnimation:nil];
+  }
   _keyButton.contentTintColor =
       pending ? NSColor.controlAccentColor : NSColor.secondaryLabelColor;
-  _keyButton.toolTip = pending  ? @"Save password"
-                       : locked ? @"Unlock Bitwarden"
-                                : @"Saved passwords";
+  _keyButton.toolTip = pending     ? @"Save password"
+                       : locked    ? @"Unlock Bitwarden"
+                       : unlocking ? @"Unlocking Bitwarden…"
+                                   : @"Saved passwords";
   _keyButton.accessibilityValue = _keyButton.toolTip;
 }
 

@@ -4,6 +4,7 @@
 #import <AppKit/AppKit.h>
 
 #include <filesystem>
+#include <functional>
 #include <string>
 
 #include "cef/password_tab.h"
@@ -13,10 +14,13 @@ NS_ASSUME_NONNULL_BEGIN
 namespace brouk::mac {
 
 // The Bitwarden master password dialog (008), as a sheet on `window` (or a
-// window of its own). Main thread.
+// window of its own). It stays open while the password is checked, with a
+// progress indicator, and shows a failure so the user can try again.
+// Main thread.
 void AskBitwardenPassword(NSWindow* _Nullable window,
                           const BitwardenPasswordRequest& request,
-                          BitwardenPasswordDone done);
+                          BitwardenPasswordSubmit submit,
+                          std::function<void()> cancelled);
 
 // Touch ID only (no fallback to the Mac's password: the fallback is the
 // Bitwarden master password). `reason` completes "Brouk wants to …".

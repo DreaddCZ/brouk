@@ -786,6 +786,10 @@ void PasswordTab::UpdateIcon() {
   if (!delegate_) {
     return;
   }
+  if (unlock_busy_) {
+    delegate_->OnPasswordIconChanged(PasswordIcon::kUnlocking);
+    return;
+  }
   if (prompt_) {
     delegate_->OnPasswordIconChanged(PasswordIcon::kSavePending);
     return;
@@ -830,17 +834,24 @@ void PasswordTab::FillChosen(const std::string& frame_id,
   });
 }
 
+void PasswordTab::SetUnlockBusy(bool busy) {
+  unlock_busy_ = busy;
+  UpdateIcon();
+}
+
 void PasswordTab::UnlockBitwarden() {
   if (unlocking_ || !delegate_) {
     return;
   }
   unlocking_ = true;
+  SetUnlockBusy(true);  // `bw status` takes a moment.
   std::weak_ptr<PasswordTab> weak = weak_from_this();
   manager_->BitwardenState([weak](const BitwardenUnlockState& state) {
     std::shared_ptr<PasswordTab> self = weak.lock();
     if (!self || !self->delegate_) {
       return;
     }
+    self->SetUnlockBusy(false);
     switch (state.status.state) {
       case BitwardenSource::State::kNoCli:
       case BitwardenSource::State::kLoggedOut:
@@ -857,7 +868,7 @@ void PasswordTab::UnlockBitwarden() {
     }
     if (!state.stored_session ||
         !self->manager_->options().bitwarden_touch_id) {
-      self->AskMasterPassword(state, "");
+      self->AskMasterPassword(state);
       return;
     }
     self->delegate_->ConfirmWithTouchId(
@@ -868,17 +879,19 @@ void PasswordTab::UnlockBitwarden() {
           }
           if (result != TouchIdResult::kPassed) {
             // As in Bitwarden: the master password instead.
-            tab->AskMasterPassword(state, "");
+            tab->AskMasterPassword(state);
             return;
           }
+          tab->SetUnlockBusy(true);
           tab->manager_->UnlockBitwardenWithStoredSession(
               [weak, state](const std::optional<Error>& error) {
                 std::shared_ptr<PasswordTab> again = weak.lock();
                 if (!again || !again->delegate_) {
                   return;
                 }
+                again->SetUnlockBusy(false);
                 if (error) {
-                  again->AskMasterPassword(state, "");
+                  again->AskMasterPassword(state);
                   return;
                 }
                 again->unlocking_ = false;
@@ -888,40 +901,39 @@ void PasswordTab::UnlockBitwarden() {
   });
 }
 
-void PasswordTab::AskMasterPassword(const BitwardenUnlockState& state,
-                                    const std::string& error) {
+void PasswordTab::AskMasterPassword(const BitwardenUnlockState& state) {
   BitwardenPasswordRequest request;
   request.account = state.status.user_email;
   request.server = state.status.server_url;
-  request.error = error;
   std::weak_ptr<PasswordTab> weak = weak_from_this();
   delegate_->AskBitwardenPassword(
-      request, [weak, state](std::optional<std::string> password) {
+      request,
+      [weak](std::string password, BitwardenPasswordResult result) {
         std::shared_ptr<PasswordTab> self = weak.lock();
-        if (!self) {
-          if (password) {
-            Wipe(*password);
-          }
-          return;
-        }
-        if (!password || !self->delegate_) {
-          self->unlocking_ = false;
+        if (!self || !self->delegate_) {
+          Wipe(password);
+          result(std::nullopt);
           return;
         }
         self->manager_->UnlockBitwarden(
-            std::move(*password),
-            [weak, state](const std::optional<Error>& failed) {
-              std::shared_ptr<PasswordTab> tab = weak.lock();
-              if (!tab || !tab->delegate_) {
-                return;
-              }
+            std::move(password), [weak, result = std::move(result)](
+                                     const std::optional<Error>& failed) {
               if (failed) {
-                tab->AskMasterPassword(state, failed->message);
+                result(failed->message);
                 return;
               }
-              tab->unlocking_ = false;
-              tab->LookUpAll();
+              result(std::nullopt);
+              std::shared_ptr<PasswordTab> tab = weak.lock();
+              if (tab && tab->delegate_) {
+                tab->unlocking_ = false;
+                tab->LookUpAll();
+              }
             });
+      },
+      [weak] {
+        if (std::shared_ptr<PasswordTab> self = weak.lock()) {
+          self->unlocking_ = false;
+        }
       });
 }
 
@@ -931,7 +943,7 @@ void PasswordTab::ConfirmReprompt(std::function<void()> then) {
   }
   std::weak_ptr<PasswordTab> weak = weak_from_this();
   if (!manager_->options().bitwarden_touch_id) {
-    AskRepromptPassword(std::move(then), "");
+    AskRepromptPassword(std::move(then));
     return;
   }
   delegate_->ConfirmWithTouchId(
@@ -944,44 +956,42 @@ void PasswordTab::ConfirmReprompt(std::function<void()> then) {
         if (result == TouchIdResult::kPassed) {
           then();
         } else if (result == TouchIdResult::kUnavailable) {
-          self->AskRepromptPassword(then, "");
+          self->AskRepromptPassword(then);
         }
       });
 }
 
-void PasswordTab::AskRepromptPassword(std::function<void()> then,
-                                      const std::string& error) {
+void PasswordTab::AskRepromptPassword(std::function<void()> then) {
   BitwardenPasswordRequest request;
   request.reprompt = true;
-  request.error = error;
   std::weak_ptr<PasswordTab> weak = weak_from_this();
   delegate_->AskBitwardenPassword(
       request,
-      [weak, then = std::move(then)](std::optional<std::string> password) {
+      [weak, then = std::move(then)](std::string password,
+                                     BitwardenPasswordResult result) {
         std::shared_ptr<PasswordTab> self = weak.lock();
-        if (!password) {
-          return;
-        }
         if (!self || !self->delegate_) {
-          Wipe(*password);
+          Wipe(password);
+          result(std::nullopt);
           return;
         }
         // Checking the master password means unlocking again (a new
         // session); the logins stay the same.
         self->manager_->UnlockBitwarden(
-            std::move(*password),
-            [weak, then](const std::optional<Error>& failed) {
-              std::shared_ptr<PasswordTab> tab = weak.lock();
-              if (!tab || !tab->delegate_) {
-                return;
-              }
+            std::move(password), [weak, then, result = std::move(result)](
+                                     const std::optional<Error>& failed) {
               if (failed) {
-                tab->AskRepromptPassword(then, failed->message);
+                result(failed->message);
                 return;
               }
-              then();
+              result(std::nullopt);
+              std::shared_ptr<PasswordTab> tab = weak.lock();
+              if (tab && tab->delegate_) {
+                then();
+              }
             });
-      });
+      },
+      [] {});
 }
 
 }  // namespace brouk

@@ -73,7 +73,13 @@ struct PasswordPromptAnswer {
 using PasswordPromptDone = std::function<void(PasswordPromptAnswer)>;
 
 // The key icon in the address bar.
-enum class PasswordIcon { kHidden, kLogins, kSavePending, kLocked };
+enum class PasswordIcon {
+  kHidden,
+  kLogins,
+  kSavePending,
+  kLocked,
+  kUnlocking,  // Bitwarden is being unlocked: a progress indicator.
+};
 
 // The master password dialog of Bitwarden profiles (008).
 struct BitwardenPasswordRequest {
@@ -81,11 +87,15 @@ struct BitwardenPasswordRequest {
   std::string server;   // Empty: Bitwarden's US cloud.
   // Why: "unlock" or "re-prompt" (an item asks to confirm before filling).
   bool reprompt = false;
-  std::string error;  // From the previous try, e.g. a wrong password.
 };
-// The master password, or nullopt when the user cancelled.
-using BitwardenPasswordDone =
-    std::function<void(std::optional<std::string> password)>;
+// How checking the entered master password went: nullopt closes the
+// dialog; an error is shown in it, and the user can try again.
+using BitwardenPasswordResult =
+    std::function<void(std::optional<std::string> error)>;
+// The dialog sends the master password and shows progress until `result`
+// is called.
+using BitwardenPasswordSubmit =
+    std::function<void(std::string password, BitwardenPasswordResult result)>;
 enum class TouchIdResult { kPassed, kCancelled, kUnavailable };
 using TouchIdDone = std::function<void(TouchIdResult result)>;
 
@@ -113,8 +123,10 @@ class PasswordTabDelegate {
   virtual void ShowPasswordMessage(const std::string& title,
                                    const std::string& text) = 0;
   // Bitwarden (008).
+  // `cancelled` is called if the user closes the dialog without unlocking.
   virtual void AskBitwardenPassword(const BitwardenPasswordRequest& request,
-                                    BitwardenPasswordDone done) = 0;
+                                    BitwardenPasswordSubmit submit,
+                                    std::function<void()> cancelled) = 0;
   // Touch ID, with `reason` completing "Brouk wants to …".
   virtual void ConfirmWithTouchId(const std::string& reason,
                                   TouchIdDone done) = 0;
@@ -176,12 +188,12 @@ class PasswordTab : public std::enable_shared_from_this<PasswordTab> {
   // Unlocks Bitwarden (Touch ID or the master password), then looks up
   // every frame again.
   void UnlockBitwarden();
-  void AskMasterPassword(const BitwardenUnlockState& state,
-                         const std::string& error);
+  void AskMasterPassword(const BitwardenUnlockState& state);
   // Confirms who the user is before filling a "re-prompt" item.
   void ConfirmReprompt(std::function<void()> then);
-  void AskRepromptPassword(std::function<void()> then,
-                           const std::string& error);
+  void AskRepromptPassword(std::function<void()> then);
+  // `bw` is working on an unlock: the key icon shows progress.
+  void SetUnlockBusy(bool busy);
   // Looks up every frame's logins again (the vault was unlocked).
   void LookUpAll();
   // Fills `entry`, after the re-prompt check if it asks for one.
@@ -239,7 +251,8 @@ class PasswordTab : public std::enable_shared_from_this<PasswordTab> {
     std::vector<BitwardenSaveLocation> locations;  // Bitwarden.
   };
   std::optional<Prompt> prompt_;
-  bool unlocking_ = false;  // The unlock flow is showing.
+  bool unlocking_ = false;    // The unlock flow is running.
+  bool unlock_busy_ = false;  // `bw` is unlocking (no dialog shows it).
 };
 
 }  // namespace brouk

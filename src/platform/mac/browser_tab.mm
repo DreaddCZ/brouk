@@ -233,8 +233,10 @@ class TabDelegateBridge : public TabClientDelegate {
     }
   }
   void AskBitwardenPassword(const BitwardenPasswordRequest& request,
-                            BitwardenPasswordDone done) override {
-    mac::AskBitwardenPassword(tab_.tabView.window, request, std::move(done));
+                            BitwardenPasswordSubmit submit,
+                            std::function<void()> cancelled) override {
+    mac::AskBitwardenPassword(tab_.tabView.window, request, std::move(submit),
+                              std::move(cancelled));
   }
   void ConfirmWithTouchId(const std::string& reason,
                           TouchIdDone done) override {
