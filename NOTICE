@@ -1,0 +1,8 @@
+Brouk
+Copyright 2026 Radek Sevcik
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Brouk is built on the Chromium Embedded Framework (CEF) and Chromium, and
+uses other third-party software under their own licences. They are listed,
+with versions and licences, in third_party/README.md.

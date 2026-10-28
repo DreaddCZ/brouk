@@ -1,4 +1,4 @@
-{"name": "Brouk", "version": 1, "tags": ["browser", "beetle"], "homepage": "https://github.com/DreaddCZ/web-browser",
+{"name": "Brouk", "version": 1, "tags": ["browser", "beetle"], "homepage": "https://github.com/DreaddCZ/brouk",
  "owner": {"name": "Radek", "roles": ["developer", "tester"], "active": true, "manager": null},
  "items": [{"id": 1, "label": "first item", "price": 9.5}, {"id": 2, "label": "second item", "price": 12}],
  "weird key": "spaces in the key", "nested": {"a": {"b": {"c": {"d": "deep value"}}}}}

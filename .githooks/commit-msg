@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Checks the commit message for real organisation names (scripts/check_terms).
+# Enabled with the pre-commit hook: git config core.hooksPath .githooks
+exec "$(git rev-parse --show-toplevel)/scripts/check_terms" --message "$1"

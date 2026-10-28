@@ -1,0 +1,76 @@
+name: Bug report
+description: Something in Brouk doesn't work as it should.
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **This repository is public: anyone can read what you write here.**
+        Don't include client names, internal addresses, account names, passwords
+        or tokens, or screenshots of client systems. Black out anything sensitive
+        before attaching a screenshot.
+  - type: input
+    id: version
+    attributes:
+      label: Brouk version
+      description: Brouk → About Brouk, e.g. "0.1.1 (abc1234)".
+    validations:
+      required: true
+  - type: dropdown
+    id: mac
+    attributes:
+      label: Mac
+      options:
+        - Apple Silicon (M1 or later)
+        - Intel
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+      description: Apple menu → About This Mac, e.g. "15.4".
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Tabs and windows
+        - Profiles
+        - Link routing
+        - Developer tools
+        - Passwords
+        - Bookmarks
+        - History
+        - Downloads
+        - Ad blocking
+        - Settings
+        - Help
+        - Updates
+        - Other
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. …
+        2. …
+  - type: dropdown
+    id: often
+    attributes:
+      label: How often?
+      options:
+        - Once
+        - Sometimes
+        - Every time

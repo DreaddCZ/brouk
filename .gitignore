@@ -5,3 +5,6 @@ third_party/cef/
 node_modules/
 .DS_Store
 third_party/sparkle/
+
+# Claude Code settings of this clone (permissions, local paths)
+.claude/settings.local.json
