@@ -79,14 +79,15 @@ rules:
     languages: [regex]
     severity: ERROR
     message: >-
-      Programs are started only by src/core/process_runner.cc (an argument
-      vector, never a shell), so there is one place to review.
+      Programs are started only by src/core/process_runner_*.cc (an
+      argument vector, never a shell), so there is one place to review.
     paths:
       include:
         - src/
       exclude:
-        - src/core/process_runner.cc
-    pattern-regex: (\bposix_spawnp?\s*\(|\bexec[lv]p?e?\s*\(|(?<![\w.:>])(std::)?system\s*\(|\bpopen\s*\(|\bNSTask\b|launchedTaskWith)
+        - src/core/process_runner_posix.cc
+        - src/core/process_runner_win.cc
+    pattern-regex: (\bposix_spawnp?\s*\(|\bCreateProcess(As\w*|With\w*)?[AW]?\s*\(|\bShellExecute(Ex)?[AW]?\s*\(|\b_?w?spawn[lv]p?e?\s*\(|\bexec[lv]p?e?\s*\(|(?<![\w.:>])(std::)?system\s*\(|\bpopen\s*\(|\bNSTask\b|launchedTaskWith)
 
   - id: cpp-unsafe-c-function
     languages: [regex]

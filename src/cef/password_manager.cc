@@ -1,9 +1,12 @@
 #include "cef/password_manager.h"
 
-#include <sys/stat.h>
-
+#include <algorithm>
+#include <cctype>
 #include <chrono>
+#include <filesystem>
 #include <map>
+#include <string>
+#include <system_error>
 #include <utility>
 
 #include "cef/function_task.h"
@@ -33,9 +36,22 @@ std::string BitwardenSessionAccount(std::string_view user_id) {
 }
 
 bool IsExecutableFile(const std::filesystem::path& path) {
-  struct stat info{};
-  return stat(path.c_str(), &info) == 0 && S_ISREG(info.st_mode) &&
-         (info.st_mode & S_IXUSR) != 0;
+  std::error_code error;
+  std::filesystem::file_status status = std::filesystem::status(path, error);
+  if (error || !std::filesystem::is_regular_file(status)) {
+    return false;
+  }
+#if defined(_WIN32)
+  // Windows has no execute permission; RunProcess runs .exe files only.
+  std::string extension = path.extension().string();
+  std::ranges::transform(extension, extension.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
+  return extension == ".exe";
+#else
+  return (status.permissions() & std::filesystem::perms::owner_exec) !=
+         std::filesystem::perms::none;
+#endif
 }
 
 constexpr std::int64_t kIdleCheckMilliseconds = std::int64_t{60} * 1000;

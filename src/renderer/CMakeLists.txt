@@ -13,12 +13,20 @@ brouk_target_options(brouk_renderer CEF NO_SANITIZE)
 target_link_libraries(brouk_renderer PUBLIC libcef_dll_wrapper)
 target_include_directories(brouk_renderer SYSTEM PUBLIC "${CEF_ROOT}")
 
+# scripts/web is a bash script; Windows runs it with Git's bash (not the
+# Windows Subsystem for Linux's bash.exe in System32).
+set(_run_script "")
+if(WIN32)
+  find_program(BROUK_BASH bash REQUIRED HINTS "$ENV{ProgramFiles}/Git/bin")
+  set(_run_script "${BROUK_BASH}")
+endif()
+
 # The JSON viewer (web/jsonview, TypeScript), compiled and embedded as a
 # string the renderer adds to JSON documents (006).
 set(_viewer_js "${PROJECT_BINARY_DIR}/generated/brouk/json_viewer.js")
 set(_viewer_h "${PROJECT_BINARY_DIR}/generated/brouk/json_viewer_script.h")
 add_custom_command(OUTPUT "${_viewer_h}"
-  COMMAND "${PROJECT_SOURCE_DIR}/scripts/web" jsonview "${_viewer_js}"
+  COMMAND ${_run_script} "${PROJECT_SOURCE_DIR}/scripts/web" jsonview "${_viewer_js}"
   COMMAND ${CMAKE_COMMAND} -DINPUT=${_viewer_js} -DOUTPUT=${_viewer_h}
           -DNAME=kJsonViewerScript -P "${PROJECT_SOURCE_DIR}/cmake/EmbedText.cmake"
   DEPENDS "${PROJECT_SOURCE_DIR}/web/jsonview/viewer.ts"
@@ -37,7 +45,7 @@ set(_adblock_js_dir "${PROJECT_BINARY_DIR}/generated/brouk/adblock")
 set(_cosmetic_h "${PROJECT_BINARY_DIR}/generated/brouk/adblock_cosmetic_script.h")
 set(_picker_h "${PROJECT_BINARY_DIR}/generated/brouk/adblock_picker_script.h")
 add_custom_command(OUTPUT "${_cosmetic_h}" "${_picker_h}"
-  COMMAND "${PROJECT_SOURCE_DIR}/scripts/web" adblock "${_adblock_js_dir}"
+  COMMAND ${_run_script} "${PROJECT_SOURCE_DIR}/scripts/web" adblock "${_adblock_js_dir}"
   COMMAND ${CMAKE_COMMAND} -DINPUT=${_adblock_js_dir}/cosmetic.js -DOUTPUT=${_cosmetic_h}
           -DNAME=kAdblockCosmeticScript -P "${PROJECT_SOURCE_DIR}/cmake/EmbedText.cmake"
   COMMAND ${CMAKE_COMMAND} -DINPUT=${_adblock_js_dir}/picker.js -DOUTPUT=${_picker_h}
@@ -57,7 +65,7 @@ target_sources(brouk_renderer PRIVATE "${_cosmetic_h}" "${_picker_h}")
 set(_forms_js "${PROJECT_BINARY_DIR}/generated/brouk/forms.js")
 set(_forms_h "${PROJECT_BINARY_DIR}/generated/brouk/forms_script.h")
 add_custom_command(OUTPUT "${_forms_h}"
-  COMMAND "${PROJECT_SOURCE_DIR}/scripts/web" forms "${_forms_js}"
+  COMMAND ${_run_script} "${PROJECT_SOURCE_DIR}/scripts/web" forms "${_forms_js}"
   COMMAND ${CMAKE_COMMAND} -DINPUT=${_forms_js} -DOUTPUT=${_forms_h}
           -DNAME=kFormsScript -P "${PROJECT_SOURCE_DIR}/cmake/EmbedText.cmake"
   DEPENDS "${PROJECT_SOURCE_DIR}/web/forms/field_rules.ts"

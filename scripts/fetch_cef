@@ -2,7 +2,7 @@
 # Downloads the pinned CEF binary distribution (minimal) for this platform into
 # third_party/cef/<platform>/ (git-ignored) and verifies its SHA-256 checksum.
 #
-# Usage: scripts/fetch_cef [macosx64|macosarm64|linux64]
+# Usage: scripts/fetch_cef [macosx64|macosarm64|linux64|windows64]
 #   Without an argument, the platform of this machine is used. Pass the other
 #   macOS architecture to cross-compile (e.g. the Intel build on Apple Silicon).
 #
@@ -19,6 +19,7 @@ checksum() {
     macosx64) echo ebcb691252c9ccde63488a913e2381bce4e275acbbb96ce4763b318b7f0b781a ;;
     macosarm64) echo b7efb24bcce34b94e836a9f545005aea210e08abdf4ee1483ea03b8daf93f080 ;;
     linux64) echo e87e2c76304372dd28b899ceb6efa4b353f52700594ddc358a8237ec07ec6492 ;;
+    windows64) echo c81c34d048d87276f4a18f0b000206710a1709bb67dd658948b87100e1a538da ;;
     *) echo "Unknown CEF platform: $1" >&2; return 1 ;;
   esac
 }
@@ -32,6 +33,7 @@ else
     Darwin-x86_64) PLATFORM=macosx64 ;;
     Darwin-arm64) PLATFORM=macosarm64 ;;
     Linux-x86_64) PLATFORM=linux64 ;;
+    MINGW64_NT*-x86_64 | MSYS_NT*-x86_64) PLATFORM=windows64 ;;
     *) echo "Unsupported platform: $(uname -s)-$(uname -m)" >&2; exit 1 ;;
   esac
 fi
@@ -49,12 +51,17 @@ fi
 # Archives are cached outside the repo so switching versions or re-extracting
 # does not download again. CI points BROUK_CEF_CACHE at a cached directory.
 CACHE="${BROUK_CEF_CACHE:-$HOME/.cache/brouk/cef}"
+# Git Bash on Windows: GNU tar reads "D:\..." as a remote host; use the
+# /d/... form.
+if command -v cygpath >/dev/null; then CACHE="$(cygpath -u "$CACHE")"; fi
 mkdir -p "$CACHE"
 ARCHIVE="$CACHE/$NAME.tar.bz2"
 
+# Reads the file from stdin: with a Windows path (backslashes) in its
+# arguments, sha256sum would print the hash with a leading "\".
 sha256() {
-  if command -v sha256sum >/dev/null; then sha256sum "$1" | cut -d' ' -f1
-  else shasum -a 256 "$1" | cut -d' ' -f1; fi
+  if command -v sha256sum >/dev/null; then sha256sum < "$1" | cut -d' ' -f1
+  else shasum -a 256 < "$1" | cut -d' ' -f1; fi
 }
 
 if [[ ! -f "$ARCHIVE" ]] || [[ "$(sha256 "$ARCHIVE")" != "$EXPECTED" ]]; then

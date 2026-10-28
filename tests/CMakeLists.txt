@@ -12,7 +12,7 @@ FetchContent_MakeAvailable(googletest)
 # GoogleTest must match our sanitizer and RTTI settings.
 foreach(gtest_target gtest gtest_main)
   target_compile_options(${gtest_target} PRIVATE ${BROUK_SANITIZER_FLAGS}
-                         -fno-rtti)
+                         ${BROUK_NO_RTTI_FLAG})
 endforeach()
 
 include(GoogleTest)
@@ -91,4 +91,11 @@ add_executable(brouk_core_tests
 )
 brouk_target_options(brouk_core_tests)
 target_link_libraries(brouk_core_tests PRIVATE brouk_core_testing GTest::gtest_main)
+
+# A program that behaves the same on every system, for process_runner_test.
+add_executable(brouk_process_runner_helper core/process_runner_helper.cc)
+brouk_target_options(brouk_process_runner_helper)
+add_dependencies(brouk_core_tests brouk_process_runner_helper)
+target_compile_definitions(brouk_core_tests PRIVATE
+  BROUK_PROCESS_RUNNER_HELPER="$<TARGET_FILE:brouk_process_runner_helper>")
 gtest_discover_tests(brouk_core_tests DISCOVERY_MODE PRE_TEST)

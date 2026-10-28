@@ -18,6 +18,11 @@ if(APPLE)
   endif()
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set(BROUK_CEF_PLATFORM linux64)
+elseif(WIN32)
+  set(BROUK_CEF_PLATFORM windows64)
+  # CEF adds /MT (/MTd in Debug); the runtime library is chosen for all our
+  # targets in BroukCompilerOptions.cmake instead.
+  set(CEF_RUNTIME_LIBRARY_FLAG "" CACHE STRING "" FORCE)
 else()
   message(FATAL_ERROR "CEF platform not configured for ${CMAKE_SYSTEM_NAME}")
 endif()
@@ -39,6 +44,17 @@ if(APPLE)
   set(CEF_TARGET_SDK "${CMAKE_OSX_DEPLOYMENT_TARGET}")
   list(APPEND CEF_COMPILER_FLAGS
     "-mmacosx-version-min=${CMAKE_OSX_DEPLOYMENT_TARGET}")
+endif()
+
+# CEF's MSVC flags that clang-cl does not support: /MP (cl.exe's own
+# parallel build; Ninja runs compilers in parallel) and /RTC1 (cl.exe's
+# run-time checks). Its /W4 /WX are tuned for cl.exe; under clang-cl they
+# fail on CEF's own code, which is third-party code (no warnings, as
+# BroukSodium.cmake). Our targets get our flags (BroukCompilerOptions.cmake).
+if(MSVC)
+  list(REMOVE_ITEM CEF_COMPILER_FLAGS /MP /W4 /WX)
+  list(APPEND CEF_COMPILER_FLAGS /w)
+  list(REMOVE_ITEM CEF_COMPILER_FLAGS_DEBUG /RTC1)
 endif()
 
 # The minimal distribution ships only Release binaries of CEF itself; our Debug

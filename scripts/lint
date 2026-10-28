@@ -25,8 +25,17 @@ extra=()
 if [[ "$(uname -s)" == Darwin ]]; then
   extra+=("--extra-arg=-isysroot$(xcrun --show-sdk-path)")
 fi
+# Of those, only the files this build compiles: not the other systems'
+# versions (process_runner_win.cc on a Mac, process_runner_posix.cc on
+# Windows).
+files=()
+while IFS= read -r f; do
+  if grep -qF "/$f\"" "$BUILD_DIR/compile_commands.json"; then
+    files+=("$f")
+  fi
+done < <(git ls-files --cached --others --exclude-standard "${patterns[@]}")
 jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
 # xargs exits non-zero if any clang-tidy run fails.
-git ls-files --cached --others --exclude-standard "${patterns[@]}" |
+printf '%s\n' "${files[@]}" |
   xargs -P "$jobs" -n 4 "$CLANG_TIDY" --quiet -p "$BUILD_DIR" \
     ${extra[@]+"${extra[@]}"}

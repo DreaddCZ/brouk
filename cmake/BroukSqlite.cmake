@@ -31,7 +31,7 @@ function(brouk_sqlite_library target)
     SQLITE_OMIT_LOAD_EXTENSION
     SQLITE_OMIT_SHARED_CACHE
     SQLITE_USE_ALLOCA)
-  target_compile_options(${target} PRIVATE ${ARGN} -w)
+  target_compile_options(${target} PRIVATE ${ARGN} ${BROUK_NO_WARNINGS_FLAG})
   target_link_options(${target} PRIVATE ${ARGN})
   target_link_libraries(${target} PUBLIC Threads::Threads)
 endfunction()

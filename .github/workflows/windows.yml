@@ -1,0 +1,99 @@
+# Windows CI (specs/002, specs/001): builds the portable code (core, CEF
+# integration, renderer) on Windows x64 with clang-cl and runs its tests and
+# the internal pages' tests. There is no Windows app yet. Runs on pull
+# requests, on pushes to main and on demand.
+name: windows
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same pull request or branch replaces a running build.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    # The check's name, as required by the main ruleset.
+    name: windows
+    runs-on: windows-2025
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: bash
+    env:
+      BROUK_CEF_CACHE: ${{ github.workspace }}/.cef-cache
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Cache pinned tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tools
+          key: tools-${{ runner.os }}-${{ hashFiles('scripts/install_tools') }}
+
+      - name: Cache CEF download
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cef-cache
+          key: cef-windows64-${{ hashFiles('scripts/fetch_cef') }}
+
+      - name: Install tools
+        run: scripts/install_tools
+
+      # clang-cl needs the MSVC headers and libraries and the Windows SDK:
+      # load the Visual Studio developer environment for the later steps.
+      - name: Visual Studio environment
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
+            -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath
+          cmd /c "`"$vs\VC\Auxiliary\Build\vcvars64.bat`" >nul && set" | ForEach-Object {
+            if ($_ -match '^([^=]+)=(.*)$') {
+              Add-Content -Path $env:GITHUB_ENV -Value "$($Matches[1])=$($Matches[2])"
+            }
+          }
+
+      # clang-cl is the runner's LLVM (not pinned, like clang on the Linux
+      # runner); its version is printed here.
+      - name: Tool versions
+        run: |
+          source scripts/env.sh
+          clang-cl --version
+          cmake --version | head -1
+          cargo --version
+          node --version
+
+      - name: Internal pages (TypeScript type-check and tests)
+        run: scripts/web test
+
+      - name: Fetch CEF
+        run: scripts/fetch_cef windows64
+
+      # lld-link: Git Bash's /usr/bin/link would shadow MSVC's link.exe.
+      - name: Configure (Debug)
+        run: |
+          source scripts/env.sh
+          cmake -S . -B build/debug -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl \
+            -DCMAKE_LINKER=lld-link
+
+      - name: Build
+        run: |
+          source scripts/env.sh
+          # -k 0: report every compile error in one run.
+          cmake --build build/debug -- -k 0
+
+      - name: Test
+        run: |
+          source scripts/env.sh
+          ctest --test-dir build/debug --output-on-failure

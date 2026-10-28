@@ -95,7 +95,6 @@ set(BROUK_CORE_SOURCES
   password_store.h
   permissions.cc
   permissions.h
-  process_runner.cc
   process_runner.h
   profile_export.cc
   profile_export.h
@@ -157,6 +156,13 @@ set(BROUK_CORE_SOURCES
   zoom.h
 )
 
+# Starting programs is the one part that needs each system's own API.
+if(WIN32)
+  list(APPEND BROUK_CORE_SOURCES process_runner_win.cc)
+else()
+  list(APPEND BROUK_CORE_SOURCES process_runner_posix.cc)
+endif()
+
 # Built twice with different sanitizers (see BroukCompilerOptions.cmake):
 # brouk_core for the app process, brouk_core_testing for the tests.
 add_library(brouk_core STATIC ${BROUK_CORE_SOURCES})
@@ -166,7 +172,8 @@ add_library(brouk_core_testing STATIC EXCLUDE_FROM_ALL ${BROUK_CORE_SOURCES})
 brouk_target_options(brouk_core_testing)
 
 # yaml-cpp throws; the one file using it catches everything (see the file).
-set_source_files_properties(yaml_io.cc PROPERTIES COMPILE_OPTIONS -fexceptions)
+set_source_files_properties(yaml_io.cc PROPERTIES
+  COMPILE_OPTIONS ${BROUK_EXCEPTIONS_FLAG})
 
 target_link_libraries(brouk_core PRIVATE brouk_yaml_cpp brouk_sqlite brouk_sodium)
 target_link_libraries(brouk_core PUBLIC brouk_adblock_rs)

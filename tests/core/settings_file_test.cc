@@ -55,9 +55,13 @@ TEST_F(SettingsFileTest, SavesCreatesDirectoriesAndReadsBack) {
   EXPECT_TRUE(loaded.problems.empty());
   EXPECT_EQ(loaded.settings, settings);
   EXPECT_FALSE(std::filesystem::exists(nested.string() + ".tmp"));
+#if !defined(_WIN32)
+  // Windows has no POSIX permission bits (a file is readable by everyone the
+  // folder's access list allows; the user's own folder by default).
   auto perms = std::filesystem::status(nested).permissions();
   EXPECT_EQ(perms & std::filesystem::perms::group_read,
             std::filesystem::perms::none);
+#endif
 }
 
 TEST_F(SettingsFileTest, SaveReplacesHandEditedFile) {

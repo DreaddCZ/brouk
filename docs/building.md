@@ -174,6 +174,10 @@ All data is stored in `~/Library/Application Support/Brouk/`:
 Until profiles (spec 005) exist there is one profile with the id `default`.
 Deleting the `Brouk` folder resets the browser completely.
 
+CI builds the macOS app for Apple Silicon and runs its tests and clang-tidy
+for every pull request (`.github/workflows/macos.yml`: `scripts/build --test`,
+then `scripts/lint`). It signs ad-hoc, as a Mac without certificates does.
+
 ## Linux (core and tests only)
 
 The portable code (`src/core/`, `src/cef/`) builds and is tested on Linux;
@@ -187,6 +191,26 @@ cmake --build build/debug && ctest --test-dir build/debug
 ```
 
 Without CEF (core only): add `-DBROUK_WITH_CEF=OFF`.
+
+## Windows (core and tests only)
+
+There is no Windows app yet (spec 002). The same portable code builds and is
+tested on Windows x64 with clang-cl; CI does this for every pull request and
+push to `main` (`.github/workflows/windows.yml`; "Run workflow" on the
+Actions page runs it on demand). In Git
+Bash, with Visual Studio's C++ tools and LLVM installed and the Visual Studio
+developer environment loaded (`vcvars64.bat`):
+
+```sh
+scripts/install_tools && source scripts/env.sh
+scripts/fetch_cef windows64
+cmake -S . -B build/debug -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+  -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl -DCMAKE_LINKER=lld-link
+cmake --build build/debug && ctest --test-dir build/debug
+```
+
+On Windows the sanitizers are off (they run on Linux) and everything uses the
+static C runtime, as CEF does.
 
 ## Updating pinned versions
 

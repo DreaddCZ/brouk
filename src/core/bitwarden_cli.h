@@ -23,7 +23,8 @@ inline constexpr std::string_view kBitwardenLockedError =
 
 // Where the Bitwarden CLI is: `setting` (the "Bitwarden CLI" setting) if not
 // empty, else the first `bw` in Homebrew's folders and then `search_path`
-// (a PATH-style list). nullopt if there is none. `exists` checks a file.
+// (a PATH-style list; on Windows `bw.exe`, and no Homebrew). nullopt if there
+// is none. `exists` checks a file.
 std::optional<std::filesystem::path> FindBitwardenCli(
     std::string_view setting,
     std::string_view search_path,

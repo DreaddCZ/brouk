@@ -109,7 +109,11 @@ std::optional<std::int64_t> ParseNumber(std::string_view text) {
 std::tm LocalTime(std::int64_t time) {
   auto t = static_cast<std::time_t>(time);
   std::tm local{};
+#if defined(_WIN32)
+  localtime_s(&local, &t);
+#else
   localtime_r(&t, &local);
+#endif
   return local;
 }
 
