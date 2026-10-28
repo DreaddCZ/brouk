@@ -20,6 +20,8 @@ permissions:
 
 jobs:
   build-and-test:
+    # The check's name, as required by the main ruleset.
+    name: macos
     runs-on: macos-15
     timeout-minutes: 120
     env:

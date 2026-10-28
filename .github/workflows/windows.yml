@@ -20,6 +20,8 @@ permissions:
 
 jobs:
   build-and-test:
+    # The check's name, as required by the main ruleset.
+    name: windows
     runs-on: windows-2025
     timeout-minutes: 120
     defaults:
