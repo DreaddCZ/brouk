@@ -18,8 +18,10 @@ std::optional<std::string> InternalPageOf(std::string_view url);
 
 // The file to serve for an internal URL, relative to the bundle's web
 // folder: brouk://profiles/ -> "profiles/index.html",
-// brouk://profiles/app.js -> "profiles/app.js", and the shared modules every
-// page imports, brouk://profiles/shared/bridge.js -> "shared/bridge.js".
+// brouk://profiles/app.js -> "profiles/app.js", a page next to the main one
+// without its extension, brouk://credits/chromium -> "credits/chromium.html",
+// and the shared modules every page imports,
+// brouk://profiles/shared/bridge.js -> "shared/bridge.js".
 // Only plain file names (letters, digits, '_', '-', '.') with a known
 // extension are served; nullopt for anything else (no "..", no hidden
 // files, no query-dependent paths).

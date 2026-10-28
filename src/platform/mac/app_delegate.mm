@@ -51,6 +51,7 @@
 #include "cef/passwords_page_handler.h"
 #include "cef/profile_manager_handler.h"
 #include "cef/settings_handler.h"
+#include "cef/static_page_handler.h"
 #include "cef/task_manager_handler.h"
 #include "core/adblock_lists.h"
 #include "core/address_input.h"
@@ -2547,6 +2548,9 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
         std::make_unique<brouk::AppBookmarksPage>(self, _bookmarks, controller,
                                                   tabId));
   }
+  if ([page isEqualToString:@"credits"]) {
+    return std::make_unique<brouk::StaticPageHandler>();
+  }
   return nullptr;
 }
 
@@ -3834,11 +3838,26 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
 }
 
 // The version with the commit it was built from (019), e.g.
-// "Version 0.4.0 (a1b2c3d)".
+// "Version 0.4.0 (a1b2c3d)", and where the licences are (023). The
+// standard panel opens links only through macOS, which never hands
+// brouk:// addresses to Brouk (010), so it names the menu item instead.
 - (void)showAbout:(nullable id)sender {
+  NSMutableParagraphStyle* centered = [[NSMutableParagraphStyle alloc] init];
+  centered.alignment = NSTextAlignmentCenter;
+  NSAttributedString* credits = [[NSAttributedString alloc]
+      initWithString:@"Open source under the Apache License 2.0, built on "
+                     @"Chromium and other open-source software.\nTheir "
+                     @"licences: Help → Open-Source Licences."
+          attributes:@{
+            NSFontAttributeName :
+                [NSFont systemFontOfSize:NSFont.smallSystemFontSize],
+            NSForegroundColorAttributeName : NSColor.secondaryLabelColor,
+            NSParagraphStyleAttributeName : centered,
+          }];
   [NSApp orderFrontStandardAboutPanelWithOptions:@{
     NSAboutPanelOptionApplicationVersion : @(brouk::kAppVersion),
     NSAboutPanelOptionVersion : @(brouk::kAppCommit),
+    NSAboutPanelOptionCredits : credits,
   }];
 }
 
@@ -4221,6 +4240,13 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
   [self addItem:help
           title:@"Keyboard Shortcuts"
          action:@selector(showKeyboardShortcutsHelp:)
+            key:@""
+      modifiers:0];
+  [help addItem:NSMenuItem.separatorItem];
+  // In the front browser window (023).
+  [self addItem:help
+          title:@"Open-Source Licences"
+         action:@selector(showCredits:)
             key:@""
       modifiers:0];
   NSApp.helpMenu = help;

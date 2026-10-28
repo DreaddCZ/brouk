@@ -1,6 +1,7 @@
 #include "cef/internal_page_client.h"
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -12,6 +13,16 @@
 #include "include/wrapper/cef_helpers.h"
 
 namespace brouk {
+
+namespace {
+
+// Pages whose web links open in a tab: help (016) and the licences (023).
+bool OpensWebLinks(const std::string& page_url) {
+  std::optional<std::string> page = InternalPageOf(page_url);
+  return page == "help" || page == "credits";
+}
+
+}  // namespace
 
 InternalPageClient::InternalPageClient(
     InternalPageDelegate* delegate,
@@ -114,8 +125,8 @@ bool InternalPageClient::OnBeforePopup(
     bool* /*no_javascript_access*/) {
   CEF_REQUIRE_UI_THREAD();
   // Internal pages open no popups; a web link ⌘-clicked on the help page
-  // opens in a tab (016).
-  if (frame && InternalPageOf(frame->GetURL().ToString()) == "help") {
+  // (016) or the licences page (023) opens in a tab.
+  if (frame && OpensWebLinks(frame->GetURL().ToString())) {
     OpenHelpWebLink(target_url.ToString());
   }
   return true;
@@ -152,12 +163,12 @@ bool InternalPageClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
                                         bool /*user_gesture*/,
                                         bool /*is_redirect*/) {
   CEF_REQUIRE_UI_THREAD();
-  // An internal page window shows internal pages only. Web links on the
-  // help page open in a tab of the default profile instead (016).
+  // An internal page shows internal pages only. Web links on the help page
+  // (016) and the licences page (023) open in a tab of the default profile
+  // instead.
   std::string url = request->GetURL().ToString();
   if (!IsInternalPageUrl(url)) {
-    if (frame->IsMain() &&
-        InternalPageOf(frame->GetURL().ToString()) == "help") {
+    if (frame->IsMain() && OpensWebLinks(frame->GetURL().ToString())) {
       OpenHelpWebLink(url);
     }
     return true;

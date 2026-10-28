@@ -11,9 +11,9 @@ namespace brouk {
 namespace {
 
 // Pages that exist. New pages are added here.
-constexpr std::array<std::string_view, 9> kPages = {
-    "bookmarks", "downloads", "help",         "history", "passwords",
-    "profiles",  "settings",  "task-manager", "tools"};
+constexpr std::array<std::string_view, 10> kPages = {
+    "bookmarks", "credits",  "downloads", "help",         "history",
+    "passwords", "profiles", "settings",  "task-manager", "tools"};
 
 constexpr std::array<std::string_view, 4> kExtensions = {".html", ".js", ".css",
                                                          ".svg"};
@@ -85,6 +85,13 @@ std::optional<std::string> InternalResourcePath(std::string_view url) {
     folder = "shared";
     path.remove_prefix(kShared.size());
   }
+  // A page next to the main one, without its extension:
+  // brouk://credits/chromium -> "credits/chromium.html" (023).
+  std::string file(path);
+  if (IsPlainFileName(path) && path.find('.') == std::string_view::npos) {
+    file += ".html";
+  }
+  path = file;
   // One plain file name: no further folders, so nothing outside web/.
   if (!IsPlainFileName(path) || !HasKnownExtension(path)) {
     return std::nullopt;

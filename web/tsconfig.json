@@ -16,5 +16,5 @@
     "rootDir": ".",
     "outDir": "../build/web"
   },
-  "include": ["shared/**/*.ts", "bookmarks/**/*.ts", "downloads/**/*.ts", "help/**/*.ts", "history/**/*.ts", "profiles/**/*.ts", "settings/**/*.ts", "task-manager/**/*.ts", "tools/**/*.ts", "forms/**/*.ts", "passwords/**/*.ts", "jsonview/**/*.test.ts"]
+  "include": ["shared/**/*.ts", "bookmarks/**/*.ts", "credits/**/*.ts", "downloads/**/*.ts", "help/**/*.ts", "history/**/*.ts", "profiles/**/*.ts", "settings/**/*.ts", "task-manager/**/*.ts", "tools/**/*.ts", "forms/**/*.ts", "passwords/**/*.ts", "jsonview/**/*.test.ts"]
 }
