@@ -1,0 +1,126 @@
+# Project rules for Opengrep (scripts/sast). They turn conventions from
+# CLAUDE.md into checks. A finding that is fine where it is gets a
+# "// nosemgrep: <rule-id>" comment on the line, with the reason next to it.
+rules:
+  # --- Internal pages (TypeScript). They can call the browser through the
+  # bridge, so script injected into one has the browser's powers.
+
+  - id: ts-html-sink
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      HTML parsed from a string can run script in a privileged internal page.
+      Build the DOM with createElement/textContent instead.
+    patterns:
+      - pattern-either:
+          - pattern: $X.innerHTML = $Y
+          - pattern: $X.outerHTML = $Y
+          - pattern: $X.srcdoc = $Y
+          - pattern: $X.insertAdjacentHTML(...)
+          - pattern: document.write(...)
+          - pattern: document.writeln(...)
+          - pattern: $P.parseFromString(...)
+          - pattern: $R.createContextualFragment(...)
+      # A constant string with no interpolation cannot be injected.
+      - pattern-not: $X.innerHTML = "..."
+      - pattern-not: $X.outerHTML = "..."
+
+  - id: ts-code-from-string
+    languages: [typescript]
+    severity: ERROR
+    message: Code built from a string; internal pages never need this.
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: new Function(...)
+      - pattern: Function(...)
+      - pattern: setTimeout("...", ...)
+      - pattern: setInterval("...", ...)
+
+  - id: ts-url-sink
+    languages: [typescript]
+    severity: WARNING
+    message: >-
+      A URL from data is put where clicking or loading it runs it; a
+      "javascript:" URL runs script in this page. Allow only http(s) (or the
+      schemes the feature needs) before assigning, then mark the line.
+    patterns:
+      - pattern-either:
+          - pattern: $X.href = $Y
+          - pattern: $X.action = $Y
+          - pattern: $X.formAction = $Y
+          - pattern: location.assign($Y)
+          - pattern: location.replace($Y)
+          - pattern: window.open($Y, ...)
+      - pattern-not: $X.$F = "..."
+      # A link to a fragment of this page.
+      - pattern-not: $X.$F = `#${$E}`
+
+  - id: ts-cefquery-outside-bridge
+    languages: [typescript]
+    severity: ERROR
+    message: >-
+      Pages talk to the browser only through web/shared/bridge.ts, so every
+      message has one typed, validated shape.
+    paths:
+      exclude:
+        - web/shared/bridge.ts
+    pattern-regex: \bcefQuery(Cancel)?\b
+
+  - id: ts-postmessage-any-origin
+    languages: [typescript]
+    severity: ERROR
+    message: postMessage to "*" hands the data to whatever page is there.
+    pattern: $W.postMessage($M, "*", ...)
+
+  # --- C++ and Objective-C++. Regex rules, because Opengrep does not parse
+  # Objective-C++ and these must cover src/platform/mac too.
+
+  - id: cpp-process-spawn
+    languages: [regex]
+    severity: ERROR
+    message: >-
+      Programs are started only by src/core/process_runner.cc (an argument
+      vector, never a shell), so there is one place to review.
+    paths:
+      include:
+        - src/
+      exclude:
+        - src/core/process_runner.cc
+    pattern-regex: (\bposix_spawnp?\s*\(|\bexec[lv]p?e?\s*\(|(?<![\w.:>])(std::)?system\s*\(|\bpopen\s*\(|\bNSTask\b|launchedTaskWith)
+
+  - id: cpp-unsafe-c-function
+    languages: [regex]
+    severity: ERROR
+    message: >-
+      No bounds or error checks. Use std::string / std::snprintf /
+      std::from_chars instead.
+    paths:
+      include:
+        - src/
+    pattern-regex: (?<![\w.>])(std::)?(strcpy|strcat|sprintf|vsprintf|gets|atoi|atol|atoll|atof|strtok)\s*\(
+
+  - id: cpp-delete
+    # Parsed, so comments and JavaScript inside C++ strings do not match.
+    # Objective-C++ (.mm) is not parsed; it uses ARC.
+    languages: [cpp]
+    severity: ERROR
+    message: >-
+      No delete in our code: owned objects live in std::unique_ptr, CEF
+      objects in CefRefPtr.
+    paths:
+      include:
+        - src/
+    pattern-either:
+      - pattern: delete $X;
+      - pattern: delete[] $X;
+
+  - id: log-secret
+    languages: [regex]
+    severity: ERROR
+    message: >-
+      Looks like a password, token, cookie or key is logged. Never log
+      secrets or form contents.
+    paths:
+      include:
+        - src/
+    pattern-regex: (?i)(\b(D?LOG|VLOG|CHECK)\s*\([^)]*\)[^;]*<<\s*[\w.:>()\[\]-]*|NSLog\s*\(@"[^"]*"\s*,[^;]*?|std::(cerr|cout|clog)\s*<<[^;]*?<<\s*[\w.:>()\[\]-]*|fprintf\s*\(\s*stderr[^;]*?,\s*[\w.:>()\[\]-]*)(password|passwd|passphrase|secret|token|cookie|credential|api_?key|private_?key|master_?key)
