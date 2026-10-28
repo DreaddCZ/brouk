@@ -167,6 +167,7 @@ Dev tools are switched **per tab** with an always-visible toggle — rules never
 | Built-in help, with "?" links from every page | ✅ in use |
 | Task manager (pause, unload, end tabs; graph) | ✅ in use |
 | Signed releases with automatic updates (beta) | ✅ in use |
+| Open source (Apache 2.0), with a page of third-party licences | ✅ in use |
 | VPN per profile | 🔍 being investigated |
 
 <!-- Update this slide before each presentation. -->
