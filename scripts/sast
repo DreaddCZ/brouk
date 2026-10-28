@@ -5,6 +5,7 @@
 #   - OSV-Scanner:  known vulnerabilities in the npm and Cargo lockfiles
 #   - cargo-deny:   Rust advisories, licences and sources (src/adblock)
 #   - zizmor:       GitHub Actions workflows
+#   - check_cef:    whether a CEF update is overdue (docs/cef-updates.md)
 #
 #   scripts/sast            everything (CI); needs the network for the
 #                           vulnerability databases
@@ -43,4 +44,5 @@ run osv-scanner osv-scanner scan source \
   --lockfile web/package-lock.json --lockfile src/adblock/Cargo.lock
 run cargo-deny cargo-deny --manifest-path src/adblock/Cargo.toml check
 run zizmor zizmor --no-progress .github/workflows
+run "CEF version" scripts/check_cef
 exit $status

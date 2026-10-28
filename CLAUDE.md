@@ -60,6 +60,7 @@ When a new open decision comes up, list it here until it is decided, then record
 
 ## Working with CEF and the code
 
+- **CEF updates** follow the policy and steps in `docs/cef-updates.md` (patch within 7 days, major within 28; `scripts/check_cef`, `scripts/update_cef`).
 - **Check the CEF headers before using any CEF API.** The CEF API changes between versions and your training data may be outdated; the headers in the CEF distribution used by the build (`include/`) are the source of truth, including their doc comments. Do not rely on memory for CEF function names, signatures or behaviour.
 - Same for macOS APIs that are new or recently changed: verify against the SDK headers.
 - Keep quality checks strict so mistakes surface immediately: compiler warnings as errors, sanitizers (AddressSanitizer, UndefinedBehaviorSanitizer) in debug/test builds and CI, and tests for every change.

@@ -112,6 +112,10 @@ certificate on another Mac, open Xcode → Settings → Accounts and sign in.
   advisories, licences, sources) and zizmor (GitHub Actions workflows).
   A finding that is fine where it is gets a `// nosemgrep: <rule-id>` comment
   with the reason; a false gitleaks hit goes into `.gitleaks.toml` (by path and rule).
+- `scripts/sast` also runs `scripts/check_cef`, which fails when a CEF update
+  is overdue; updating CEF is described in `docs/cef-updates.md`. The logic of
+  build scripts written in Node is tested with
+  `node --test scripts/*.test.mjs` (CI runs it).
 - The pre-commit hook runs `scripts/sast --staged` (secrets and project rules
   on the staged files, a few seconds, offline). Enable it once per clone:
   `git config core.hooksPath .githooks`.

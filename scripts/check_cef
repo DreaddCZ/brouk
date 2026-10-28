@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# Checks the pinned CEF version (scripts/fetch_cef) against CEF's newest
+# stable builds and the update policy of specs/001 ("Update process"; rules
+# in scripts/cef_versions.mjs). Exit 1 if an update is overdue. Part of
+# scripts/sast, so the weekly security workflow reports it.
+#   scripts/check_cef
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=/dev/null
+source "$ROOT/scripts/env.sh"
+
+pinned="$(sed -n 's/^CEF_VERSION="\(.*\)"$/\1/p' "$ROOT/scripts/fetch_cef")"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+curl -fsSL --retry 3 -o "$tmp/index.json" https://cef-builds.spotifycdn.com/index.json
+node "$ROOT/scripts/cef_versions.mjs" check "$tmp/index.json" "$pinned"
