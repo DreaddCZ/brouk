@@ -111,7 +111,7 @@ certificate on another Mac, open Xcode → Settings → Accounts and sign in.
   `src/adblock/Cargo.lock`), cargo-deny (`src/adblock/deny.toml`: Rust
   advisories, licences, sources) and zizmor (GitHub Actions workflows).
   A finding that is fine where it is gets a `// nosemgrep: <rule-id>` comment
-  with the reason; a false gitleaks hit goes into `.gitleaksignore`.
+  with the reason; a false gitleaks hit goes into `.gitleaks.toml` (by path and rule).
 - The pre-commit hook runs `scripts/sast --staged` (secrets and project rules
   on the staged files, a few seconds, offline). Enable it once per clone:
   `git config core.hooksPath .githooks`.
