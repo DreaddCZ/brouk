@@ -1,5 +1,6 @@
 // Tests for cef_versions.mjs: node --test scripts/*.test.mjs
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 import { assess, parseVersion, PLATFORMS, stableReleases } from './cef_versions.mjs';
@@ -108,4 +109,12 @@ test('an older extended-support branch does not count as newer', () => {
 
 test('an unreadable pinned version is reported', () => {
   assert.equal(assess(index([]), 'garbage', NOW).overdue, true);
+});
+
+test('every platform fetch_cef has a checksum for is updated', () => {
+  // A platform missing here keeps the old version's checksum (CEF 156: Windows).
+  const fetchCef = readFileSync(new URL('./fetch_cef', import.meta.url), 'utf8');
+  const pinned = [...fetchCef.matchAll(/^ {4}([a-z0-9]+)\) echo [0-9a-f]{64} ;;$/gm)].map((m) => m[1]);
+  assert.ok(pinned.length > 0);
+  assert.deepEqual([...PLATFORMS].sort(), pinned.sort());
 });

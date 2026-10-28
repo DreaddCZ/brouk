@@ -16,7 +16,7 @@ import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 /** The platforms we build, as named in the index. */
-export const PLATFORMS = ['macosx64', 'macosarm64', 'linux64'];
+export const PLATFORMS = ['macosx64', 'macosarm64', 'linux64', 'windows64'];
 export const PATCH_DAYS = 7;
 export const MAJOR_DAYS = 28;
 const DAY_MS = 24 * 60 * 60 * 1000;
