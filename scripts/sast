@@ -6,11 +6,14 @@
 #   - cargo-deny:   Rust advisories, licences and sources (src/adblock)
 #   - zizmor:       GitHub Actions workflows
 #   - check_cef:    whether a CEF update is overdue (docs/cef-updates.md)
+#   - check_terms:  real organisation names in staged files (only with
+#                   --staged; the list is private, see the script)
 #
 #   scripts/sast            everything (CI); needs the network for the
 #                           vulnerability databases
-#   scripts/sast --staged   only the staged changes, offline and fast: secrets
-#                           and project rules (the pre-commit hook)
+#   scripts/sast --staged   only the staged changes, offline and fast: secrets,
+#                           organisation names and project rules (the
+#                           pre-commit hook)
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck source=/dev/null
@@ -26,6 +29,7 @@ run() {  # run <name> <command...>: runs every check, fails at the end
 
 if [[ "${1:-}" == "--staged" ]]; then
   run gitleaks gitleaks git --staged --no-banner --redact --log-level=warn .
+  run "organisation names" scripts/check_terms --staged
   files=()
   while IFS= read -r f; do files+=("$f"); done < <(
     git diff --cached --name-only --diff-filter=ACMR -- src web |

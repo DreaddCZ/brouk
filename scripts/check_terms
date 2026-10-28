@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# Checks that no real organisation name (employer, clients, their domains or
+# tenants) gets into the public repository. The names themselves are private,
+# so they live outside the repository, one per line (case-insensitive; blank
+# lines and lines starting with # are ignored):
+#   ~/.config/brouk/forbidden-terms.txt   (or $BROUK_FORBIDDEN_TERMS)
+# Without that file there is nothing to check and the script passes.
+# Matches are reported by location only, so the names never reach a log.
+#
+#   scripts/check_terms --staged          staged files and their names
+#                                         (pre-commit hook, via scripts/sast)
+#   scripts/check_terms --message <file>  a commit message (commit-msg hook)
+#   scripts/check_terms --all             tracked files, branch and tag names,
+#                                         and every commit's authors, message
+#                                         and diff (before publishing)
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+list="${BROUK_FORBIDDEN_TERMS:-$HOME/.config/brouk/forbidden-terms.txt}"
+mode="${1:-}"
+case "$mode" in
+  --staged | --all) ;;
+  --message) [[ -n "${2:-}" ]] || { echo "usage: $0 --message <file>" >&2; exit 2; } ;;
+  *) echo "usage: $0 --staged | --message <file> | --all" >&2; exit 2 ;;
+esac
+if [[ ! -f "$list" ]]; then
+  [[ "$mode" == "--all" ]] && echo "check_terms: no list at $list, nothing checked"
+  exit 0
+fi
+
+# The usable terms, lower case; an empty pattern would match every line.
+terms="$(mktemp)"
+trap 'rm -f "$terms"' EXIT
+grep -v -e '^[[:space:]]*#' -e '^[[:space:]]*$' "$list" |
+  sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' |
+  tr '[:upper:]' '[:lower:]' >"$terms" || true
+[[ -s "$terms" ]] || exit 0
+
+found=0
+report() {  # report <where>
+  echo "check_terms: a forbidden term in $1" >&2
+  found=1
+}
+# Prints the input lines that contain a term ("<n>:<line>").
+matches() { grep -n -i -F -f "$terms" || true; }
+
+case "$mode" in
+  --staged)
+    files=()
+    while IFS= read -r f; do files+=("$f"); done < <(
+      git diff --cached --name-only --diff-filter=ACMR)
+    [[ ${#files[@]} -gt 0 ]] || exit 0
+    while IFS= read -r name; do report "the file name $name"; done < <(
+      printf '%s\n' "${files[@]}" | matches | cut -d: -f2-)
+    while IFS= read -r hit; do report "${hit%%:*}:$(cut -d: -f1 <<<"${hit#*:}")"; done < <(
+      git grep --cached -I -n -i -F -f "$terms" -- "${files[@]}" || true)
+    ;;
+  --message)
+    while IFS= read -r hit; do report "the commit message, line ${hit%%:*}"; done < <(
+      grep -v '^#' "$2" | matches)
+    ;;
+  --all)
+    while IFS= read -r hit; do report "${hit%%:*}:$(cut -d: -f1 <<<"${hit#*:}")"; done < <(
+      git grep -I -n -i -F -f "$terms" || true)
+    while IFS= read -r ref; do report "the ref name $ref"; done < <(
+      git for-each-ref --format='%(refname)' | matches | cut -d: -f2-)
+    # One stream of all history; awk keeps track of the commit being read.
+    while IFS= read -r commit; do report "commit $commit"; done < <(
+      git log --all -p --no-color --format='commit %H%n%an <%ae>%n%cn <%ce>%n%B' |
+        awk -v list="$terms" '
+          BEGIN { while ((getline t < list) > 0) terms[t] = 1 }
+          /^commit [0-9a-f]{40}$/ { commit = $2; next }
+          {
+            line = tolower($0)
+            for (t in terms) if (index(line, t) && !(commit in seen)) {
+              seen[commit] = 1; print commit
+            }
+          }')
+    ;;
+esac
+
+if [[ $found -ne 0 ]]; then
+  echo "Replace real organisation names with placeholders (contoso, example.com, \"Client A\")." >&2
+fi
+exit $found

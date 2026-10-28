@@ -116,9 +116,15 @@ certificate on another Mac, open Xcode → Settings → Accounts and sign in.
   is overdue; updating CEF is described in `docs/cef-updates.md`. The logic of
   build scripts written in Node is tested with
   `node --test scripts/*.test.mjs` (CI runs it).
-- The pre-commit hook runs `scripts/sast --staged` (secrets and project rules
-  on the staged files, a few seconds, offline). Enable it once per clone:
-  `git config core.hooksPath .githooks`.
+- The pre-commit hook runs `scripts/sast --staged` (secrets, organisation
+  names and project rules on the staged files, a few seconds, offline), and
+  the commit-msg hook checks the message for organisation names. Enable both
+  once per clone: `git config core.hooksPath .githooks`.
+- `scripts/check_terms` keeps real company and client names out of the public
+  repository. The names are private, so they are listed outside it, one per
+  line, in `~/.config/brouk/forbidden-terms.txt`; without that file the check
+  passes. `scripts/check_terms --all` also checks branch names and every
+  commit (authors, messages and diffs).
 - Internal pages (`web/`, TypeScript) are compiled into
   `Brouk.app/Contents/Resources/web/` by the build; `scripts/web test`
   type-checks them and runs their unit tests (Node's test runner). The first
