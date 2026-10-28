@@ -20,7 +20,7 @@ clang-format and clang-tidy 22.1.8, Rust 1.98.0 (rustc and cargo, only for
 the ad blocking engine; specs 007 and 001). The TypeScript compiler (`tsc`, chosen in
 spec 001) is pinned in `web/package-lock.json` with its integrity hash:
 TypeScript 6.0.3 (Apache-2.0), installed by `scripts/web`. The help page's
-Markdown is converted at build time with markdown-it 15.0.2 (MIT, spec 016,
+Markdown is converted at build time with markdown-it 15.0.3 (MIT, spec 016,
 approved by the user 2026-10-23; nothing of it ships in the app), with its
 dependencies argparse, entities, linkify-it, mdurl, punycode.js and uc.micro
 (MIT/BSD-2-Clause/Python-2.0 for argparse), pinned in the same lockfile. The only package the
