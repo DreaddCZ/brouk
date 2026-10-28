@@ -8,8 +8,16 @@ void Cases(char* buffer, const char* text, int* p, Widget* w) {
   posix_spawnp(&pid, "bw", nullptr, nullptr, argv, env);
   // ruleid: cpp-process-spawn
   execvp("bw", argv);
+  // ruleid: cpp-process-spawn
+  CreateProcessW(program, line, nullptr, nullptr, TRUE, 0, env, nullptr, &si, &pi);
+  // ruleid: cpp-process-spawn
+  ShellExecuteW(nullptr, L"open", file, nullptr, nullptr, SW_SHOW);
+  // ruleid: cpp-process-spawn
+  _wspawnvp(_P_WAIT, L"bw", argv);
   // ok: cpp-process-spawn
   file_system(path);
+  // ok: cpp-process-spawn
+  CreateProcessThing(x);
 
   // ruleid: cpp-unsafe-c-function
   strcpy(buffer, text);

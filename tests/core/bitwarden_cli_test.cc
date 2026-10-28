@@ -42,6 +42,16 @@ TEST(BitwardenCliTest, FindsTheProgram) {
   auto only = [](std::string_view path) {
     return [path](const std::filesystem::path& p) { return p == path; };
   };
+#if defined(_WIN32)
+  EXPECT_EQ(FindBitwardenCli("", "C:\\Windows;relative;\\nodrive;C:\\Tools",
+                             only("C:\\Tools\\bw.exe")),
+            "C:\\Tools\\bw.exe");
+  EXPECT_FALSE(FindBitwardenCli("", "C:\\Tools", only("C:\\Tools\\bw")));
+  EXPECT_FALSE(FindBitwardenCli("", "relative", only("relative\\bw.exe")));
+  EXPECT_EQ(
+      FindBitwardenCli(" C:\\custom\\bw.exe ", "", only("C:\\custom\\bw.exe")),
+      "C:\\custom\\bw.exe");
+#else
   EXPECT_EQ(FindBitwardenCli("", "/usr/bin:/bin", only("/opt/homebrew/bin/bw")),
             "/opt/homebrew/bin/bw");
   EXPECT_EQ(FindBitwardenCli("", "/usr/bin:relative:/home/u/.npm/bin",
@@ -52,6 +62,7 @@ TEST(BitwardenCliTest, FindsTheProgram) {
   EXPECT_FALSE(
       FindBitwardenCli("/custom/bw", "", only("/opt/homebrew/bin/bw")));
   EXPECT_FALSE(FindBitwardenCli("", "/usr/bin", only("/elsewhere/bw")));
+#endif
 }
 
 TEST(BitwardenCliTest, UnlockPassesThePasswordInTheEnvironment) {

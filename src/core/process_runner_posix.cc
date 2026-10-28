@@ -1,3 +1,5 @@
+// RunProcess on macOS and Linux (process_runner_win.cc is the Windows
+// version).
 #include "core/process_runner.h"
 
 #include <fcntl.h>

@@ -10,9 +10,19 @@ namespace brouk {
 
 namespace {
 
+#if defined(_WIN32)
+// PATH is separated by ";". Only the .exe: RunProcess refuses the bw.cmd
+// that npm installs (cmd.exe would parse its arguments again).
+constexpr char kPathSeparator = ';';
+constexpr std::string_view kCliName = "bw.exe";
+constexpr std::array<std::string_view, 0> kHomebrewFolders = {};
+#else
+constexpr char kPathSeparator = ':';
+constexpr std::string_view kCliName = "bw";
 // Where Homebrew puts programs (Apple silicon, Intel).
 constexpr std::array<std::string_view, 2> kHomebrewFolders = {
     "/opt/homebrew/bin", "/usr/local/bin"};
+#endif
 
 // Variables Brouk's environment must not pass on to `bw`: other sessions
 // and credentials, and Node.js options that would change how it runs.
@@ -91,9 +101,10 @@ std::optional<std::filesystem::path> FindBitwardenCli(
   std::vector<std::filesystem::path> folders(kHomebrewFolders.begin(),
                                              kHomebrewFolders.end());
   while (!search_path.empty()) {
-    std::size_t end = search_path.find(':');
+    std::size_t end = search_path.find(kPathSeparator);
     std::string_view folder = search_path.substr(0, end);
-    if (!folder.empty() && folder.front() == '/') {
+    // Relative folders would depend on Brouk's working folder.
+    if (!folder.empty() && std::filesystem::path(folder).is_absolute()) {
       folders.emplace_back(folder);
     }
     if (end == std::string_view::npos) {
@@ -102,8 +113,8 @@ std::optional<std::filesystem::path> FindBitwardenCli(
     search_path.remove_prefix(end + 1);
   }
   for (const std::filesystem::path& folder : folders) {
-    if (exists(folder / "bw")) {
-      return folder / "bw";
+    if (exists(folder / kCliName)) {
+      return folder / kCliName;
     }
   }
   return std::nullopt;

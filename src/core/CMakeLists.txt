@@ -95,7 +95,6 @@ set(BROUK_CORE_SOURCES
   password_store.h
   permissions.cc
   permissions.h
-  process_runner.cc
   process_runner.h
   profile_export.cc
   profile_export.h
@@ -156,6 +155,13 @@ set(BROUK_CORE_SOURCES
   zoom.cc
   zoom.h
 )
+
+# Starting programs is the one part that needs each system's own API.
+if(WIN32)
+  list(APPEND BROUK_CORE_SOURCES process_runner_win.cc)
+else()
+  list(APPEND BROUK_CORE_SOURCES process_runner_posix.cc)
+endif()
 
 # Built twice with different sanitizers (see BroukCompilerOptions.cmake):
 # brouk_core for the app process, brouk_core_testing for the tests.

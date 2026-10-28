@@ -4,7 +4,11 @@
 #include <cstdint>
 #include <string>
 
+#if defined(_WIN32)
+#include <process.h>
+#else
 #include <unistd.h>
+#endif
 
 #include "brouk/adblock_cosmetic_script.h"
 #include "brouk/adblock_picker_script.h"
@@ -26,6 +30,14 @@
 namespace brouk {
 
 namespace {
+
+int CurrentProcessId() {
+#if defined(_WIN32)
+  return _getpid();
+#else
+  return static_cast<int>(getpid());
+#endif
+}
 
 // Names of the native functions while the page script starts; the script
 // removes them from the page's global object right away.
@@ -473,7 +485,7 @@ void RendererApp::OnContextCreated(CefRefPtr<CefBrowser> browser,
     // The task manager's Process ID column (020).
     CefRefPtr<CefProcessMessage> message =
         CefProcessMessage::Create(std::string(kRendererProcessMessage));
-    message->GetArgumentList()->SetInt(0, static_cast<int>(getpid()));
+    message->GetArgumentList()->SetInt(0, CurrentProcessId());
     frame->SendProcessMessage(PID_BROWSER, message);
   }
   if (IsInternalPageUrl(frame->GetURL().ToString())) {
