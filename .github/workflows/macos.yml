@@ -19,7 +19,28 @@ permissions:
   contents: read
 
 jobs:
+  # Specs and docs only (for example the spec of a future feature): the
+  # build below is skipped, which its required check counts as passed.
+  changes:
+    runs-on: ubuntu-24.04
+    outputs:
+      build: ${{ steps.check.outputs.build }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: check
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: node scripts/ci_changes.mjs >> "$GITHUB_OUTPUT"
+
   build-and-test:
+    # Builds unless the check above ran and found only docs.
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || needs.changes.outputs.build != 'false') }}
     # The check's name, as required by the main ruleset.
     name: macos
     runs-on: macos-15

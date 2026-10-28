@@ -178,6 +178,13 @@ CI builds the macOS app for Apple Silicon and runs its tests and clang-tidy
 for every pull request (`.github/workflows/macos.yml`: `scripts/build --test`,
 then `scripts/lint`). It signs ad-hoc, as a Mac without certificates does.
 
+The linux, macos and windows workflows first check what changed
+(`scripts/ci_changes.mjs`): a change to specs and docs only (`specs/`,
+`docs/`, Markdown files at the top level, issue and pull request templates)
+skips the build, and the required check counts the skipped job as passed.
+Everything else builds, including help (`web/help/content/`), which is
+built into the app.
+
 ## Linux (core and tests only)
 
 The portable code (`src/core/`, `src/cef/`) builds and is tested on Linux;
