@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Writes the open-source licences page's data (spec 023) with the pinned
+# Node.js; see scripts/credits.mjs for the arguments. Run by the build.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=/dev/null
+source "$ROOT/scripts/env.sh"
+exec node "$ROOT/scripts/credits.mjs" "$@"
