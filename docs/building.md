@@ -31,7 +31,8 @@ What `scripts/build` does:
 
 1. `scripts/install_tools` downloads the pinned build tools (CMake, Ninja,
    Node.js, GitHub CLI, clang-format, clang-tidy, Rust with the standard
-   library for both Mac architectures) into `.tools/` and checks
+   library for both Mac architectures, and the security scanners of
+   `scripts/sast`) into `.tools/` and checks
    their checksums. Nothing is installed system-wide. (Homebrew is not used:
    it no longer ships prebuilt tools for Intel Macs.)
 2. `scripts/fetch_cef` downloads the pinned CEF version for the target
@@ -98,7 +99,22 @@ certificate on another Mac, open Xcode → Settings → Accounts and sign in.
   cannot run under AddressSanitizer: the CEF framework traps at startup.)
 - Compiler warnings are errors.
 - `scripts/format` formats the code (`--check` only reports), `scripts/lint
-  [build-dir]` runs clang-tidy on the portable code.
+  [build-dir]` runs clang-tidy, including the Clang Static Analyzer, on the
+  portable code and, on a Mac, the macOS UI (`src/platform/mac/.clang-tidy`:
+  only the analyzer there).
+- `scripts/sast` runs the security scanners (CI does too, in the `security`
+  job): gitleaks (secrets in the whole history), Opengrep with the project
+  rules in `scripts/opengrep/` (unsafe DOM and URL sinks in internal pages,
+  `cefQuery` outside the bridge, process spawning outside `process_runner`,
+  unsafe C functions, `delete`, logged secrets) and their tests,
+  OSV-Scanner (known vulnerabilities in `web/package-lock.json` and
+  `src/adblock/Cargo.lock`), cargo-deny (`src/adblock/deny.toml`: Rust
+  advisories, licences, sources) and zizmor (GitHub Actions workflows).
+  A finding that is fine where it is gets a `// nosemgrep: <rule-id>` comment
+  with the reason; a false gitleaks hit goes into `.gitleaksignore`.
+- The pre-commit hook runs `scripts/sast --staged` (secrets and project rules
+  on the staged files, a few seconds, offline). Enable it once per clone:
+  `git config core.hooksPath .githooks`.
 - Internal pages (`web/`, TypeScript) are compiled into
   `Brouk.app/Contents/Resources/web/` by the build; `scripts/web test`
   type-checks them and runs their unit tests (Node's test runner). The first
