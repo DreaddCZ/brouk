@@ -26,10 +26,10 @@ update is overdue; run it by hand at any time. The rules live in
 
 1. Branch: `chore/cef-<version>` from `main`.
 2. `scripts/update_cef [version]` (default: the newest stable one). It
-   downloads the minimal distribution for macOS Intel, macOS Apple Silicon and
-   Linux, checks each against the SHA-1 in CEF's index, writes the new version
-   and SHA-256 checksums into `scripts/fetch_cef` and `third_party/README.md`,
-   fetches the new CEF for this Mac, and writes the changes of CEF's API
+   downloads the minimal distribution for macOS Intel, macOS Apple Silicon,
+   Linux and Windows (CI), checks each against the SHA-1 in CEF's index,
+   writes the new version and SHA-256 checksums into `scripts/fetch_cef` and
+   `third_party/README.md`, fetches the new CEF for this Mac, and writes the changes of CEF's API
    headers to `build/cef-include.diff`.
 3. Major updates: review `build/cef-include.diff` — the headers are the
    source of truth for the API (CLAUDE.md), not memory. Fix compile errors,

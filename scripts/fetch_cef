@@ -19,7 +19,7 @@ checksum() {
     macosx64) echo e584ade521802f8c2779d24996b32ddc183e8502743e5e3910b7247bb08f24f1 ;;
     macosarm64) echo ed994b907ad596ca609a0542a1e2b22aa97e93e98b8141fed4c24aef39b9ccf6 ;;
     linux64) echo 4191ac920a91a052eba04afb6ed830d47aed46a3e246c434a2f062c23588dc8a ;;
-    windows64) echo c81c34d048d87276f4a18f0b000206710a1709bb67dd658948b87100e1a538da ;;
+    windows64) echo 99f8a6dffd47417e0caee7845a98c549b41f1d4246cd715dec843ca4b699ee57 ;;
     *) echo "Unknown CEF platform: $1" >&2; return 1 ;;
   esac
 }
