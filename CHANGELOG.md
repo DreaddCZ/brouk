@@ -2,6 +2,12 @@
 
 What changed in each release of Brouk. Written by `scripts/release` (spec 019).
 
+## 0.2.0 (beta) – 2026-10-28
+
+### New
+
+- **Task manager**: a new window that lists open tabs and the browser's background tasks, grouped by process, with memory, CPU, network use and process IDs. From it you can pause or unload tabs to free up resources. A paused tab shows a still picture of the page until you resume it. Settings let you adjust the task manager, and help has a new section on it.
+
 ## 0.1.2 (beta) – 2026-10-27
 
 ### New
