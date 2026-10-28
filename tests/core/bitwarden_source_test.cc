@@ -164,7 +164,8 @@ TEST(BitwardenSourceTest, UnlockFindAndLock) {
 
 TEST(BitwardenSourceTest, IdleAfterTheLockTime) {
   Fixture f;
-  f.source.SetOptions({.lock_seconds = 900});
+  f.source.SetOptions(
+      {.cli_setting = "", .search_path = "", .lock_seconds = 900});
   ASSERT_FALSE(f.source.Unlock("correct", 1000));
   EXPECT_FALSE(f.source.IsIdle(1899));
   f.source.Find("https://www.example.com/", 1800);
