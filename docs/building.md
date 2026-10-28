@@ -174,6 +174,10 @@ All data is stored in `~/Library/Application Support/Brouk/`:
 Until profiles (spec 005) exist there is one profile with the id `default`.
 Deleting the `Brouk` folder resets the browser completely.
 
+CI builds the macOS app for Apple Silicon and runs its tests and clang-tidy
+for every pull request (`.github/workflows/macos.yml`: `scripts/build --test`,
+then `scripts/lint`). It signs ad-hoc, as a Mac without certificates does.
+
 ## Linux (core and tests only)
 
 The portable code (`src/core/`, `src/cef/`) builds and is tested on Linux;
@@ -191,8 +195,9 @@ Without CEF (core only): add `-DBROUK_WITH_CEF=OFF`.
 ## Windows (core and tests only)
 
 There is no Windows app yet (spec 002). The same portable code builds and is
-tested on Windows x64 with clang-cl; CI does this weekly and on demand
-(`.github/workflows/windows.yml`, "Run workflow" on the Actions page). In Git
+tested on Windows x64 with clang-cl; CI does this for every pull request and
+push to `main` (`.github/workflows/windows.yml`; "Run workflow" on the
+Actions page runs it on demand). In Git
 Bash, with Visual Studio's C++ tools and LLVM installed and the Visual Studio
 developer environment loaded (`vcvars64.bat`):
 

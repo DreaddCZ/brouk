@@ -1,13 +1,19 @@
 # Windows CI (specs/002, specs/001): builds the portable code (core, CEF
 # integration, renderer) on Windows x64 with clang-cl and runs its tests and
-# the internal pages' tests. There is no Windows app yet. Runs weekly and on
-# demand only: Windows minutes cost twice the Linux ones on a private repo.
+# the internal pages' tests. There is no Windows app yet. Runs on pull
+# requests, on pushes to main and on demand.
 name: windows
 
 on:
+  push:
+    branches: [main]
+  pull_request:
   workflow_dispatch:
-  schedule:
-    - cron: "0 4 * * 1" # Mondays 04:00 UTC
+
+# A newer push to the same pull request or branch replaces a running build.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -22,16 +28,18 @@ jobs:
     env:
       BROUK_CEF_CACHE: ${{ github.workspace }}/.cef-cache
     steps:
-      - uses: actions/checkout@v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Cache pinned tools
-        uses: actions/cache@v6.1.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .tools
           key: tools-${{ runner.os }}-${{ hashFiles('scripts/install_tools') }}
 
       - name: Cache CEF download
-        uses: actions/cache@v6.1.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .cef-cache
           key: cef-windows64-${{ hashFiles('scripts/fetch_cef') }}

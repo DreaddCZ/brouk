@@ -1,0 +1,50 @@
+# macOS CI (specs/001): builds the whole app for Apple Silicon (core, CEF
+# integration, renderer and the AppKit UI), signed ad-hoc, and runs the tests
+# under AddressSanitizer + UBSan, then clang-tidy including the macOS UI.
+# Releases are still built and notarized on the user's Intel Mac (019).
+name: macos
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push to the same pull request or branch replaces a running build.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+    timeout-minutes: 120
+    env:
+      BROUK_CEF_CACHE: ${{ github.workspace }}/.cef-cache
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Cache pinned tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tools
+          key: tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/install_tools') }}
+
+      - name: Cache CEF download
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cef-cache
+          key: cef-macosarm64-${{ hashFiles('scripts/fetch_cef') }}
+
+      # Installs the pinned tools, fetches CEF and Sparkle, builds the app
+      # (Debug, sanitizers on) and runs the tests.
+      - name: Build and test
+        run: scripts/build --test
+
+      - name: clang-tidy
+        run: scripts/lint
