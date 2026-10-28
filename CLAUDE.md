@@ -50,7 +50,8 @@ All features and requirements live in [`specs/`](specs/README.md).
 - **Build:** CMake + Ninja, pinned CEF version downloaded by script, `tsc` for TypeScript, GoogleTest and Node's test runner for tests.
 - **Phases:** phase 1 (now) — personal use, builds made locally on the user's Macs, CI runs the Linux core build and tests. Phase 2 — colleagues: releases built, signed with Developer ID, notarized and smoke-tested on the user's Intel Mac, published in the public releases repo `DreaddCZ/brouk-releases`, automatic updates with Sparkle (019). Details: `specs/001-technology-stack.md`. "Phase 1/2" always means these release phases; platforms are rolled out separately (002).
 - **Help:** `brouk://help` in its own window, written in Markdown (`web/help/content/`) and converted at build time with markdown-it; pages link to sections with a "?" icon button. Details: `specs/016-help.md`.
-- From phase 2, the app **updates itself automatically** (Sparkle, stable and beta channels) from a separate public releases repo; the source repo stays private. Details: `specs/019-release-pipeline.md`.
+- From phase 2, the app **updates itself automatically** (Sparkle, stable and beta channels) from a separate public releases repo, which stays separate because installed copies read their update feed from it. Details: `specs/019-release-pipeline.md`.
+- **Open source:** the source is public in `DreaddCZ/brouk` under the Apache License 2.0 (decided 2026-10-28). Anyone may use it, for personal or work use. Others contribute by pull request after the user agrees to the change in an issue (`CONTRIBUTING.md`); the user reviews and merges every pull request. Security reports go through GitHub's private vulnerability reporting (`SECURITY.md`). The old private repo `DreaddCZ/web-browser` is archived and never made public.
 
 ## Open decisions
 
@@ -129,6 +130,7 @@ Follow the style of CEF and Chromium, so our code and CEF read the same way.
 ### Git workflow
 
 - `main` always builds and passes tests.
+- **The repository is public. Never name a real company, client or organisation** (the user's employer, clients, or anything identifying them: domains, Entra tenants, internal sites, profile names) in code, tests, docs, specs, commit messages, branch names, issues or pull requests. Use placeholders: `contoso.onmicrosoft.com`, `example.com`, `corp.example`, "Client A". When the user pastes a real link or example, generalise it first. Commits are made only as `Radek Sevcik <radek.sevcik@gmail.com>`. `scripts/check_terms` checks staged files and commit messages (git hooks) against the private list in `~/.config/brouk/forbidden-terms.txt`, which is never committed.
 - **One branch per feature or spec:** `feat/NNN-short-name` (e.g. `feat/012-web-platform-basics`), `fix/short-description` for fixes, `chore/…` for build/tooling. Spec-only or documentation-only edits may go directly to `main`.
 - **Commit often:** small commits, each one building and (where practical) passing tests.
 - **Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/):** `type(scope): summary`

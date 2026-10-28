@@ -8,7 +8,7 @@
 
 One command on the user's Intel Mac builds a release of Brouk for both Mac architectures, signs and notarizes it, smoke-tests it, and publishes it. Installed copies of Brouk then update themselves, like Chrome does. **The files that were tested are exactly the files that are published**, and nothing is published unless the tests pass.
 
-Everything runs on the user's Mac: no GitHub Actions minutes are used. Builds are published in a separate **public releases repository**, so beta testers need no GitHub account and the updater can download from it, while the source repository stays private.
+Everything runs on the user's Mac: no GitHub Actions minutes are used. Builds are published in a separate **public releases repository**, so beta testers need no GitHub account and the updater can download from it. The source repository is public too (since 2026-10-28, see Notes), but releases stay in their own repository.
 
 Scope now: macOS, Apple Silicon and Intel (002). Windows joins later.
 
@@ -82,7 +82,7 @@ A public GitHub repository, `DreaddCZ/brouk-releases`, holds only what users dow
 
 It holds no source code. Setting it up is a one-time step, done once the user approves it. It is created public, and Pages serves its `main` branch. `docs/releasing.md` describes the setup.
 
-The source repository stays private. Beta testers download the disk image from the releases page; they need no GitHub account.
+Beta testers download the disk image from the releases page; they need no GitHub account.
 
 ### Update feed
 
@@ -202,3 +202,4 @@ None.
 - 2026-10-26 (implementation, first part): the releases repository `DreaddCZ/brouk-releases` is created (public, Pages on `main`, empty feeds) with the user's approval. Sparkle 2.10.0 (2.10.1 was a day old). The update signing key is in the login keychain under the account `brouk` (not Sparkle's default `ed25519`, so it cannot be mixed up with another app's key). Builds embed Sparkle thinned to their architecture (`ditto --arch`) and without its XPC services; `--version` and About show `0.1.0 (a1b2c3d)` from a separate generated header (`brouk/build_info.h`), so a new commit recompiles only the files that show it. Test runs with their own data folder (`BROUK_DEV_DATA_DIR`) never start the updater, so the smoke tests do not touch the updater state that Sparkle keeps in the user's defaults. Sparkle's standard update window shows found updates and the result of Check for Updates…. The quit question for running downloads (014) is asked when Restart to Update quits, as for any quit. Settings → Updates shows the channel and the mode; the version, last check and a "Check now" button in Settings follow later (Brouk → Check for Updates… and About cover them now).
 - 2026-10-27 (releases 0.1.0 and 0.1.1): the first run of 0.1.0 stopped at a core test and undid its release commit, nothing published; the second published the images, and an interrupted publish (no feed items, a script bug) was finished by running the command again without rebuilding. 0.1.1 went through in one run. The user's installed 0.1.0 (beta channel) found 0.1.1, downloaded it and restarted into it (Check for Updates…, Restart to Update); the beta also runs on the M2 Mac. Still to verify: the precondition refusals, `--no-publish`, the stable channel (no stable release yet), a rejected signature, `notify`/`off`, switching from beta to stable, and that local builds never check; Settings → Updates still lacks the version, last check and "Check now".
 - 2026-10-27 (user's decision): the release pipeline and automatic updates are tested by the user and the spec is done. Criteria not yet ticked (precondition messages, `--no-publish`, stable channel, bad signatures, `notify`/`off` modes, channel switch, local builds not checking) are left for later releases and the beta testers.
+- 2026-10-28 (user's decision, see 001): the source repository becomes public (`DreaddCZ/brouk`). The releases repository stays: installed copies read their update feeds from `dreaddcz.github.io/brouk-releases`, and moving the feeds would need a bridge release. The description no longer says the source stays private. Tags `v<version>` are pushed to the public source repository, whose `main` ruleset lets the user bypass pull requests so `scripts/release` can push its release commit.
