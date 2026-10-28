@@ -48,6 +48,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 021 | [File viewers for text formats](021-file-viewers.md) | idea | P3 |
 | 022 | [History in profile export](022-history-export.md) | ready | P3 |
 | 023 | [Open-source licences (credits)](023-credits.md) | done | P1 |
+| 024 | [Windows app](024-windows-app.md) | in-progress — W1 | P2 |
 
 ## Roadmap
 
@@ -60,6 +61,7 @@ Build order. Each milestone ends with a build the user tests on their Macs.
 | **M3 – Profiles** | Isolated profiles, profile groups in one window, profile manager, export/import (parts available so far). | 005 |
 | **M4 – Full browser UI** | Tab overflow, pinned tabs, command palette, remappable shortcuts, themes, address bar suggestions from history. | 003, history storage needed by 003 (013) |
 | **M5 – Developer tools** | Dock, per-tab toggle, own tools, request rules, API export, remote debugging. | 006 |
+| **W1–W4 – Windows** | The Windows app in four stages: browse the web, everyday browser, work features, release. | 024 |
 | **Later** | In an order to be agreed: | 010, 007, 008, 009, 011, 013, 014, 017 (after checking company computers), 018 and 019 (at the start of phase 2, before the first beta testers), 021 (later phase), then 016 last |
 
 2026-10-22 (user's decision): the rest of 012 (folder upload and file drop, pinch zoom, Picture-in-Picture, permissions in settings) is postponed; profiles (005) come next, on top of the configuration foundation from 004 that they need (settings files, typed settings, live reload). The settings page of 004 follows later.
@@ -89,5 +91,7 @@ Build order. Each milestone ends with a build the user tests on their Macs.
 2026-10-27 (user's decision): the task manager (020) is tested by the user; done.
 
 2026-10-25 (user's decision): file viewers for text formats (021) are recorded at a high level for a later phase.
+
+2026-10-29 (user's decision): the Windows app (024) starts now, in stages W1–W4; the user tests in a Windows 11 x64 virtual machine on the Intel Mac.
 
 Rules: a milestone uses only `ready` specs; later milestones may be re-ordered by the user. Unspecified standard browser behaviour follows Chrome (see `CLAUDE.md`).

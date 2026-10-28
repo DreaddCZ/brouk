@@ -41,7 +41,7 @@ This spec defines the configuration system itself.
 
 ## Open questions
 
-None. (Windows location to be decided together with Windows support, see 002.)
+None. (Windows location: `%LOCALAPPDATA%\Brouk\`, as Chrome; decided 2026-10-29 in 024.)
 
 ## Notes
 
