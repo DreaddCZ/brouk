@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
-# Runs clang-tidy on the portable C++ sources (core and CEF integration).
-# Needs a configured build directory with compile_commands.json.
+# Runs clang-tidy (including the Clang Static Analyzer) on our C++ sources:
+# the core and CEF integration (.clang-tidy) and, on a Mac, the macOS UI
+# (src/platform/mac/.clang-tidy). Needs a configured build directory with
+# compile_commands.json.
 #   scripts/lint [build-dir]     default: the debug build of scripts/build
 #                                (build/debug-<arch>)
 set -euo pipefail
@@ -10,19 +12,21 @@ CLANG_TIDY="${CLANG_TIDY:-$ROOT/.tools/bin/clang-tidy}"
 command -v "$CLANG_TIDY" >/dev/null || CLANG_TIDY=clang-tidy
 
 cd "$ROOT"
-# The CEF integration can only be checked if the build includes it.
+# Only what the build compiles can be checked: the CEF integration and the
+# macOS UI need builds that include them.
 patterns=('src/core/*.cc')
-if grep -q '"file": ".*src/cef/' "$BUILD_DIR/compile_commands.json"; then
-  patterns+=('src/cef/*.cc')
-fi
+for dir in src/cef src/platform/mac; do
+  if grep -q "\"file\": \".*$dir/" "$BUILD_DIR/compile_commands.json"; then
+    patterns+=("$dir/*.cc" "$dir/*.mm")
+  fi
+done
 # The standalone clang-tidy does not know where Xcode keeps the SDK headers.
 extra=()
 if [[ "$(uname -s)" == Darwin ]]; then
   extra+=("--extra-arg=-isysroot$(xcrun --show-sdk-path)")
 fi
-status=0
-while IFS= read -r f; do
-  "$CLANG_TIDY" --quiet -p "$BUILD_DIR" ${extra[@]+"${extra[@]}"} "$f" ||
-    status=1
-done < <(git ls-files --cached --others --exclude-standard "${patterns[@]}")
-exit $status
+jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
+# xargs exits non-zero if any clang-tidy run fails.
+git ls-files --cached --others --exclude-standard "${patterns[@]}" |
+  xargs -P "$jobs" -n 4 "$CLANG_TIDY" --quiet -p "$BUILD_DIR" \
+    ${extra[@]+"${extra[@]}"}

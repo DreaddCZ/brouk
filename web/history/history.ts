@@ -128,7 +128,8 @@ function removeButton(label: string, items: readonly DeleteItem[]): HTMLButtonEl
 
 function link(text: string, url: string, profile: string | null): HTMLAnchorElement {
   const node = element('a', { className: 'title', text: text === '' ? url : text });
-  node.href = url;
+  // Clicks are handled below and open the URL through the browser.
+  node.href = url; // nosemgrep: ts-url-sink
   node.title = url;
   const open = (newTab: boolean): void => {
     api.open(profile, url, newTab).catch((error: unknown) => showError(errorText(error)));

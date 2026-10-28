@@ -17,10 +17,14 @@ pinned version and licence. Adding one needs the user's approval (see
 Build tools (not linked into the app) are pinned in `scripts/install_tools`:
 CMake 4.4.4, Ninja 1.13.2, Node.js 24.21.0 LTS, GitHub CLI 2.102.0,
 clang-format and clang-tidy 22.1.8, Rust 1.98.0 (rustc and cargo, only for
-the ad blocking engine; specs 007 and 001). The TypeScript compiler (`tsc`, chosen in
+the ad blocking engine; specs 007 and 001), and the security scanners of
+`scripts/sast` (approved by the user 2026-10-28): Opengrep 1.30.2
+(LGPL-2.1; a standalone scanner, never linked or shipped), gitleaks 8.30.1
+(MIT), OSV-Scanner 2.7.0 (Apache-2.0), cargo-deny 0.20.2
+(MIT/Apache-2.0) and zizmor 1.30.1 (MIT). The TypeScript compiler (`tsc`, chosen in
 spec 001) is pinned in `web/package-lock.json` with its integrity hash:
 TypeScript 6.0.3 (Apache-2.0), installed by `scripts/web`. The help page's
-Markdown is converted at build time with markdown-it 15.0.2 (MIT, spec 016,
+Markdown is converted at build time with markdown-it 15.0.3 (MIT, spec 016,
 approved by the user 2026-10-23; nothing of it ships in the app), with its
 dependencies argparse, entities, linkify-it, mdurl, punycode.js and uc.micro
 (MIT/BSD-2-Clause/Python-2.0 for argparse), pinned in the same lockfile. The only package the

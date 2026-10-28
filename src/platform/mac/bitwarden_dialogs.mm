@@ -276,6 +276,8 @@ NSArray* _Nullable TrustedChain(NSURL* url) {
                    dispatch_semaphore_signal(finished);
                  }];
   [task resume];
+  // Blocking is intended: callers are off the main thread (see the header).
+  // NOLINTNEXTLINE(clang-analyzer-optin.performance.GCDAntipattern)
   dispatch_semaphore_wait(finished,
                           dispatch_time(DISPATCH_TIME_NOW, 20 * NSEC_PER_SEC));
   [session invalidateAndCancel];

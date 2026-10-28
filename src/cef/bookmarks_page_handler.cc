@@ -284,7 +284,7 @@ bool BookmarksPageHandler::OnQuery(CefRefPtr<CefBrowser> /*browser*/,
       delegate.Favicons(
           profile, std::move(urls),
           [shared, finish, ids_by_url = std::move(by_url)](
-              std::map<std::string, std::vector<std::uint8_t>> icons) {
+              const std::map<std::string, std::vector<std::uint8_t>>& icons) {
             for (const auto& [url, png] : icons) {
               auto ids = ids_by_url.find(url);
               if (ids == ids_by_url.end() || png.empty()) {

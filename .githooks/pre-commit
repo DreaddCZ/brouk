@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Checks the staged changes for secrets and project rule violations before
+# each commit (scripts/sast --staged). Enabled per clone with:
+#   git config core.hooksPath .githooks
+# Skip once with: git commit --no-verify
+exec "$(git rev-parse --show-toplevel)/scripts/sast" --staged

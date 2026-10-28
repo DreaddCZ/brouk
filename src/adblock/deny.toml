@@ -1,0 +1,30 @@
+# cargo-deny policy for the Rust dependencies (scripts/sast): known
+# vulnerabilities, licences (CLAUDE.md: permissive only; MPL-2.0 approved for
+# adblock-rust; a new licence needs the user's approval) and where crates
+# may come from.
+
+[graph]
+all-features = false
+
+[advisories]
+# RustSec advisories: vulnerabilities fail, unmaintained crates are reported.
+unmaintained = "workspace"
+yanked = "deny"
+
+[licenses]
+allow = [
+  "Apache-2.0",
+  "MIT",
+  "MPL-2.0",
+  "Unicode-3.0",
+]
+confidence-threshold = 0.9
+
+[bans]
+multiple-versions = "allow"
+wildcards = "allow"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

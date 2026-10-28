@@ -95,7 +95,7 @@ Follow the style of CEF and Chromium, so our code and CEF read the same way.
 
 - **Formatting:** `clang-format` with `BasedOnStyle: Chromium`, enforced in CI (`scripts/format --check`). Never argue with the formatter.
 - **Naming (Chromium style):** files `snake_case.cc` / `.h` / `.mm`; types and functions `PascalCase`; variables `snake_case`; class members `snake_case_`; constants `kPascalCase`; macros `ALL_CAPS` (avoid new macros).
-- **Static analysis:** `clang-tidy` in CI with the `bugprone-*`, `performance-*`, `modernize-*` and selected `cppcoreguidelines-*` checks; new code must not add warnings.
+- **Static analysis:** `clang-tidy` in CI with the `bugprone-*`, `performance-*`, `modernize-*`, `cert-*`, `clang-analyzer-*` and selected `cppcoreguidelines-*` checks (the macOS UI: `clang-analyzer-*` only, locally); new code must not add warnings. Security scanners (`scripts/sast`: gitleaks, Opengrep project rules, OSV-Scanner, cargo-deny, zizmor) run in CI and, for staged files, in the pre-commit hook. A new rule in `scripts/opengrep/` comes with test cases.
 - **Compiler:** `-Wall -Wextra -Wpedantic -Wshadow -Werror` (MSVC `/W4 /WX` later). Debug and test builds use AddressSanitizer + UndefinedBehaviorSanitizer; code with threads also gets a ThreadSanitizer CI job.
 - **Memory and ownership:**
   - No `new`/`delete` in our code. Use `std::make_unique` / `std::unique_ptr` for owned objects, `CefRefPtr` for CEF ref-counted objects, values wherever possible.

@@ -635,7 +635,8 @@ NSImage* SnapshotOf(NSView* view) {
     NSURL* parsed = text ? [NSURL URLWithString:text] : nil;
     url = parsed.scheme ? parsed.absoluteString : nil;
   }
-  NSString* scheme = [NSURL URLWithString:url].scheme.lowercaseString;
+  NSString* scheme =
+      url ? [NSURL URLWithString:url].scheme.lowercaseString : nil;
   if (!url ||
       !([scheme isEqualToString:@"http"] || [scheme isEqualToString:@"https"] ||
         [scheme isEqualToString:@"file"])) {

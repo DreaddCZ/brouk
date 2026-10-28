@@ -1,0 +1,16 @@
+# Checks for the macOS UI (scripts/lint on a Mac). Only the Clang Static
+# Analyzer, which understands Objective-C (init, ARC, nullability, GCD);
+# the style checks of the core config are not applied to this code.
+# Not enabled, deliberately:
+# - optin.osx.cocoa.localizability: the UI is not localized yet.
+# - nullability.NullablePassedToNonnull: fires on every AppKit factory that
+#   is annotated nullable but cannot fail here (system symbol images, ...).
+#   Passing a literal nil is still caught (NullPassedToNonnull).
+InheritParentConfig: false
+Checks: >
+  -*,
+  clang-analyzer-*,
+  -clang-analyzer-optin.osx.cocoa.localizability.*,
+  -clang-analyzer-nullability.NullablePassedToNonnull
+WarningsAsErrors: '*'
+HeaderFilterRegex: '.*/src/platform/mac/.*'

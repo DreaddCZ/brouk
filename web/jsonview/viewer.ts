@@ -217,7 +217,7 @@ function jsonViewRender(host: HTMLElement, data: JsonValue, rawText: string, pag
       // would navigate away from the page showing the viewer.
       if (page && jsonViewIsLink(value)) {
         const link = element('a', 'bj-string', JSON.stringify(value));
-        link.href = value;
+        link.href = value; // nosemgrep: ts-url-sink (http(s) only, checked above)
         link.rel = 'noreferrer';
         return link;
       }
