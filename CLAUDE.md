@@ -44,8 +44,8 @@ All features and requirements live in [`specs/`](specs/README.md).
 - **Profiles:** local only (no online account sign-in); tabs of several profiles can share a window, one tab group per profile per window; links are routed to profiles by URL rules. Details: `specs/005-profiles.md`, `specs/010-link-routing.md`.
 - Profiles, developer tools (beyond the stock DevTools frontend), password manager and autofill are **our own implementations**, not Chrome's.
 - **Passwords:** each profile uses either the built-in password manager or the user's Bitwarden vault through the official Bitwarden CLI (no browser extensions). Details: `specs/008-password-manager.md`.
-- **UI shell: hybrid** — native (Objective-C++/AppKit on macOS) for windows, tabs, toolbar, address bar, menus and the window picker; HTML/TypeScript pages in CEF for settings, history, password manager, profile manager and custom developer tools. Details: `specs/001-technology-stack.md`.
-- **Languages:** C++20 for the core, Objective-C++ (AppKit) for the macOS UI, TypeScript for the HTML pages. Swift only for a macOS API not reachable from Objective-C. No Rust, except Brave's `adblock-rust` built as a library for ad blocking (007). Details: `specs/001-technology-stack.md`.
+- **UI shell: hybrid** — native (Objective-C++/AppKit on macOS, C++/Win32 on Windows) for windows, tabs, toolbar, address bar, menus and the window picker; HTML/TypeScript pages in CEF for settings, history, password manager, profile manager and custom developer tools. Details: `specs/001-technology-stack.md`.
+- **Languages:** C++20 for the core, Objective-C++ (AppKit) for the macOS UI, C++20 on the Win32 API for the Windows UI (no WinUI, WPF, MFC or Qt), TypeScript for the HTML pages. Swift only for a macOS API not reachable from Objective-C. No Rust, except Brave's `adblock-rust` built as a library for ad blocking (007). Details: `specs/001-technology-stack.md`.
 - **Configuration:** YAML files, global and per profile (on macOS in `~/Library/Application Support/Brouk/`), live reload, machine-written (comments not preserved). Details: `specs/004-configuration.md`.
 - **Build:** CMake + Ninja, pinned CEF version downloaded by script, `tsc` for TypeScript, GoogleTest and Node's test runner for tests.
 - **Phases:** phase 1 (now) — personal use, builds made locally on the user's Macs, CI (free, as the repo is public) builds and tests on Linux (every push), and on macOS (the whole app, Apple Silicon) and Windows (portable code only; no Windows app yet) for every pull request and push to `main`. Phase 2 — colleagues: releases built, signed with Developer ID, notarized and smoke-tested on the user's Intel Mac, published in the public releases repo `DreaddCZ/brouk-releases`, automatic updates with Sparkle (019). Details: `specs/001-technology-stack.md`. "Phase 1/2" always means these release phases; platforms are rolled out separately (002).
@@ -81,7 +81,7 @@ src/core/             portable C++: window/tab model, profiles, config, routing,
 src/cef/              CEF integration (browser/request handlers, request contexts) — portable
 src/renderer/         code running in CEF renderer processes (injected scripts, V8 bindings)
 src/platform/mac/     Objective-C++ / AppKit UI and macOS integration
-src/platform/win/     Windows UI (later)
+src/platform/win/     C++/Win32 UI and Windows integration (later)
 web/                  TypeScript sources of internal HTML pages (settings, profile manager, dev tools…)
 tests/                GoogleTest tests (mirrors src/), TypeScript tests next to web/ sources
 third_party/          vendored or fetched third-party code (never edited by hand)
