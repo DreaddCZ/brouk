@@ -1198,10 +1198,11 @@ class AppSettingsPage : public SettingsPageDelegate {
   CefRefPtr<CefCommandLine> commandLine =
       CefCommandLine::GetGlobalCommandLine();
   if (commandLine->HasSwitch("remote-debugging-port")) {
-    _remoteDebuggingPort =
-        std::atoi(commandLine->GetSwitchValue("remote-debugging-port")
-                      .ToString()
-                      .c_str());
+    // A value that is not a number gives 0: no remote debugging.
+    _remoteDebuggingPort = std::atoi(  // nosemgrep: cpp-unsafe-c-function
+        commandLine->GetSwitchValue("remote-debugging-port")
+            .ToString()
+            .c_str());
   } else {
     _remoteDebuggingPort = [self remoteDebuggingPortSetting];
   }
@@ -1605,15 +1606,16 @@ class AppSettingsPage : public SettingsPageDelegate {
   NSString* app = [self senderOfCurrentAppleEvent];
   for (NSURL* url in urls) {
     NSString* scheme = url.scheme.lowercaseString;
+    NSString* absolute = url.absoluteString;
     // http/https links, and files opened from Finder (HTML documents, see
     // Info.plist); local files are routed like file paths given on the
     // command line. Other schemes are never opened from outside.
-    if (![scheme isEqualToString:@"http"] &&
-        ![scheme isEqualToString:@"https"] &&
-        !(url.isFileURL && [scheme isEqualToString:@"file"])) {
+    if (!absolute || (![scheme isEqualToString:@"http"] &&
+                      ![scheme isEqualToString:@"https"] &&
+                      !(url.isFileURL && [scheme isEqualToString:@"file"]))) {
       continue;
     }
-    [_pendingExternalLinks addObject:@[ url.absoluteString, app ]];
+    [_pendingExternalLinks addObject:@[ absolute, app ]];
   }
   if (_sessionReady) {
     [self openPendingExternalLinks];
@@ -2061,8 +2063,11 @@ class AppSettingsPage : public SettingsPageDelegate {
         brouk::ParseUrlPatternList(global.GetString("history.never_record"))
             .value_or(std::vector<brouk::UrlPattern>{}));
     _history->SetRetentionDays(
-        keep == "forever" ? std::nullopt
-                          : std::optional<int>(std::atoi(keep.c_str())));
+        keep == "forever"
+            ? std::nullopt
+            // A choice the settings schema has validated.
+            : std::optional<int>(std::atoi(  // nosemgrep: cpp-unsafe-c-function
+                  keep.c_str())));
   }
   [_updates setChannel:global.GetString("updates.channel")
                   mode:global.GetString("updates.mode")];
@@ -3003,9 +3008,10 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
     return;
   }
   brouk::ProfileRegistry* registry = _profiles.get();
-  NSString* url = section.empty()
-                      ? @"brouk://help/"
-                      : [@"brouk://help/#" stringByAppendingString:anchor];
+  NSString* url =
+      section.empty()
+          ? @"brouk://help/"
+          : [@"brouk://help/#" stringByAppendingString:@(section.c_str())];
   _helpWindow = [[BRInternalPageWindowController alloc]
       initWithOwner:self
                 url:url

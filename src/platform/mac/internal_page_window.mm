@@ -110,7 +110,6 @@ class InternalPageBridge : public InternalPageDelegate {
                   backing:NSBackingStoreBuffered
                     defer:NO];
   window.title = title;
-  _defaultTitle = [title copy];
   window.minSize = NSMakeSize(420, 360);
   window.releasedWhenClosed = NO;
   window.restorable = NO;
@@ -123,6 +122,7 @@ class InternalPageBridge : public InternalPageDelegate {
   }
   if ((self = [super initWithWindow:window])) {
     _owner = owner;
+    _defaultTitle = [title copy];
     window.delegate = self;
     NSView* content = window.contentView;
     content.wantsLayer = YES;
