@@ -1,6 +1,6 @@
 # 023 – Open-source licences (credits)
 
-- **Status:** draft
+- **Status:** in-progress
 - **Priority:** P1
 - **Depends on:** 016 (help), 019 (release pipeline)
 
@@ -34,14 +34,14 @@ Brouk ships third-party software: Chromium and CEF, yaml-cpp, SQLite, libsodium,
 
 ## Acceptance criteria
 
-- [ ] `brouk://credits` opens in a tab. It shows Brouk's Apache-2.0 licence and copyright first, then one section per shipped component, each with name, version, licence and full licence text.
-- [ ] The components listed: CEF, yaml-cpp, SQLite (its public-domain dedication), libsodium, adblock-rust, every Rust crate linked into the app (from `Cargo.lock`, without build-only crates), Brave's adblock-resources, Sparkle (macOS), and the zxcvbn-ts packages with their dependencies. The versions match `third_party/README.md` and the lock files.
-- [ ] `brouk://credits/chromium` shows the CEF distribution's `CREDITS.html`.
+- [x] `brouk://credits` opens in a tab. It shows Brouk's Apache-2.0 licence and copyright first, then one section per shipped component, each with name, version, licence and full licence text.
+- [x] The components listed: CEF, yaml-cpp, SQLite (its public-domain dedication), libsodium, adblock-rust, every Rust crate linked into the app (from `Cargo.lock`, without build-only crates), Brave's adblock-resources, Sparkle (macOS), and the zxcvbn-ts packages with their dependencies. The versions match `third_party/README.md` and the lock files.
+- [x] `brouk://credits/chromium` shows the CEF distribution's `CREDITS.html`.
 - [ ] About Brouk and the Help menu open `brouk://credits`, and help has a section on it.
-- [ ] The search box filters the components by name and licence.
-- [ ] A test fails when a shipped component has no licence text, or when `third_party/README.md` lists a component the page does not.
-- [ ] Works offline: everything is inside the app, nothing is downloaded.
-- [ ] The release builds (019) contain the page. The release smoke test checks that it loads.
+- [x] The search box filters the components by name and licence.
+- [x] A test fails when a shipped component has no licence text, or when `third_party/README.md` lists a component the page does not.
+- [x] Works offline: everything is inside the app, nothing is downloaded.
+- [x] The release builds (019) contain the page. The release smoke test checks that it loads.
 
 ## Out of scope
 
@@ -60,3 +60,13 @@ None.
 ## Notes
 
 - 2026-10-28 (first version): needed before or with the next release. Published builds 0.1.0–0.2.0 shipped without these notices. Chrome's equivalent is `chrome://credits`, opened from Settings → About Chrome; Firefox has `about:license`.
+- 2026-10-28 (implementation):
+  - **Generator:** `scripts/credits.mjs`, run by the build after the pages (`scripts/credits`). It writes `credits/data.js`, plus `credits/chromium.html` (CEF's `CREDITS.html` with `credits/chromium.css` in place of its `chrome://` stylesheets; licences fold with CSS only, since internal pages allow no inline scripts). Identical licence texts are stored once, so the data is about 150 KB for 70 components.
+  - **Rust crates:** taken from `cargo metadata` for the build's target, following normal dependencies from our wrapper. Procedural macros (syn, serde_derive…) run in the compiler and are not in the app, so neither they nor what only they use is listed. Three crates publish no licence file (seahash MIT, selectors MPL-2.0, flatbuffers Apache-2.0). They get the standard text of their licence, with the authors as copyright holders for MIT, through a list in the script; any other crate without one fails the build.
+  - **Also listed**, though not in the first version of the description:
+    - The Rust standard library, which is compiled into the ad blocking engine. Its notices from the pinned toolchain are at `brouk://credits/rust-std`.
+    - Brave's adblock-resources, now also a row of `third_party/README.md`.
+  - **Pages next to the main one** are served without their extension (`brouk://credits/chromium` → `credits/chromium.html`, `InternalResourcePath`).
+  - **Web links** on the page (project pages) open in a tab of the default profile, as on the help page.
+  - **About Brouk:** the standard About panel opens links only through macOS, and Brouk never accepts `brouk://` addresses from outside (010). So the panel names the menu item ("Their licences: Help → Open-Source Licences") instead of linking. A real link needs an About window of our own; that is for the user to decide. Until then this criterion stays open (the Help menu and the help section are done).
+  - **Smoke test (019):** starts Brouk with `--profile=smoke about:blank brouk://credits` (URLs with `--profile` open as typed). It checks that the page lists the components and that Chromium's credits load.

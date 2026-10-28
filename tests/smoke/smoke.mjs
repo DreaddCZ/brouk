@@ -184,7 +184,10 @@ async function main() {
 
   dataDir = mkdtempSync(join(tmpdir(), 'brouk-smoke-'));
   const port = 9400 + Math.floor(Math.random() * 500);
-  brouk = spawn(executable, ['--use-mock-keychain', `--remote-debugging-port=${port}`], {
+  // A blank tab for the web pages, and the licences page (023): URLs with
+  // --profile open as typed, without link routing.
+  const args = ['--use-mock-keychain', `--remote-debugging-port=${port}`, '--profile=smoke', 'about:blank', 'brouk://credits'];
+  brouk = spawn(executable, args, {
     env: { ...process.env, BROUK_DEV_DATA_DIR: dataDir },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -212,6 +215,31 @@ async function main() {
     const title = await waitForTitle(cdp, expected);
     check(title === expected, `${name} loads ("${title}")`);
     await screenshot(cdp, name.replace('.html', ''));
+  }
+
+  // The open-source licences (023) are in the app and load, with
+  // Chromium's credits next to them.
+  const list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+  const creditsTarget = list.find((t) => t.url.startsWith('brouk://credits'));
+  if (check(creditsTarget !== undefined, 'the licences page opens')) {
+    const credits = await Cdp.connect(creditsTarget.webSocketDebuggerUrl);
+    const title = await waitForTitle(credits, 'Open-Source Licences');
+    let shown = '';
+    for (let i = 0; i < 40 && !/components$/.test(shown); i++) {
+      const { result } = await credits.send('Runtime.evaluate', {
+        expression: 'document.getElementById("error").hidden ? document.getElementById("count").textContent : "error"',
+        returnByValue: true,
+      });
+      shown = result.value ?? '';
+      if (shown === 'error') break;
+      await sleep(250);
+    }
+    check(title === 'Open-Source Licences' && /^\d+ components$/.test(shown), `brouk://credits lists the licences ("${shown}")`);
+    await screenshot(credits, 'credits');
+    await credits.send('Page.navigate', { url: 'brouk://credits/chromium' });
+    const chromium = await waitForTitle(credits, 'Credits');
+    check(chromium === 'Credits', `brouk://credits/chromium shows Chromium's credits ("${chromium}")`);
+    credits.close();
   }
 
   // A crashed renderer shows the crash page (012); Brouk keeps running.
