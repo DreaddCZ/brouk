@@ -1,0 +1,38 @@
+name: Feature idea
+description: Something Brouk should do, or do differently.
+title: "[Idea] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **This repository is public: anyone can read what you write here.**
+        Don't include client names, internal addresses or screenshots of client systems.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Tabs and windows
+        - Profiles
+        - Link routing
+        - Developer tools
+        - Passwords
+        - Bookmarks
+        - History
+        - Downloads
+        - Ad blocking
+        - Settings
+        - Help
+        - Updates
+        - Other
+  - type: textarea
+    id: what
+    attributes:
+      label: What would you like?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: What would it help you with?
