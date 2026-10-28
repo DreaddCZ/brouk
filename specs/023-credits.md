@@ -1,6 +1,6 @@
 # 023 – Open-source licences (credits)
 
-- **Status:** in-progress
+- **Status:** done
 - **Priority:** P1
 - **Depends on:** 016 (help), 019 (release pipeline)
 
