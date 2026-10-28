@@ -51,6 +51,20 @@ TEST(InternalPagesTest, MimeTypes) {
   EXPECT_EQ(InternalResourceMimeType("a/x.svg"), "image/svg+xml");
 }
 
+TEST(InternalPagesTest, CreditsAndItsNoticePages) {
+  // 023: the licences page, and further notice pages next to it.
+  EXPECT_EQ(InternalPageOf("brouk://credits/"), "credits");
+  EXPECT_EQ(InternalResourcePath("brouk://credits/"), "credits/index.html");
+  EXPECT_EQ(InternalResourcePath("brouk://credits/chromium"),
+            "credits/chromium.html");
+  EXPECT_EQ(InternalResourcePath("brouk://credits/rust-std#x"),
+            "credits/rust-std.html");
+  EXPECT_EQ(InternalResourcePath("brouk://credits/data.js"), "credits/data.js");
+  EXPECT_FALSE(InternalResourcePath("brouk://credits/a/b"));
+  EXPECT_FALSE(InternalResourcePath("brouk://credits/.hidden"));
+  EXPECT_FALSE(InternalResourcePath("brouk://credits/..%2Fx"));
+}
+
 TEST(InternalPagesTest, HistoryPageExists) {
   EXPECT_TRUE(IsInternalPageUrl("brouk://history/"));
   EXPECT_EQ(InternalPageOf("brouk://bookmarks/#folder=5"), "bookmarks");

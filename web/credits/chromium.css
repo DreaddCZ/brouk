@@ -1,0 +1,24 @@
+/* Chromium's credits page (023, brouk://credits/chromium): CEF's
+   CREDITS.html as it is, with this stylesheet in place of Chrome's own.
+   Licences are folded; the checkbox in each label (and "show all" at the
+   top) unfolds them, without scripts. */
+:root { color-scheme: light dark; --line: #8884; --muted: #888; }
+body { font: 14px -apple-system, BlinkMacSystemFont, sans-serif; max-width: 860px; margin: 0 auto;
+  padding: 16px 24px 48px; }
+.page-title { display: block; font-size: 22px; font-weight: 600; margin: 8px 0 12px; }
+#print-link { display: none; }
+.open-sourced { color: var(--muted); margin: 0 0 16px; }
+.product { border-bottom: 1px solid var(--line); padding: 6px 0; overflow: hidden; }
+.product .title { font-weight: 600; }
+.product .homepage { margin-left: 8px; font-size: 13px; }
+label.show { float: right; cursor: pointer; color: #0a66d0; font-size: 13px; }
+label.show::before { content: "Show license"; }
+.product:has(label.show input:checked) label.show::before { content: "Hide license"; }
+label.show-all { float: none; display: inline-block; margin: 0 0 12px; }
+label.show-all::before { content: "Show all licenses"; }
+body:has(label.show-all input:checked) label.show-all::before { content: "Hide all licenses"; }
+.license { display: none; }
+.product:has(label.show input:checked) .license,
+body:has(label.show-all input:checked) .license { display: block; }
+.license pre { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap;
+  border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px; }
