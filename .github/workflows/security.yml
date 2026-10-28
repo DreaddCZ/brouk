@@ -1,0 +1,35 @@
+# Security scanners (scripts/sast): secrets, project rules, vulnerable
+# dependencies, workflows. Only on pull requests and once a week, to save
+# Actions minutes; the pre-commit hook covers local work (scripts/sast
+# --staged), and the weekly run catches new advisories for unchanged code.
+name: security
+
+on:
+  pull_request:
+  schedule:
+    - cron: "17 6 * * 1" # Mondays, 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # gitleaks scans the whole history
+          persist-credentials: false
+
+      - name: Cache pinned tools
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tools
+          key: tools-${{ runner.os }}-${{ hashFiles('scripts/install_tools') }}
+
+      - name: Install tools
+        run: scripts/install_tools
+
+      - name: Security scanners
+        run: scripts/sast

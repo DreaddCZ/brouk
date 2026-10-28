@@ -103,7 +103,7 @@ certificate on another Mac, open Xcode → Settings → Accounts and sign in.
   portable code and, on a Mac, the macOS UI (`src/platform/mac/.clang-tidy`:
   only the analyzer there).
 - `scripts/sast` runs the security scanners (CI does too, in the `security`
-  job): gitleaks (secrets in the whole history), Opengrep with the project
+  workflow, on pull requests and every Monday): gitleaks (secrets in the whole history), Opengrep with the project
   rules in `scripts/opengrep/` (unsafe DOM and URL sinks in internal pages,
   `cefQuery` outside the bridge, process spawning outside `process_runner`,
   unsafe C functions, `delete`, logged secrets) and their tests,
