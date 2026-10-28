@@ -20,7 +20,7 @@ Brouk ships third-party software: Chromium and CEF, yaml-cpp, SQLite, libsodium,
   - A search box filters the list.
 - **`brouk://credits/chromium`** shows the Chromium and CEF credits page from the CEF distribution (`CREDITS.html`), unchanged. Brouk embeds CEF's binaries as they are, so that page lists what they contain.
 - **Opening it:**
-  - **About Brouk** gets an "Open-source licences" link.
+  - **About Brouk** says where the licences are (Help → Open-Source Licences).
   - The **Help menu** gets "Open-Source Licences".
   - A short help section (016) explains the page.
 - **Generated at build time.** A build script collects the licence texts:
@@ -37,7 +37,7 @@ Brouk ships third-party software: Chromium and CEF, yaml-cpp, SQLite, libsodium,
 - [x] `brouk://credits` opens in a tab. It shows Brouk's Apache-2.0 licence and copyright first, then one section per shipped component, each with name, version, licence and full licence text.
 - [x] The components listed: CEF, yaml-cpp, SQLite (its public-domain dedication), libsodium, adblock-rust, every Rust crate linked into the app (from `Cargo.lock`, without build-only crates), Brave's adblock-resources, Sparkle (macOS), and the zxcvbn-ts packages with their dependencies. The versions match `third_party/README.md` and the lock files.
 - [x] `brouk://credits/chromium` shows the CEF distribution's `CREDITS.html`.
-- [ ] About Brouk and the Help menu open `brouk://credits`, and help has a section on it.
+- [x] The Help menu opens `brouk://credits`, About Brouk names where the licences are, and help has a section on it.
 - [x] The search box filters the components by name and licence.
 - [x] A test fails when a shipped component has no licence text, or when `third_party/README.md` lists a component the page does not.
 - [x] Works offline: everything is inside the app, nothing is downloaded.
@@ -68,5 +68,6 @@ None.
     - Brave's adblock-resources, now also a row of `third_party/README.md`.
   - **Pages next to the main one** are served without their extension (`brouk://credits/chromium` → `credits/chromium.html`, `InternalResourcePath`).
   - **Web links** on the page (project pages) open in a tab of the default profile, as on the help page.
-  - **About Brouk:** the standard About panel opens links only through macOS, and Brouk never accepts `brouk://` addresses from outside (010). So the panel names the menu item ("Their licences: Help → Open-Source Licences") instead of linking. A real link needs an About window of our own; that is for the user to decide. Until then this criterion stays open (the Help menu and the help section are done).
+  - **About Brouk:** the standard About panel opens links only through macOS, and Brouk never accepts `brouk://` addresses from outside (010). So the panel names the menu item ("Their licences: Help → Open-Source Licences") instead of linking. A real link needs an About window of our own; that is for the user to decide.
   - **Smoke test (019):** starts Brouk with `--profile=smoke about:blank brouk://credits` (URLs with `--profile` open as typed). It checks that the page lists the components and that Chromium's credits load.
+- 2026-10-28 (user's decision): About Brouk keeps the standard panel and names the menu item, with no About window of our own. The description and criterion were changed to match.
