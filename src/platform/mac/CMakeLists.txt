@@ -156,7 +156,8 @@ set(_bundle_commands "")
 # Internal pages (web/, TypeScript), compiled into the bundle's resources.
 file(GLOB_RECURSE _web_sources CONFIGURE_DEPENDS
   "${PROJECT_SOURCE_DIR}/web/shared/*" "${PROJECT_SOURCE_DIR}/web/history/*"
-  "${PROJECT_SOURCE_DIR}/web/bookmarks/*" "${PROJECT_SOURCE_DIR}/web/downloads/*"
+  "${PROJECT_SOURCE_DIR}/web/bookmarks/*" "${PROJECT_SOURCE_DIR}/web/credits/*"
+  "${PROJECT_SOURCE_DIR}/web/downloads/*"
   "${PROJECT_SOURCE_DIR}/web/forms/*" "${PROJECT_SOURCE_DIR}/web/passwords/*"
   "${PROJECT_SOURCE_DIR}/web/help/*"
   "${PROJECT_SOURCE_DIR}/web/profiles/*"
@@ -167,8 +168,19 @@ set(_web_stamp "${CMAKE_CURRENT_BINARY_DIR}/web.stamp")
 add_custom_command(OUTPUT "${_web_stamp}"
   COMMAND "${PROJECT_SOURCE_DIR}/scripts/web" build
           "${APP_BUNDLE}/Contents/Resources/web"
+  # The licences of everything third-party in the app (023); fails the
+  # build if one is missing.
+  COMMAND "${PROJECT_SOURCE_DIR}/scripts/credits"
+          "${APP_BUNDLE}/Contents/Resources/web/credits"
+          --cef "${CEF_ROOT}" --deps "${CMAKE_BINARY_DIR}/_deps"
+          --cargo "${BROUK_CARGO}" --cargo-home "${PROJECT_SOURCE_DIR}/.tools/cargo"
+          --rust-target "${BROUK_RUST_TARGET}" --sparkle "${_sparkle_dir}"
   COMMAND ${CMAKE_COMMAND} -E touch "${_web_stamp}"
   DEPENDS ${_web_sources} "${PROJECT_SOURCE_DIR}/web/tsconfig.json"
+          "${PROJECT_SOURCE_DIR}/scripts/credits.mjs"
+          "${PROJECT_SOURCE_DIR}/third_party/README.md"
+          "${PROJECT_SOURCE_DIR}/src/adblock/Cargo.lock"
+          "${BROUK_ADBLOCK_LIBRARY}"
           "${PROJECT_SOURCE_DIR}/web/package-lock.json"
           "${PROJECT_SOURCE_DIR}/scripts/vendor_modules.mjs"
           "${PROJECT_SOURCE_DIR}/src/core/settings_schema.cc"

@@ -19,6 +19,8 @@ if(APPLE)
     set(_rust_target x86_64-apple-darwin)
   endif()
   set(_cargo_target_args --target ${_rust_target})
+  # Also for the licences page (023), which lists the crates of this target.
+  set(BROUK_RUST_TARGET ${_rust_target})
   set(_cargo_out "${BROUK_CARGO_TARGET_DIR}/${_rust_target}/release")
 endif()
 set(BROUK_ADBLOCK_LIBRARY

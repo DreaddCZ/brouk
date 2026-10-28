@@ -4,6 +4,14 @@ Every third-party library and binary distribution used by the build, with its
 pinned version and licence. Adding one needs the user's approval (see
 `CLAUDE.md`) and is called out in the pull request.
 
+Everything here that ships in the app is also on its open-source licences
+page (`brouk://credits`, spec 023), with its licence texts:
+`scripts/credits.mjs` collects them at build time and fails the build when a
+component has no licence text, or when this table lists one it does not know.
+The page also lists the Rust standard library (compiled into the ad blocking
+engine), every Rust crate linked into the app and the npm packages the pages
+use at run time.
+
 | Name | Version | Licence | How it is fetched | Why |
 |---|---|---|---|---|
 | Chromium Embedded Framework (CEF), minimal binary distribution | 154.0.34+g14c5a08+chromium-154.0.8037.98 | BSD-3-Clause (CEF); Chromium components under their own licences, listed in the distribution's `CREDITS.html` | `scripts/fetch_cef` (SHA-256 checked) into `third_party/cef/<platform>/` | The browser engine (spec 001) |
@@ -11,6 +19,7 @@ pinned version and licence. Adding one needs the user's approval (see
 | SQLite (amalgamation) | 3.54.1 | Public domain | CMake `FetchContent` in `cmake/BroukSqlite.cmake` (SHA-256 checked; the SHA3-256 matches the one published on sqlite.org) | The per-profile history databases (specs 013 and 003); approved by the user 2026-10-23. Used only by the core's history storage |
 | adblock-rust (crate `adblock`) | 0.13.3 | MPL-2.0 | Cargo, pinned with every dependency by version and checksum in `src/adblock/Cargo.lock`; built by `cmake/BroukAdblock.cmake` | Brave's ad and tracker blocking engine (spec 007); approved by the user 2026-10-23. Used only through our C wrapper `src/adblock` (the only Rust code) and `src/core/adblock_engine.h`. Its dependencies (serde, regex, flatbuffers, psl, …) are MIT/Apache-2.0 crates listed in the lock file; `psl` (the public suffix list) is also used directly for the password manager's site matching (008) |
 | libsodium | 1.0.22 | ISC | CMake `FetchContent` in `cmake/BroukSodium.cmake` (SHA-256 checked; the same file as the GitHub release `1.0.22-RELEASE`) | Encrypting saved passwords and autofill data, and the password-protected profile export (specs 008, 009); approved by the user 2026-10-24. Used only by `src/core/crypto.cc` |
+| Brave adblock-resources | commit 60346357addf | MPL-2.0 | CMake `file(DOWNLOAD)` in `cmake/BroukAdblock.cmake` (SHA-256 checked) | The redirect and scriptlet resources of ad blocking (spec 007), bundled as the first copy; newer copies are downloaded with the filter lists |
 | Sparkle | 2.10.0 | MIT | `scripts/fetch_sparkle` (SHA-256 checked, the same as GitHub's digest of the release asset) into `third_party/sparkle/` | The updater of release builds (spec 019); approved by the user 2026-10-26. `Sparkle.framework` is embedded thinned to the build's architecture and without its XPC services (Brouk is not sandboxed); `generate_keys` and `sign_update` are used by `scripts/release` |
 | GoogleTest | 1.18.0 | BSD-3-Clause | CMake `FetchContent` in `tests/CMakeLists.txt` (SHA-256 checked) | C++ unit tests (spec 001) |
 

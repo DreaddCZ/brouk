@@ -31,7 +31,7 @@ compile() {  # compile <dir>
   # The password checkup's strength estimate (008), flattened for the page.
   node "$ROOT/scripts/vendor_modules.mjs" node_modules "$1/passwords" zx \
     @zxcvbn-ts/core @zxcvbn-ts/language-common @zxcvbn-ts/language-en
-  find shared bookmarks downloads help history passwords profiles settings task-manager tools -name '*.html' -o -name '*.css' | while read -r f; do
+  find shared bookmarks credits downloads help history passwords profiles settings task-manager tools -name '*.html' -o -name '*.css' | while read -r f; do
     mkdir -p "$1/$(dirname "$f")"
     cp "$f" "$1/$f"
   done

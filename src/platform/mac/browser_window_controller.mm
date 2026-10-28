@@ -622,13 +622,16 @@ NSButton* ToolbarButton(NSString* symbol,
     BOOL bookmarks = [page isEqualToString:@"bookmarks"];
     BOOL passwords = [page isEqualToString:@"passwords"];
     BOOL downloads = [page isEqualToString:@"downloads"];
+    BOOL credits = [page isEqualToString:@"credits"];
     NSString* title = bookmarks   ? @"Bookmarks"
                       : passwords ? @"Passwords"
                       : downloads ? @"Downloads"
+                      : credits   ? @"Open-Source Licences"
                                   : @"History";
     NSString* symbol = bookmarks   ? @"star"
                        : passwords ? @"key"
                        : downloads ? @"arrow.down.circle"
+                       : credits   ? @"doc.text"
                                    : @"clock";
     [tab createInternalPageWithURL:url
                              title:title
@@ -682,7 +685,8 @@ NSButton* ToolbarButton(NSString* symbol,
   return [page isEqualToString:@"downloads"] ||
          [page isEqualToString:@"history"] ||
          [page isEqualToString:@"bookmarks"] ||
-         [page isEqualToString:@"passwords"];
+         [page isEqualToString:@"passwords"] ||
+         [page isEqualToString:@"credits"];
 }
 
 - (BRTab*)replaceTab:(BRTab*)old withURL:(NSString*)url typed:(BOOL)typed {
@@ -718,6 +722,12 @@ NSButton* ToolbarButton(NSString* symbol,
 // ⌥⌘B: the bookmark manager as a tab, like the history page (011).
 - (IBAction)showBookmarkManager:(id)sender {
   [self showInternalPage:@"bookmarks" fragment:@""];
+}
+
+// Help → Open-Source Licences: the licences page as a tab (023), as
+// chrome://credits in Chrome.
+- (IBAction)showCredits:(id)sender {
+  [self showInternalPage:@"credits" fragment:@""];
 }
 
 // An internal page as a tab in the current tab's profile group, in place of
