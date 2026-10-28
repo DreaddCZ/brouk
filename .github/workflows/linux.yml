@@ -44,6 +44,11 @@ jobs:
       - name: Internal pages (TypeScript type-check and tests)
         run: scripts/web test
 
+      - name: Build script tests
+        run: |
+          source scripts/env.sh
+          node --test scripts/*.test.mjs
+
       - name: Fetch CEF
         run: scripts/fetch_cef linux64
 

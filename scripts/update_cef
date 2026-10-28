@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+# Moves the build to another CEF version (default: the newest stable one):
+# downloads the minimal distribution of every platform we build, checks each
+# against the SHA-1 in CEF's index, records its SHA-256 in scripts/fetch_cef,
+# updates third_party/README.md, fetches the new CEF for this machine and
+# writes the changes of CEF's API headers (include/) to build/cef-include.diff
+# for reviewing breaking changes. Steps after it: docs/cef-updates.md.
+#   scripts/update_cef [cef-version]
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=/dev/null
+source "$ROOT/scripts/env.sh"
+cd "$ROOT"
+
+old="$(sed -n 's/^CEF_VERSION="\(.*\)"$/\1/p' scripts/fetch_cef)"
+tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
+curl -fsSL --retry 3 -o "$tmp/index.json" https://cef-builds.spotifycdn.com/index.json
+node scripts/cef_versions.mjs files "$tmp/index.json" "${1:-latest}" > "$tmp/files"
+# Every line has the version in its file name; take it from the first.
+new="$(head -1 "$tmp/files" | sed -E 's/^[a-z0-9]+ cef_binary_(.*)_[a-z0-9]+_minimal\.tar\.bz2 .*/\1/')"
+if [[ "$new" == "$old" ]]; then
+  echo "Already on CEF $old."
+  exit 0
+fi
+echo "Updating CEF $old -> $new"
+
+hash_of() {  # hash_of <1|256> <file>
+  if command -v "sha$1sum" >/dev/null; then "sha$1sum" "$2" | cut -d' ' -f1
+  else shasum -a "$1" "$2" | cut -d' ' -f1; fi
+}
+
+# The same cache as scripts/fetch_cef, so it does not download again.
+cache="${BROUK_CEF_CACHE:-$HOME/.cache/brouk/cef}"
+mkdir -p "$cache"
+while read -r platform name sha1; do
+  archive="$cache/$name"
+  if [[ ! -f "$archive" ]] || [[ "$(hash_of 1 "$archive")" != "$sha1" ]]; then
+    echo "Downloading $name ..."
+    curl -fL --retry 3 -o "$archive.part" \
+      "https://cef-builds.spotifycdn.com/${name//+/%2B}"
+    mv "$archive.part" "$archive"
+  fi
+  if [[ "$(hash_of 1 "$archive")" != "$sha1" ]]; then
+    rm -f "$archive"
+    echo "SHA-1 mismatch for $name (index: $sha1)" >&2
+    exit 1
+  fi
+  sha256="$(hash_of 256 "$archive")"
+  sed -i.bak -E "s/^(    $platform\) echo )[0-9a-f]{64}( ;;)$/\1$sha256\2/" \
+    scripts/fetch_cef
+  grep -q "$platform) echo $sha256 ;;" scripts/fetch_cef || {
+    echo "Could not record the checksum of $platform in scripts/fetch_cef" >&2
+    exit 1
+  }
+done < "$tmp/files"
+sed -i.bak "s/^CEF_VERSION=\".*\"$/CEF_VERSION=\"$new\"/" scripts/fetch_cef
+sed -i.bak "s/$old/$new/g" third_party/README.md
+rm -f scripts/fetch_cef.bak third_party/README.md.bak
+
+# Keep this machine's old headers, fetch the new CEF, and compare.
+case "$(uname -s)-$(uname -m)" in
+  Darwin-x86_64) platform=macosx64 ;;
+  Darwin-arm64) platform=macosarm64 ;;
+  *) platform=linux64 ;;
+esac
+mkdir -p build
+rm -rf build/cef-include-old
+if [[ -d "third_party/cef/$platform/include" ]]; then
+  cp -R "third_party/cef/$platform/include" build/cef-include-old
+fi
+scripts/fetch_cef "$platform"
+if [[ -d build/cef-include-old ]]; then
+  diff -ru build/cef-include-old "third_party/cef/$platform/include" \
+    > build/cef-include.diff || true
+  echo "API header changes: build/cef-include.diff" \
+    "($(grep -c '^diff ' build/cef-include.diff || true) files)"
+fi
+echo "Next: build and test both architectures and Linux, then follow docs/cef-updates.md."
