@@ -85,14 +85,25 @@ struct FakeBw {
   }
 };
 
+// Where the fake `bw` is, in the form each system's search accepts.
+#if defined(_WIN32)
+constexpr const char* kFakeCli = "C:\\tools\\bw.exe";
+#else
+constexpr const char* kFakeCli = "/opt/homebrew/bin/bw";
+#endif
+
 struct Fixture {
+  Fixture() {
+    BitwardenSource::Options options;
+    options.cli_setting = kFakeCli;
+    source.SetOptions(options);
+  }
+
   FakeBw bw;
   std::vector<std::string> certificate_servers;
   BitwardenSource source{
       [this](const ProcessRequest& request) { return bw.Run(request); },
-      [](const std::filesystem::path& path) {
-        return path == "/opt/homebrew/bin/bw";
-      },
+      [](const std::filesystem::path& path) { return path == kFakeCli; },
       [this](const std::string& server) {
         certificate_servers.push_back(server);
         return std::filesystem::path("/data/certificates.pem");
@@ -165,7 +176,7 @@ TEST(BitwardenSourceTest, UnlockFindAndLock) {
 TEST(BitwardenSourceTest, IdleAfterTheLockTime) {
   Fixture f;
   f.source.SetOptions(
-      {.cli_setting = "", .search_path = "", .lock_seconds = 900});
+      {.cli_setting = kFakeCli, .search_path = "", .lock_seconds = 900});
   ASSERT_FALSE(f.source.Unlock("correct", 1000));
   EXPECT_FALSE(f.source.IsIdle(1899));
   f.source.Find("https://www.example.com/", 1800);

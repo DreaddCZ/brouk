@@ -361,7 +361,7 @@ Result<ProcessOutput> RunProcess(const ProcessRequest& request) {
     }
     Wipe(buffer);
     {
-      std::lock_guard<std::mutex> lock(mutex);
+      std::scoped_lock lock(mutex);
       ++finished_reads;
     }
     reads_done.notify_one();
