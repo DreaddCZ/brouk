@@ -123,7 +123,7 @@ Follow the style of CEF and Chromium, so our code and CEF read the same way.
 
 ### Testing
 
-- **Core (C++):** every change comes with GoogleTest tests; every bug fix adds a test that failed before the fix. Tests run in CI on Linux, macOS and Windows for every pull request.
+- **Core (C++):** every change comes with GoogleTest tests; every bug fix adds a test that failed before the fix. Tests run in CI on Linux, macOS and Windows for every pull request; a change to specs and docs only skips the builds (`scripts/ci_changes.mjs`).
 - **TypeScript:** logic is unit-tested with Node's test runner.
 - **UI and end-to-end:** tested manually by the user for now. Every pull request that changes behaviour includes a **manual test checklist** — short, numbered steps with the expected result, mapped to the spec's acceptance criteria — and longer-lived checklists are kept in `docs/testing/`. Automated end-to-end tests (e.g. Playwright over the Chrome DevTools Protocol, see remote debugging in 006) are planned for later; keep the code testable for that (stable accessibility labels, no hidden timing assumptions).
 
