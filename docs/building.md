@@ -111,7 +111,7 @@ certificate on another Mac, open Xcode → Settings → Accounts and sign in.
   `src/adblock/Cargo.lock`), cargo-deny (`src/adblock/deny.toml`: Rust
   advisories, licences, sources) and zizmor (GitHub Actions workflows).
   A finding that is fine where it is gets a `// nosemgrep: <rule-id>` comment
-  with the reason; a false gitleaks hit goes into `.gitleaksignore`.
+  with the reason; a false gitleaks hit goes into `.gitleaks.toml` (by path and rule).
 - `scripts/sast` also runs `scripts/check_cef`, which fails when a CEF update
   is overdue; updating CEF is described in `docs/cef-updates.md`. The logic of
   build scripts written in Node is tested with

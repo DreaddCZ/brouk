@@ -1,0 +1,9 @@
+# gitleaks configuration (scripts/sast): the default rules, plus known false
+# positives by path and rule, so they survive rewritten commit IDs.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Made-up JWT (signature 'signature') in the request log test"
+targetRules = ["jwt"]
+paths = ['''^tests/core/request_log_test\.cc$''']
