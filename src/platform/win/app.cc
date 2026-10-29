@@ -7,6 +7,7 @@
 #include "cef/function_task.h"
 #include "core/address_input.h"
 #include "core/search_engines.h"
+#include "include/base/cef_logging.h"
 #include "include/cef_app.h"
 #include "include/cef_command_line.h"
 #include "include/cef_task.h"
@@ -71,9 +72,15 @@ TabClientDelegate::SearchEngine App::SearchEngine() {
 void App::OpenWindow(const std::string& url) {
   CEF_REQUIRE_UI_THREAD();
   auto window = std::make_unique<BrowserWindow>(*this);
-  if (window->Create(url)) {
-    windows_.push_back(std::move(window));
+  if (!window->Create(url)) {
+    LOG(ERROR) << "Could not create a browser window (error "
+               << GetLastError() << ")";
+    if (windows_.empty()) {
+      CefQuitMessageLoop();  // Nothing to show: quit instead of hanging.
+    }
+    return;
   }
+  windows_.push_back(std::move(window));
 }
 
 void App::OnWindowDestroyed(BrowserWindow* window) {

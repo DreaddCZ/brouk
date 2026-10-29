@@ -124,6 +124,9 @@ jobs:
       # (tests/smoke/smoke.mjs); screenshots and logs are uploaded below.
       - name: Smoke test
         run: |
+          # A crash ends the process instead of waiting in a dialog.
+          reg add "HKCU\Software\Microsoft\Windows\Windows Error Reporting" \
+            //v DontShowUI //t REG_DWORD //d 1 //f
           source scripts/env.sh
           version="$(sed -n 's/^set(APP_VERSION "\(.*\)")$/\1/p' CMakeLists.txt)"
           node tests/smoke/smoke.mjs build/debug/Brouk "$version" unknown x86_64 build/smoke

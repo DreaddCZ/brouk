@@ -52,7 +52,27 @@ setTimeout(() => {
 let brouk = null;
 let server = null;
 let dataDir = null;
+// What was on the screen when a test failed on Windows (CI has no one to
+// look): a dialog in front of Brouk explains a hang.
+function desktopScreenshot() {
+  if (!kWindows) return;
+  const file = join(outDir, 'desktop.png').replaceAll("'", "''");
+  const script = [
+    'Add-Type -AssemblyName System.Windows.Forms, System.Drawing',
+    '$b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds',
+    '$i = New-Object System.Drawing.Bitmap $b.Width, $b.Height',
+    '[System.Drawing.Graphics]::FromImage($i).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)',
+    `$i.Save('${file}')`,
+  ].join('; ');
+  try {
+    execFileSync('powershell', ['-NoProfile', '-Command', script], { timeout: 30000 });
+  } catch (error) {
+    log(`(no desktop screenshot: ${error.message})`);
+  }
+}
+
 function finish(code) {
+  if (code !== 0) desktopScreenshot();
   if (brouk && brouk.exitCode === null) brouk.kill('SIGKILL');
   server?.close();
   if (dataDir) rmSync(dataDir, { recursive: true, force: true });
@@ -103,8 +123,14 @@ class Cdp {
   }
 }
 
+// Brouk's DevTools endpoint; a Brouk that hangs fails the request instead
+// of the whole run.
+async function devtoolsJson(port, path) {
+  return (await fetch(`http://127.0.0.1:${port}${path}`, { signal: AbortSignal.timeout(5000) })).json();
+}
+
 async function pageTarget(port) {
-  const list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+  const list = await devtoolsJson(port, '/json/list');
   return list.find((t) => t.type === 'page' && !t.url.startsWith('brouk:') && !t.url.startsWith('devtools:'));
 }
 
@@ -207,10 +233,15 @@ async function main() {
   log(`Started Brouk (pid ${brouk.pid}), data in ${dataDir}`);
 
   let target = null;
+  let lastError = '';
   for (let i = 0; i < 60 && !target && brouk.exitCode === null; i++) {
     await sleep(500);
-    target = await pageTarget(port).catch(() => null);
+    target = await pageTarget(port).catch((error) => {
+      lastError = error.message;
+      return null;
+    });
   }
+  if (!target) log(`(no tab: exit code ${brouk.exitCode}, last error: ${lastError || 'none'})`);
   if (!check(target !== null, 'Brouk starts and opens a tab')) return finish(1);
   await sleep(Math.max(0, 10000 - (Date.now() - started)));
   check(brouk.exitCode === null, 'Brouk is still running after 10 seconds');
@@ -228,7 +259,7 @@ async function main() {
 
   // The open-source licences (023) are in the app and load, with
   // Chromium's credits next to them.
-  const list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+  const list = await devtoolsJson(port, '/json/list');
   const creditsTarget = list.find((t) => t.url.startsWith('brouk://credits'));
   if (kInternalPages && check(creditsTarget !== undefined, 'the licences page opens')) {
     const credits = await Cdp.connect(creditsTarget.webSocketDebuggerUrl);
