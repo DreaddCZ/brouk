@@ -168,7 +168,7 @@ Dev tools are switched **per tab** with an always-visible toggle — rules never
 | Task manager (pause, unload, end tabs; graph) | ✅ in use |
 | Signed releases with automatic updates (beta) | ✅ in use |
 | Open source (Apache 2.0), with a page of third-party licences | ✅ in use |
-| Windows app (first window and tab so far) | 🔧 being built |
+| Windows app (windows with tabs so far) | 🔧 being built |
 | VPN per profile | 🔍 being investigated |
 
 <!-- Update this slide before each presentation. -->

@@ -52,11 +52,12 @@ setTimeout(() => {
 let brouk = null;
 let server = null;
 let dataDir = null;
-// What was on the screen when a test failed on Windows (CI has no one to
-// look): a dialog in front of Brouk explains a hang.
-function desktopScreenshot() {
+// The CI runner's screen on Windows, where no one can look: Brouk's own
+// window parts (the page screenshots show only pages), and on failure a
+// dialog in front of Brouk that explains a hang.
+function desktopScreenshot(name) {
   if (!kWindows) return;
-  const file = join(outDir, 'desktop.png').replaceAll("'", "''");
+  const file = join(outDir, `${name}.png`).replaceAll("'", "''");
   const script = [
     'Add-Type -AssemblyName System.Windows.Forms, System.Drawing',
     '$b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds',
@@ -72,7 +73,7 @@ function desktopScreenshot() {
 }
 
 function finish(code) {
-  if (code !== 0) desktopScreenshot();
+  if (code !== 0) desktopScreenshot('desktop');
   if (brouk && brouk.exitCode === null) brouk.kill('SIGKILL');
   server?.close();
   if (dataDir) rmSync(dataDir, { recursive: true, force: true });
@@ -245,6 +246,7 @@ async function main() {
   if (!check(target !== null, 'Brouk starts and opens a tab')) return finish(1);
   await sleep(Math.max(0, 10000 - (Date.now() - started)));
   check(brouk.exitCode === null, 'Brouk is still running after 10 seconds');
+  desktopScreenshot('window');
 
   const cdp = await Cdp.connect(target.webSocketDebuggerUrl);
   await cdp.send('Page.enable');
