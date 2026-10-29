@@ -29,7 +29,7 @@ class TabHost {
   virtual TabClientDelegate::SearchEngine TabSearchEngine() = 0;
 
  protected:
-  ~TabHost() = default;
+  virtual ~TabHost() = default;
 };
 
 // One tab: a CEF browser (Alloy style) in a child window of the browser
@@ -40,7 +40,7 @@ class TabHost {
 // available": permission and protocol prompts are declined and popups
 // without a click are blocked. Password, autofill, download and ad blocking
 // callbacks never come, as the tab's client has none of those services.
-class Tab : public TabClientDelegate {
+class Tab final : public TabClientDelegate {
  public:
   explicit Tab(TabHost& host);
   ~Tab() override;

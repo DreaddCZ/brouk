@@ -57,7 +57,8 @@ std::wstring WindowText(HWND window) {
 void SetAccessibleName(HWND control, const wchar_t* name) {
   IAccPropServices* services = nullptr;
   if (FAILED(CoCreateInstance(CLSID_AccPropServices, nullptr,
-                              CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&services)))) {
+                              CLSCTX_INPROC_SERVER, IID_IAccPropServices,
+                              reinterpret_cast<void**>(&services)))) {
     return;
   }
   services->SetHwndPropStr(control, static_cast<DWORD>(OBJID_CLIENT),

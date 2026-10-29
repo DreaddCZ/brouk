@@ -15,7 +15,7 @@ namespace brouk::win {
 // The Windows app in the browser process: profiles, settings and the open
 // windows (the macOS counterpart is BRAppDelegate). Created before
 // CefInitialize; every other method runs on the UI thread.
-class App : public BrowserWindowOwner {
+class App final : public BrowserWindowOwner {
  public:
   App();
   App(const App&) = delete;

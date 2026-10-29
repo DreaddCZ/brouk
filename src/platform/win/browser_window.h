@@ -26,16 +26,16 @@ class BrowserWindowOwner {
   virtual void OnWindowDestroyed(BrowserWindow* window) = 0;
 
  protected:
-  ~BrowserWindowOwner() = default;
+  virtual ~BrowserWindowOwner() = default;
 };
 
 // A top-level browser window: toolbar (back, forward, reload, address bar)
 // and one tab. W1 of 024 adds the tab strip in the title bar; until then a
 // window holds a single tab, and links that would open a tab open a window.
-class BrowserWindow : public TabHost {
+class BrowserWindow final : public TabHost {
  public:
   explicit BrowserWindow(BrowserWindowOwner& owner);
-  ~BrowserWindow();
+  ~BrowserWindow() override;
   BrowserWindow(const BrowserWindow&) = delete;
   BrowserWindow& operator=(const BrowserWindow&) = delete;
 
