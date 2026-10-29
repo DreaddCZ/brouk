@@ -319,6 +319,25 @@ async function main() {
     sendKeys(['{ESC}', '^0']);
   }
 
+  // HTML full screen (Windows app, 024): the window covers the screen
+  // without tab strip and toolbar; Escape (a real key press) leaves it.
+  if (kWindows) {
+    await cdp.send('Page.navigate', { url: `${pagesBase}/fullscreen.html` });
+    await waitForTitle(cdp, 'Full screen test');
+    await cdp.send('Runtime.evaluate', {
+      expression: 'document.documentElement.requestFullscreen().then(() => "yes", (e) => String(e))',
+      userGesture: true,
+      awaitPromise: true,
+    });
+    await sleep(1500);
+    desktopScreenshot('fullscreen');
+    sendKeys(['{ESC}']);
+    await sleep(1000);
+    const { result } = await cdp.send('Runtime.evaluate', { expression: 'document.fullscreenElement === null' });
+    check(result.value === true, 'Escape leaves HTML full screen');
+    desktopScreenshot('fullscreen-left');
+  }
+
   // The Windows app draws the permission prompt and the dialogs over the
   // page itself (024): a screenshot of both for a look. The navigation
   // below must then take the open dialog away.

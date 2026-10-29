@@ -382,6 +382,18 @@ double Tab::ZoomLevel() const {
   return browser_ ? browser_->GetHost()->GetZoomLevel() : 0.0;
 }
 
+void Tab::Print() {
+  if (browser_) {
+    browser_->GetHost()->Print();
+  }
+}
+
+void Tab::ExitFullscreen() {
+  if (browser_ && browser_->GetHost()->IsFullscreen()) {
+    browser_->GetHost()->ExitFullscreen(/*will_cause_resize=*/true);
+  }
+}
+
 void Tab::Close() {
   closing_ = true;
   if (browser_) {
@@ -704,7 +716,9 @@ void Tab::OpenExternalUrl(const std::string& url) {
       SW_SHOWNORMAL);
 }
 
-void Tab::OnFullscreenModeChanged(bool /*fullscreen*/) {}
+void Tab::OnFullscreenModeChanged(bool fullscreen) {
+  host_.OnTabFullscreenChanged(*this, fullscreen);
+}
 
 void Tab::OnAudibleChanged(bool /*audible*/) {}
 

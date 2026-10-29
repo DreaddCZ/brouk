@@ -13,6 +13,7 @@
 #include "core/tab_strip_model.h"
 #include "include/cef_request_context.h"
 #include "platform/win/tab.h"
+#include "platform/win/tab_panel.h"
 #include "platform/win/tab_strip.h"
 #include "platform/win/theme.h"
 
@@ -93,6 +94,7 @@ class BrowserWindow final : public TabHost {
   std::optional<PopupHost> OnTabPopup(Tab& opener,
                                       const PopupRequest& request) override;
   void OnTabPopupAborted(Tab& opener, int popup_id) override;
+  void OnTabFullscreenChanged(Tab& tab, bool fullscreen) override;
   void OpenUrlFromTab(Tab& opener,
                       const std::string& url,
                       OpenDisposition disposition) override;
@@ -148,6 +150,12 @@ class BrowserWindow final : public TabHost {
   void UpdateToolbar();
   void UpdateSpinner();
 
+  // Full screen (F11, or a page's HTML full screen, 012): the window covers
+  // its monitor without frame, tab strip or toolbar.
+  void SetFullscreen(bool fullscreen);
+  // "Press Esc to exit full screen" for a few seconds, as in Chrome.
+  void ShowFullscreenHint(const wchar_t* text);
+
   // Browser shortcuts, from the page, the address bar or the window.
   bool HandleShortcut(int key, bool control, bool alt, bool shift);
   void FocusAddressBar();
@@ -189,6 +197,15 @@ class BrowserWindow final : public TabHost {
   bool address_had_focus_ = false;
   bool closing_ = false;
   bool spinner_running_ = false;
+  bool fullscreen_ = false;
+  // The window went full screen because a page asked (not F11), and leaves
+  // it with the page.
+  bool fullscreen_for_page_ = false;
+  std::optional<TabId> fullscreen_tab_;
+  // To restore the window after full screen.
+  WINDOWPLACEMENT saved_placement_ = {};
+  LONG_PTR saved_style_ = 0;
+  std::unique_ptr<TabPanel> fullscreen_hint_;
   int spinner_step_ = 0;
 };
 
