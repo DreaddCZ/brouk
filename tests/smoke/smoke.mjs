@@ -71,6 +71,25 @@ function desktopScreenshot(name) {
   }
 }
 
+// Windows: brings Brouk's window to the front and types `keys`
+// (System.Windows.Forms.SendKeys syntax: "^f" is Ctrl+F), one after another.
+function sendKeys(keys) {
+  const sends = keys
+    .map((k) => `[System.Windows.Forms.SendKeys]::SendWait('${k.replaceAll("'", "''")}'); Start-Sleep -Milliseconds 300`)
+    .join('; ');
+  const script = [
+    'Add-Type -AssemblyName System.Windows.Forms',
+    `(New-Object -ComObject WScript.Shell).AppActivate(${brouk.pid}) | Out-Null`,
+    'Start-Sleep -Milliseconds 500',
+    sends,
+  ].join('; ');
+  try {
+    execFileSync('powershell', ['-NoProfile', '-Command', script], { timeout: 30000 });
+  } catch (error) {
+    log(`(keys not sent: ${error.message})`);
+  }
+}
+
 function finish(code) {
   if (code !== 0) desktopScreenshot('desktop');
   if (brouk && brouk.exitCode === null) brouk.kill('SIGKILL');
@@ -288,24 +307,16 @@ async function main() {
     credits.close();
   }
 
-  // Find in page and zoom (Windows app, 024): keys the page does not use
-  // reach Brouk's shortcuts. A screenshot of the find bar and the zoom
-  // indicator for a look.
+  // Find in page and zoom (Windows app, 024), with real key presses sent
+  // to Brouk's window: Ctrl+Plus twice, Ctrl+F, then "beetle" in the find
+  // bar. A screenshot of the find bar and the zoom indicator for a look.
   if (kWindows) {
     await cdp.send('Page.navigate', { url: `${pagesBase}/find-and-zoom.html` });
     await waitForTitle(cdp, 'Find and zoom test');
-    const key = async (code, modifiers = 2) => {
-      for (const type of ['rawKeyDown', 'keyUp']) {
-        await cdp.send('Input.dispatchKeyEvent', { type, windowsVirtualKeyCode: code, modifiers });
-      }
-      await sleep(300);
-    };
-    await key(0xbb); // Ctrl+Plus (VK_OEM_PLUS)
-    await key(0xbb);
-    await key(0x46); // Ctrl+F
+    sendKeys(['^{ADD}', '^{ADD}', '^f', 'beetle']);
     await sleep(1000);
-    desktopScreenshot('find-and-zoom');
-    await key(0x30); // Ctrl+0
+    desktopScreenshot('find-bar');
+    sendKeys(['{ESC}', '^0']);
   }
 
   // The Windows app draws the permission prompt and the dialogs over the
