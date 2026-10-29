@@ -73,8 +73,8 @@ void App::OpenWindow(const std::string& url) {
   CEF_REQUIRE_UI_THREAD();
   auto window = std::make_unique<BrowserWindow>(*this);
   if (!window->Create(url)) {
-    LOG(ERROR) << "Could not create a browser window (error "
-               << GetLastError() << ")";
+    LOG(ERROR) << "Could not create a browser window (error " << GetLastError()
+               << ")";
     if (windows_.empty()) {
       CefQuitMessageLoop();  // Nothing to show: quit instead of hanging.
     }
