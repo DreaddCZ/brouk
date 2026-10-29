@@ -7,8 +7,10 @@
 #include <memory>
 #include <utility>
 
+#include "cef/function_task.h"
 #include "core/external_protocol.h"
 #include "core/permissions.h"
+#include "include/cef_task.h"
 #include "include/wrapper/cef_helpers.h"
 #include "platform/win/theme.h"
 #include "platform/win/wide_string.h"
@@ -104,6 +106,7 @@ Tab::~Tab() {
                       &sad_tab_, &permission_prompt_}) {
     panel->reset();
   }
+  find_bar_.reset();
   if (container_) {
     SetWindowLongPtrW(container_, GWLP_USERDATA, 0);
     DestroyWindow(container_);
@@ -194,19 +197,26 @@ void Tab::OnContainerSize() {
       panel->Place();
     }
   }
+  if (find_bar_) {
+    find_bar_->Place();
+  }
+}
+
+bool Tab::ForwardShortcut(int key, bool control, bool alt, bool shift) {
+  CefKeyEvent event;
+  event.type = KEYEVENT_RAWKEYDOWN;
+  event.windows_key_code = key;
+  event.modifiers = (control ? EVENTFLAG_CONTROL_DOWN : 0) |
+                    (alt ? EVENTFLAG_ALT_DOWN : 0) |
+                    (shift ? EVENTFLAG_SHIFT_DOWN : 0);
+  return host_.OnTabKey(event);
 }
 
 std::unique_ptr<TabPanel> Tab::MakePanel(TabPanel::Content content,
                                          TabPanel::Done done) {
   // Browser shortcuts work while a panel has the focus, as in the page.
   auto shortcuts = [this](int key, bool control, bool alt, bool shift) {
-    CefKeyEvent event;
-    event.type = KEYEVENT_RAWKEYDOWN;
-    event.windows_key_code = key;
-    event.modifiers = (control ? EVENTFLAG_CONTROL_DOWN : 0) |
-                      (alt ? EVENTFLAG_ALT_DOWN : 0) |
-                      (shift ? EVENTFLAG_SHIFT_DOWN : 0);
-    return host_.OnTabKey(event);
+    return ForwardShortcut(key, control, alt, shift);
   };
   return std::make_unique<TabPanel>(container_, CurrentTheme(),
                                     std::move(content), std::move(done),
@@ -298,6 +308,75 @@ void Tab::Focus() {
   } else if (browser_) {
     browser_->GetHost()->SetFocus(true);
   }
+}
+
+void Tab::ShowFindBar() {
+  if (!find_bar_) {
+    find_bar_ = std::make_unique<FindBar>(container_, CurrentTheme(), *this);
+  }
+  find_bar_->Focus();
+}
+
+void Tab::FindNext(bool forward) {
+  if (!find_bar_ || find_bar_->text().empty()) {
+    ShowFindBar();
+    return;
+  }
+  if (browser_) {
+    browser_->GetHost()->Find(WideToUtf8(find_bar_->text()), forward,
+                              /*matchCase=*/false, /*findNext=*/true);
+  }
+}
+
+void Tab::OnFindTextChanged() {
+  const std::string text = find_bar_ ? WideToUtf8(find_bar_->text()) : "";
+  if (!browser_) {
+    return;
+  }
+  if (text.empty()) {
+    browser_->GetHost()->StopFinding(/*clearSelection=*/true);
+    find_bar_->SetResult(0, 0);
+    return;
+  }
+  browser_->GetHost()->Find(text, /*forward=*/true, /*matchCase=*/false,
+                            /*findNext=*/false);
+}
+
+void Tab::OnFindNext(bool forward) {
+  FindNext(forward);
+}
+
+void Tab::OnFindClose() {
+  // Not from inside the bar's own window procedure, which calls this.
+  std::weak_ptr<int> alive = alive_;
+  CefPostTask(TID_UI, new FunctionTask([this, alive] {
+                if (alive.expired() || !find_bar_) {
+                  return;
+                }
+                const bool refocus = FocusInTab();
+                find_bar_.reset();
+                if (browser_) {
+                  browser_->GetHost()->StopFinding(/*clearSelection=*/true);
+                }
+                if (refocus && IsWindowVisible(container_)) {
+                  Focus();
+                }
+              }));
+}
+
+bool Tab::OnFindShortcut(int key, bool control, bool alt, bool shift) {
+  return ForwardShortcut(key, control, alt, shift);
+}
+
+void Tab::Zoom(cef_zoom_command_t command) {
+  if (browser_ && browser_->GetHost()->CanZoom(command)) {
+    browser_->GetHost()->Zoom(command);
+    host_.OnTabChanged(*this);
+  }
+}
+
+double Tab::ZoomLevel() const {
+  return browser_ ? browser_->GetHost()->GetZoomLevel() : 0.0;
 }
 
 void Tab::Close() {
@@ -632,7 +711,11 @@ void Tab::ChooseDesktopSource(DesktopSourceDone done) {
   done(std::nullopt);  // The screen picker comes with W1.
 }
 
-void Tab::OnFindResult(int /*count*/, int /*active*/, bool /*final_update*/) {}
+void Tab::OnFindResult(int count, int active, bool /*final_update*/) {
+  if (find_bar_) {
+    find_bar_->SetResult(active, count);
+  }
+}
 
 void Tab::OpenUrl(const std::string& url, OpenDisposition disposition) {
   host_.OpenUrlFromTab(*this, url, disposition);

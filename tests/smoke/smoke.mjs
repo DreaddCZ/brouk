@@ -288,6 +288,26 @@ async function main() {
     credits.close();
   }
 
+  // Find in page and zoom (Windows app, 024): keys the page does not use
+  // reach Brouk's shortcuts. A screenshot of the find bar and the zoom
+  // indicator for a look.
+  if (kWindows) {
+    await cdp.send('Page.navigate', { url: `${pagesBase}/find-and-zoom.html` });
+    await waitForTitle(cdp, 'Find and zoom test');
+    const key = async (code, modifiers = 2) => {
+      for (const type of ['rawKeyDown', 'keyUp']) {
+        await cdp.send('Input.dispatchKeyEvent', { type, windowsVirtualKeyCode: code, modifiers });
+      }
+      await sleep(300);
+    };
+    await key(0xbb); // Ctrl+Plus (VK_OEM_PLUS)
+    await key(0xbb);
+    await key(0x46); // Ctrl+F
+    await sleep(1000);
+    desktopScreenshot('find-and-zoom');
+    await key(0x30); // Ctrl+0
+  }
+
   // The Windows app draws the permission prompt and the dialogs over the
   // page itself (024): a screenshot of both for a look. The navigation
   // below must then take the open dialog away.
