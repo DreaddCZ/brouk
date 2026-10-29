@@ -39,9 +39,9 @@ constexpr UINT kSpinnerInterval = 80;  // Milliseconds per step.
 enum ControlId : int { kBackId = 1, kForwardId, kReloadId, kAddressId };
 
 // Glyphs of the "Segoe MDL2 Assets" icon font, on Windows 10 and 11.
-constexpr wchar_t kBackGlyph[] = L"";
-constexpr wchar_t kForwardGlyph[] = L"";
-constexpr wchar_t kReloadGlyph[] = L"";
+constexpr wchar_t kBackGlyph[] = L"\uE72B";
+constexpr wchar_t kForwardGlyph[] = L"\uE72A";
+constexpr wchar_t kReloadGlyph[] = L"\uE72C";
 
 TabId NextTabId() {
   static TabId next = 0;

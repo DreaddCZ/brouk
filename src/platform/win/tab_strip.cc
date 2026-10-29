@@ -30,12 +30,12 @@ constexpr int kCloseButtonSize = 20;
 constexpr int kTabCornerRadius = 8;
 
 // Glyphs of the "Segoe MDL2 Assets" icon font (Windows 10 and 11).
-constexpr wchar_t kMinimizeGlyph[] = L"";
-constexpr wchar_t kMaximizeGlyph[] = L"";
-constexpr wchar_t kRestoreGlyph[] = L"";
-constexpr wchar_t kCloseGlyph[] = L"";
-constexpr wchar_t kAddGlyph[] = L"";
-constexpr wchar_t kPageGlyph[] = L"";  // Globe: a page without icon.
+constexpr wchar_t kMinimizeGlyph[] = L"\uE921";
+constexpr wchar_t kMaximizeGlyph[] = L"\uE922";
+constexpr wchar_t kRestoreGlyph[] = L"\uE923";
+constexpr wchar_t kCloseGlyph[] = L"\uE8BB";
+constexpr wchar_t kAddGlyph[] = L"\uE710";
+constexpr wchar_t kPageGlyph[] = L"\uE774";  // Globe: a page without icon.
 
 bool Contains(const RECT& rect, POINT point) {
   return PtInRect(&rect, point) != FALSE;
