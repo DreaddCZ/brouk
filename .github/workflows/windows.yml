@@ -1,7 +1,8 @@
-# Windows CI (specs/002, specs/001): builds the portable code (core, CEF
-# integration, renderer) on Windows x64 with clang-cl and runs its tests and
-# the internal pages' tests. There is no Windows app yet. Runs on pull
-# requests, on pushes to main and on demand.
+# Windows CI (specs/002, 001, 024): builds the portable code (core, CEF
+# integration, renderer) and the Windows app on Windows x64 with clang-cl,
+# runs the tests and the internal pages' tests, and uploads the app for
+# testing in a Windows virtual machine. Runs on pull requests, on pushes to
+# main and on demand.
 name: windows
 
 on:
@@ -118,3 +119,17 @@ jobs:
         run: |
           source scripts/env.sh
           ctest --test-dir build/debug --output-on-failure
+
+      # The app to test in a Windows virtual machine (024): the run's page,
+      # "Artifacts". A Debug build of Brouk's own code; CEF is its release
+      # build.
+      - name: Upload the app
+        if: ${{ github.event_name != 'push' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: brouk-windows-${{ github.sha }}
+          path: |
+            build/debug/Brouk/
+            !build/debug/Brouk/*.pdb
+          retention-days: 14
+          if-no-files-found: error
