@@ -222,8 +222,6 @@ async function main() {
   // --profile open as typed, without link routing.
   const args = ['--use-mock-keychain', `--remote-debugging-port=${port}`, '--profile=smoke', 'about:blank'];
   if (kInternalPages) args.push('brouk://credits');
-  // TEMPORARY (024): why Chromium cannot open its databases on Windows.
-  if (kWindows) args.push('--enable-logging=stderr', '--vmodule=*sql*=3,*login_database*=3,*os_crypt*=3');
   brouk = spawn(executable, args, {
     env: { ...process.env, BROUK_DEV_DATA_DIR: dataDir },
     stdio: ['ignore', 'pipe', 'pipe'],
