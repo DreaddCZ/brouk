@@ -443,6 +443,10 @@ void TabPanel::Focus() {
   }
 }
 
+void TabPanel::Cancel() {
+  Finish(content_.escape_answer.value_or(kClosed));
+}
+
 void TabPanel::MoveFocus(bool forward) {
   if (focus_order_.empty()) {
     return;

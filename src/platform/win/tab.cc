@@ -348,6 +348,13 @@ void Tab::OnLoadingStateChanged(bool is_loading,
     // A new load (Reload) replaces the crash page.
     sad_tab_.reset();
   }
+  if (is_loading && !loading_ && js_dialog_ && !js_dialog_->answered() &&
+      js_dialog_while_idle_) {
+    // A navigation (the address bar, back) cancels the page's dialog, as
+    // in Chrome; the page waits in it and would hold the navigation up. A
+    // "leave site?" dialog comes while loading and stays.
+    js_dialog_->Cancel();
+  }
   loading_ = is_loading;
   can_go_back_ = can_go_back;
   can_go_forward_ = can_go_forward;
@@ -424,6 +431,7 @@ void Tab::ShowJsDialog(const JsDialogRequest& request, JsDialogDone done) {
   // Escape cancels; an alert has only OK.
   content.escape_answer = request.kind == Kind::kAlert ? 0 : 1;
   std::weak_ptr<int> alive = alive_;
+  js_dialog_while_idle_ = !loading_;
   js_dialog_ = MakePanel(
       std::move(content),
       [this, alive, done = std::move(done)](const TabPanel::Answer& answer) {

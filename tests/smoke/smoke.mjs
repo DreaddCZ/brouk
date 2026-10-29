@@ -305,7 +305,8 @@ async function main() {
 
   // A crashed renderer shows the crash page (012); Brouk keeps running.
   await cdp.send('Page.navigate', { url: `${pagesBase}/crash-and-hang.html` });
-  await waitForTitle(cdp, 'Crash and hang test');
+  const crashPage = await waitForTitle(cdp, 'Crash and hang test');
+  check(crashPage === 'Crash and hang test', `crash-and-hang.html loads ("${crashPage}")`);
   cdp.send('Page.crash').catch(() => {});
   await sleep(3000);
   desktopScreenshot('crash');

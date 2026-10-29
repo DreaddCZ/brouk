@@ -223,6 +223,8 @@ class Tab final : public TabClientDelegate, public InternalPageDelegate {
   // A navigation asked for before the browser exists.
   std::string pending_url_;
   std::unique_ptr<TabPanel> js_dialog_;
+  // The dialog came while no page was loading: a new navigation cancels it.
+  bool js_dialog_while_idle_ = false;
   std::unique_ptr<TabPanel> unresponsive_;
   std::unique_ptr<TabPanel> external_protocol_;
   std::unique_ptr<TabPanel> sad_tab_;

@@ -79,6 +79,8 @@ class TabPanel {
   void Place();
   // Gives keyboard focus to the text field or the default button.
   void Focus();
+  // Answers as Escape does (or as the close button), for the user.
+  void Cancel();
   // Whether the user has answered (the panel is hidden then).
   bool answered() const { return answered_; }
 
