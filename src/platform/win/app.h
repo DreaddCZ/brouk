@@ -32,11 +32,13 @@ class App final : public BrowserWindowOwner {
   CefRefPtr<CefRequestContext> RequestContext() override;
   TabClientDelegate::SearchEngine SearchEngine() override;
   void OpenWindow(const std::string& url) override;
+  BrowserWindow* OpenPopupWindow(int width, int height) override;
+  bool IsOpenWindow(const BrowserWindow* window) const override;
   void OnWindowDestroyed(BrowserWindow* window) override;
 
  private:
-  // A launch's URLs, each in a window until tabs exist (W1); an empty
-  // window when none is usable. --profile waits for profiles (W2).
+  // A launch's URLs as tabs of a new window (Chrome), or an empty tab when
+  // none is usable. --profile waits for profiles (W2).
   void OpenLaunchRequest(const LaunchRequest& request);
 
   ProfileRegistry profiles_;

@@ -34,18 +34,33 @@ void App::OnRelaunch(const LaunchRequest& request) {
 }
 
 void App::OpenLaunchRequest(const LaunchRequest& request) {
-  bool opened = false;
+  std::vector<std::string> urls;
   for (const std::string& url : request.urls) {
     // Untrusted, like text typed into the address bar.
     const AddressInputResult input = ClassifyAddressInput(url);
     if (input.kind != AddressInputResult::Kind::kEmpty) {
-      OpenWindow(input.url);
-      opened = true;
+      urls.push_back(input.url);
     }
   }
-  if (!opened) {
+  if (urls.empty()) {
     OpenWindow(std::string());
+    return;
   }
+  auto window =
+      std::make_unique<BrowserWindow>(*this, BrowserWindow::Kind::kNormal);
+  if (!window->Create()) {
+    LOG(ERROR) << "Could not create a browser window (error " << GetLastError()
+               << ")";
+    if (windows_.empty()) {
+      CefQuitMessageLoop();  // Nothing to show: quit instead of hanging.
+    }
+    return;
+  }
+  for (std::size_t i = 0; i < urls.size(); ++i) {
+    window->OpenTab(urls[i], /*foreground=*/i == 0);
+  }
+  window->Show();
+  windows_.push_back(std::move(window));
 }
 
 void App::ReleaseBrowserObjects() {
@@ -71,8 +86,9 @@ TabClientDelegate::SearchEngine App::SearchEngine() {
 
 void App::OpenWindow(const std::string& url) {
   CEF_REQUIRE_UI_THREAD();
-  auto window = std::make_unique<BrowserWindow>(*this);
-  if (!window->Create(url)) {
+  auto window =
+      std::make_unique<BrowserWindow>(*this, BrowserWindow::Kind::kNormal);
+  if (!window->Create()) {
     LOG(ERROR) << "Could not create a browser window (error " << GetLastError()
                << ")";
     if (windows_.empty()) {
@@ -80,7 +96,27 @@ void App::OpenWindow(const std::string& url) {
     }
     return;
   }
+  window->OpenTab(url, true);
+  window->Show();
   windows_.push_back(std::move(window));
+}
+
+BrowserWindow* App::OpenPopupWindow(int width, int height) {
+  CEF_REQUIRE_UI_THREAD();
+  auto window =
+      std::make_unique<BrowserWindow>(*this, BrowserWindow::Kind::kPopup);
+  if (!window->Create(width, height)) {
+    return nullptr;
+  }
+  window->Show();
+  BrowserWindow* popup = window.get();
+  windows_.push_back(std::move(window));
+  return popup;
+}
+
+bool App::IsOpenWindow(const BrowserWindow* window) const {
+  return std::ranges::any_of(
+      windows_, [window](const auto& w) { return w.get() == window; });
 }
 
 void App::OnWindowDestroyed(BrowserWindow* window) {

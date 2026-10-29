@@ -4,54 +4,65 @@
 #include <windows.h>
 
 #include <memory>
+#include <optional>
 #include <string>
+#include <vector>
 
 #include "cef/tab_client.h"
+#include "core/tab_strip_model.h"
 #include "include/cef_browser.h"
 #include "include/cef_request_context.h"
+#include "platform/win/favicon.h"
 
 namespace brouk::win {
+
+class Tab;
 
 // What a tab tells the window it is in. UI thread.
 class TabHost {
  public:
-  virtual void OnTabTitleChanged(const std::string& title) = 0;
-  virtual void OnTabAddressChanged(const std::string& url) = 0;
-  virtual void OnTabLoadingStateChanged(bool can_go_back,
-                                        bool can_go_forward) = 0;
-  // The browser is gone (after Close() or a page that closed itself).
-  virtual void OnTabClosed() = 0;
-  // A page or link asks to open `url` elsewhere; W1 opens it in a new
-  // window until the tab strip exists.
-  virtual void OpenInNewWindow(const std::string& url) = 0;
+  // Title, address, icon, loading or navigation state changed.
+  virtual void OnTabChanged(Tab& tab) = 0;
+  // The browser is gone (after Close() or a page that closed itself). The
+  // host deletes the tab, later (not from inside this call).
+  virtual void OnTabClosed(Tab& tab) = 0;
+  // The page opens a popup or a link in a new tab: where to put it, or
+  // nullopt to block it (TabClientDelegate::OnBeforePopup).
+  virtual std::optional<PopupHost> OnTabPopup(Tab& opener,
+                                              const PopupRequest& request) = 0;
+  virtual void OnTabPopupAborted(Tab& opener, int popup_id) = 0;
+  // A context menu or shortcut opens `url` in a new tab or window.
+  virtual void OpenUrlFromTab(Tab& opener,
+                              const std::string& url,
+                              OpenDisposition disposition) = 0;
   // A key the page did not handle (shortcuts). True if handled.
   virtual bool OnTabKey(const CefKeyEvent& event) = 0;
   virtual TabClientDelegate::SearchEngine TabSearchEngine() = 0;
+  // The tab icon's size in pixels at the window's current DPI.
+  virtual int FaviconSize() = 0;
 
  protected:
   virtual ~TabHost() = default;
 };
 
-// One tab: a CEF browser (Alloy style) in a child window of the browser
-// window, and the TabClientDelegate for it. Every method runs on the UI
-// thread (the main thread: CefRunMessageLoop).
-//
-// Features not yet ported to Windows (024, stages W1–W3) answer as "not
-// available": permission and protocol prompts are declined and popups
-// without a click are blocked. Password, autofill, download and ad blocking
-// callbacks never come, as the tab's client has none of those services.
 class Tab final : public TabClientDelegate {
  public:
-  explicit Tab(TabHost& host);
+  // Creates the tab's (hidden) container window in `parent`.
+  Tab(TabHost& host, TabId id, HWND parent);
   ~Tab() override;
   Tab(const Tab&) = delete;
   Tab& operator=(const Tab&) = delete;
 
-  void CreateBrowser(HWND parent,
-                     const RECT& bounds,
-                     const std::string& url,
+  // Starts the tab's browser with `url`.
+  void CreateBrowser(const std::string& url,
                      CefRefPtr<CefRequestContext> context);
+  // Where CEF creates a popup's browser for this tab instead
+  // (TabHost::OnTabPopup).
+  PopupHost PopupHostForBrowser();
   void SetBounds(const RECT& bounds);
+  void SetVisible(bool visible);
+  // The icon again at a new size (the window's DPI changed).
+  void UpdateFaviconSize();
   void Navigate(const std::string& url);
   void GoBack();
   void GoForward();
@@ -61,6 +72,16 @@ class Tab final : public TabClientDelegate {
   // follows. A page may cancel ("leave site?").
   void Close();
   bool has_browser() const { return browser_ != nullptr; }
+  bool closing() const { return closing_; }
+
+  TabId id() const { return id_; }
+  HWND container() const { return container_; }
+  const std::string& title() const { return title_; }
+  const std::string& url() const { return url_; }
+  const Favicon& favicon() const { return favicon_; }
+  bool loading() const { return loading_; }
+  bool can_go_back() const { return can_go_back_; }
+  bool can_go_forward() const { return can_go_forward_; }
 
   // TabClientDelegate:
   void OnBrowserCreated(CefRefPtr<CefBrowser> browser) override;
@@ -138,10 +159,23 @@ class Tab final : public TabClientDelegate {
  private:
   HWND BrowserWindowHandle() const;
 
+  static LRESULT CALLBACK ContainerProc(HWND window,
+                                        UINT message,
+                                        WPARAM wparam,
+                                        LPARAM lparam);
+
   TabHost& host_;
+  const TabId id_;
+  HWND container_ = nullptr;
   CefRefPtr<TabClient> client_;
   CefRefPtr<CefBrowser> browser_;
-  RECT bounds_{};
+  std::string title_;
+  std::string url_;
+  std::vector<std::uint8_t> favicon_png_;
+  Favicon favicon_;
+  bool loading_ = false;
+  bool can_go_back_ = false;
+  bool can_go_forward_ = false;
   // A navigation asked for before the browser exists.
   std::string pending_url_;
   // The answer to an open JavaScript dialog, until it is shown.

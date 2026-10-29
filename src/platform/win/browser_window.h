@@ -3,12 +3,18 @@
 
 #include <windows.h>
 
+#include <map>
 #include <memory>
+#include <optional>
 #include <string>
+#include <utility>
 
 #include "cef/tab_client.h"
+#include "core/tab_strip_model.h"
 #include "include/cef_request_context.h"
 #include "platform/win/tab.h"
+#include "platform/win/tab_strip.h"
+#include "platform/win/theme.h"
 
 namespace brouk::win {
 
@@ -19,8 +25,14 @@ class BrowserWindowOwner {
  public:
   virtual CefRefPtr<CefRequestContext> RequestContext() = 0;
   virtual TabClientDelegate::SearchEngine SearchEngine() = 0;
-  // Opens a new browser window with `url` (empty: a new, empty page).
+  // Opens a new browser window with a tab for `url` (empty: a new, empty
+  // tab).
   virtual void OpenWindow(const std::string& url) = 0;
+  // Opens an empty popup window (window.open() with a size, as Chrome) for
+  // content of `width` x `height` pixels; null if it failed.
+  virtual BrowserWindow* OpenPopupWindow(int width, int height) = 0;
+  // Whether `window` is still open (popups opened from another window).
+  virtual bool IsOpenWindow(const BrowserWindow* window) const = 0;
   // The window is gone; the owner deletes it (later, not from inside its
   // window procedure).
   virtual void OnWindowDestroyed(BrowserWindow* window) = 0;
@@ -29,30 +41,48 @@ class BrowserWindowOwner {
   virtual ~BrowserWindowOwner() = default;
 };
 
-// A top-level browser window: toolbar (back, forward, reload, address bar)
-// and one tab. W1 of 024 adds the tab strip in the title bar; until then a
-// window holds a single tab, and links that would open a tab open a window.
+// A top-level browser window. Normal windows draw their own title bar with
+// the tab strip in it (024, like Chrome and Edge), keeping the system's
+// resizing, snapping and snap layouts; below it are the toolbar (back,
+// forward, reload, address bar) and the active tab. Popup windows have the
+// system title bar and a read-only address bar (Chrome). The tabs' order
+// and selection follow the core's TabStripModel.
 class BrowserWindow final : public TabHost {
  public:
-  explicit BrowserWindow(BrowserWindowOwner& owner);
+  enum class Kind { kNormal, kPopup };
+
+  BrowserWindow(BrowserWindowOwner& owner, Kind kind);
   ~BrowserWindow() override;
   BrowserWindow(const BrowserWindow&) = delete;
   BrowserWindow& operator=(const BrowserWindow&) = delete;
 
-  // Creates and shows the window and starts loading `url` (an empty page if
-  // empty, with the address bar focused). False if Windows refused.
-  bool Create(const std::string& url);
-  void Navigate(const std::string& url);
+  // Creates the window, not yet shown. `content_width` and
+  // `content_height`: the page area's size for popups (0: default size).
+  bool Create(int content_width = 0, int content_height = 0);
+  void Show();
   void Activate();
+  // Opens a tab with `url` at the end of the strip (an empty tab, with the
+  // address bar focused, if `url` is empty).
+  void OpenTab(const std::string& url, bool foreground);
+  // A tab for a popup or link from `opener` (in this or another window),
+  // after the opener if it is here. The caller creates its browser.
+  Tab* InsertTabFromOpener(const Tab* opener, bool foreground);
+  // Removes a tab whose browser never came (the popup was aborted).
+  void RemoveUncreatedTab(TabId id);
+  Tab* FindTab(TabId id);
 
   // TabHost:
-  void OnTabTitleChanged(const std::string& title) override;
-  void OnTabAddressChanged(const std::string& url) override;
-  void OnTabLoadingStateChanged(bool can_go_back, bool can_go_forward) override;
-  void OnTabClosed() override;
-  void OpenInNewWindow(const std::string& url) override;
+  void OnTabChanged(Tab& tab) override;
+  void OnTabClosed(Tab& tab) override;
+  std::optional<PopupHost> OnTabPopup(Tab& opener,
+                                      const PopupRequest& request) override;
+  void OnTabPopupAborted(Tab& opener, int popup_id) override;
+  void OpenUrlFromTab(Tab& opener,
+                      const std::string& url,
+                      OpenDisposition disposition) override;
   bool OnTabKey(const CefKeyEvent& event) override;
   TabClientDelegate::SearchEngine TabSearchEngine() override;
+  int FaviconSize() override;
 
  private:
   static LRESULT CALLBACK WindowProc(HWND window,
@@ -67,12 +97,35 @@ class BrowserWindow final : public TabHost {
                                       DWORD_PTR data);
   LRESULT HandleMessage(UINT message, WPARAM wparam, LPARAM lparam);
 
+  // The custom title bar.
+  LRESULT OnNcCalcSize(WPARAM wparam, LPARAM lparam);
+  LRESULT OnNcHitTest(LPARAM lparam);
+  void OnNcButton(UINT message, WPARAM hit_code);
+  void OnMouse(UINT message, POINT point);
+  int ResizeBorderHeight() const;
+
   void CreateControls();
   void UpdateFonts();
   void Layout();
+  void Paint();
+  void PaintToolbar(HDC dc);
+  void DrawToolbarButton(const DRAWITEMSTRUCT& item);
+  RECT StripBounds() const;
+  RECT ToolbarBounds() const;
   RECT ContentBounds() const;
-  // Device pixels for `dips` at the window's current DPI.
   int Scale(int dips) const;
+  void InvalidateStrip();
+
+  // After tabs were added, removed, moved or activated: shows the active
+  // tab and updates the strip, toolbar and window title.
+  void ModelChanged();
+  // Focuses the active tab's page, or the address bar for an empty tab.
+  void FocusActiveTab();
+  Tab* ActiveTab();
+  void CloseTab(TabId id);
+  void UpdateToolbar();
+  void UpdateSpinner();
+
   // Browser shortcuts, from the page, the address bar or the window.
   bool HandleShortcut(int key, bool control, bool alt, bool shift);
   void FocusAddressBar();
@@ -80,7 +133,14 @@ class BrowserWindow final : public TabHost {
   void ShowAddress();
 
   BrowserWindowOwner& owner_;
-  std::unique_ptr<Tab> tab_;
+  const Kind kind_;
+  TabStripModel model_;
+  std::map<TabId, std::unique_ptr<Tab>> tabs_;
+  // Popups being created from this window's tabs: (opener, popup id) to
+  // the window and tab that will hold them.
+  std::map<std::pair<TabId, int>, std::pair<BrowserWindow*, TabId>>
+      pending_popups_;
+
   HWND window_ = nullptr;
   HWND back_ = nullptr;
   HWND forward_ = nullptr;
@@ -88,8 +148,24 @@ class BrowserWindow final : public TabHost {
   HWND address_ = nullptr;
   HFONT text_font_ = nullptr;
   HFONT icon_font_ = nullptr;
-  std::string url_;
-  bool tab_closed_ = false;
+  int text_height_ = 0;
+  RECT address_field_ = {};  // The rounded field behind the address edit.
+  HBRUSH field_brush_ = nullptr;
+  Theme theme_;
+  TabStrip strip_;
+
+  TabStrip::Hit hover_;
+  TabStrip::Hit pressed_;
+  // A tab being dragged to another place in the strip.
+  std::optional<TabId> drag_tab_;
+  POINT drag_start_ = {};
+  bool dragging_ = false;
+  bool tracking_mouse_ = false;
+  bool active_ = true;
+  bool address_had_focus_ = false;
+  bool closing_ = false;
+  bool spinner_running_ = false;
+  int spinner_step_ = 0;
 };
 
 }  // namespace brouk::win

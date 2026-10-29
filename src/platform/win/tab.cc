@@ -25,10 +25,31 @@ bool RunJsDialog(HWND owner,
                      buttons | MB_ICONINFORMATION) == IDOK;
 }
 
+constexpr wchar_t kContainerClass[] = L"BroukTabContainer";
+
+bool RegisterContainerClass(WNDPROC procedure) {
+  static const bool registered = [procedure] {
+    WNDCLASSEXW container_class = {};
+    container_class.cbSize = sizeof(container_class);
+    container_class.lpfnWndProc = procedure;
+    container_class.hInstance = GetModuleHandleW(nullptr);
+    container_class.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    container_class.hbrBackground = GetSysColorBrush(COLOR_WINDOW);
+    container_class.lpszClassName = kContainerClass;
+    return RegisterClassExW(&container_class) != 0;
+  }();
+  return registered;
+}
+
 }  // namespace
 
-Tab::Tab(TabHost& host) : host_(host) {
+Tab::Tab(TabHost& host, TabId id, HWND parent) : host_(host), id_(id) {
   client_ = new TabClient(this);
+  if (RegisterContainerClass(&Tab::ContainerProc)) {
+    container_ = CreateWindowExW(0, kContainerClass, L"",
+                                 WS_CHILD | WS_CLIPCHILDREN, 0, 0, 0, 0, parent,
+                                 nullptr, GetModuleHandleW(nullptr), nullptr);
+  }
 }
 
 Tab::~Tab() {
@@ -37,21 +58,47 @@ Tab::~Tab() {
   if (client_) {
     client_->DetachDelegate();
   }
+  if (container_) {
+    DestroyWindow(container_);
+  }
 }
 
-void Tab::CreateBrowser(HWND parent,
-                        const RECT& bounds,
-                        const std::string& url,
+// static
+LRESULT CALLBACK Tab::ContainerProc(HWND window,
+                                    UINT message,
+                                    WPARAM wparam,
+                                    LPARAM lparam) {
+  if (message == WM_SIZE) {
+    // The browser's window fills its tab's container.
+    if (HWND browser = GetWindow(window, GW_CHILD)) {
+      SetWindowPos(browser, nullptr, 0, 0, LOWORD(lparam), HIWORD(lparam),
+                   SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+    return 0;
+  }
+  return DefWindowProcW(window, message, wparam, lparam);
+}
+
+void Tab::CreateBrowser(const std::string& url,
                         CefRefPtr<CefRequestContext> context) {
   CEF_REQUIRE_UI_THREAD();
-  bounds_ = bounds;
+  PopupHost host = PopupHostForBrowser();
   CefWindowInfo info;
-  info.SetAsChild(parent,
-                  CefRect(bounds.left, bounds.top, bounds.right - bounds.left,
-                          bounds.bottom - bounds.top));
+  info.SetAsChild(host.parent_view, host.bounds);
   info.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
   CefBrowserSettings settings;
+  url_ = url;
   CefBrowserHost::CreateBrowser(info, client_, url, settings, nullptr, context);
+}
+
+PopupHost Tab::PopupHostForBrowser() {
+  RECT bounds = {};
+  GetClientRect(container_, &bounds);
+  PopupHost host;
+  host.parent_view = container_;
+  host.bounds = CefRect(0, 0, bounds.right, bounds.bottom);
+  host.client = client_;
+  return host;
 }
 
 HWND Tab::BrowserWindowHandle() const {
@@ -59,12 +106,19 @@ HWND Tab::BrowserWindowHandle() const {
 }
 
 void Tab::SetBounds(const RECT& bounds) {
-  bounds_ = bounds;
-  if (HWND window = BrowserWindowHandle()) {
-    SetWindowPos(window, nullptr, bounds.left, bounds.top,
-                 bounds.right - bounds.left, bounds.bottom - bounds.top,
-                 SWP_NOZORDER | SWP_NOACTIVATE);
-  }
+  SetWindowPos(container_, nullptr, bounds.left, bounds.top,
+               bounds.right - bounds.left, bounds.bottom - bounds.top,
+               SWP_NOZORDER | SWP_NOACTIVATE);
+}
+
+void Tab::SetVisible(bool visible) {
+  // Chromium notices a hidden window and stops rendering the tab (CEF's
+  // WasHidden is only for windowless browsers).
+  ShowWindow(container_, visible ? SW_SHOWNA : SW_HIDE);
+}
+
+void Tab::UpdateFaviconSize() {
+  favicon_ = Favicon::FromPng(favicon_png_, host_.FaviconSize());
 }
 
 void Tab::Navigate(const std::string& url) {
@@ -109,7 +163,11 @@ void Tab::Close() {
 
 void Tab::OnBrowserCreated(CefRefPtr<CefBrowser> browser) {
   browser_ = browser;
-  SetBounds(bounds_);
+  // A popup's browser is created by CEF in the bounds it was given then.
+  RECT bounds = {};
+  GetClientRect(container_, &bounds);
+  SetWindowPos(BrowserWindowHandle(), nullptr, 0, 0, bounds.right,
+               bounds.bottom, SWP_NOZORDER | SWP_NOACTIVATE);
   if (closing_) {
     browser_->GetHost()->CloseBrowser(false);
     return;
@@ -121,11 +179,13 @@ void Tab::OnBrowserCreated(CefRefPtr<CefBrowser> browser) {
 }
 
 void Tab::OnTitleChanged(const std::string& title) {
-  host_.OnTabTitleChanged(title);
+  title_ = title;
+  host_.OnTabChanged(*this);
 }
 
 void Tab::OnAddressChanged(const std::string& url) {
-  host_.OnTabAddressChanged(url);
+  url_ = url;
+  host_.OnTabChanged(*this);
 }
 
 void Tab::OnPageVisited(const std::string& /*url*/,
@@ -134,29 +194,33 @@ void Tab::OnPageVisited(const std::string& /*url*/,
   // History (013) comes with W2.
 }
 
-void Tab::OnLoadingStateChanged(bool /*is_loading*/,
+void Tab::OnLoadingStateChanged(bool is_loading,
                                 bool can_go_back,
                                 bool can_go_forward) {
-  host_.OnTabLoadingStateChanged(can_go_back, can_go_forward);
+  loading_ = is_loading;
+  can_go_back_ = can_go_back;
+  can_go_forward_ = can_go_forward;
+  host_.OnTabChanged(*this);
 }
 
 void Tab::OnFaviconChanged(const std::string& /*icon_url*/,
-                           const std::vector<std::uint8_t>& /*png*/) {
-  // Shown by the tab strip (W1).
+                           const std::vector<std::uint8_t>& png) {
+  favicon_png_ = png;
+  UpdateFaviconSize();
+  host_.OnTabChanged(*this);
 }
 
 std::optional<PopupHost> Tab::OnBeforePopup(const PopupRequest& request) {
-  // Until the tab strip exists, a link the user clicked opens in a new
-  // window, without an opener (sign-in popups need the real popup: W1).
-  if (request.user_gesture) {
-    host_.OpenInNewWindow(request.target_url);
-  }
-  return std::nullopt;
+  return host_.OnTabPopup(*this, request);
 }
 
-void Tab::OnPopupBlocked(const std::string& /*target_url*/) {}
+void Tab::OnPopupBlocked(const std::string& /*target_url*/) {
+  // The address bar's "popup blocked" icon comes with W1.
+}
 
-void Tab::OnPopupAborted(int /*popup_id*/) {}
+void Tab::OnPopupAborted(int popup_id) {
+  host_.OnTabPopupAborted(*this, popup_id);
+}
 
 void Tab::OnCloseReady() {
   // The browser lives in a child window of ours (TabClient::DoClose returns
@@ -172,7 +236,9 @@ void Tab::OnBrowserClosed() {
     client_ = nullptr;
   }
   browser_ = nullptr;
-  host_.OnTabClosed();
+  closing_ = true;
+  // May delete this tab later; nothing here touches it afterwards.
+  host_.OnTabClosed(*this);
 }
 
 void Tab::ShowJsDialog(const JsDialogRequest& request, JsDialogDone done) {
@@ -253,8 +319,8 @@ void Tab::ChooseDesktopSource(DesktopSourceDone done) {
 
 void Tab::OnFindResult(int /*count*/, int /*active*/, bool /*final_update*/) {}
 
-void Tab::OpenUrl(const std::string& url, OpenDisposition /*disposition*/) {
-  host_.OpenInNewWindow(url);
+void Tab::OpenUrl(const std::string& url, OpenDisposition disposition) {
+  host_.OpenUrlFromTab(*this, url, disposition);
 }
 
 bool Tab::RouteFirstNavigation(const std::string& /*url*/) {
