@@ -338,8 +338,11 @@ void Tab::OnFindTextChanged() {
     find_bar_->SetResult(0, 0);
     return;
   }
+  // As Chrome's find bar: a new text starts a new search (Chromium sees
+  // the text changed) and makes the first match the current one ("1/6");
+  // without it all matches are only highlighted ("0/6").
   browser_->GetHost()->Find(text, /*forward=*/true, /*matchCase=*/false,
-                            /*findNext=*/false);
+                            /*findNext=*/true);
 }
 
 void Tab::OnFindNext(bool forward) {
