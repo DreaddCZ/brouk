@@ -23,6 +23,23 @@ const std::filesystem::path& EnsureDirectory(
   return path;
 }
 
+// The long form of an existing path: Chromium cannot open its databases
+// under a short 8.3 name such as C:\Users\RUNNER~1 (the temporary folder of
+// some accounts).
+std::filesystem::path LongPath(const std::filesystem::path& path) {
+  const DWORD size = GetLongPathNameW(path.c_str(), nullptr, 0);
+  if (size == 0) {
+    return path;
+  }
+  std::wstring long_path(size, L'\0');
+  const DWORD written = GetLongPathNameW(path.c_str(), long_path.data(), size);
+  if (written == 0 || written >= size) {
+    return path;
+  }
+  long_path.resize(written);
+  return long_path;
+}
+
 std::filesystem::path LocalAppData() {
   PWSTR folder = nullptr;
   std::filesystem::path path;
@@ -42,7 +59,7 @@ std::filesystem::path AppDataDirectory() {
   if (const wchar_t* dev_dir = _wgetenv(L"BROUK_DEV_DATA_DIR")) {
     std::filesystem::path path(dev_dir);
     if (path.is_absolute()) {
-      return EnsureDirectory(path);
+      return LongPath(EnsureDirectory(path));
     }
   }
   return EnsureDirectory(LocalAppData() / Utf8ToWide(kAppDataDirName));
