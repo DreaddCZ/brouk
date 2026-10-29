@@ -6,7 +6,7 @@ set(APP_NAME "Brouk")
 set(APP_EXECUTABLE_NAME "brouk")
 set(APP_BUNDLE_ID "io.github.dreaddcz.brouk")
 set(APP_DATA_DIR_NAME "Brouk")
-set(APP_VERSION "0.2.0")
+set(APP_VERSION "0.2.1")
 # Automatic updates (019): the releases repository's update feeds (one per
 # architecture, appcast-<arch>.xml) and the public EdDSA key that update
 # images must be signed with. Only builds with BROUK_UPDATES (scripts/release)

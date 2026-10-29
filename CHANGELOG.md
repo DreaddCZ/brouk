@@ -2,6 +2,20 @@
 
 What changed in each release of Brouk. Written by `scripts/release` (spec 019).
 
+## 0.2.1 – 2026-10-29
+
+### New
+
+- Open-source licences page: Help → Open-Source Licences opens a tab that lists Brouk's licence and every third-party component with its licence text, including Chromium's notices. About Brouk points to it.
+
+### Changed
+
+- Updated the browser engine to Chromium 156 (CEF 156.0.14).
+
+### Fixed
+
+- Fixed a rare crash when opening a link from another app.
+
 ## 0.2.0 (beta) – 2026-10-28
 
 ### New
