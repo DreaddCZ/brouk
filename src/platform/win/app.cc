@@ -1,11 +1,17 @@
 #include "platform/win/app.h"
 
 #include <algorithm>
+#include <filesystem>
 #include <utility>
 
 #include "cef/browser_app.h"
 #include "cef/function_task.h"
+#include "cef/help_link.h"
+#include "cef/help_page_handler.h"
+#include "cef/internal_scheme.h"
+#include "cef/static_page_handler.h"
 #include "core/address_input.h"
+#include "core/help.h"
 #include "core/search_engines.h"
 #include "include/base/cef_logging.h"
 #include "include/cef_app.h"
@@ -13,6 +19,7 @@
 #include "include/cef_task.h"
 #include "include/wrapper/cef_helpers.h"
 #include "platform/win/data_paths.h"
+#include "platform/win/wide_string.h"
 
 namespace brouk::win {
 
@@ -24,6 +31,10 @@ App::App() : profiles_(AppDataDirectory()) {
 
 void App::OnContextInitialized() {
   CEF_REQUIRE_UI_THREAD();
+  SetHelpLinkOpeners({
+      .open_help = [this](const std::string& anchor) { OpenHelp(anchor); },
+      .open_web_link = [this](const std::string& url) { OpenWebLink(url); },
+  });
   OpenLaunchRequest(
       BrowserApp::LaunchRequestFrom(CefCommandLine::GetGlobalCommandLine()));
 }
@@ -64,8 +75,10 @@ void App::OpenLaunchRequest(const LaunchRequest& request) {
 }
 
 void App::ReleaseBrowserObjects() {
+  help_window_.reset();
   windows_.clear();
   context_ = nullptr;
+  internal_context_ = nullptr;
 }
 
 CefRefPtr<CefRequestContext> App::RequestContext() {
@@ -77,6 +90,99 @@ CefRefPtr<CefRequestContext> App::RequestContext() {
     context_ = CefRequestContext::CreateContext(settings, nullptr);
   }
   return context_;
+}
+
+CefRefPtr<CefRequestContext> App::InternalContext() {
+  CEF_REQUIRE_UI_THREAD();
+  if (!internal_context_) {
+    // A folder of its own, not in memory as on macOS: CEF builds an
+    // in-memory context on Chromium's "Default" profile, which is the first
+    // Brouk profile's folder on Windows (see BrowserApp's
+    // --profile-directory). Internal pages keep nothing of the user's.
+    CefRequestContextSettings settings;
+    CefString(&settings.cache_path) =
+        (WebDataRootDirectory() / L"internal").wstring();
+    internal_context_ = CefRequestContext::CreateContext(settings, nullptr);
+    // The pages are built next to brouk.exe (CMakeLists.txt).
+    wchar_t module[MAX_PATH] = {};
+    GetModuleFileNameW(nullptr, module, MAX_PATH);
+    const std::filesystem::path web =
+        std::filesystem::path(module).parent_path() / L"web";
+    InstallInternalPages(internal_context_, WideToUtf8(web.wstring()));
+  }
+  return internal_context_;
+}
+
+std::unique_ptr<CefMessageRouterBrowserSide::Handler> App::InternalPageHandler(
+    const std::string& page) {
+  // The other pages come with their features (024, W2 and W3).
+  if (page == "credits") {
+    return std::make_unique<StaticPageHandler>();
+  }
+  return nullptr;
+}
+
+void App::OpenHelp(const std::string& anchor) {
+  CEF_REQUIRE_UI_THREAD();
+  if (!anchor.empty() && !IsHelpAnchor(anchor)) {
+    return;
+  }
+  if (help_window_) {
+    if (!anchor.empty()) {
+      // Checked above: only letters, digits and '-'.
+      help_window_->ExecuteJavaScript("showHelpSection('" + anchor + "')");
+    }
+    help_window_->Activate();
+    return;
+  }
+  // One help window (016); deleted once closed.
+  auto window = std::make_unique<InternalPageWindow>([this] {
+    CefPostTask(TID_UI, new FunctionTask([this] {
+                  help_window_.reset();
+                  if (quitting_) {
+                    CefQuitMessageLoop();
+                  }
+                }));
+  });
+  const std::string url =
+      anchor.empty() ? "brouk://help/" : "brouk://help/#" + anchor;
+  ProfileRegistry* registry = &profiles_;
+  if (window->Create(
+          url, L"Brouk Help", 980, 720,
+          std::make_unique<HelpPageHandler>([registry]() -> const Settings& {
+            return registry->global_settings();
+          }),
+          InternalContext())) {
+    help_window_ = std::move(window);
+  }
+}
+
+void App::OpenWebLink(const std::string& url) {
+  if (windows_.empty()) {
+    OpenWindow(url);
+    return;
+  }
+  // The window used last: the front one of Brouk's normal windows.
+  for (HWND window = GetTopWindow(nullptr); window;
+       window = GetWindow(window, GW_HWNDNEXT)) {
+    for (const std::unique_ptr<BrowserWindow>& browser_window : windows_) {
+      if (browser_window->hwnd() == window && browser_window->is_normal()) {
+        browser_window->OpenTab(url, true);
+        browser_window->Activate();
+        return;
+      }
+    }
+  }
+  OpenWindow(url);
+}
+
+void App::CloseAllWindows() {
+  if (help_window_) {
+    PostMessageW(help_window_->hwnd(), WM_CLOSE, 0, 0);
+  }
+  for (const std::unique_ptr<BrowserWindow>& window : windows_) {
+    PostMessageW(window->hwnd(), WM_CLOSE, 0, 0);
+  }
 }
 
 TabClientDelegate::SearchEngine App::SearchEngine() {
@@ -127,9 +233,15 @@ void App::OnWindowDestroyed(BrowserWindow* window) {
                     [window](const std::unique_ptr<BrowserWindow>& w) {
                       return w.get() == window;
                     });
-                // Brouk quits with its last window, as Chrome on Windows.
-                if (windows_.empty()) {
-                  CefQuitMessageLoop();
+                // Brouk quits with its last window, as Chrome on Windows; an
+                // open help window closes first.
+                if (windows_.empty() && !quitting_) {
+                  quitting_ = true;
+                  if (help_window_) {
+                    PostMessageW(help_window_->hwnd(), WM_CLOSE, 0, 0);
+                  } else {
+                    CefQuitMessageLoop();
+                  }
                 }
               }));
 }

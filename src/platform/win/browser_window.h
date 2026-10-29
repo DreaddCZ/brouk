@@ -31,6 +31,17 @@ class BrowserWindowOwner {
   // Opens an empty popup window (window.open() with a size, as Chrome) for
   // content of `width` x `height` pixels; null if it failed.
   virtual BrowserWindow* OpenPopupWindow(int width, int height) = 0;
+  // The request context of internal pages (in memory only); only it can
+  // load brouk:// pages.
+  virtual CefRefPtr<CefRequestContext> InternalContext() = 0;
+  // The bridge handler of an internal page shown in a tab (the licences,
+  // 023), or null for pages that do not open in a tab (yet).
+  virtual std::unique_ptr<CefMessageRouterBrowserSide::Handler>
+  InternalPageHandler(const std::string& page) = 0;
+  // Opens the help window (016), at a section if `anchor` is not empty.
+  virtual void OpenHelp(const std::string& anchor) = 0;
+  // Closes every window (the menu's Exit).
+  virtual void CloseAllWindows() = 0;
   // Whether `window` is still open (popups opened from another window).
   virtual bool IsOpenWindow(const BrowserWindow* window) const = 0;
   // The window is gone; the owner deletes it (later, not from inside its
@@ -67,9 +78,14 @@ class BrowserWindow final : public TabHost {
   // A tab for a popup or link from `opener` (in this or another window),
   // after the opener if it is here. The caller creates its browser.
   Tab* InsertTabFromOpener(const Tab* opener, bool foreground);
+  // Opens an internal page (brouk://...) in a tab, in place of an empty
+  // active tab; help opens its own window.
+  void OpenInternalPage(const std::string& url);
   // Removes a tab whose browser never came (the popup was aborted).
   void RemoveUncreatedTab(TabId id);
   Tab* FindTab(TabId id);
+  HWND hwnd() const { return window_; }
+  bool is_normal() const { return kind_ == Kind::kNormal; }
 
   // TabHost:
   void OnTabChanged(Tab& tab) override;
@@ -110,6 +126,9 @@ class BrowserWindow final : public TabHost {
   void Paint();
   void PaintToolbar(HDC dc);
   void DrawToolbarButton(const DRAWITEMSTRUCT& item);
+  // The "⋮" menu (Chrome's "Customise and control"): new tab and window,
+  // help, licences, exit.
+  void ShowAppMenu();
   RECT StripBounds() const;
   RECT ToolbarBounds() const;
   RECT ContentBounds() const;
@@ -145,6 +164,7 @@ class BrowserWindow final : public TabHost {
   HWND back_ = nullptr;
   HWND forward_ = nullptr;
   HWND reload_ = nullptr;
+  HWND menu_ = nullptr;
   HWND address_ = nullptr;
   HFONT text_font_ = nullptr;
   HFONT icon_font_ = nullptr;
