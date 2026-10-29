@@ -24,6 +24,19 @@ void BrowserApp::OnBeforeCommandLineProcessing(
     command_line->AppendSwitchWithValue("remote-debugging-address",
                                         "127.0.0.1");
   }
+#if defined(OS_WIN)
+  // Chromium's own profile (behind CEF's global request context, used only
+  // for background downloads) lives in <root>\Default, and the first Brouk
+  // profile, "default", in <root>\default: on Windows, whose file names
+  // ignore case, the same folder, and the two lock each other's databases
+  // ("Profile error occurred"). Chromium's profile gets a folder of its
+  // own. Not on macOS: there the two have shared the folder without
+  // errors, and with this switch Chromium fails to open its password
+  // databases in a new data folder (024, Notes).
+  if (process_type.empty()) {
+    command_line->AppendSwitchWithValue("profile-directory", "Chromium");
+  }
+#endif
   // Developer test runs only: every local rebuild gets a new ad-hoc signature,
   // so macOS asks for the keychain password on each launch. With this
   // variable set, Chromium uses a throwaway key instead of the keychain.

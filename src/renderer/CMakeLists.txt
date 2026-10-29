@@ -2,15 +2,23 @@
 add_library(brouk_renderer STATIC
   renderer_app.cc
   renderer_app.h
-  # Validates the browser's answer to the screen sharing picker. Compiled in
-  # directly: brouk_core is built with sanitizers, which helpers cannot load.
-  "${PROJECT_SOURCE_DIR}/src/core/screen_share.cc"
-  # Which pages get the internal pages' bridge.
-  "${PROJECT_SOURCE_DIR}/src/core/internal_pages.cc"
 )
 # The helper processes cannot load the sanitizer runtime (sandbox).
 brouk_target_options(brouk_renderer CEF NO_SANITIZE)
 target_link_libraries(brouk_renderer PUBLIC libcef_dll_wrapper)
+if(WIN32)
+  # On Windows one DLL runs every process (024) and links the core anyway;
+  # there are no sanitizers, so the renderer uses the core too.
+  target_link_libraries(brouk_renderer PUBLIC brouk_core)
+else()
+  target_sources(brouk_renderer PRIVATE
+    # Validates the browser's answer to the screen sharing picker. Compiled
+    # in directly: brouk_core is built with sanitizers, which helpers cannot
+    # load.
+    "${PROJECT_SOURCE_DIR}/src/core/screen_share.cc"
+    # Which pages get the internal pages' bridge.
+    "${PROJECT_SOURCE_DIR}/src/core/internal_pages.cc")
+endif()
 target_include_directories(brouk_renderer SYSTEM PUBLIC "${CEF_ROOT}")
 
 # scripts/web is a bash script; Windows runs it with Git's bash (not the

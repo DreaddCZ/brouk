@@ -63,6 +63,8 @@ if(BROUK_WITH_CEF)
   add_subdirectory(src/renderer)
   if(APPLE)
     add_subdirectory(src/platform/mac)
+  elseif(WIN32)
+    add_subdirectory(src/platform/win)
   endif()
 endif()
 

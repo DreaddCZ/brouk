@@ -1,7 +1,8 @@
 // Smoke tests of a release build (spec 019), run by scripts/release on the
-// Intel build copied out of its disk image:
+// Intel build copied out of its disk image, and of the Windows app in CI
+// (024; <app> is the app folder with brouk.exe):
 //
-//   node tests/smoke/smoke.mjs <Brouk.app> <version> <commit> <arch> <out-dir>
+//   node tests/smoke/smoke.mjs <app> <version> <commit> <arch> <out-dir>
 //
 // Brouk runs with a new, empty data folder, the mock keychain and remote
 // debugging on localhost, so the user's own Brouk, data and keychain are
@@ -16,9 +17,13 @@ import { join, extname, resolve } from 'node:path';
 
 const [appPath, version, commit, arch, outDir] = process.argv.slice(2);
 if (!outDir) {
-  console.error('usage: smoke.mjs <Brouk.app> <version> <commit> <arch> <out-dir>');
+  console.error('usage: smoke.mjs <app> <version> <commit> <arch> <out-dir>');
   process.exit(2);
 }
+const kWindows = process.platform === 'win32';
+// Not yet in the Windows app (024, W1–W4): internal pages, the crash page
+// and the updater.
+const kInternalPages = !kWindows;
 const kTotalLimitMs = 5 * 60 * 1000;
 const kPagesDir = resolve(import.meta.dirname, '../../docs/testing/pages');
 const kCrashReports = join(homedir(), 'Library/Logs/DiagnosticReports');
@@ -47,7 +52,27 @@ setTimeout(() => {
 let brouk = null;
 let server = null;
 let dataDir = null;
+// What was on the screen when a test failed on Windows (CI has no one to
+// look): a dialog in front of Brouk explains a hang.
+function desktopScreenshot() {
+  if (!kWindows) return;
+  const file = join(outDir, 'desktop.png').replaceAll("'", "''");
+  const script = [
+    'Add-Type -AssemblyName System.Windows.Forms, System.Drawing',
+    '$b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds',
+    '$i = New-Object System.Drawing.Bitmap $b.Width, $b.Height',
+    '[System.Drawing.Graphics]::FromImage($i).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)',
+    `$i.Save('${file}')`,
+  ].join('; ');
+  try {
+    execFileSync('powershell', ['-NoProfile', '-Command', script], { timeout: 30000 });
+  } catch (error) {
+    log(`(no desktop screenshot: ${error.message})`);
+  }
+}
+
 function finish(code) {
+  if (code !== 0) desktopScreenshot();
   if (brouk && brouk.exitCode === null) brouk.kill('SIGKILL');
   server?.close();
   if (dataDir) rmSync(dataDir, { recursive: true, force: true });
@@ -98,8 +123,14 @@ class Cdp {
   }
 }
 
+// Brouk's DevTools endpoint; a Brouk that hangs fails the request instead
+// of the whole run.
+async function devtoolsJson(port, path) {
+  return (await fetch(`http://127.0.0.1:${port}${path}`, { signal: AbortSignal.timeout(5000) })).json();
+}
+
 async function pageTarget(port) {
-  const list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+  const list = await devtoolsJson(port, '/json/list');
   return list.find((t) => t.type === 'page' && !t.url.startsWith('brouk:') && !t.url.startsWith('devtools:'));
 }
 
@@ -156,6 +187,7 @@ function startServer() {
 }
 
 function crashReports() {
+  if (kWindows) return []; // Windows Error Reporting keeps no reports here.
   try {
     // The main process only: the renderer crash is caused on purpose.
     return readdirSync(kCrashReports).filter((name) => /^brouk[-_]/i.test(name));
@@ -167,17 +199,19 @@ function crashReports() {
 // ---- The tests ----
 
 async function main() {
-  const executable = join(appPath, 'Contents/MacOS/brouk');
+  const executable = kWindows ? join(appPath, 'brouk.exe') : join(appPath, 'Contents/MacOS/brouk');
   const started = Date.now();
   const reportsBefore = new Set(crashReports());
 
   const printed = execFileSync(executable, ['--version'], { encoding: 'utf8' }).trim();
   check(printed === `Brouk ${version} (${commit})`, `--version prints "Brouk ${version} (${commit})" (got "${printed}")`);
 
-  const feed = execFileSync('plutil', ['-extract', 'SUFeedURL', 'raw', '-o', '-', join(appPath, 'Contents/Info.plist')], {
-    encoding: 'utf8',
-  }).trim();
-  check(feed.endsWith(`/appcast-${arch}.xml`), `the updater points to the ${arch} feed (${feed})`);
+  if (!kWindows) {
+    const feed = execFileSync('plutil', ['-extract', 'SUFeedURL', 'raw', '-o', '-', join(appPath, 'Contents/Info.plist')], {
+      encoding: 'utf8',
+    }).trim();
+    check(feed.endsWith(`/appcast-${arch}.xml`), `the updater points to the ${arch} feed (${feed})`);
+  }
 
   server = await startServer();
   const pagesBase = `http://127.0.0.1:${server.address().port}`;
@@ -186,7 +220,8 @@ async function main() {
   const port = 9400 + Math.floor(Math.random() * 500);
   // A blank tab for the web pages, and the licences page (023): URLs with
   // --profile open as typed, without link routing.
-  const args = ['--use-mock-keychain', `--remote-debugging-port=${port}`, '--profile=smoke', 'about:blank', 'brouk://credits'];
+  const args = ['--use-mock-keychain', `--remote-debugging-port=${port}`, '--profile=smoke', 'about:blank'];
+  if (kInternalPages) args.push('brouk://credits');
   brouk = spawn(executable, args, {
     env: { ...process.env, BROUK_DEV_DATA_DIR: dataDir },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -198,10 +233,15 @@ async function main() {
   log(`Started Brouk (pid ${brouk.pid}), data in ${dataDir}`);
 
   let target = null;
+  let lastError = '';
   for (let i = 0; i < 60 && !target && brouk.exitCode === null; i++) {
     await sleep(500);
-    target = await pageTarget(port).catch(() => null);
+    target = await pageTarget(port).catch((error) => {
+      lastError = error.message;
+      return null;
+    });
   }
+  if (!target) log(`(no tab: exit code ${brouk.exitCode}, last error: ${lastError || 'none'})`);
   if (!check(target !== null, 'Brouk starts and opens a tab')) return finish(1);
   await sleep(Math.max(0, 10000 - (Date.now() - started)));
   check(brouk.exitCode === null, 'Brouk is still running after 10 seconds');
@@ -219,9 +259,9 @@ async function main() {
 
   // The open-source licences (023) are in the app and load, with
   // Chromium's credits next to them.
-  const list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+  const list = await devtoolsJson(port, '/json/list');
   const creditsTarget = list.find((t) => t.url.startsWith('brouk://credits'));
-  if (check(creditsTarget !== undefined, 'the licences page opens')) {
+  if (kInternalPages && check(creditsTarget !== undefined, 'the licences page opens')) {
     const credits = await Cdp.connect(creditsTarget.webSocketDebuggerUrl);
     const title = await waitForTitle(credits, 'Open-Source Licences');
     let shown = '';
@@ -258,14 +298,20 @@ async function main() {
     again.close();
   }
 
-  // Quit as the user does (Brouk → Quit), aimed at this copy's pid only.
+  // Quit as the user does (Brouk → Quit; on Windows closing the window),
+  // aimed at this copy's pid only.
   const quitStarted = Date.now();
-  execFileSync('osascript', [
-    '-l',
-    'JavaScript',
-    '-e',
-    `ObjC.import("AppKit"); $.NSRunningApplication.runningApplicationWithProcessIdentifier(${brouk.pid}).terminate`,
-  ]);
+  if (kWindows) {
+    // Without /F, taskkill asks the process's windows to close (WM_CLOSE).
+    execFileSync('taskkill', ['/PID', String(brouk.pid)]);
+  } else {
+    execFileSync('osascript', [
+      '-l',
+      'JavaScript',
+      '-e',
+      `ObjC.import("AppKit"); $.NSRunningApplication.runningApplicationWithProcessIdentifier(${brouk.pid}).terminate`,
+    ]);
+  }
   while (brouk.exitCode === null && Date.now() - quitStarted < 10000) await sleep(200);
   check(brouk.exitCode === 0, `Brouk quits cleanly within 10 seconds (exit code ${brouk.exitCode})`);
 
