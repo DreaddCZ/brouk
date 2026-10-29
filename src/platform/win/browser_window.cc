@@ -1,6 +1,8 @@
 #include "platform/win/browser_window.h"
 
 #include <commctrl.h>
+// Defines the accessibility GUIDs of oleacc.h here (no library has them).
+#include <initguid.h>
 #include <oleacc.h>
 
 #include <algorithm>
