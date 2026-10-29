@@ -181,6 +181,11 @@ HWND Tab::BrowserWindowHandle() const {
   return browser_ ? browser_->GetHost()->GetWindowHandle() : nullptr;
 }
 
+bool Tab::IsPageWindow(HWND window) const {
+  HWND browser = BrowserWindowHandle();
+  return browser && (window == browser || IsChild(browser, window));
+}
+
 void Tab::OnContainerSize() {
   // The browser's window fills its tab's container; the panels keep their
   // place over it.

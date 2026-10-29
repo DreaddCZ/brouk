@@ -194,7 +194,9 @@ class BrowserWindow final : public TabHost {
   bool dragging_ = false;
   bool tracking_mouse_ = false;
   bool active_ = true;
-  bool address_had_focus_ = false;
+  // Where the keyboard focus was when the window was deactivated (the
+  // address bar, a find bar, a dialog over a page, ...), to go back there.
+  HWND saved_focus_ = nullptr;
   bool closing_ = false;
   bool spinner_running_ = false;
   bool fullscreen_ = false;

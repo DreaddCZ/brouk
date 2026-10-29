@@ -315,10 +315,20 @@ async function main() {
   if (kWindows) {
     await cdp.send('Page.navigate', { url: `${pagesBase}/find-and-zoom.html` });
     await waitForTitle(cdp, 'Find and zoom test');
+    const zoom = async () =>
+      (await cdp.send('Runtime.evaluate', { expression: 'Math.round(devicePixelRatio * 100)' })).result.value;
+    const before = await zoom();
     sendKeys(['^{ADD}', '^{ADD}', '^f', 'beetle']);
     await sleep(1000);
+    const zoomed = await zoom();
+    check(zoomed === Math.round(before * 1.25), `Ctrl+Plus twice zooms to 125 % (${before} → ${zoomed})`);
     desktopScreenshot('find-bar');
+    // The screenshot took the focus away; Brouk gives it back to the find
+    // bar, where Escape closes it, then Ctrl+0 resets the zoom.
     sendKeys(['{ESC}', '^0']);
+    await sleep(500);
+    const reset = await zoom();
+    check(reset === before, `Ctrl+0 resets the zoom (${reset})`);
   }
 
   // HTML full screen (Windows app, 024): the window covers the screen

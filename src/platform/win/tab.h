@@ -100,6 +100,8 @@ class Tab final : public TabClientDelegate,
   // follows. A page may cancel ("leave site?").
   void Close();
   bool has_browser() const { return browser_ != nullptr; }
+  // Whether `window` is the page's (the browser's window or one inside it).
+  bool IsPageWindow(HWND window) const;
   bool closing() const { return closing_; }
   // Shows an internal page (CreateInternalPage), which cannot navigate to
   // web pages.

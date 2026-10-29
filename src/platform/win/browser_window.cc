@@ -1335,15 +1335,20 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
     case WM_ACTIVATE:
       active_ = LOWORD(wparam) != WA_INACTIVE;
       if (!active_) {
-        address_had_focus_ = GetFocus() == address_;
+        HWND focus = GetFocus();
+        saved_focus_ = focus && IsChild(window_, focus) ? focus : nullptr;
       }
       InvalidateStrip();
       break;
     case WM_SETFOCUS:
-      // Back to where the user was: the address bar or the page.
-      if (address_had_focus_) {
-        SetFocus(address_);
-      } else if (Tab* tab = ActiveTab()) {
+      // Back to where the user was, as in Chrome. The page itself is
+      // focused through its browser.
+      if (Tab* tab = ActiveTab(); saved_focus_ && IsWindow(saved_focus_) &&
+                                  IsWindowVisible(saved_focus_) &&
+                                  IsWindowEnabled(saved_focus_) &&
+                                  !(tab && tab->IsPageWindow(saved_focus_))) {
+        SetFocus(saved_focus_);
+      } else if (tab) {
         tab->Focus();
       }
       return 0;
