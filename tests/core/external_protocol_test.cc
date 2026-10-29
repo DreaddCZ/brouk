@@ -2,6 +2,9 @@
 
 #include <gtest/gtest.h>
 
+#include <optional>
+#include <string>
+
 namespace brouk {
 namespace {
 
@@ -42,6 +45,32 @@ TEST(ExternalProtocolTest, InvalidSchemesAreLeftToTheBrowser) {
 TEST(ExternalProtocolTest, AllowKey) {
   EXPECT_EQ(ExternalProtocolAllowKey("https://teams.microsoft.com", "msteams"),
             "https://teams.microsoft.com msteams");
+}
+
+TEST(ExternalProtocolTest, ShellUrlEscapesWhatCouldSplitTheCommandLine) {
+  EXPECT_EQ(ExternalUrlForShell("mailto:a@example.com?subject=Hi there"),
+            "mailto:a@example.com?subject=Hi%20there");
+  EXPECT_EQ(ExternalUrlForShell("x-app:\"a\" b|c<d>"),
+            "x-app:%22a%22%20b%7Cc%3Cd%3E");
+  EXPECT_EQ(ExternalUrlForShell("x-app:\\x^`{}"), "x-app:%5Cx%5E%60%7B%7D");
+  EXPECT_EQ(ExternalUrlForShell("x-app:a\tb\nc"), "x-app:a%09b%0Ac");
+  // UTF-8 bytes ("č"); escapes already in the URL stay as they are.
+  EXPECT_EQ(ExternalUrlForShell("x-app:\xC4\x8D%20"), "x-app:%C4%8D%20");
+  EXPECT_EQ(ExternalUrlForShell("msteams:/l/chat/0/0?users=a@example.com"),
+            "msteams:/l/chat/0/0?users=a@example.com");
+}
+
+TEST(ExternalProtocolTest, ShellUrlRejectsDrivesAndLongUrls) {
+  EXPECT_EQ(ExternalUrlForShell("c:/Windows/System32/calc.exe"), std::nullopt);
+  EXPECT_EQ(ExternalUrlForShell("C:\\x"), std::nullopt);
+  EXPECT_EQ(ExternalUrlForShell("no scheme"), std::nullopt);
+  EXPECT_EQ(ExternalUrlForShell(""), std::nullopt);
+  const std::string longest = "x-app:" + std::string(2048 - 6, 'a');
+  EXPECT_EQ(ExternalUrlForShell(longest), longest);
+  EXPECT_EQ(ExternalUrlForShell(longest + "a"), std::nullopt);
+  // Escaping counts: with 681 spaces, 2049 characters.
+  EXPECT_EQ(ExternalUrlForShell("x-app:" + std::string(681, ' ')),
+            std::nullopt);
 }
 
 }  // namespace

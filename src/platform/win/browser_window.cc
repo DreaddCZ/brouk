@@ -2,9 +2,6 @@
 
 #include <commctrl.h>
 #include <windowsx.h>
-// Defines the accessibility GUIDs of oleacc.h here (no library has them).
-#include <initguid.h>
-#include <oleacc.h>
 
 #include <algorithm>
 #include <cstdlib>
@@ -18,6 +15,7 @@
 #include "core/profile_id.h"
 #include "include/cef_task.h"
 #include "include/wrapper/cef_helpers.h"
+#include "platform/win/controls.h"
 #include "platform/win/wide_string.h"
 
 namespace brouk::win {
@@ -76,32 +74,6 @@ bool RegisterWindowClass() {
     return RegisterClassExW(&window_class) != 0;
   }();
   return registered;
-}
-
-std::wstring WindowText(HWND window) {
-  const int length = GetWindowTextLengthW(window);
-  std::wstring text(static_cast<size_t>(length) + 1, L'\0');
-  GetWindowTextW(window, text.data(), length + 1);
-  text.resize(static_cast<size_t>(length));
-  return text;
-}
-
-bool KeyDown(int key) {
-  return (GetKeyState(key) & 0x8000) != 0;
-}
-
-// The name screen readers announce for a control whose text is an icon
-// glyph (MSAA annotation, also read through UI Automation).
-void SetAccessibleName(HWND control, const wchar_t* name) {
-  IAccPropServices* services = nullptr;
-  if (FAILED(CoCreateInstance(CLSID_AccPropServices, nullptr,
-                              CLSCTX_INPROC_SERVER, IID_IAccPropServices,
-                              reinterpret_cast<void**>(&services)))) {
-    return;
-  }
-  services->SetHwndPropStr(control, static_cast<DWORD>(OBJID_CLIENT),
-                           CHILDID_SELF, PROPID_ACC_NAME, name);
-  services->Release();
 }
 
 bool IsBlank(const std::string& url) {

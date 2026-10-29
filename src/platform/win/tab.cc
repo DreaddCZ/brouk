@@ -1,31 +1,65 @@
 #include "platform/win/tab.h"
 
+#include <shellapi.h>
+#include <shlwapi.h>
+
 #include <cstring>
 #include <memory>
 #include <utility>
 
-#include "cef/function_task.h"
-#include "include/cef_task.h"
+#include "core/external_protocol.h"
+#include "core/permissions.h"
 #include "include/wrapper/cef_helpers.h"
+#include "platform/win/theme.h"
 #include "platform/win/wide_string.h"
 
 namespace brouk::win {
 
 namespace {
 
-// The JavaScript dialog as a system message box, until the tab-modal dialog
-// of 012 is ported (W1). Returns true for OK / Leave.
-bool RunJsDialog(HWND owner,
-                 JsDialogRequest::Kind kind,
-                 const std::wstring& title,
-                 const std::wstring& text) {
-  const UINT buttons =
-      kind == JsDialogRequest::Kind::kAlert ? MB_OK : MB_OKCANCEL;
-  return MessageBoxW(owner, text.c_str(), title.c_str(),
-                     buttons | MB_ICONINFORMATION) == IDOK;
+constexpr wchar_t kContainerClass[] = L"BroukTabContainer";
+
+// Glyphs of the "Segoe MDL2 Assets" icon font.
+constexpr wchar_t kWarningGlyph[] = L"\uE7BA";
+
+// The permission prompt's icon for each permission (Segoe MDL2 Assets).
+const wchar_t* PermissionGlyph(PermissionKind kind) {
+  switch (kind) {
+    case PermissionKind::kCamera:
+    case PermissionKind::kCameraPanTiltZoom:
+      return L"\uE714";
+    case PermissionKind::kMicrophone:
+      return L"\uE720";
+    case PermissionKind::kScreenShare:
+      return L"\uE7F4";
+    case PermissionKind::kLocation:
+      return L"\uE81D";
+    case PermissionKind::kNotifications:
+      return L"\uEA8F";
+    case PermissionKind::kClipboard:
+      return L"\uE77F";
+    case PermissionKind::kAutomaticDownloads:
+      return L"\uE896";
+    default:
+      return L"\uE785";
+  }
 }
 
-constexpr wchar_t kContainerClass[] = L"BroukTabContainer";
+// The name of the app Windows opens `scheme` links with ("Mail"), or empty
+// if none is registered.
+std::wstring ExternalAppName(const std::string& scheme) {
+  if (scheme.empty()) {
+    return {};
+  }
+  wchar_t name[MAX_PATH] = {};
+  DWORD size = MAX_PATH;
+  if (FAILED(AssocQueryStringW(ASSOCF_IS_PROTOCOL, ASSOCSTR_FRIENDLYAPPNAME,
+                               Utf8ToWide(scheme).c_str(), L"open", name,
+                               &size))) {
+    return {};
+  }
+  return name;
+}
 
 bool RegisterContainerClass(WNDPROC procedure) {
   static const bool registered = [procedure] {
@@ -50,6 +84,10 @@ Tab::Tab(TabHost& host, TabId id, HWND parent) : host_(host), id_(id) {
                                  WS_CHILD | WS_CLIPCHILDREN, 0, 0, 0, 0, parent,
                                  nullptr, GetModuleHandleW(nullptr), nullptr);
   }
+  if (container_) {
+    SetWindowLongPtrW(container_, GWLP_USERDATA,
+                      reinterpret_cast<LONG_PTR>(this));
+  }
 }
 
 Tab::~Tab() {
@@ -61,7 +99,13 @@ Tab::~Tab() {
   if (internal_client_) {
     internal_client_->DetachDelegate();
   }
+  // The panels' windows go before the container they are in.
+  for (auto* panel : {&js_dialog_, &unresponsive_, &external_protocol_,
+                      &sad_tab_, &permission_prompt_}) {
+    panel->reset();
+  }
   if (container_) {
+    SetWindowLongPtrW(container_, GWLP_USERDATA, 0);
     DestroyWindow(container_);
   }
 }
@@ -72,10 +116,9 @@ LRESULT CALLBACK Tab::ContainerProc(HWND window,
                                     WPARAM wparam,
                                     LPARAM lparam) {
   if (message == WM_SIZE) {
-    // The browser's window fills its tab's container.
-    if (HWND browser = GetWindow(window, GW_CHILD)) {
-      SetWindowPos(browser, nullptr, 0, 0, LOWORD(lparam), HIWORD(lparam),
-                   SWP_NOZORDER | SWP_NOACTIVATE);
+    if (auto* tab =
+            reinterpret_cast<Tab*>(GetWindowLongPtrW(window, GWLP_USERDATA))) {
+      tab->OnContainerSize();
     }
     return 0;
   }
@@ -135,6 +178,76 @@ HWND Tab::BrowserWindowHandle() const {
   return browser_ ? browser_->GetHost()->GetWindowHandle() : nullptr;
 }
 
+void Tab::OnContainerSize() {
+  // The browser's window fills its tab's container; the panels keep their
+  // place over it.
+  RECT bounds = {};
+  GetClientRect(container_, &bounds);
+  if (HWND browser = BrowserWindowHandle()) {
+    SetWindowPos(browser, nullptr, 0, 0, bounds.right, bounds.bottom,
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+  }
+  for (TabPanel* panel :
+       {js_dialog_.get(), unresponsive_.get(), external_protocol_.get(),
+        sad_tab_.get(), permission_prompt_.get()}) {
+    if (panel) {
+      panel->Place();
+    }
+  }
+}
+
+std::unique_ptr<TabPanel> Tab::MakePanel(TabPanel::Content content,
+                                         TabPanel::Done done) {
+  // Browser shortcuts work while a panel has the focus, as in the page.
+  auto shortcuts = [this](int key, bool control, bool alt, bool shift) {
+    CefKeyEvent event;
+    event.type = KEYEVENT_RAWKEYDOWN;
+    event.windows_key_code = key;
+    event.modifiers = (control ? EVENTFLAG_CONTROL_DOWN : 0) |
+                      (alt ? EVENTFLAG_ALT_DOWN : 0) |
+                      (shift ? EVENTFLAG_SHIFT_DOWN : 0);
+    return host_.OnTabKey(event);
+  };
+  return std::make_unique<TabPanel>(container_, CurrentTheme(),
+                                    std::move(content), std::move(done),
+                                    shortcuts);
+}
+
+TabPanel* Tab::ModalPanel() const {
+  for (TabPanel* panel :
+       {unresponsive_.get(), js_dialog_.get(), external_protocol_.get()}) {
+    if (panel && !panel->answered()) {
+      return panel;
+    }
+  }
+  return nullptr;
+}
+
+bool Tab::FocusInTab() const {
+  HWND focus = GetFocus();
+  return !focus || focus == container_ || IsChild(container_, focus);
+}
+
+void Tab::UpdatePanels(bool refocus) {
+  // A disabled window and its children get no mouse or keyboard input.
+  if (HWND browser = BrowserWindowHandle()) {
+    EnableWindow(browser, ModalPanel() == nullptr);
+  }
+  // A hidden tab's dialog waits for the user to switch to it, as in Chrome.
+  if (refocus && IsWindowVisible(container_)) {
+    Focus();
+  }
+}
+
+void Tab::ClosePanel(std::unique_ptr<TabPanel>& panel) {
+  if (!panel) {
+    return;
+  }
+  const bool refocus = FocusInTab();
+  panel.reset();
+  UpdatePanels(refocus);
+}
+
 void Tab::SetBounds(const RECT& bounds) {
   SetWindowPos(container_, nullptr, bounds.left, bounds.top,
                bounds.right - bounds.left, bounds.bottom - bounds.top,
@@ -178,7 +291,11 @@ void Tab::Reload() {
 }
 
 void Tab::Focus() {
-  if (browser_) {
+  if (TabPanel* panel = ModalPanel()) {
+    panel->Focus();
+  } else if (sad_tab_ && !sad_tab_->answered()) {
+    sad_tab_->Focus();
+  } else if (browser_) {
     browser_->GetHost()->SetFocus(true);
   }
 }
@@ -227,6 +344,10 @@ void Tab::OnPageVisited(const std::string& /*url*/,
 void Tab::OnLoadingStateChanged(bool is_loading,
                                 bool can_go_back,
                                 bool can_go_forward) {
+  if (is_loading && sad_tab_) {
+    // A new load (Reload) replaces the crash page.
+    sad_tab_.reset();
+  }
   loading_ = is_loading;
   can_go_back_ = can_go_back;
   can_go_forward_ = can_go_forward;
@@ -276,70 +397,222 @@ void Tab::OnBrowserClosed() {
 }
 
 void Tab::ShowJsDialog(const JsDialogRequest& request, JsDialogDone done) {
-  if (request.kind == JsDialogRequest::Kind::kPrompt) {
-    done(false, std::string(), false);  // Needs the tab-modal dialog (W1).
-    return;
-  }
-  std::wstring title;
-  std::wstring text;
-  if (request.kind == JsDialogRequest::Kind::kBeforeUnload) {
-    // Chrome's wording.
-    title = request.is_reload ? L"Reload site?" : L"Leave site?";
-    text = L"Changes that you made may not be saved.";
+  using Kind = JsDialogRequest::Kind;
+  TabPanel::Content content;
+  if (request.kind == Kind::kBeforeUnload) {
+    // Like Chrome, the page's own text is not shown (it could mislead).
+    content.title = request.is_reload ? L"Reload site?" : L"Leave site?";
+    content.message = L"Changes you made may not be saved.";
+    content.buttons = {request.is_reload ? L"Reload" : L"Leave", L"Cancel"};
   } else {
-    title = request.origin.empty() ? std::wstring(L"This page says")
-                                   : Utf8ToWide(request.origin) + L" says";
-    text = Utf8ToWide(request.message);
+    content.title = request.origin.empty()
+                        ? std::wstring(L"This page says")
+                        : Utf8ToWide(request.origin) + L" says";
+    content.message = Utf8ToWide(request.message);
+    content.buttons = {L"OK"};
+    if (request.kind != Kind::kAlert) {
+      content.buttons.emplace_back(L"Cancel");
+    }
   }
-  // Shown from a task, not inside CEF's callback: the message box runs its
-  // own message loop.
-  dialog_done_ = std::move(done);
-  HWND owner = GetAncestor(BrowserWindowHandle(), GA_ROOT);
+  if (request.kind == Kind::kPrompt) {
+    content.input = Utf8ToWide(request.default_prompt_text);
+    content.input_name = L"Your answer";
+  }
+  if (request.offer_suppression) {
+    content.checkbox = L"Prevent this page from creating additional dialogs";
+  }
+  // Escape cancels; an alert has only OK.
+  content.escape_answer = request.kind == Kind::kAlert ? 0 : 1;
   std::weak_ptr<int> alive = alive_;
-  const JsDialogRequest::Kind kind = request.kind;
-  CefPostTask(TID_UI, new FunctionTask([this, alive, owner, kind, title, text] {
-                if (alive.expired() || !dialog_done_) {
-                  return;  // The tab closed or the page dismissed the dialog.
-                }
-                const bool ok = RunJsDialog(owner, kind, title, text);
-                if (alive.expired() || !dialog_done_) {
-                  return;
-                }
-                JsDialogDone done = std::move(dialog_done_);
-                dialog_done_ = nullptr;
-                done(ok, std::string(), false);
-              }));
+  js_dialog_ = MakePanel(
+      std::move(content),
+      [this, alive, done = std::move(done)](const TabPanel::Answer& answer) {
+        if (!alive.expired() && js_dialog_ && js_dialog_->answered()) {
+          ClosePanel(js_dialog_);
+        }
+        done(answer.button == 0, WideToUtf8(answer.input), answer.checked);
+      });
+  UpdatePanels(true);
 }
 
 void Tab::DismissJsDialog() {
-  dialog_done_ = nullptr;
+  ClosePanel(js_dialog_);
 }
 
-void Tab::OnRendererGone(RendererGoneReason /*reason*/,
-                         const std::string& /*error_code*/) {
-  // The crash page ("Aw, Snap!") comes with W1; Reload loads the page again.
+void Tab::OnRendererGone(RendererGoneReason reason,
+                         const std::string& error_code) {
+  ClosePanel(js_dialog_);
+  ClosePanel(unresponsive_);
+  TabPanel::Content content;
+  content.placement = TabPanel::Placement::kFill;
+  content.width = 480;
+  content.icon = kWarningGlyph;
+  content.title = L"Aw, Snap!";
+  content.message =
+      reason == RendererGoneReason::kOutOfMemory
+          ? L"The page ran out of memory while displaying this webpage."
+          : L"Something went wrong while displaying this webpage.";
+  content.detail = Utf8ToWide(error_code);
+  content.buttons = {L"Reload"};
+  std::weak_ptr<int> alive = alive_;
+  const bool refocus = FocusInTab();
+  sad_tab_ = MakePanel(std::move(content),
+                       [this, alive](const TabPanel::Answer& /*answer*/) {
+                         if (!alive.expired()) {
+                           Reload();
+                         }
+                       });
+  if (refocus && IsWindowVisible(container_)) {
+    sad_tab_->Focus();
+  }
+  loading_ = false;
+  host_.OnTabChanged(*this);
 }
 
+// Chrome's "Page unresponsive" question, over the tab.
 void Tab::OnRendererUnresponsive(UnresponsiveDone done) {
-  done(false);  // Keep waiting until the question can be asked (W1).
+  const std::wstring name = Utf8ToWide(title_.empty() ? url_ : title_);
+  TabPanel::Content content;
+  content.title = L"Page unresponsive";
+  content.message = L"\u201C" + name +
+                    L"\u201D is not responding. You can wait for it to "
+                    L"become responsive or exit the page.";
+  content.buttons = {L"Wait", L"Exit page"};
+  content.escape_answer = 0;
+  std::weak_ptr<int> alive = alive_;
+  unresponsive_ = MakePanel(
+      std::move(content),
+      [this, alive, done = std::move(done)](const TabPanel::Answer& answer) {
+        if (!alive.expired() && unresponsive_ && unresponsive_->answered()) {
+          ClosePanel(unresponsive_);
+        }
+        done(/*exit_page=*/answer.button == 1);
+      });
+  UpdatePanels(true);
 }
 
-void Tab::OnRendererResponsive() {}
+void Tab::OnRendererResponsive() {
+  ClosePanel(unresponsive_);
+}
 
-void Tab::ShowPermissionPrompt(const PermissionRequest& /*request*/,
+void Tab::ShowPermissionPrompt(const PermissionRequest& request,
                                PermissionDone done) {
-  // Asked again next time, once the prompt is ported (W1).
-  done(PermissionChoice::kDismiss);
+  permission_requests_.push_back({request, std::move(done)});
+  if (!permission_prompt_) {
+    ShowNextPermissionPrompt();
+  }
 }
 
-void Tab::DismissPermissionPrompt(std::uint64_t /*id*/) {}
+// The prompt at the top left of the page, under the address bar, as in
+// Chrome (012). It does not block the page.
+void Tab::ShowNextPermissionPrompt() {
+  permission_prompt_.reset();
+  if (permission_requests_.empty()) {
+    return;
+  }
+  const PermissionRequest& request = permission_requests_.front().request;
+  TabPanel::Content content;
+  content.placement = TabPanel::Placement::kTopLeft;
+  content.width = 340;
+  content.title = Utf8ToWide(PermissionPromptTitle(request.origin));
+  content.close_button = true;
+  for (PermissionKind kind : request.kinds) {
+    content.lines.push_back(
+        {PermissionGlyph(kind), Utf8ToWide(PermissionDescription(kind))});
+  }
+  std::vector<PermissionChoice> choices;
+  for (const PermissionButton& button : PermissionButtons(request.kinds)) {
+    content.buttons.push_back(Utf8ToWide(button.title));
+    choices.push_back(button.choice);
+  }
+  content.first_is_default = false;
+  content.stacked_buttons = true;
+  content.escape_answer = TabPanel::kClosed;
+  std::weak_ptr<int> alive = alive_;
+  const std::uint64_t id = request.id;
+  permission_prompt_ = MakePanel(
+      std::move(content),
+      [this, alive, id, choices](const TabPanel::Answer& answer) {
+        if (alive.expired() || permission_requests_.empty() ||
+            permission_requests_.front().request.id != id) {
+          return;  // The tab closed, or the request went away meanwhile.
+        }
+        PermissionDone done = std::move(permission_requests_.front().done);
+        permission_requests_.pop_front();
+        const bool refocus = FocusInTab();
+        ShowNextPermissionPrompt();
+        UpdatePanels(refocus);
+        const auto index = static_cast<size_t>(answer.button);
+        done(answer.button >= 0 && index < choices.size()
+                 ? choices[index]
+                 : PermissionChoice::kDismiss);
+      });
+}
 
-void Tab::AskOpenExternalProtocol(const ExternalProtocolRequest& /*request*/,
+void Tab::DismissPermissionPrompt(std::uint64_t id) {
+  if (!permission_requests_.empty() &&
+      permission_requests_.front().request.id == id) {
+    const bool refocus = FocusInTab();
+    permission_requests_.pop_front();
+    ShowNextPermissionPrompt();
+    UpdatePanels(refocus);
+    return;
+  }
+  std::erase_if(permission_requests_, [id](const PendingPermission& pending) {
+    return pending.request.id == id;
+  });
+}
+
+// Chrome's "Open <app>?" question. Links to schemes no app handles do
+// nothing, as in Chrome.
+void Tab::AskOpenExternalProtocol(const ExternalProtocolRequest& request,
                                   ExternalProtocolDone done) {
-  done(false, false);  // Not yet (W1).
+  const std::wstring app = ExternalAppName(request.scheme);
+  if (app.empty()) {
+    done(false, false);
+    return;
+  }
+  const std::wstring origin = Utf8ToWide(request.origin);
+  TabPanel::Content content;
+  content.title = L"Open " + app + L"?";
+  content.message =
+      origin.empty() ? std::wstring(L"A link wants to open this application.")
+                     : origin + L" wants to open this application.";
+  if (request.can_remember) {
+    content.checkbox = L"Always allow " + origin + L" to open " +
+                       Utf8ToWide(request.scheme) +
+                       L": links in the associated app";
+  }
+  content.buttons = {L"Open " + app, L"Cancel"};
+  content.escape_answer = 1;
+  std::weak_ptr<int> alive = alive_;
+  external_protocol_ = MakePanel(
+      std::move(content),
+      [this, alive, done = std::move(done)](const TabPanel::Answer& answer) {
+        if (!alive.expired() && external_protocol_ &&
+            external_protocol_->answered()) {
+          ClosePanel(external_protocol_);
+        }
+        const bool open = answer.button == 0;
+        done(open, open && answer.checked);
+      });
+  UpdatePanels(true);
 }
 
-void Tab::OpenExternalUrl(const std::string& /*url*/) {}
+// Opens the link with the app Windows has for it. The URL comes from a
+// page: it is escaped for the shell, and only schemes with a registered
+// app are handed over (never a drive letter or a file).
+void Tab::OpenExternalUrl(const std::string& url) {
+  const std::optional<std::string> shell_url = ExternalUrlForShell(url);
+  if (!shell_url || ExternalAppName(SchemeOf(url)).empty()) {
+    return;
+  }
+  // A URL for its registered app, not a program or a command line (as
+  // NSWorkspace openURL on macOS).
+  ShellExecuteW(  // nosemgrep: cpp-process-spawn
+      nullptr, L"open", Utf8ToWide(*shell_url).c_str(), nullptr, nullptr,
+      SW_SHOWNORMAL);
+}
 
 void Tab::OnFullscreenModeChanged(bool /*fullscreen*/) {}
 
