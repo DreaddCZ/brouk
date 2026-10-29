@@ -91,6 +91,13 @@ void Tab::CreateBrowser(const std::string& url,
   CefBrowserHost::CreateBrowser(info, client_, url, settings, nullptr, context);
 }
 
+std::string Tab::DisplayTitle() const {
+  if (url_.empty() || url_ == "about:blank") {
+    return "New Tab";
+  }
+  return title_.empty() ? url_ : title_;
+}
+
 PopupHost Tab::PopupHostForBrowser() {
   RECT bounds = {};
   GetClientRect(container_, &bounds);

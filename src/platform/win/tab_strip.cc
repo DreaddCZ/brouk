@@ -303,8 +303,8 @@ void TabStrip::PaintTab(HDC dc,
       has_close ? geometry.close.left - Scale(4) : rect.right - padding,
       rect.bottom};
   if (title.right > title.left) {
-    std::wstring text =
-        tab && !tab->title().empty() ? Utf8ToWide(tab->title()) : L"New Tab";
+    const std::wstring text =
+        tab ? Utf8ToWide(tab->DisplayTitle()) : std::wstring(L"New Tab");
     HGDIOBJ previous = SelectObject(dc, title_font_);
     SetTextColor(dc, active ? theme.text : theme.text_dim);
     DrawTextW(

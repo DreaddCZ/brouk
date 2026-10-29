@@ -77,6 +77,9 @@ class Tab final : public TabClientDelegate {
   TabId id() const { return id_; }
   HWND container() const { return container_; }
   const std::string& title() const { return title_; }
+  // What the tab strip and the window title show: "New Tab" for an empty
+  // tab (Chrome), else the page's title, else its address.
+  std::string DisplayTitle() const;
   const std::string& url() const { return url_; }
   const Favicon& favicon() const { return favicon_; }
   bool loading() const { return loading_; }

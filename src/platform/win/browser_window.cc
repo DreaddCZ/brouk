@@ -472,8 +472,8 @@ void BrowserWindow::UpdateToolbar() {
   }
   // "Page - Brouk", as Chrome's "Page - Google Chrome".
   std::wstring title = Utf8ToWide(kAppName);
-  if (tab && !tab->title().empty()) {
-    title = Utf8ToWide(tab->title()) + L" - " + title;
+  if (tab) {
+    title = Utf8ToWide(tab->DisplayTitle()) + L" - " + title;
   }
   SetWindowTextW(window_, title.c_str());
 }
