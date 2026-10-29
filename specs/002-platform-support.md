@@ -1,6 +1,6 @@
 # 002 – Platform support
 
-- **Status:** ready (for macOS; Windows and mobile parts are not in scope yet)
+- **Status:** ready (macOS; Windows is specified in 024; mobile not in scope yet)
 - **Priority:** P1
 - **Depends on:** 001
 
@@ -58,3 +58,4 @@ None for macOS. Deferred until they become relevant (they do not block macOS wor
 - 2026-10-28 (user's decision): the core's process runner has a Windows implementation (`src/core/process_runner_win.cc`, CreateProcessW; `process_runner_posix.cc` for macOS and Linux) with the same contract: an argument vector quoted for the C runtime's rules, only the three pipes inherited (a handle list), environment changes, and a timeout. The program runs in a job object, so a timeout ends everything it started. Batch files (`.bat`, `.cmd`) are refused, because cmd.exe parses their arguments again (CVE-2024-24576). The tests use a small helper program built with them instead of a shell, so the same tests run on every system.
 - 2026-10-28 (user's decision, see 001): the Windows app's native UI is C++ on the Win32 API, in `src/platform/win/`, like the macOS UI in `src/platform/mac/` on AppKit. Its internal pages are the same HTML/TypeScript pages as on macOS.
 - 2026-10-28 (user's decisions, see 001): on Windows, updates come from WinSparkle with a per-user installer; releases are signed for free through SignPath Foundation and built in CI. Secrets go to Windows Credential Manager, and Windows Hello replaces Touch ID.
+- 2026-10-29: Windows work starts; the Windows app is specified in 024 (stages W1–W4, data in `%LOCALAPPDATA%\Brouk\`, tested in a Windows 11 x64 virtual machine on the Intel Mac).
