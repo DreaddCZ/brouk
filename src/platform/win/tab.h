@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "cef/internal_page_client.h"
 #include "cef/tab_client.h"
 #include "core/tab_strip_model.h"
 #include "include/cef_browser.h"
@@ -45,7 +46,7 @@ class TabHost {
   virtual ~TabHost() = default;
 };
 
-class Tab final : public TabClientDelegate {
+class Tab final : public TabClientDelegate, public InternalPageDelegate {
  public:
   // Creates the tab's (hidden) container window in `parent`.
   Tab(TabHost& host, TabId id, HWND parent);
@@ -56,6 +57,13 @@ class Tab final : public TabClientDelegate {
   // Starts the tab's browser with `url`.
   void CreateBrowser(const std::string& url,
                      CefRefPtr<CefRequestContext> context);
+  // Starts the tab's browser with an internal page (brouk://..., such as
+  // the licences, 023), answered by `handler`, in the internal pages'
+  // request context.
+  void CreateInternalPage(
+      const std::string& url,
+      std::unique_ptr<CefMessageRouterBrowserSide::Handler> handler,
+      CefRefPtr<CefRequestContext> context);
   // Where CEF creates a popup's browser for this tab instead
   // (TabHost::OnTabPopup).
   PopupHost PopupHostForBrowser();
@@ -73,6 +81,9 @@ class Tab final : public TabClientDelegate {
   void Close();
   bool has_browser() const { return browser_ != nullptr; }
   bool closing() const { return closing_; }
+  // Shows an internal page (CreateInternalPage), which cannot navigate to
+  // web pages.
+  bool internal() const { return internal_client_ != nullptr; }
 
   TabId id() const { return id_; }
   HWND container() const { return container_; }
@@ -86,9 +97,18 @@ class Tab final : public TabClientDelegate {
   bool can_go_back() const { return can_go_back_; }
   bool can_go_forward() const { return can_go_forward_; }
 
-  // TabClientDelegate:
+  // TabClientDelegate and InternalPageDelegate:
   void OnBrowserCreated(CefRefPtr<CefBrowser> browser) override;
+  void OnCloseReady() override;
+  void OnBrowserClosed() override;
   void OnTitleChanged(const std::string& title) override;
+  bool OnUnhandledKeyEvent(const CefKeyEvent& event,
+                           CefEventHandle os_event) override;
+
+  // InternalPageDelegate:
+  void OnInspectElement(int x, int y) override;
+
+  // TabClientDelegate:
   void OnAddressChanged(const std::string& url) override;
   void OnPageVisited(const std::string& url,
                      const std::string& title,
@@ -101,8 +121,6 @@ class Tab final : public TabClientDelegate {
   std::optional<PopupHost> OnBeforePopup(const PopupRequest& request) override;
   void OnPopupBlocked(const std::string& target_url) override;
   void OnPopupAborted(int popup_id) override;
-  void OnCloseReady() override;
-  void OnBrowserClosed() override;
   void ShowJsDialog(const JsDialogRequest& request, JsDialogDone done) override;
   void DismissJsDialog() override;
   void OnRendererGone(RendererGoneReason reason,
@@ -132,8 +150,6 @@ class Tab final : public TabClientDelegate {
   void OnPageBlocked(const AdblockRequestInfo& info) override;
   void OnElementPicked(const std::string& url,
                        const std::string& selector) override;
-  bool OnUnhandledKeyEvent(const CefKeyEvent& event,
-                           CefEventHandle os_event) override;
   bool KeepsFocusOnNavigation() override;
 
   // PasswordTabDelegate:
@@ -171,6 +187,8 @@ class Tab final : public TabClientDelegate {
   const TabId id_;
   HWND container_ = nullptr;
   CefRefPtr<TabClient> client_;
+  // Instead of client_, for an internal page.
+  CefRefPtr<InternalPageClient> internal_client_;
   CefRefPtr<CefBrowser> browser_;
   std::string title_;
   std::string url_;

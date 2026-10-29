@@ -58,6 +58,9 @@ Tab::~Tab() {
   if (client_) {
     client_->DetachDelegate();
   }
+  if (internal_client_) {
+    internal_client_->DetachDelegate();
+  }
   if (container_) {
     DestroyWindow(container_);
   }
@@ -89,6 +92,26 @@ void Tab::CreateBrowser(const std::string& url,
   CefBrowserSettings settings;
   url_ = url;
   CefBrowserHost::CreateBrowser(info, client_, url, settings, nullptr, context);
+}
+
+void Tab::CreateInternalPage(
+    const std::string& url,
+    std::unique_ptr<CefMessageRouterBrowserSide::Handler> handler,
+    CefRefPtr<CefRequestContext> context) {
+  CEF_REQUIRE_UI_THREAD();
+  // The web client is not used for this tab.
+  client_->DetachDelegate();
+  client_ = nullptr;
+  internal_client_ = new InternalPageClient(this, std::move(handler));
+  RECT bounds = {};
+  GetClientRect(container_, &bounds);
+  CefWindowInfo info;
+  info.SetAsChild(container_, CefRect(0, 0, bounds.right, bounds.bottom));
+  info.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
+  CefBrowserSettings settings;
+  url_ = url;
+  CefBrowserHost::CreateBrowser(info, internal_client_, url, settings, nullptr,
+                                context);
 }
 
 std::string Tab::DisplayTitle() const {
@@ -242,6 +265,10 @@ void Tab::OnBrowserClosed() {
     client_->DetachDelegate();
     client_ = nullptr;
   }
+  if (internal_client_) {
+    internal_client_->DetachDelegate();
+    internal_client_ = nullptr;
+  }
   browser_ = nullptr;
   closing_ = true;
   // May delete this tab later; nothing here touches it afterwards.
@@ -341,6 +368,8 @@ TabClientDelegate::SearchEngine Tab::CurrentSearchEngine() {
 }
 
 void Tab::InspectElement(int /*x*/, int /*y*/) {}
+
+void Tab::OnInspectElement(int /*x*/, int /*y*/) {}  // Dev tools (006): W3.
 
 bool Tab::AskWhereToSaveDownloads() {
   return false;

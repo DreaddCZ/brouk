@@ -22,6 +22,9 @@ if(APPLE)
   # Also for the licences page (023), which lists the crates of this target.
   set(BROUK_RUST_TARGET ${_rust_target})
   set(_cargo_out "${BROUK_CARGO_TARGET_DIR}/${_rust_target}/release")
+elseif(WIN32)
+  # The host's target (Windows x64); named for the licences page (023).
+  set(BROUK_RUST_TARGET x86_64-pc-windows-msvc)
 endif()
 set(BROUK_ADBLOCK_LIBRARY
   "${_cargo_out}/${CMAKE_STATIC_LIBRARY_PREFIX}brouk_adblock${CMAKE_STATIC_LIBRARY_SUFFIX}")

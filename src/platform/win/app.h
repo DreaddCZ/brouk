@@ -9,6 +9,7 @@
 #include "core/profile_registry.h"
 #include "include/cef_request_context.h"
 #include "platform/win/browser_window.h"
+#include "platform/win/internal_page_window.h"
 
 namespace brouk::win {
 
@@ -23,6 +24,9 @@ class App final : public BrowserWindowOwner {
 
   // CEF is ready: opens the first window with the command line's URLs.
   void OnContextInitialized();
+  // A web link from help or the licences page (016, 023): a tab in the most
+  // recent window, or a new window.
+  void OpenWebLink(const std::string& url);
   // Brouk was started again while running (CEF's process singleton).
   void OnRelaunch(const LaunchRequest& request);
   // After the message loop ends, before CefShutdown: drops every CEF object.
@@ -31,6 +35,11 @@ class App final : public BrowserWindowOwner {
   // BrowserWindowOwner:
   CefRefPtr<CefRequestContext> RequestContext() override;
   TabClientDelegate::SearchEngine SearchEngine() override;
+  CefRefPtr<CefRequestContext> InternalContext() override;
+  std::unique_ptr<CefMessageRouterBrowserSide::Handler> InternalPageHandler(
+      const std::string& page) override;
+  void OpenHelp(const std::string& anchor) override;
+  void CloseAllWindows() override;
   void OpenWindow(const std::string& url) override;
   BrowserWindow* OpenPopupWindow(int width, int height) override;
   bool IsOpenWindow(const BrowserWindow* window) const override;
@@ -43,6 +52,10 @@ class App final : public BrowserWindowOwner {
 
   ProfileRegistry profiles_;
   CefRefPtr<CefRequestContext> context_;
+  CefRefPtr<CefRequestContext> internal_context_;
+  std::unique_ptr<InternalPageWindow> help_window_;
+  // The last browser window closed: Brouk quits once help has closed too.
+  bool quitting_ = false;
   std::vector<std::unique_ptr<BrowserWindow>> windows_;
 };
 

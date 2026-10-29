@@ -17,6 +17,8 @@ add_library(brouk_app SHARED
   data_paths.h
   favicon.cc
   favicon.h
+  internal_page_window.cc
+  internal_page_window.h
   main.cc
   tab.cc
   tab.h
@@ -68,3 +70,42 @@ add_custom_command(TARGET brouk_app POST_BUILD
   COMMAND icacls "${APP_DIR}" /grant "*S-1-15-2-2:(OI)(CI)(RX)" /Q
   COMMENT "Assembling ${APP_NAME}"
   VERBATIM)
+
+# Internal pages (web/, TypeScript) and the open-source licences (023), built
+# into <app>/web. scripts/web and scripts/credits are bash scripts, run with
+# Git's bash (see src/renderer/CMakeLists.txt).
+file(GLOB_RECURSE _web_sources CONFIGURE_DEPENDS
+  "${PROJECT_SOURCE_DIR}/web/shared/*" "${PROJECT_SOURCE_DIR}/web/history/*"
+  "${PROJECT_SOURCE_DIR}/web/bookmarks/*" "${PROJECT_SOURCE_DIR}/web/credits/*"
+  "${PROJECT_SOURCE_DIR}/web/downloads/*"
+  "${PROJECT_SOURCE_DIR}/web/forms/*" "${PROJECT_SOURCE_DIR}/web/passwords/*"
+  "${PROJECT_SOURCE_DIR}/web/help/*"
+  "${PROJECT_SOURCE_DIR}/web/profiles/*"
+  "${PROJECT_SOURCE_DIR}/web/settings/*" "${PROJECT_SOURCE_DIR}/web/tools/*"
+  "${PROJECT_SOURCE_DIR}/web/task-manager/*"
+  "${PROJECT_SOURCE_DIR}/web/jsonview/*")
+set(_web_stamp "${CMAKE_CURRENT_BINARY_DIR}/web.stamp")
+add_custom_command(OUTPUT "${_web_stamp}"
+  COMMAND "${BROUK_BASH}" "${PROJECT_SOURCE_DIR}/scripts/web" build
+          "${APP_DIR}/web"
+  # The licences of everything third-party in the app; fails the build if
+  # one is missing.
+  COMMAND "${BROUK_BASH}" "${PROJECT_SOURCE_DIR}/scripts/credits"
+          "${APP_DIR}/web/credits"
+          --cef "${CEF_ROOT}" --deps "${CMAKE_BINARY_DIR}/_deps"
+          --cargo "${BROUK_CARGO}" --cargo-home "${PROJECT_SOURCE_DIR}/.tools/cargo"
+          --rust-target "${BROUK_RUST_TARGET}"
+  COMMAND ${CMAKE_COMMAND} -E touch "${_web_stamp}"
+  DEPENDS ${_web_sources} "${PROJECT_SOURCE_DIR}/web/tsconfig.json"
+          "${PROJECT_SOURCE_DIR}/scripts/credits.mjs"
+          "${PROJECT_SOURCE_DIR}/third_party/README.md"
+          "${PROJECT_SOURCE_DIR}/src/adblock/Cargo.lock"
+          "${BROUK_ADBLOCK_LIBRARY}"
+          "${PROJECT_SOURCE_DIR}/web/package-lock.json"
+          "${PROJECT_SOURCE_DIR}/scripts/vendor_modules.mjs"
+          "${PROJECT_SOURCE_DIR}/src/core/settings_schema.cc"
+  COMMENT "Building internal pages"
+  JOB_POOL brouk_web
+  VERBATIM)
+add_custom_target(brouk_web_pages DEPENDS "${_web_stamp}")
+add_dependencies(brouk_app brouk_web_pages)

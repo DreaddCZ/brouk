@@ -14,6 +14,7 @@
 #include "brouk/app_info.h"
 #include "cef/function_task.h"
 #include "core/address_input.h"
+#include "core/internal_pages.h"
 #include "core/profile_id.h"
 #include "include/cef_task.h"
 #include "include/wrapper/cef_helpers.h"
@@ -36,12 +37,28 @@ constexpr int kAddressPadding = 12;
 constexpr UINT_PTR kSpinnerTimer = 1;
 constexpr UINT kSpinnerInterval = 80;  // Milliseconds per step.
 
-enum ControlId : int { kBackId = 1, kForwardId, kReloadId, kAddressId };
+enum ControlId : int {
+  kBackId = 1,
+  kForwardId,
+  kReloadId,
+  kMenuId,
+  kAddressId,
+};
+
+// Items of the "⋮" menu.
+enum MenuCommand : UINT {
+  kNewTabCommand = 100,
+  kNewWindowCommand,
+  kHelpCommand,
+  kLicencesCommand,
+  kExitCommand,
+};
 
 // Glyphs of the "Segoe MDL2 Assets" icon font, on Windows 10 and 11.
 constexpr wchar_t kBackGlyph[] = L"\uE72B";
 constexpr wchar_t kForwardGlyph[] = L"\uE72A";
 constexpr wchar_t kReloadGlyph[] = L"\uE72C";
+constexpr wchar_t kMoreGlyph[] = L"\uE712";
 
 TabId NextTabId() {
   static TabId next = 0;
@@ -178,6 +195,7 @@ void BrowserWindow::CreateControls() {
   back_ = button(kBackGlyph, kBackId, L"Back");
   forward_ = button(kForwardGlyph, kForwardId, L"Forward");
   reload_ = button(kReloadGlyph, kReloadId, L"Reload");
+  menu_ = button(kMoreGlyph, kMenuId, L"Customise and control Brouk");
   DWORD style = WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL;
   if (kind_ == Kind::kPopup) {
     style |= ES_READONLY;  // Popups show where they are (Chrome).
@@ -286,10 +304,17 @@ void BrowserWindow::Layout() {
       x += button + margin;
     }
   }
+  int right = static_cast<int>(toolbar.right) - margin;
+  if (kind_ == Kind::kNormal) {
+    right -= button;
+    SetWindowPos(menu_, nullptr, right,
+                 toolbar.top + (toolbar_height - button) / 2, button, button,
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+    right -= margin;
+  }
   const int field_height = Scale(kAddressHeight);
   const int field_top = toolbar.top + (toolbar_height - field_height) / 2;
-  address_field_ = {x, field_top,
-                    std::max(x, static_cast<int>(toolbar.right) - margin * 2),
+  address_field_ = {x, field_top, std::max(x, right - margin),
                     field_top + field_height};
   const int padding = Scale(kAddressPadding);
   const int edit_height = text_height_ + Scale(2);
@@ -382,6 +407,67 @@ void BrowserWindow::DrawToolbarButton(const DRAWITEMSTRUCT& item) {
   SelectObject(item.hDC, previous);
 }
 
+void BrowserWindow::ShowAppMenu() {
+  HMENU menu = CreatePopupMenu();
+  AppendMenuW(menu, MF_STRING, kNewTabCommand, L"New tab\tCtrl+T");
+  AppendMenuW(menu, MF_STRING, kNewWindowCommand, L"New window\tCtrl+N");
+  AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+  AppendMenuW(menu, MF_STRING, kHelpCommand, L"Brouk Help\tF1");
+  AppendMenuW(menu, MF_STRING, kLicencesCommand, L"Open-source licences");
+  AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+  AppendMenuW(menu, MF_STRING, kExitCommand, L"Exit");
+  RECT button = {};
+  GetWindowRect(menu_, &button);
+  const UINT command = static_cast<UINT>(TrackPopupMenuEx(
+      menu, TPM_RIGHTALIGN | TPM_TOPALIGN | TPM_RETURNCMD | TPM_NONOTIFY,
+      button.right, button.bottom, window_, nullptr));
+  DestroyMenu(menu);
+  switch (command) {
+    case kNewTabCommand:
+      OpenTab(std::string(), true);
+      break;
+    case kNewWindowCommand:
+      owner_.OpenWindow(std::string());
+      break;
+    case kHelpCommand:
+      owner_.OpenHelp(std::string());
+      break;
+    case kLicencesCommand:
+      OpenInternalPage("brouk://credits/");
+      break;
+    case kExitCommand:
+      owner_.CloseAllWindows();
+      break;
+    default:
+      break;
+  }
+}
+
+void BrowserWindow::OpenInternalPage(const std::string& url) {
+  const std::optional<std::string> page = InternalPageOf(url);
+  if (!page) {
+    return;
+  }
+  if (*page == "help") {
+    owner_.OpenHelp(std::string());
+    return;
+  }
+  std::unique_ptr<CefMessageRouterBrowserSide::Handler> handler =
+      owner_.InternalPageHandler(*page);
+  if (!handler) {
+    return;  // Not on Windows yet.
+  }
+  // In place of an empty tab, as Chrome loads chrome:// pages there.
+  Tab* active = ActiveTab();
+  const bool replace = active && IsBlank(active->url()) && !active->internal();
+  Tab* tab = InsertTabFromOpener(active, true);
+  tab->CreateInternalPage(url, std::move(handler), owner_.InternalContext());
+  if (replace) {
+    CloseTab(active->id());
+  }
+  FocusActiveTab();
+}
+
 Tab* BrowserWindow::FindTab(TabId id) {
   auto it = tabs_.find(id);
   return it == tabs_.end() ? nullptr : it->second.get();
@@ -393,6 +479,28 @@ Tab* BrowserWindow::ActiveTab() {
 }
 
 void BrowserWindow::OpenTab(const std::string& url, bool foreground) {
+  if (IsInternalPageUrl(url)) {
+    // From the command line or a link: brouk:// pages load only in their
+    // own request context.
+    if (std::optional<std::string> page = InternalPageOf(url)) {
+      if (*page == "help") {
+        owner_.OpenHelp(std::string());
+        return;
+      }
+      if (auto handler = owner_.InternalPageHandler(*page)) {
+        const TabId id = NextTabId();
+        auto tab = std::make_unique<Tab>(*this, id, window_);
+        tab->SetBounds(ContentBounds());
+        Tab* created = tab.get();
+        tabs_[id] = std::move(tab);
+        model_.AppendTab(id, foreground);
+        created->CreateInternalPage(url, std::move(handler),
+                                    owner_.InternalContext());
+        ModelChanged();
+        return;
+      }
+    }
+  }
   const TabId id = NextTabId();
   auto tab = std::make_unique<Tab>(*this, id, window_);
   tab->SetBounds(ContentBounds());
@@ -514,6 +622,20 @@ void BrowserWindow::NavigateToAddressBarText() {
   if (input.kind == AddressInputResult::Kind::kEmpty) {
     return;
   }
+  if (IsInternalPageUrl(input.url)) {
+    OpenInternalPage(input.url);
+    return;
+  }
+  if (tab->internal()) {
+    // An internal page's tab cannot load web pages: a web tab takes its
+    // place.
+    const TabId internal = tab->id();
+    Tab* web = InsertTabFromOpener(tab, true);
+    web->CreateBrowser(input.url, owner_.RequestContext());
+    CloseTab(internal);
+    FocusActiveTab();
+    return;
+  }
   tab->Navigate(input.url);
   tab->Focus();
 }
@@ -524,6 +646,10 @@ bool BrowserWindow::HandleShortcut(int key,
                                    bool shift) {
   // Chrome's Windows shortcuts for what the Windows app has so far.
   Tab* tab = ActiveTab();
+  if (!control && !alt && !shift && key == VK_F1) {
+    owner_.OpenHelp(std::string());
+    return true;
+  }
   if ((control && !alt && key == 'L') || (alt && !control && key == 'D') ||
       (!control && !alt && key == VK_F6)) {
     FocusAddressBar();
@@ -1046,6 +1172,9 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
             return 0;
           case kReloadId:
             tab->Reload();
+            return 0;
+          case kMenuId:
+            ShowAppMenu();
             return 0;
           default:
             break;

@@ -21,9 +21,8 @@ if (!outDir) {
   process.exit(2);
 }
 const kWindows = process.platform === 'win32';
-// Not yet in the Windows app (024, W1–W4): internal pages, the crash page
-// and the updater.
-const kInternalPages = !kWindows;
+// Not yet in the Windows app (024, W1–W4): the crash page and the updater.
+const kInternalPages = true;
 const kTotalLimitMs = 5 * 60 * 1000;
 const kPagesDir = resolve(import.meta.dirname, '../../docs/testing/pages');
 const kCrashReports = join(homedir(), 'Library/Logs/DiagnosticReports');
