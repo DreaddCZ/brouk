@@ -95,7 +95,13 @@ CefRefPtr<CefRequestContext> App::RequestContext() {
 CefRefPtr<CefRequestContext> App::InternalContext() {
   CEF_REQUIRE_UI_THREAD();
   if (!internal_context_) {
-    CefRequestContextSettings settings;  // No cache path: in memory only.
+    // A folder of its own, not in memory as on macOS: CEF builds an
+    // in-memory context on Chromium's "Default" profile, which is the first
+    // Brouk profile's folder on Windows (see BrowserApp's
+    // --profile-directory). Internal pages keep nothing of the user's.
+    CefRequestContextSettings settings;
+    CefString(&settings.cache_path) =
+        (WebDataRootDirectory() / L"internal").wstring();
     internal_context_ = CefRequestContext::CreateContext(settings, nullptr);
     // The pages are built next to brouk.exe (CMakeLists.txt).
     wchar_t module[MAX_PATH] = {};

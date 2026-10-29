@@ -75,7 +75,12 @@ function finish(code) {
   if (code !== 0) desktopScreenshot('desktop');
   if (brouk && brouk.exitCode === null) brouk.kill('SIGKILL');
   server?.close();
-  if (dataDir) rmSync(dataDir, { recursive: true, force: true });
+  try {
+    if (dataDir) rmSync(dataDir, { recursive: true, force: true });
+  } catch (error) {
+    // Windows may still hold files of the process just ended.
+    log(`(data folder not removed: ${error.message})`);
+  }
   log(code === 0 ? 'All smoke tests passed.' : `${failures.length} smoke test(s) failed.`);
   process.exit(code);
 }
