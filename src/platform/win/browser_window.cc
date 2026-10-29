@@ -481,12 +481,18 @@ void BrowserWindow::SetFullscreen(bool fullscreen) {
 }
 
 void BrowserWindow::ShowFullscreenHint(const wchar_t* text) {
+  Tab* tab = ActiveTab();
+  if (!tab) {
+    return;
+  }
   TabPanel::Content content;
   content.title = text;
   content.width = 300;
+  // Over the page, inside its tab: Chromium's page would cover a panel next
+  // to the tab.
   fullscreen_hint_ = std::make_unique<TabPanel>(
-      window_, theme_, std::move(content), [](const TabPanel::Answer&) {},
-      nullptr);
+      tab->container(), theme_, std::move(content),
+      [](const TabPanel::Answer&) {}, nullptr);
   SetTimer(window_, kFullscreenHintTimer, kFullscreenHintTime, nullptr);
 }
 

@@ -79,12 +79,14 @@ function sendKeys(keys) {
     .join('; ');
   const script = [
     'Add-Type -AssemblyName System.Windows.Forms',
-    `(New-Object -ComObject WScript.Shell).AppActivate(${brouk.pid}) | Out-Null`,
+    `$active = (New-Object -ComObject WScript.Shell).AppActivate(${brouk.pid})`,
     'Start-Sleep -Milliseconds 500',
     sends,
+    'Write-Output "Brouk in front: $active"',
   ].join('; ');
   try {
-    execFileSync('powershell', ['-NoProfile', '-Command', script], { timeout: 30000 });
+    const output = execFileSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8', timeout: 30000 });
+    log(`(keys ${keys.join(' ')}: ${output.trim()})`);
   } catch (error) {
     log(`(keys not sent: ${error.message})`);
   }
