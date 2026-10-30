@@ -9,6 +9,7 @@
 
 namespace brouk::win {
 
+// COM is initialised on the UI thread by Chromium.
 namespace {
 
 using Microsoft::WRL::ComPtr;
@@ -58,8 +59,10 @@ std::optional<std::filesystem::path> AskSavePath(
     HWND owner,
     const FileDialogOptions& options) {
   ComPtr<IFileSaveDialog> dialog;
-  if (FAILED(CoCreateInstance(CLSID_FileSaveDialog, nullptr,
-                              CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog))) ||
+  if (FAILED(CoCreateInstance(
+          CLSID_FileSaveDialog, nullptr, CLSCTX_INPROC_SERVER,
+          IID_IFileSaveDialog,
+          reinterpret_cast<void**>(dialog.ReleaseAndGetAddressOf()))) ||
       !Configure(*dialog.Get(), options)) {
     return std::nullopt;
   }
@@ -72,7 +75,9 @@ std::optional<std::filesystem::path> AskSavePath(
   if (!options.note.empty()) {
     // What the file contains; optional, so a failure is ignored.
     ComPtr<IFileDialogCustomize> customize;
-    if (SUCCEEDED(dialog.As(&customize))) {
+    if (SUCCEEDED(dialog->QueryInterface(
+            IID_IFileDialogCustomize,
+            reinterpret_cast<void**>(customize.ReleaseAndGetAddressOf())))) {
       customize->AddText(kNoteId, options.note.c_str());
     }
   }
@@ -83,8 +88,10 @@ std::optional<std::filesystem::path> AskOpenPath(
     HWND owner,
     const FileDialogOptions& options) {
   ComPtr<IFileOpenDialog> dialog;
-  if (FAILED(CoCreateInstance(CLSID_FileOpenDialog, nullptr,
-                              CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog))) ||
+  if (FAILED(CoCreateInstance(
+          CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER,
+          IID_IFileOpenDialog,
+          reinterpret_cast<void**>(dialog.ReleaseAndGetAddressOf()))) ||
       !Configure(*dialog.Get(), options)) {
     return std::nullopt;
   }
