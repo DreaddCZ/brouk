@@ -555,8 +555,17 @@ async function main() {
   log(`(pages before quitting: ${pagesBeforeQuit.map((t) => `${t.type} ${t.url}`).join(', ')})`);
   const quitStarted = Date.now();
   if (kWindows) {
-    // Without /F, taskkill asks the process's windows to close (WM_CLOSE).
-    execFileSync('taskkill', ['/PID', String(brouk.pid)]);
+    // Without /F, taskkill asks one of the process's windows to close
+    // (WM_CLOSE); Brouk runs until its last window has closed, so ask
+    // again while it still has windows (profile windows, the manager).
+    for (let i = 0; i < 10 && brouk.exitCode === null; ++i) {
+      try {
+        execFileSync('taskkill', ['/PID', String(brouk.pid)], { stdio: 'ignore' });
+      } catch {
+        // No window left to ask: Brouk is quitting.
+      }
+      await sleep(500);
+    }
   } else {
     execFileSync('osascript', [
       '-l',
