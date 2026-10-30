@@ -514,7 +514,10 @@ async function main() {
   desktopScreenshot('crash');
   cdp.close();
   check(brouk.exitCode === null, 'Brouk keeps running after a renderer crash');
-  const after = await pageTarget(port).catch(() => null);
+  // The crashed tab, by its address: other windows' tabs are pages too.
+  const after = await devtoolsJson(port, '/json/list')
+    .then((list) => list.find((t) => t.type === 'page' && t.url.includes('/crash-and-hang.html')))
+    .catch(() => null);
   if (check(after !== null && after !== undefined, 'the crashed tab is still there')) {
     const again = await Cdp.connect(after.webSocketDebuggerUrl);
     await again.send('Page.reload').catch(() => {});
