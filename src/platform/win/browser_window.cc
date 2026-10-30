@@ -62,6 +62,7 @@ enum MenuCommand : UINT {
   kPrintCommand,
   kFindCommand,
   kHelpCommand,
+  kSettingsCommand,
   kLicencesCommand,
   kExitCommand,
   kAllowPopupsCommand,
@@ -818,6 +819,7 @@ void BrowserWindow::ShowAppMenu() {
   AppendMenuW(menu, MF_STRING, kPrintCommand, L"Print\u2026\tCtrl+P");
   AppendMenuW(menu, MF_STRING, kFindCommand, L"Find\u2026\tCtrl+F");
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+  AppendMenuW(menu, MF_STRING, kSettingsCommand, L"Settings");
   AppendMenuW(menu, MF_STRING, kHelpCommand, L"Brouk Help\tF1");
   AppendMenuW(menu, MF_STRING, kLicencesCommand, L"Open-source licences");
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
@@ -846,6 +848,9 @@ void BrowserWindow::ShowAppMenu() {
       break;
     case kHelpCommand:
       owner_.OpenHelp(std::string());
+      break;
+    case kSettingsCommand:
+      owner_.OpenSettings(std::string());
       break;
     case kZoomInCommand:
     case kZoomOutCommand:
@@ -877,6 +882,19 @@ void BrowserWindow::ShowAppMenu() {
   }
 }
 
+void BrowserWindow::RefreshTheme() {
+  theme_ = CurrentTheme();
+  ApplyThemeToFrame(window_, theme_);
+  UpdateFonts();
+  RedrawWindow(window_, nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN);
+}
+
+void BrowserWindow::SendRendererConfig(bool json_viewer) {
+  for (const auto& [id, tab] : tabs_) {
+    tab->SendRendererConfig(json_viewer);
+  }
+}
+
 void BrowserWindow::OpenInternalPage(const std::string& url) {
   const std::optional<std::string> page = InternalPageOf(url);
   if (!page) {
@@ -888,6 +906,10 @@ void BrowserWindow::OpenInternalPage(const std::string& url) {
   }
   if (*page == "profiles") {
     owner_.OpenProfileManager();  // Its own window, as on macOS.
+    return;
+  }
+  if (*page == "settings") {
+    owner_.OpenSettings(url);  // Its own window, as on macOS.
     return;
   }
   std::unique_ptr<CefMessageRouterBrowserSide::Handler> handler =
@@ -931,6 +953,10 @@ void BrowserWindow::OpenTab(const std::string& url,
       }
       if (*page == "profiles") {
         owner_.OpenProfileManager();
+        return;
+      }
+      if (*page == "settings") {
+        owner_.OpenSettings(url);
         return;
       }
       if (auto handler = owner_.InternalPageHandler(*page)) {
@@ -1742,11 +1768,7 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
       // Light or dark app mode changed.
       if (lparam && std::wstring_view(reinterpret_cast<const wchar_t*>(
                         lparam)) == L"ImmersiveColorSet") {
-        theme_ = CurrentTheme();
-        ApplyThemeToFrame(window_, theme_);
-        UpdateFonts();
-        RedrawWindow(window_, nullptr, nullptr,
-                     RDW_INVALIDATE | RDW_ALLCHILDREN);
+        RefreshTheme();
       }
       break;
     case WM_DPICHANGED: {

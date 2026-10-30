@@ -88,8 +88,7 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance,
   callbacks.on_relaunch = [&app](brouk::LaunchRequest request) {
     app.OnRelaunch(request);
   };
-  // The setting (006) comes with the settings page (W2).
-  callbacks.json_viewer_enabled = [] { return true; };
+  callbacks.json_viewer_enabled = [&app] { return app.JsonViewerEnabled(); };
   CefRefPtr<brouk::BrowserApp> browser_app(new brouk::BrowserApp(callbacks));
 
   // Returns false also when another instance is already running; that

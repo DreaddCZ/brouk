@@ -20,11 +20,30 @@ bool SystemUsesDarkMode() {
   return light == 0;
 }
 
+ThemeChoice& Choice() {
+  static ThemeChoice choice = ThemeChoice::kSystem;
+  return choice;
+}
+
 }  // namespace
+
+void SetThemeChoice(ThemeChoice choice) {
+  Choice() = choice;
+}
 
 Theme CurrentTheme() {
   Theme theme;
-  theme.dark = SystemUsesDarkMode();
+  switch (Choice()) {
+    case ThemeChoice::kSystem:
+      theme.dark = SystemUsesDarkMode();
+      break;
+    case ThemeChoice::kLight:
+      theme.dark = false;
+      break;
+    case ThemeChoice::kDark:
+      theme.dark = true;
+      break;
+  }
   // Close to Chrome's and Edge's default colours on Windows 11.
   if (theme.dark) {
     theme.frame = RGB(32, 32, 32);

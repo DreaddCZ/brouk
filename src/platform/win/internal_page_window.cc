@@ -93,6 +93,16 @@ void InternalPageWindow::ExecuteJavaScript(const std::string& code) {
   }
 }
 
+void InternalPageWindow::LoadUrl(const std::string& url) {
+  if (browser_) {
+    browser_->GetMainFrame()->LoadURL(url);
+  }
+}
+
+void InternalPageWindow::RefreshTheme() {
+  ApplyThemeToFrame(window_, CurrentTheme());
+}
+
 HWND InternalPageWindow::BrowserWindowHandle() const {
   return browser_ ? browser_->GetHost()->GetWindowHandle() : nullptr;
 }

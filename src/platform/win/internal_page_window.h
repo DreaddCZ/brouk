@@ -37,6 +37,10 @@ class InternalPageWindow final : public InternalPageDelegate {
   HWND hwnd() const { return window_; }
   // Runs a script of ours in the page (e.g. help's showHelpSection).
   void ExecuteJavaScript(const std::string& code);
+  // Loads another address of the same page (a settings fragment).
+  void LoadUrl(const std::string& url);
+  // The theme setting changed (004): the frame follows.
+  void RefreshTheme();
 
   // InternalPageDelegate:
   void OnBrowserCreated(CefRefPtr<CefBrowser> browser) override;

@@ -100,6 +100,8 @@ class Tab final : public TabClientDelegate,
   void ExitFullscreen();
   // Mutes or unmutes the tab's sound ("Mute Tab").
   void SetMuted(bool muted);
+  // Settings the page's renderer follows (the JSON viewer, 006).
+  void SendRendererConfig(bool json_viewer);
   bool muted() const { return muted_; }
   // Moving the tab to another profile (005) reloads its page there and
   // loses what was typed into it: asks first, in a panel over the page.

@@ -1,10 +1,14 @@
 #include "platform/win/app.h"
 
+#include <shlobj.h>
+
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <format>
+#include <system_error>
 #include <utility>
 
 #include "cef/browser_app.h"
@@ -18,6 +22,7 @@
 #include "core/help.h"
 #include "core/profile_export.h"
 #include "core/search_engines.h"
+#include "core/settings_export.h"
 #include "core/text_file.h"
 #include "include/base/cef_logging.h"
 #include "include/cef_app.h"
@@ -26,6 +31,7 @@
 #include "include/wrapper/cef_helpers.h"
 #include "platform/win/data_paths.h"
 #include "platform/win/file_dialogs.h"
+#include "platform/win/theme.h"
 #include "platform/win/wide_string.h"
 
 namespace brouk::win {
@@ -34,6 +40,8 @@ namespace {
 
 // Profile export files are small (005); bigger files are not ones.
 constexpr std::uintmax_t kMaxProfileExportBytes = 16 * 1024 * 1024;
+// Settings exports too (as on macOS).
+constexpr std::uintmax_t kMaxSettingsExportBytes = 1024 * 1024;
 
 }  // namespace
 
@@ -49,6 +57,10 @@ void App::OnContextInitialized() {
       .open_help = [this](const std::string& anchor) { OpenHelp(anchor); },
       .open_web_link = [this](const std::string& url) { OpenWebLink(url); },
   });
+  ApplySettings();
+  // Changes made in the files apply while Brouk runs (004).
+  settings_watcher_ = std::make_unique<SettingsWatcher>(
+      AppDataDirectory(), [this] { SettingsFilesChanged(); });
   OpenLaunchRequest(
       BrowserApp::LaunchRequestFrom(CefCommandLine::GetGlobalCommandLine()));
 }
@@ -112,8 +124,10 @@ void App::OpenLaunchRequest(const LaunchRequest& request) {
 }
 
 void App::ReleaseBrowserObjects() {
+  settings_watcher_.reset();
   help_window_.reset();
   profiles_window_.reset();
+  settings_window_.reset();
   windows_.clear();
   contexts_.clear();
   internal_context_ = nullptr;
@@ -133,6 +147,7 @@ CefRefPtr<CefRequestContext> App::RequestContext(const ProfileId& profile) {
   CefString(&settings.cache_path) = ProfileWebDataDirectory(id).wstring();
   CefRefPtr<CefRequestContext> context =
       CefRequestContext::CreateContext(settings, nullptr);
+  context->SetChromeColorScheme(color_variant_, 0);
   contexts_[id] = context;
   return context;
 }
@@ -159,6 +174,7 @@ CefRefPtr<CefRequestContext> App::InternalContext() {
     CefString(&settings.cache_path) =
         (WebDataRootDirectory() / L"internal").wstring();
     internal_context_ = CefRequestContext::CreateContext(settings, nullptr);
+    internal_context_->SetChromeColorScheme(color_variant_, 0);
     // The pages are built next to brouk.exe (CMakeLists.txt).
     wchar_t module[MAX_PATH] = {};
     GetModuleFileNameW(nullptr, module, MAX_PATH);
@@ -231,7 +247,7 @@ void App::OpenWebLink(const std::string& url) {
 }
 
 void App::CloseAllWindows() {
-  for (const auto* page : {&help_window_, &profiles_window_}) {
+  for (const auto* page : PageWindows()) {
     if (*page) {
       PostMessageW((*page)->hwnd(), WM_CLOSE, 0, 0);
     }
@@ -293,7 +309,7 @@ void App::OnWindowDestroyed(BrowserWindow* window) {
                 // open help and profile manager windows close first.
                 if (windows_.empty() && !quitting_) {
                   quitting_ = true;
-                  for (const auto* page : {&help_window_, &profiles_window_}) {
+                  for (const auto* page : PageWindows()) {
                     if (*page) {
                       PostMessageW((*page)->hwnd(), WM_CLOSE, 0, 0);
                     }
@@ -304,7 +320,9 @@ void App::OnWindowDestroyed(BrowserWindow* window) {
 }
 
 void App::QuitWhenDone() {
-  if (quitting_ && !help_window_ && !profiles_window_) {
+  if (quitting_ && std::ranges::none_of(PageWindows(), [](const auto* page) {
+        return *page != nullptr;
+      })) {
     CefQuitMessageLoop();
   }
 }
@@ -329,8 +347,10 @@ void App::OpenProfileManager() {
                   // else is open, so Brouk quits (Chrome's profile picker).
                   if (windows_.empty() && !quitting_) {
                     quitting_ = true;
-                    if (help_window_) {
-                      PostMessageW(help_window_->hwnd(), WM_CLOSE, 0, 0);
+                    for (const auto* page : PageWindows()) {
+                      if (*page) {
+                        PostMessageW((*page)->hwnd(), WM_CLOSE, 0, 0);
+                      }
                     }
                   }
                   QuitWhenDone();
@@ -433,7 +453,7 @@ void App::DeleteProfile(const ProfileId& id, DeleteDone done) {
       L"Delete the profile \u201C" + Utf8ToWide(info->name) + L"\u201D?";
   // Asked from a task: the message box runs its own message loop, which
   // must not run inside the page's request.
-  HWND owner = profiles_window_ ? profiles_window_->hwnd() : nullptr;
+  HWND owner = DialogOwner();
   CefPostTask(TID_UI, new FunctionTask([this, id, owner, title, text, done] {
                 const int answer = MessageBoxW(
                     owner, (title + L"\n\n" + text).c_str(), L"Delete profile",
@@ -477,7 +497,7 @@ void App::ExportProfile(const ProfileId& id, ExportDone done) {
       L"contains no sign-ins, cookies or cache.";
   // Asked from a task: the dialog runs its own message loop, which must not
   // run inside the page's request.
-  HWND owner = profiles_window_ ? profiles_window_->hwnd() : nullptr;
+  HWND owner = DialogOwner();
   CefPostTask(
       TID_UI, new FunctionTask([options, owner, text, done] {
         std::optional<std::filesystem::path> path = AskSavePath(owner, options);
@@ -495,7 +515,7 @@ void App::ImportProfile(ImportDone done) {
   options.title = L"Import a Profile";
   options.type_name = L"Brouk profile";
   options.extension = Utf8ToWide(kProfileExportExtension);
-  HWND owner = profiles_window_ ? profiles_window_->hwnd() : nullptr;
+  HWND owner = DialogOwner();
   // From a task, as ExportProfile.
   CefPostTask(
       TID_UI, new FunctionTask([this, options, owner, done] {
@@ -544,6 +564,247 @@ const LinkRoutingConfig* App::LinkRouting() {
 
 std::optional<Error> App::SetLinkRouting(LinkRoutingConfig /*config*/) {
   return Error{"Link routing comes later on Windows."};
+}
+
+std::array<std::unique_ptr<InternalPageWindow>*, 3> App::PageWindows() {
+  return {&help_window_, &profiles_window_, &settings_window_};
+}
+
+HWND App::DialogOwner() const {
+  // The page that asked is in front; the profile manager is the older one.
+  for (const auto* page : {&settings_window_, &profiles_window_}) {
+    if (*page && GetForegroundWindow() == (*page)->hwnd()) {
+      return (*page)->hwnd();
+    }
+  }
+  if (profiles_window_) {
+    return profiles_window_->hwnd();
+  }
+  return settings_window_ ? settings_window_->hwnd() : nullptr;
+}
+
+bool App::JsonViewerEnabled() const {
+  return profiles_.global_settings().GetBool("content.json_viewer");
+}
+
+void App::SettingsFilesChanged() {
+  CEF_REQUIRE_UI_THREAD();
+  if (quitting_) {
+    return;
+  }
+  profiles_.Load();
+  for (const std::string& problem : profiles_.problems()) {
+    LOG(WARNING) << "Settings: " << problem;
+  }
+  ApplySettings();
+  ProfilesChanged();
+}
+
+void App::ApplySettings() {
+  CEF_REQUIRE_UI_THREAD();
+  const Settings& global = profiles_.global_settings();
+  const std::string& theme = global.GetString("appearance.theme");
+  // A choice the settings schema has validated.
+  const ThemeChoice choice = theme == "light"  ? ThemeChoice::kLight
+                             : theme == "dark" ? ThemeChoice::kDark
+                                               : ThemeChoice::kSystem;
+  SetThemeChoice(choice);
+  // Web pages' prefers-color-scheme, and Chromium's own pages.
+  color_variant_ = choice == ThemeChoice::kLight  ? CEF_COLOR_VARIANT_LIGHT
+                   : choice == ThemeChoice::kDark ? CEF_COLOR_VARIANT_DARK
+                                                  : CEF_COLOR_VARIANT_SYSTEM;
+  for (const auto& [id, context] : contexts_) {
+    context->SetChromeColorScheme(color_variant_, 0);
+  }
+  if (internal_context_) {
+    internal_context_->SetChromeColorScheme(color_variant_, 0);
+  }
+  const bool json_viewer = JsonViewerEnabled();
+  for (const std::unique_ptr<BrowserWindow>& window : windows_) {
+    window->RefreshTheme();
+    window->SendRendererConfig(json_viewer);
+  }
+  for (const auto* page : PageWindows()) {
+    if (*page) {
+      (*page)->RefreshTheme();
+    }
+  }
+}
+
+void App::OpenSettings(const std::string& url) {
+  CEF_REQUIRE_UI_THREAD();
+  if (quitting_) {
+    return;
+  }
+  // Only brouk://settings addresses (a fragment names a setting).
+  const std::string page =
+      url.starts_with("brouk://settings/") ? url : "brouk://settings/";
+  if (settings_window_) {
+    if (!url.empty()) {
+      settings_window_->LoadUrl(page);
+    }
+    settings_window_->Activate();
+    return;
+  }
+  // One settings window, as on macOS; deleted once closed.
+  auto window = std::make_unique<InternalPageWindow>([this] {
+    CefPostTask(TID_UI, new FunctionTask([this] {
+                  settings_window_.reset();
+                  QuitWhenDone();
+                }));
+  });
+  if (window->Create(page, L"Settings", 980, 720,
+                     std::make_unique<SettingsHandler>(this),
+                     InternalContext())) {
+    settings_window_ = std::move(window);
+  }
+}
+
+const ProfileRegistry& App::Registry() {
+  return profiles_;
+}
+
+std::optional<Settings> App::ProfileSettings(std::string_view id) {
+  return profiles_.ProfileSettings(id);
+}
+
+std::optional<Error> App::SetGlobalSetting(std::string_view key,
+                                           SettingValue value) {
+  std::optional<Error> error =
+      profiles_.SetGlobalSetting(key, std::move(value));
+  ApplySettings();
+  ProfilesChanged();
+  return error;
+}
+
+std::optional<Error> App::SetProfileSetting(std::string_view id,
+                                            std::string_view key,
+                                            SettingValue value) {
+  std::optional<Error> error =
+      profiles_.SetProfileSetting(id, key, std::move(value));
+  ProfilesChanged();
+  return error;
+}
+
+void App::RevealSettingsFolder() {
+  const std::filesystem::path file = AppDataDirectory() / L"settings.yaml";
+  std::error_code error;
+  if (!std::filesystem::exists(file, error)) {
+    // Write the defaults, so there is a file to edit.
+    profiles_.ReplaceGlobalSettings(profiles_.global_settings());
+  }
+  // File Explorer with the file selected. Our own path, not a program.
+  PIDLIST_ABSOLUTE item = ILCreateFromPathW(file.c_str());
+  if (item) {
+    SHOpenFolderAndSelectItems(item, 0, nullptr, 0);
+    ILFree(item);
+  }
+}
+
+void App::OpenClearBrowsingData() {
+  // Clearing browsing data (013) comes with history (W2).
+}
+
+AdblockService* App::Adblock() {
+  return nullptr;  // Ad blocking (007) comes later on Windows.
+}
+
+std::string App::Language() {
+  std::array<wchar_t, LOCALE_NAME_MAX_LENGTH> name{};
+  if (GetUserDefaultLocaleName(name.data(), static_cast<int>(name.size())) ==
+      0) {
+    return "en";
+  }
+  return WideToUtf8(name.data());
+}
+
+AutofillManager* App::Autofill() {
+  return nullptr;  // Form autofill (009) comes later on Windows.
+}
+
+void App::SaveAutofillFile(std::string /*json*/, TextSaveDone done) {
+  done(false, Error{"Autofill comes later on Windows."});
+}
+
+void App::OpenAutofillFile(TextOpenDone done) {
+  done(std::nullopt, Error{"Autofill comes later on Windows."});
+}
+
+void App::ExportSettings(FileDone done) {
+  const std::string exported_at =
+      std::format("{:%FT%TZ}", std::chrono::floor<std::chrono::seconds>(
+                                   std::chrono::system_clock::now()));
+  std::string text =
+      brouk::ExportSettings(profiles_.global_settings(), exported_at);
+  FileDialogOptions options;
+  options.title = L"Export Settings";
+  options.type_name = L"Brouk settings";
+  options.extension = Utf8ToWide(kSettingsExportExtension);
+  options.file_name = L"Brouk settings";
+  options.note =
+      L"Settings for all profiles. Profiles are exported in the profile "
+      L"manager.";
+  HWND owner = DialogOwner();
+  // From a task: the dialog runs its own message loop, which must not run
+  // inside the page's request.
+  CefPostTask(
+      TID_UI, new FunctionTask([options, owner, text, done] {
+        std::optional<std::filesystem::path> path = AskSavePath(owner, options);
+        if (!path) {
+          done(false, {}, std::nullopt);
+          return;
+        }
+        std::optional<Error> error = WriteTextFileAtomically(*path, text);
+        done(!error, {}, error);
+      }));
+}
+
+void App::ImportSettings(FileDone done) {
+  FileDialogOptions options;
+  options.title = L"Import Settings";
+  options.type_name = L"Brouk settings";
+  options.extension = Utf8ToWide(kSettingsExportExtension);
+  HWND owner = DialogOwner();
+  // From a task, as ExportSettings.
+  CefPostTask(
+      TID_UI, new FunctionTask([this, options, owner, done] {
+        std::optional<std::filesystem::path> path = AskOpenPath(owner, options);
+        if (!path || quitting_) {
+          done(false, {}, std::nullopt);
+          return;
+        }
+        Result<std::string> text = ReadTextFile(*path, kMaxSettingsExportBytes);
+        if (!text) {
+          done(false, {}, Error{"This file is not a Brouk settings export."});
+          return;
+        }
+        Result<ImportedSettings> parsed = ParseSettingsExport(text.value());
+        if (!parsed) {
+          done(false, {}, parsed.error());
+          return;
+        }
+        if (std::optional<Error> error =
+                profiles_.ReplaceGlobalSettings(parsed.value().settings)) {
+          done(false, {}, error);
+          return;
+        }
+        ApplySettings();
+        ProfilesChanged();
+        done(true, parsed.value().problems, std::nullopt);
+      }));
+}
+
+std::vector<std::string> App::LinkRoutingProblems() {
+  return {};
+}
+
+bool App::IsDefaultBrowser() {
+  return false;
+}
+
+void App::MakeDefaultBrowser(
+    std::function<void(std::optional<Error> error)> done) {
+  done(Error{"Making Brouk the default browser comes later on Windows."});
 }
 
 }  // namespace brouk::win

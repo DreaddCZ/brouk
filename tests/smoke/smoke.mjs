@@ -332,6 +332,8 @@ async function main() {
   if (kInternalPages) args.push('brouk://credits');
   // The profile manager (005) in its own window; on macOS it is opened from the menu.
   if (kWindows) args.push('brouk://profiles');
+  // Settings (004) in its own window too.
+  if (kWindows) args.push('brouk://settings');
   brouk = spawn(executable, args, {
     env: { ...process.env, BROUK_DEV_DATA_DIR: dataDir },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -552,6 +554,40 @@ async function main() {
       }
       manager.close();
     }
+  }
+
+  // Settings (Windows app, 024 W2): brouk://settings opens in its own
+  // window, and a change made in settings.yaml applies while Brouk runs
+  // (004, live reload): the pages' colour scheme follows appearance.theme.
+  if (kWindows) {
+    const list = await devtoolsJson(port, '/json/list');
+    const settingsTarget = list.find((t) => t.url.startsWith('brouk://settings'));
+    if (check(settingsTarget !== undefined, 'the settings window opens')) {
+      const settingsPage = await Cdp.connect(settingsTarget.webSocketDebuggerUrl);
+      const title = await waitForTitle(settingsPage, 'Settings');
+      check(title === 'Settings', `brouk://settings loads ("${title}")`);
+      await screenshot(settingsPage, 'settings');
+      settingsPage.close();
+    }
+    const dark = async () =>
+      (
+        await cdp.send('Runtime.evaluate', {
+          expression: "matchMedia('(prefers-color-scheme: dark)').matches",
+          returnByValue: true,
+        })
+      ).result.value;
+    const before = await dark();
+    const settingsFile = join(dataDir, 'settings.yaml');
+    writeFileSync(settingsFile, `appearance:\n  theme: ${before ? 'light' : 'dark'}\n`);
+    let now = before;
+    for (let i = 0; i < 25 && now === before; i++) {
+      await sleep(200);
+      now = await dark();
+    }
+    check(now === !before, `editing settings.yaml changes the pages' colour scheme (dark: ${before} → ${now})`);
+    desktopScreenshot('theme');
+    writeFileSync(settingsFile, 'appearance:\n  theme: system\n');
+    await sleep(1000);
   }
 
   // A crashed renderer shows the crash page (012); Brouk keeps running.

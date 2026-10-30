@@ -74,5 +74,23 @@ TEST_F(SettingsFileTest, SaveReplacesHandEditedFile) {
   EXPECT_EQ(again.settings.GetString("profile.color"), "red");
 }
 
+TEST(LiveReloadedFileTest, SettingsAndRulesFilesCount) {
+  EXPECT_TRUE(IsLiveReloadedFile("settings.yaml"));
+  EXPECT_TRUE(IsLiveReloadedFile("settings.yaml.tmp"));
+  EXPECT_TRUE(IsLiveReloadedFile("profiles/p-1234/settings.yaml"));
+  EXPECT_TRUE(IsLiveReloadedFile("profiles\\p-1234\\settings.yaml"));
+  EXPECT_TRUE(IsLiveReloadedFile("request-rules.yaml"));
+  EXPECT_TRUE(IsLiveReloadedFile("link-routing.yaml"));
+}
+
+TEST(LiveReloadedFileTest, OtherFilesAndChromiumsFolderDoNot) {
+  EXPECT_FALSE(IsLiveReloadedFile("profiles.yaml.bak"));
+  EXPECT_FALSE(IsLiveReloadedFile("history.sqlite"));
+  EXPECT_FALSE(IsLiveReloadedFile("profiles/p-1234"));
+  EXPECT_FALSE(IsLiveReloadedFile("web/p-1234/settings.yaml"));
+  EXPECT_FALSE(IsLiveReloadedFile("web\\Default\\Cookies"));
+  EXPECT_FALSE(IsLiveReloadedFile(""));
+}
+
 }  // namespace
 }  // namespace brouk

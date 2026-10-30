@@ -48,6 +48,9 @@ class BrowserWindowOwner {
   virtual const std::vector<ProfileInfo>& ProfileList() = 0;
   // Opens the profile manager (brouk://profiles, 005) in its own window.
   virtual void OpenProfileManager() = 0;
+  // The settings window (004) with `url` (brouk://settings/#...), or as it
+  // is if `url` is empty.
+  virtual void OpenSettings(const std::string& url) = 0;
   // Opens the help window (016), at a section if `anchor` is not empty.
   virtual void OpenHelp(const std::string& anchor) = 0;
   // Closes every window (the menu's Exit).
@@ -82,6 +85,10 @@ class BrowserWindow final : public TabHost {
   bool Create(int content_width = 0, int content_height = 0);
   void Show();
   void Activate();
+  // The theme setting changed (004): Brouk's window parts follow.
+  void RefreshTheme();
+  // Settings the tabs' renderers follow (the JSON viewer, 006).
+  void SendRendererConfig(bool json_viewer);
   // Opens a tab with `url` at the end of `profile`'s group (empty: the
   // default profile); an empty tab, with the address bar focused, if `url`
   // is empty.

@@ -1,24 +1,29 @@
 #ifndef BROUK_PLATFORM_WIN_APP_H_
 #define BROUK_PLATFORM_WIN_APP_H_
 
+#include <array>
 #include <map>
 #include <memory>
 #include <string>
 #include <vector>
 
 #include "cef/profile_manager_handler.h"
+#include "cef/settings_handler.h"
 #include "core/launch_args.h"
 #include "core/profile_registry.h"
 #include "include/cef_request_context.h"
 #include "platform/win/browser_window.h"
 #include "platform/win/internal_page_window.h"
+#include "platform/win/settings_watcher.h"
 
 namespace brouk::win {
 
 // The Windows app in the browser process: profiles, settings and the open
 // windows (the macOS counterpart is BRAppDelegate). Created before
 // CefInitialize; every other method runs on the UI thread.
-class App final : public BrowserWindowOwner, public ProfileManagerDelegate {
+class App final : public BrowserWindowOwner,
+                  public ProfileManagerDelegate,
+                  public SettingsPageDelegate {
  public:
   App();
   App(const App&) = delete;
@@ -33,6 +38,8 @@ class App final : public BrowserWindowOwner, public ProfileManagerDelegate {
   void OnRelaunch(const LaunchRequest& request);
   // After the message loop ends, before CefShutdown: drops every CEF object.
   void ReleaseBrowserObjects();
+  // content.json_viewer (006), for new renderer processes.
+  bool JsonViewerEnabled() const;
 
   // BrowserWindowOwner:
   CefRefPtr<CefRequestContext> RequestContext(
@@ -51,6 +58,7 @@ class App final : public BrowserWindowOwner, public ProfileManagerDelegate {
   void OnWindowDestroyed(BrowserWindow* window) override;
   const std::vector<ProfileInfo>& ProfileList() override;
   void OpenProfileManager() override;
+  void OpenSettings(const std::string& url) override;
 
   // ProfileManagerDelegate (the brouk://profiles page, 005):
   std::vector<Summary> Profiles() override;
@@ -66,8 +74,31 @@ class App final : public BrowserWindowOwner, public ProfileManagerDelegate {
   void DeleteProfile(const ProfileId& id, DeleteDone done) override;
   void ExportProfile(const ProfileId& id, ExportDone done) override;
   void ImportProfile(ImportDone done) override;
+  // Also SettingsPageDelegate's: link routing comes with W3.
   const LinkRoutingConfig* LinkRouting() override;
   std::optional<Error> SetLinkRouting(LinkRoutingConfig config) override;
+
+  // SettingsPageDelegate (the brouk://settings page, 004):
+  const ProfileRegistry& Registry() override;
+  std::optional<Settings> ProfileSettings(std::string_view id) override;
+  std::optional<Error> SetGlobalSetting(std::string_view key,
+                                        SettingValue value) override;
+  std::optional<Error> SetProfileSetting(std::string_view id,
+                                         std::string_view key,
+                                         SettingValue value) override;
+  void RevealSettingsFolder() override;
+  void OpenClearBrowsingData() override;
+  AdblockService* Adblock() override;
+  std::string Language() override;
+  AutofillManager* Autofill() override;
+  void SaveAutofillFile(std::string json, TextSaveDone done) override;
+  void OpenAutofillFile(TextOpenDone done) override;
+  void ExportSettings(FileDone done) override;
+  void ImportSettings(FileDone done) override;
+  std::vector<std::string> LinkRoutingProblems() override;
+  bool IsDefaultBrowser() override;
+  void MakeDefaultBrowser(
+      std::function<void(std::optional<Error> error)> done) override;
 
  private:
   // A launch's URLs as tabs of a new window (Chrome), or an empty tab when
@@ -76,9 +107,19 @@ class App final : public BrowserWindowOwner, public ProfileManagerDelegate {
   // Names, colours or the default profile changed: the windows' groups
   // follow.
   void ProfilesChanged();
-  // With the last browser window closed, Brouk quits once help and the
-  // profile manager have closed too.
+  // With the last browser window closed, Brouk quits once help, the
+  // profile manager and settings have closed too.
   void QuitWhenDone();
+  // Brouk's page windows (help, profile manager, settings), for closing
+  // them all.
+  std::array<std::unique_ptr<InternalPageWindow>*, 3> PageWindows();
+  // A settings file changed on disk (004, live reload).
+  void SettingsFilesChanged();
+  // Applies the global settings Brouk on Windows has so far: theme and
+  // the JSON viewer.
+  void ApplySettings();
+  // The window the settings and profile pages' dialogs belong to.
+  HWND DialogOwner() const;
 
   ProfileRegistry profiles_;
   // One per profile, made when its first tab opens.
@@ -86,6 +127,10 @@ class App final : public BrowserWindowOwner, public ProfileManagerDelegate {
   CefRefPtr<CefRequestContext> internal_context_;
   std::unique_ptr<InternalPageWindow> help_window_;
   std::unique_ptr<InternalPageWindow> profiles_window_;
+  std::unique_ptr<InternalPageWindow> settings_window_;
+  std::unique_ptr<SettingsWatcher> settings_watcher_;
+  // appearance.theme for web pages (Chromium's colour scheme).
+  cef_color_variant_t color_variant_ = CEF_COLOR_VARIANT_SYSTEM;
   // The profile manager was opened at startup instead of a window: it
   // closes once a profile is chosen (Chrome's profile picker).
   bool profile_manager_at_startup_ = false;

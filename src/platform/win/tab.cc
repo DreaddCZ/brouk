@@ -735,6 +735,12 @@ void Tab::AskOpenExternalProtocol(const ExternalProtocolRequest& request,
   UpdatePanels(true);
 }
 
+void Tab::SendRendererConfig(bool json_viewer) {
+  if (browser_ && client_) {
+    TabClient::SendRendererConfig(browser_, json_viewer);
+  }
+}
+
 void Tab::AskMoveToProfile(const std::wstring& profile_name,
                            std::function<void(bool move)> done) {
   if (move_question_ || closing_) {
