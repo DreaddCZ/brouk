@@ -430,6 +430,13 @@ void Tab::OnTitleChanged(const std::string& title) {
 }
 
 void Tab::OnAddressChanged(const std::string& url) {
+  // Like Chrome, the list of blocked popups belongs to the page shown.
+  auto without_fragment = [](const std::string& address) {
+    return address.substr(0, address.find('#'));
+  };
+  if (without_fragment(url) != without_fragment(url_)) {
+    blocked_popups_.clear();
+  }
   url_ = url;
   host_.OnTabChanged(*this);
 }
@@ -471,8 +478,17 @@ std::optional<PopupHost> Tab::OnBeforePopup(const PopupRequest& request) {
   return host_.OnTabPopup(*this, request);
 }
 
-void Tab::OnPopupBlocked(const std::string& /*target_url*/) {
-  // The address bar's "popup blocked" icon comes with W1.
+void Tab::OnPopupBlocked(const std::string& target_url) {
+  constexpr size_t kMaxBlockedPopups = 20;
+  if (blocked_popups_.size() < kMaxBlockedPopups) {
+    blocked_popups_.push_back(target_url);
+  }
+  host_.OnTabChanged(*this);
+}
+
+void Tab::ClearBlockedPopups() {
+  blocked_popups_.clear();
+  host_.OnTabChanged(*this);
 }
 
 void Tab::OnPopupAborted(int popup_id) {

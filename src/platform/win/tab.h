@@ -100,6 +100,13 @@ class Tab final : public TabClientDelegate,
   // follows. A page may cancel ("leave site?").
   void Close();
   bool has_browser() const { return browser_ != nullptr; }
+  CefRefPtr<CefBrowser> browser() const { return browser_; }
+  // Popups the popup blocker stopped on the page shown (Chrome's "Pop-ups
+  // blocked" in the address bar), and forgetting them.
+  const std::vector<std::string>& blocked_popups() const {
+    return blocked_popups_;
+  }
+  void ClearBlockedPopups();
   // Whether `window` is the page's (the browser's window or one inside it).
   bool IsPageWindow(HWND window) const;
   bool closing() const { return closing_; }
@@ -259,6 +266,7 @@ class Tab final : public TabClientDelegate,
   std::deque<PendingPermission> permission_requests_;
   std::unique_ptr<TabPanel> permission_prompt_;
   std::unique_ptr<FindBar> find_bar_;
+  std::vector<std::string> blocked_popups_;
   bool closing_ = false;
   // Expires with the tab, for tasks posted while it is open.
   std::shared_ptr<int> alive_ = std::make_shared<int>(0);

@@ -8,10 +8,12 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "brouk/app_info.h"
 #include "cef/function_task.h"
+#include "cef/site_info.h"
 #include "core/address_input.h"
 #include "core/internal_pages.h"
 #include "core/profile_id.h"
@@ -47,6 +49,7 @@ enum ControlId : int {
   kMenuId,
   kAddressId,
   kZoomId,
+  kPopupsId,
 };
 
 // Items of the "⋮" menu.
@@ -61,6 +64,8 @@ enum MenuCommand : UINT {
   kHelpCommand,
   kLicencesCommand,
   kExitCommand,
+  kAllowPopupsCommand,
+  kFirstBlockedPopupCommand = 1000,
 };
 
 // Glyphs of the "Segoe MDL2 Assets" icon font, on Windows 10 and 11.
@@ -68,6 +73,7 @@ constexpr wchar_t kBackGlyph[] = L"\uE72B";
 constexpr wchar_t kForwardGlyph[] = L"\uE72A";
 constexpr wchar_t kReloadGlyph[] = L"\uE72C";
 constexpr wchar_t kMoreGlyph[] = L"\uE712";
+constexpr wchar_t kBlockedGlyph[] = L"\uE733";
 
 TabId NextTabId() {
   static TabId next = 0;
@@ -203,6 +209,11 @@ void BrowserWindow::CreateControls() {
       0, WC_BUTTONW, L"", WS_CHILD | BS_OWNERDRAW, 0, 0, 0, 0, window_,
       reinterpret_cast<HMENU>(static_cast<INT_PTR>(kZoomId)), instance,
       nullptr);
+  popups_ = CreateWindowExW(
+      0, WC_BUTTONW, kBlockedGlyph, WS_CHILD | BS_OWNERDRAW, 0, 0, 0, 0,
+      window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kPopupsId)),
+      instance, nullptr);
+  SetAccessibleName(popups_, L"Pop-ups blocked");
 }
 
 int BrowserWindow::Scale(int dips) const {
@@ -315,17 +326,20 @@ void BrowserWindow::Layout() {
                     field_top + field_height};
   const int padding = Scale(kAddressPadding);
   const int edit_height = text_height_ + Scale(2);
-  int edit_right = static_cast<int>(address_field_.right) - padding;
-  if (HasVisibleStyle(zoom_)) {
-    // The zoom indicator at the right end of the address bar.
-    const int zoom_width = Scale(56);
-    const int zoom_height = field_height - Scale(8);
-    SetWindowPos(zoom_, nullptr,
-                 static_cast<int>(address_field_.right) - Scale(4) - zoom_width,
-                 field_top + Scale(4), zoom_width, zoom_height,
-                 SWP_NOZORDER | SWP_NOACTIVATE);
-    edit_right -= zoom_width;
+  // The indicators at the right end of the address bar, right to left.
+  int indicator_right = static_cast<int>(address_field_.right) - Scale(4);
+  for (const auto& [indicator, width] :
+       {std::pair{zoom_, Scale(56)}, std::pair{popups_, Scale(30)}}) {
+    if (HasVisibleStyle(indicator)) {
+      indicator_right -= width;
+      SetWindowPos(indicator, nullptr, indicator_right, field_top + Scale(4),
+                   width, field_height - Scale(8),
+                   SWP_NOZORDER | SWP_NOACTIVATE);
+      indicator_right -= Scale(4);
+    }
   }
+  const int edit_right = std::min(
+      static_cast<int>(address_field_.right) - padding, indicator_right);
   SetWindowPos(
       address_, nullptr, address_field_.left + padding,
       field_top + (field_height - edit_height) / 2,
@@ -474,8 +488,9 @@ void BrowserWindow::SetFullscreen(bool fullscreen) {
   ShowWindow(address_, fullscreen ? SW_HIDE : SW_SHOWNA);
   if (fullscreen) {
     ShowWindow(zoom_, SW_HIDE);
+    ShowWindow(popups_, SW_HIDE);
   }
-  UpdateZoomIndicator();
+  UpdateIndicators();
   Layout();
   InvalidateRect(window_, nullptr, TRUE);
 }
@@ -496,7 +511,58 @@ void BrowserWindow::ShowFullscreenHint(const wchar_t* text) {
   SetTimer(window_, kFullscreenHintTimer, kFullscreenHintTime, nullptr);
 }
 
-void BrowserWindow::DrawZoomButton(const DRAWITEMSTRUCT& item) {
+void BrowserWindow::ShowBlockedPopups() {
+  Tab* tab = ActiveTab();
+  if (!tab || tab->blocked_popups().empty()) {
+    return;
+  }
+  HMENU menu = CreatePopupMenu();
+  AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, L"Pop-ups blocked on this page:");
+  const std::vector<std::string> urls = tab->blocked_popups();
+  for (size_t i = 0; i < urls.size(); ++i) {
+    std::wstring title = Utf8ToWide(urls[i]);
+    if (title.size() > 70) {
+      title = title.substr(0, 67) + L"\u2026";
+    }
+    AppendMenuW(menu, MF_STRING,
+                kFirstBlockedPopupCommand + static_cast<UINT>(i),
+                title.c_str());
+  }
+  const CefRefPtr<CefBrowser> browser = tab->browser();
+  const std::string origin = browser ? GetSiteInfo(browser).origin : "";
+  if (!origin.empty()) {
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    const std::wstring allow =
+        L"Always allow pop-ups and redirects from " + Utf8ToWide(origin);
+    AppendMenuW(menu, MF_STRING, kAllowPopupsCommand, allow.c_str());
+  }
+  RECT button = {};
+  GetWindowRect(popups_, &button);
+  const UINT command = static_cast<UINT>(TrackPopupMenuEx(
+      menu, TPM_RIGHTALIGN | TPM_TOPALIGN | TPM_RETURNCMD | TPM_NONOTIFY,
+      button.right, button.bottom, window_, nullptr));
+  DestroyMenu(menu);
+  // The tab may have gone while the menu was open.
+  tab = ActiveTab();
+  if (!tab || !command) {
+    return;
+  }
+  if (command == kAllowPopupsCommand) {
+    if (CefRefPtr<CefBrowser> current = tab->browser()) {
+      SetSitePermission(current, origin, PermissionKind::kPopups,
+                        PermissionSetting::kAllow);
+    }
+    tab->ClearBlockedPopups();
+  } else if (command >= kFirstBlockedPopupCommand &&
+             command - kFirstBlockedPopupCommand < urls.size()) {
+    Tab* popup = InsertTabFromOpener(tab, true);
+    popup->CreateBrowser(urls[command - kFirstBlockedPopupCommand],
+                         owner_.RequestContext());
+    FocusActiveTab();
+  }
+}
+
+void BrowserWindow::DrawIndicator(const DRAWITEMSTRUCT& item) {
   const bool pressed = (item.itemState & ODS_SELECTED) != 0;
   SetDCBrushColor(item.hDC, theme_.field);
   FillRect(item.hDC, &item.rcItem,
@@ -511,7 +577,9 @@ void BrowserWindow::DrawZoomButton(const DRAWITEMSTRUCT& item) {
   SelectObject(item.hDC, brush);
   SelectObject(item.hDC, pen);
   const std::wstring text = WindowText(item.hwndItem);
-  HGDIOBJ previous = SelectObject(item.hDC, text_font_);
+  // The pop-up indicator is an icon, the zoom indicator text.
+  HGDIOBJ previous = SelectObject(
+      item.hDC, item.hwndItem == popups_ ? icon_font_ : text_font_);
   SetBkMode(item.hDC, TRANSPARENT);
   SetTextColor(item.hDC, theme_.text);
   RECT area = item.rcItem;
@@ -520,8 +588,7 @@ void BrowserWindow::DrawZoomButton(const DRAWITEMSTRUCT& item) {
   SelectObject(item.hDC, previous);
 }
 
-// Shown while the active tab's zoom is not 100 %, as on macOS.
-void BrowserWindow::UpdateZoomIndicator() {
+void BrowserWindow::UpdateIndicators() {
   Tab* tab = ActiveTab();
   const double level = tab ? tab->ZoomLevel() : 0.0;
   const bool shown = !fullscreen_ && IsZoomIndicatorShown(level);
@@ -536,8 +603,12 @@ void BrowserWindow::UpdateZoomIndicator() {
       InvalidateRect(zoom_, nullptr, FALSE);
     }
   }
-  if (shown != HasVisibleStyle(zoom_)) {
+  const bool popups_shown =
+      !fullscreen_ && tab && !tab->blocked_popups().empty();
+  if (shown != HasVisibleStyle(zoom_) ||
+      popups_shown != HasVisibleStyle(popups_)) {
     ShowWindow(zoom_, shown ? SW_SHOWNA : SW_HIDE);
+    ShowWindow(popups_, popups_shown ? SW_SHOWNA : SW_HIDE);
     Layout();
   }
 }
@@ -745,7 +816,7 @@ void BrowserWindow::UpdateToolbar() {
   if (GetFocus() != address_) {
     ShowAddress();
   }
-  UpdateZoomIndicator();
+  UpdateIndicators();
   // "Page - Brouk", as Chrome's "Page - Google Chrome".
   std::wstring title = Utf8ToWide(kAppName);
   if (tab) {
@@ -1389,8 +1460,9 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
       return 0;
     }
     case WM_DRAWITEM:
-      if (reinterpret_cast<const DRAWITEMSTRUCT*>(lparam)->hwndItem == zoom_) {
-        DrawZoomButton(*reinterpret_cast<const DRAWITEMSTRUCT*>(lparam));
+      if (const auto* item = reinterpret_cast<const DRAWITEMSTRUCT*>(lparam);
+          item->hwndItem == zoom_ || item->hwndItem == popups_) {
+        DrawIndicator(*item);
       } else {
         DrawToolbarButton(*reinterpret_cast<const DRAWITEMSTRUCT*>(lparam));
       }
@@ -1416,6 +1488,9 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
             return 0;
           case kZoomId:
             tab->Zoom(CEF_ZOOM_COMMAND_RESET);
+            return 0;
+          case kPopupsId:
+            ShowBlockedPopups();
             return 0;
           case kMenuId:
             ShowAppMenu();

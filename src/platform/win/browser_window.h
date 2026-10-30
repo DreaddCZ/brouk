@@ -128,9 +128,13 @@ class BrowserWindow final : public TabHost {
   void Paint();
   void PaintToolbar(HDC dc);
   void DrawToolbarButton(const DRAWITEMSTRUCT& item);
-  // The zoom indicator in the address bar ("110 %"): click resets to 100 %.
-  void DrawZoomButton(const DRAWITEMSTRUCT& item);
-  void UpdateZoomIndicator();
+  // The indicators at the right of the address bar: zoom ("110 %", click
+  // resets to 100 %) and "Pop-ups blocked" (click lists them).
+  void DrawIndicator(const DRAWITEMSTRUCT& item);
+  void UpdateIndicators();
+  // Chrome's "Pop-ups blocked" bubble as a menu: open one, or allow pop-ups
+  // for the site from now on.
+  void ShowBlockedPopups();
   // The "⋮" menu (Chrome's "Customise and control"): new tab and window,
   // help, licences, exit.
   void ShowAppMenu();
@@ -177,6 +181,7 @@ class BrowserWindow final : public TabHost {
   HWND reload_ = nullptr;
   HWND menu_ = nullptr;
   HWND zoom_ = nullptr;
+  HWND popups_ = nullptr;
   HWND address_ = nullptr;
   HFONT text_font_ = nullptr;
   HFONT icon_font_ = nullptr;

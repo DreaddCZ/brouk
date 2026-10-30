@@ -195,6 +195,11 @@ function startServer() {
   return new Promise((ok) => {
     const s = createServer((request, response) => {
       const path = decodeURIComponent(new URL(request.url, 'http://x').pathname);
+      if (path === '/sign-in') {
+        // HTTP basic authentication (012): the browser asks for a login.
+        response.writeHead(401, { 'WWW-Authenticate': 'Basic realm="Smoke test"' }).end('Sign in');
+        return;
+      }
       const file = resolve(kPagesDir, '.' + path);
       if (!file.startsWith(kPagesDir)) {
         response.writeHead(403).end();
@@ -348,6 +353,19 @@ async function main() {
     const { result } = await cdp.send('Runtime.evaluate', { expression: 'document.fullscreenElement === null' });
     check(result.value === true, 'Escape leaves HTML full screen');
     desktopScreenshot('fullscreen-left');
+  }
+
+  // Windows app (024): the page's blocked popup shows the "Pop-ups blocked"
+  // indicator in the address bar; an HTTP sign-in shows Chromium's login
+  // dialog. Screenshots of both for a look.
+  if (kWindows) {
+    await cdp.send('Page.navigate', { url: `${pagesBase}/popups.html` });
+    await waitForTitle(cdp, 'Popups test');
+    await sleep(1500);
+    desktopScreenshot('popup-blocked');
+    await cdp.send('Page.navigate', { url: `${pagesBase}/sign-in` });
+    await sleep(2000);
+    desktopScreenshot('sign-in');
   }
 
   // The Windows app draws the permission prompt and the dialogs over the
