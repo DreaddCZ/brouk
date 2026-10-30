@@ -31,6 +31,18 @@ void SetThemeChoice(ThemeChoice choice) {
   Choice() = choice;
 }
 
+std::string_view PageColorScheme() {
+  switch (Choice()) {
+    case ThemeChoice::kLight:
+      return "light";
+    case ThemeChoice::kDark:
+      return "dark";
+    case ThemeChoice::kSystem:
+      break;
+  }
+  return {};
+}
+
 Theme CurrentTheme() {
   Theme theme;
   switch (Choice()) {

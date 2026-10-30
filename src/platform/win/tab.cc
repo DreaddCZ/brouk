@@ -7,6 +7,7 @@
 #include <memory>
 #include <utility>
 
+#include "cef/color_scheme.h"
 #include "cef/function_task.h"
 #include "core/external_protocol.h"
 #include "core/permissions.h"
@@ -431,6 +432,9 @@ void Tab::OnBrowserCreated(CefRefPtr<CefBrowser> browser) {
     browser_->GetHost()->CloseBrowser(false);
     return;
   }
+  if (!PageColorScheme().empty()) {
+    EmulateColorScheme(browser_, PageColorScheme());
+  }
   if (!pending_url_.empty()) {
     browser_->GetMainFrame()->LoadURL(pending_url_);
     pending_url_.clear();
@@ -733,6 +737,10 @@ void Tab::AskOpenExternalProtocol(const ExternalProtocolRequest& request,
         done(open, open && answer.checked);
       });
   UpdatePanels(true);
+}
+
+void Tab::ApplyColorScheme() {
+  EmulateColorScheme(browser_, PageColorScheme());
 }
 
 void Tab::SendRendererConfig(bool json_viewer) {

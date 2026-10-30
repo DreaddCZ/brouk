@@ -883,6 +883,9 @@ void BrowserWindow::ShowAppMenu() {
 }
 
 void BrowserWindow::RefreshTheme() {
+  for (const auto& [id, tab] : tabs_) {
+    tab->ApplyColorScheme();
+  }
   theme_ = CurrentTheme();
   ApplyThemeToFrame(window_, theme_);
   UpdateFonts();

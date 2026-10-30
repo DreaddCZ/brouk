@@ -3,6 +3,8 @@
 
 #include <windows.h>
 
+#include <string_view>
+
 namespace brouk::win {
 
 // The colours Brouk draws its own window parts with (title bar, tabs,
@@ -26,6 +28,9 @@ struct Theme {
 // always light or dark. UI thread.
 enum class ThemeChoice { kSystem, kLight, kDark };
 void SetThemeChoice(ThemeChoice choice);
+// For web pages' prefers-color-scheme: "light", "dark", or empty for the
+// system's (EmulateColorScheme).
+std::string_view PageColorScheme();
 
 // The theme for the user's choice.
 Theme CurrentTheme();
