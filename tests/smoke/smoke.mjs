@@ -567,27 +567,29 @@ async function main() {
       const title = await waitForTitle(settingsPage, 'Settings');
       check(title === 'Settings', `brouk://settings loads ("${title}")`);
       await screenshot(settingsPage, 'settings');
+      // In the settings window, which is in front: pages in windows behind
+      // it may not answer quickly on a busy runner.
+      const dark = async () =>
+        (
+          await settingsPage.send('Runtime.evaluate', {
+            expression: "matchMedia('(prefers-color-scheme: dark)').matches",
+            returnByValue: true,
+          })
+        ).result.value;
+      const before = await dark();
+      const settingsFile = join(dataDir, 'settings.yaml');
+      writeFileSync(settingsFile, `appearance:\n  theme: ${before ? 'light' : 'dark'}\n`);
+      let now = before;
+      for (let i = 0; i < 25 && now === before; i++) {
+        await sleep(200);
+        now = await dark();
+      }
+      check(now === !before, `editing settings.yaml changes the pages' colour scheme (dark: ${before} → ${now})`);
+      desktopScreenshot('theme');
+      writeFileSync(settingsFile, 'appearance:\n  theme: system\n');
+      await sleep(1000);
       settingsPage.close();
     }
-    const dark = async () =>
-      (
-        await cdp.send('Runtime.evaluate', {
-          expression: "matchMedia('(prefers-color-scheme: dark)').matches",
-          returnByValue: true,
-        })
-      ).result.value;
-    const before = await dark();
-    const settingsFile = join(dataDir, 'settings.yaml');
-    writeFileSync(settingsFile, `appearance:\n  theme: ${before ? 'light' : 'dark'}\n`);
-    let now = before;
-    for (let i = 0; i < 25 && now === before; i++) {
-      await sleep(200);
-      now = await dark();
-    }
-    check(now === !before, `editing settings.yaml changes the pages' colour scheme (dark: ${before} → ${now})`);
-    desktopScreenshot('theme');
-    writeFileSync(settingsFile, 'appearance:\n  theme: system\n');
-    await sleep(1000);
   }
 
   // A crashed renderer shows the crash page (012); Brouk keeps running.
