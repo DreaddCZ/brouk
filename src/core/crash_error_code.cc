@@ -3,6 +3,7 @@
 #include <csignal>
 #include <cstdint>
 #include <string>
+#include <string_view>
 
 namespace brouk {
 
@@ -78,7 +79,7 @@ std::string WindowsCrashErrorCodeText(int code) {
   if (const char* name = WindowsStatusName(status)) {
     return std::string("Error code: ") + name;
   }
-  constexpr char kHex[] = "0123456789ABCDEF";
+  constexpr std::string_view kHex = "0123456789ABCDEF";
   std::string text = "Error code: 0x";
   for (int shift = 28; shift >= 0; shift -= 4) {
     text.push_back(kHex[(status >> shift) & 0xF]);
