@@ -71,23 +71,36 @@ function desktopScreenshot(name) {
   }
 }
 
+// Which control has the keyboard focus (UI Automation), for the log.
+const kFocusFunction =
+  'function Get-Focus { $f = [System.Windows.Automation.AutomationElement]::FocusedElement; ' +
+  'if ($f) { "$($f.Current.ClassName) ''$($f.Current.Name)''" } else { "none" } }';
+
+function logFocus(label) {
+  if (!kWindows) return;
+  const script = ['Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes', kFocusFunction, 'Get-Focus'].join('; ');
+  try {
+    const output = execFileSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8', timeout: 30000 });
+    log(`(focus ${label}: ${output.trim()})`);
+  } catch (error) {
+    log(`(focus ${label}: ${error.message})`);
+  }
+}
+
 // Windows: brings Brouk's window to the front and types `keys`
 // (System.Windows.Forms.SendKeys syntax: "^f" is Ctrl+F), one after another.
 function sendKeys(keys) {
   const sends = keys
     .map((k) => `[System.Windows.Forms.SendKeys]::SendWait('${k.replaceAll("'", "''")}'); Start-Sleep -Milliseconds 300`)
     .join('; ');
-  // Which control has the keyboard focus (UI Automation), for the log.
-  const focus =
-    '$f = [System.Windows.Automation.AutomationElement]::FocusedElement; ' +
-    '"$($f.Current.ClassName) ""$($f.Current.Name)"""';
   const script = [
     'Add-Type -AssemblyName System.Windows.Forms, UIAutomationClient, UIAutomationTypes',
+    kFocusFunction,
     `$active = (New-Object -ComObject WScript.Shell).AppActivate(${brouk.pid})`,
     'Start-Sleep -Milliseconds 500',
-    `$before = ${focus}`,
+    '$before = Get-Focus',
     sends,
-    `$after = ${focus}`,
+    '$after = Get-Focus',
     'Write-Output "Brouk in front: $active, focus before: $before, after: $after"',
   ].join('; ');
   try {
@@ -331,11 +344,11 @@ async function main() {
     const before = await zoom();
     sendKeys(['^{ADD}', '^{ADD}', '^f', 'beetle']);
     await sleep(1000);
-    const pageFocus = (await cdp.send('Runtime.evaluate', { expression: 'document.hasFocus()' })).result.value;
-    log(`(the page has the focus after typing in the find bar: ${pageFocus})`);
+    logFocus('after typing in the find bar');
     const zoomed = await zoom();
     check(zoomed === Math.round(before * 1.25), `Ctrl+Plus twice zooms to 125 % (${before} → ${zoomed})`);
     desktopScreenshot('find-bar');
+    logFocus('after the screenshot');
     // The screenshot took the focus away; Brouk gives it back to the find
     // bar, where Escape closes it, then Ctrl+0 resets the zoom.
     sendKeys(['{ESC}', '^0']);
