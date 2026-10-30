@@ -44,6 +44,10 @@ class FindBar {
   // Focuses the search field and selects its text (Ctrl+F).
   void Focus();
   std::wstring text() const;
+  // Whether the search field has the keyboard focus.
+  bool HasFocus() const;
+  // Gives the focus back to the search field, keeping its selection.
+  void Refocus();
   // Shows "3/10", "0/0", or nothing while the field is empty.
   void SetResult(int active, int count);
 

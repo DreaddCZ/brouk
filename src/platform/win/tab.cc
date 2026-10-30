@@ -329,6 +329,7 @@ void Tab::FindNext(bool forward) {
     return;
   }
   if (browser_) {
+    finding_from_bar_ = find_bar_->HasFocus();
     browser_->GetHost()->Find(WideToUtf8(find_bar_->text()), forward,
                               /*matchCase=*/false, /*findNext=*/true);
   }
@@ -344,6 +345,7 @@ void Tab::OnFindTextChanged() {
     find_bar_->SetResult(0, 0);
     return;
   }
+  finding_from_bar_ = find_bar_->HasFocus();
   // As Chrome's find bar: a new text starts a new search (Chromium sees
   // the text changed) and makes the first match the current one ("1/6");
   // without it all matches are only highlighted ("0/6").
@@ -788,9 +790,16 @@ void Tab::ChooseDesktopSource(DesktopSourceDone done) {
   UpdatePanels(true);
 }
 
-void Tab::OnFindResult(int count, int active, bool /*final_update*/) {
-  if (find_bar_) {
-    find_bar_->SetResult(active, count);
+void Tab::OnFindResult(int count, int active, bool final_update) {
+  if (!find_bar_) {
+    return;
+  }
+  find_bar_->SetResult(active, count);
+  if (finding_from_bar_ && IsPageWindow(GetFocus())) {
+    find_bar_->Refocus();
+  }
+  if (final_update) {
+    finding_from_bar_ = false;
   }
 }
 

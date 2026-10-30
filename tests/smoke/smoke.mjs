@@ -325,6 +325,8 @@ async function main() {
     const before = await zoom();
     sendKeys(['^{ADD}', '^{ADD}', '^f', 'beetle']);
     await sleep(1000);
+    const pageFocus = (await cdp.send('Runtime.evaluate', { expression: 'document.hasFocus()' })).result.value;
+    log(`(the page has the focus after typing in the find bar: ${pageFocus})`);
     const zoomed = await zoom();
     check(zoomed === Math.round(before * 1.25), `Ctrl+Plus twice zooms to 125 % (${before} → ${zoomed})`);
     desktopScreenshot('find-bar');
@@ -334,6 +336,7 @@ async function main() {
     await sleep(500);
     const reset = await zoom();
     check(reset === before, `Ctrl+0 resets the zoom (${reset})`);
+    desktopScreenshot('find-bar-closed');
   }
 
   // HTML full screen (Windows app, 024): the window covers the screen

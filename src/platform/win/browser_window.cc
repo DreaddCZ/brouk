@@ -73,7 +73,7 @@ constexpr wchar_t kBackGlyph[] = L"\uE72B";
 constexpr wchar_t kForwardGlyph[] = L"\uE72A";
 constexpr wchar_t kReloadGlyph[] = L"\uE72C";
 constexpr wchar_t kMoreGlyph[] = L"\uE712";
-constexpr wchar_t kBlockedGlyph[] = L"\uE733";
+constexpr wchar_t kBlockedGlyph[] = L"\uE8A7";  // OpenInNewWindow.
 
 TabId NextTabId() {
   static TabId next = 0;
@@ -581,7 +581,9 @@ void BrowserWindow::DrawIndicator(const DRAWITEMSTRUCT& item) {
   HGDIOBJ previous = SelectObject(
       item.hDC, item.hwndItem == popups_ ? icon_font_ : text_font_);
   SetBkMode(item.hDC, TRANSPARENT);
-  SetTextColor(item.hDC, theme_.text);
+  // The pop-up icon in orange, as on macOS.
+  SetTextColor(item.hDC,
+               item.hwndItem == popups_ ? RGB(0xE8, 0x6E, 0x00) : theme_.text);
   RECT area = item.rcItem;
   DrawTextW(item.hDC, text.c_str(), -1, &area,
             DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);

@@ -268,6 +268,9 @@ class Tab final : public TabClientDelegate,
   std::unique_ptr<TabPanel> permission_prompt_;
   std::unique_ptr<FindBar> find_bar_;
   std::vector<std::string> blocked_popups_;
+  // A search typed in the find bar is running: the page, which takes the
+  // focus when it shows a match, gives it back to the bar.
+  bool finding_from_bar_ = false;
   bool closing_ = false;
   // Expires with the tab, for tasks posted while it is open.
   std::shared_ptr<int> alive_ = std::make_shared<int>(0);
