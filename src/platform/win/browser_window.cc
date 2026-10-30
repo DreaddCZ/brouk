@@ -1435,8 +1435,48 @@ void BrowserWindow::OnNcButton(UINT message, WPARAM hit_code) {
   }
 }
 
+std::optional<ProfileId> BrowserWindow::DropTarget(POINT point) const {
+  if (!drag_tab_ || !dragging_) {
+    return std::nullopt;
+  }
+  const std::optional<ProfileId> group = strip_.GroupAt(point);
+  const ProfileId* own = model_.ProfileOf(*drag_tab_);
+  if (!group || !own || *group == *own) {
+    return std::nullopt;
+  }
+  return group;
+}
+
+void BrowserWindow::MoveTabToProfile(TabId id, const ProfileId& profile) {
+  Tab* tab = FindTab(id);
+  if (!tab || tab->closing() || tab->profile() == profile) {
+    return;
+  }
+  const std::wstring name = Utf8ToWide(owner_.ProfileLook(profile).name);
+  BrowserWindowOwner& owner = owner_;
+  // The question's answer comes later: the window may have closed by then.
+  tab->AskMoveToProfile(name, [this, &owner, id, profile](bool move) {
+    if (!move || !owner.IsOpenWindow(this)) {
+      return;
+    }
+    Tab* moved = FindTab(id);
+    if (!moved || moved->closing()) {
+      return;
+    }
+    const std::string url =
+        IsBlank(moved->url()) ? std::string() : moved->url();
+    OpenTab(url, true, profile);
+    CloseTab(id);
+  });
+}
+
 void BrowserWindow::OnMouse(UINT message, POINT point) {
-  const TabStrip::Hit hit = strip_.HitTest(point);
+  TabStrip::Hit hit = strip_.HitTest(point);
+  // A tab dragged over another profile's group: that group's label is
+  // highlighted, where the tab goes when dropped.
+  if (const std::optional<ProfileId> target = DropTarget(point)) {
+    hit = {TabStrip::Part::kGroupLabel, 0, *target};
+  }
   switch (message) {
     case WM_MOUSEMOVE: {
       if (!tracking_mouse_) {
@@ -1491,13 +1531,17 @@ void BrowserWindow::OnMouse(UINT message, POINT point) {
       break;
     case WM_LBUTTONUP: {
       const TabStrip::Hit pressed = pressed_;
+      const std::optional<TabId> dropped = drag_tab_;
+      const std::optional<ProfileId> target = DropTarget(point);
       pressed_ = {};
       drag_tab_.reset();
       dragging_ = false;
       if (GetCapture() == window_) {
         ReleaseCapture();
       }
-      if (pressed == hit && hit.part == TabStrip::Part::kTabClose) {
+      if (dropped && target) {
+        MoveTabToProfile(*dropped, *target);
+      } else if (pressed == hit && hit.part == TabStrip::Part::kTabClose) {
         CloseTab(hit.tab);
       } else if (pressed == hit && hit.part == TabStrip::Part::kNewTab) {
         OpenTab(std::string(), true, hit.profile);

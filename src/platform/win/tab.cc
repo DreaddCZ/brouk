@@ -231,8 +231,9 @@ std::unique_ptr<TabPanel> Tab::MakePanel(TabPanel::Content content,
 }
 
 TabPanel* Tab::ModalPanel() const {
-  for (TabPanel* panel : {unresponsive_.get(), js_dialog_.get(),
-                          external_protocol_.get(), screen_picker_.get()}) {
+  for (TabPanel* panel :
+       {unresponsive_.get(), js_dialog_.get(), external_protocol_.get(),
+        screen_picker_.get(), move_question_.get()}) {
     if (panel && !panel->answered()) {
       return panel;
     }
@@ -730,6 +731,30 @@ void Tab::AskOpenExternalProtocol(const ExternalProtocolRequest& request,
         }
         const bool open = answer.button == 0;
         done(open, open && answer.checked);
+      });
+  UpdatePanels(true);
+}
+
+void Tab::AskMoveToProfile(const std::wstring& profile_name,
+                           std::function<void(bool move)> done) {
+  if (move_question_ || closing_) {
+    return;  // Already asked; the first answer counts.
+  }
+  TabPanel::Content content;
+  content.title = L"Move this tab to \u201C" + profile_name + L"\u201D?";
+  content.message = L"The page reloads in the " + profile_name +
+                    L" profile. You may need to sign in again there, and "
+                    L"anything typed into the page is lost.";
+  content.buttons = {L"Move", L"Cancel"};
+  content.escape_answer = 1;
+  std::weak_ptr<int> alive = alive_;
+  move_question_ = MakePanel(
+      std::move(content),
+      [this, alive, done = std::move(done)](const TabPanel::Answer& answer) {
+        if (!alive.expired() && move_question_ && move_question_->answered()) {
+          ClosePanel(move_question_);
+        }
+        done(answer.button == 0);
       });
   UpdatePanels(true);
 }

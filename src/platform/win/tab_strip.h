@@ -69,6 +69,9 @@ class TabStrip {
   // The tab at `x` (the first or last beyond the ends): where a dragged tab
   // goes.
   std::optional<TabId> TabAtX(int x) const;
+  // The profile whose group (label, tabs and "+") is at `point`: where a
+  // dragged tab is dropped to move it to another profile (005).
+  std::optional<ProfileId> GroupAt(POINT point) const;
   std::optional<RECT> TabRect(TabId tab) const;
 
   struct PaintState {
