@@ -87,6 +87,15 @@ function logFocus(label) {
   }
 }
 
+// Brings Brouk's main window to the front (AppActivate by process could
+// pick another of its windows, such as a tooltip). Returns whether it did.
+const frontFunction = () =>
+  'function Set-BroukFront { Add-Type -Namespace Smoke -Name Front -MemberDefinition ' +
+  '\'[DllImport("user32.dll")] public static extern bool SetForegroundWindow(System.IntPtr w);\' ' +
+  '-ErrorAction SilentlyContinue; ' +
+  `$w = (Get-Process -Id ${brouk.pid}).MainWindowHandle; ` +
+  '(New-Object -ComObject WScript.Shell).SendKeys(""); [Smoke.Front]::SetForegroundWindow($w) }';
+
 // Windows: brings Brouk's window to the front and types `keys`
 // (System.Windows.Forms.SendKeys syntax: "^f" is Ctrl+F), one after another.
 function sendKeys(keys) {
@@ -96,7 +105,8 @@ function sendKeys(keys) {
   const script = [
     'Add-Type -AssemblyName System.Windows.Forms, UIAutomationClient, UIAutomationTypes',
     kFocusFunction,
-    `$active = (New-Object -ComObject WScript.Shell).AppActivate(${brouk.pid})`,
+    frontFunction(),
+    '$active = Set-BroukFront',
     'Start-Sleep -Milliseconds 500',
     '$before = Get-Focus',
     sends,
@@ -117,11 +127,15 @@ function rightClick(x, y) {
     'Add-Type -Namespace Smoke -Name Mouse -MemberDefinition \'' +
       '[DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y); ' +
       '[DllImport("user32.dll")] public static extern void mouse_event(int f, int x, int y, int d, int e);\'',
-    `(New-Object -ComObject WScript.Shell).AppActivate(${brouk.pid}) | Out-Null`,
+    frontFunction(),
+    'Set-BroukFront | Out-Null',
     'Start-Sleep -Milliseconds 300',
     `[Smoke.Mouse]::SetCursorPos(${x}, ${y}) | Out-Null`,
     'Start-Sleep -Milliseconds 200',
     '[Smoke.Mouse]::mouse_event(0x0008, 0, 0, 0, 0); [Smoke.Mouse]::mouse_event(0x0010, 0, 0, 0, 0)',
+    // Away from the tabs again, so no tooltip stays open.
+    'Start-Sleep -Milliseconds 200',
+    `[Smoke.Mouse]::SetCursorPos(${x}, ${y} + 400) | Out-Null`,
   ].join('; ');
   try {
     execFileSync('powershell', ['-NoProfile', '-Command', script], { timeout: 30000 });

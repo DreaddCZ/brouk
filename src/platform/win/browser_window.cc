@@ -1558,11 +1558,16 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
       return 0;
     case WM_ACTIVATE:
       active_ = LOWORD(wparam) != WA_INACTIVE;
+      InvalidateStrip();
       if (!active_) {
         HWND focus = GetFocus();
         saved_focus_ = focus && IsChild(window_, focus) ? focus : nullptr;
+      } else if (HWND focus = GetFocus(); focus && IsChild(window_, focus)) {
+        // Activated again while the focus is still inside (the window was
+        // already in front): leave it where it is. DefWindowProc would move
+        // it to the window and from there to the page.
+        return 0;
       }
-      InvalidateStrip();
       break;
     case WM_SETFOCUS:
       // Back to where the user was, as in Chrome. The page itself is
@@ -1572,6 +1577,7 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
                                   IsWindowEnabled(saved_focus_) &&
                                   !(tab && tab->IsPageWindow(saved_focus_))) {
         SetFocus(saved_focus_);
+        saved_focus_ = nullptr;
       } else if (tab) {
         tab->Focus();
       }
