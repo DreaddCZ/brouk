@@ -401,7 +401,12 @@ async function main() {
     sendKeys('Find and zoom test', ['^{ADD}', '^{ADD}', '^f', 'beetle']);
     await sleep(1000);
     logFocus('after typing in the find bar');
-    const zoomed = await zoom();
+    // Each zoom step reaches the page a moment later: wait up to 3 seconds.
+    let zoomed = await zoom();
+    for (let i = 0; i < 15 && zoomed !== Math.round(before * 1.25); i++) {
+      await sleep(200);
+      zoomed = await zoom();
+    }
     check(zoomed === Math.round(before * 1.25), `Ctrl+Plus twice zooms to 125 % (${before} → ${zoomed})`);
     desktopScreenshot('find-bar');
     logFocus('after the screenshot');
