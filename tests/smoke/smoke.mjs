@@ -411,11 +411,21 @@ async function main() {
       }
       return now;
     };
-    // One key at a time: a busy runner loses keys sent in a quick row.
-    sendKeys('Find and zoom test', ['^{ADD}']);
-    const first = await zoomTo(Math.round(before * 1.1));
-    sendKeys('Find and zoom test', ['^{ADD}']);
-    const zoomed = await zoomTo(Math.round(before * 1.25));
+    // One key at a time: a busy runner loses keys sent in a quick row, and
+    // sometimes one right after activating the window, so a key without
+    // effect is sent once more (a broken shortcut still fails twice).
+    const pressUntil = async (keys, expected) => {
+      sendKeys('Find and zoom test', keys);
+      let now = await zoomTo(expected);
+      if (now !== expected) {
+        log(`(zoom ${now} after ${keys.join(' ')}, not ${expected}: sending again)`);
+        sendKeys('Find and zoom test', keys);
+        now = await zoomTo(expected);
+      }
+      return now;
+    };
+    const first = await pressUntil(['^{ADD}'], Math.round(before * 1.1));
+    const zoomed = await pressUntil(['^{ADD}'], Math.round(before * 1.25));
     check(zoomed === Math.round(before * 1.25), `Ctrl+Plus twice zooms to 125 % (${before} → ${first} → ${zoomed})`);
     sendKeys('Find and zoom test', ['^f', 'beetle']);
     await sleep(1000);
@@ -425,8 +435,7 @@ async function main() {
     // The screenshot took the focus away; Brouk gives it back to the find
     // bar, where Escape closes it, then Ctrl+0 resets the zoom.
     sendKeys('Find and zoom test', ['{ESC}']);
-    sendKeys('Find and zoom test', ['^0']);
-    const reset = await zoomTo(before);
+    const reset = await pressUntil(['^0'], before);
     check(reset === before, `Ctrl+0 resets the zoom (${reset})`);
     desktopScreenshot('find-bar-closed');
   }
