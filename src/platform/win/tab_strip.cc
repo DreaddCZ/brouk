@@ -220,31 +220,33 @@ void TabStrip::Layout(const RECT& bounds,
                    label_top + label_height};
     x = group.label.right + Scale(kLabelGap);
     const int tabs_left = static_cast<int>(std::lround(x));
-    const double width = group_layout.tab_widths[i];
-    if (width <= 0) {
-      continue;
+    for (std::size_t i = 0; i < group_layout.tab_widths.size(); ++i) {
+      const double width = group_layout.tab_widths[i];
+      if (width <= 0) {
+        continue;
+      }
+      TabGeometry geometry;
+      geometry.id = model.id_at(groups[g].start + i);
+      geometry.rect = {static_cast<int>(std::lround(x)), tab_top,
+                       static_cast<int>(std::lround(x + width)), bounds.bottom};
+      const int close_size = Scale(kCloseButtonSize);
+      const int close_right = geometry.rect.right - Scale(kTabPadding) / 2;
+      const int close_top =
+          tab_top + (bounds.bottom - tab_top - close_size) / 2;
+      geometry.close = {close_right - close_size, close_top, close_right,
+                        close_top + close_size};
+      tabs_.push_back(geometry);
+      x += width;
     }
-    TabGeometry geometry;
-    geometry.id = model.id_at(groups[g].start + i);
-    geometry.rect = {static_cast<int>(std::lround(x)), tab_top,
-                     static_cast<int>(std::lround(x + width)), bounds.bottom};
-    const int close_size = Scale(kCloseButtonSize);
-    const int close_right = geometry.rect.right - Scale(kTabPadding) / 2;
-    const int close_top = tab_top + (bounds.bottom - tab_top - close_size) / 2;
-    geometry.close = {close_right - close_size, close_top, close_right,
-                      close_top + close_size};
-    tabs_.push_back(geometry);
-    x += width;
+    const int tabs_right = static_cast<int>(std::lround(x));
+    group.line = tabs_right > tabs_left
+                     ? RECT{tabs_left, bounds.bottom - Scale(kGroupLineHeight),
+                            tabs_right, bounds.bottom}
+                     : RECT{};
+    group.plus = {tabs_right, button_top, tabs_right + button,
+                  button_top + button};
+    x = tabs_right + button + Scale(kGroupGap);
   }
-  const int tabs_right = static_cast<int>(std::lround(x));
-  group.line = tabs_right > tabs_left
-                   ? RECT{tabs_left, bounds.bottom - Scale(kGroupLineHeight),
-                          tabs_right, bounds.bottom}
-                   : RECT{};
-  group.plus = {tabs_right, button_top, tabs_right + button,
-                button_top + button};
-  x = tabs_right + button + Scale(kGroupGap);
-}
 }
 
 bool TabStrip::IsAutoCollapsed(const ProfileId& profile) const {

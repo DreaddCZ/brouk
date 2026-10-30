@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "cef/tab_client.h"
+#include "core/profile_registry.h"
 #include "core/tab_strip_model.h"
 #include "include/cef_request_context.h"
 #include "platform/win/tab.h"
@@ -44,6 +45,9 @@ class BrowserWindowOwner {
   // 023), or null for pages that do not open in a tab (yet).
   virtual std::unique_ptr<CefMessageRouterBrowserSide::Handler>
   InternalPageHandler(const std::string& page) = 0;
+  virtual const std::vector<ProfileInfo>& ProfileList() = 0;
+  // Opens the profile manager (brouk://profiles, 005) in its own window.
+  virtual void OpenProfileManager() = 0;
   // Opens the help window (016), at a section if `anchor` is not empty.
   virtual void OpenHelp(const std::string& anchor) = 0;
   // Closes every window (the menu's Exit).
@@ -94,6 +98,12 @@ class BrowserWindow final : public TabHost {
   // Removes a tab whose browser never came (the popup was aborted).
   void RemoveUncreatedTab(TabId id);
   Tab* FindTab(TabId id);
+  // Profiles (005): the number of tabs of `profile` here, closing them
+  // (the profile is deleted), and following changed names, colours or the
+  // default profile.
+  int TabCountInProfile(const ProfileId& profile) const;
+  void CloseTabsInProfile(const ProfileId& profile);
+  void ProfilesChanged();
   HWND hwnd() const { return window_; }
   bool is_normal() const { return kind_ == Kind::kNormal; }
 

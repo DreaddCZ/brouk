@@ -305,6 +305,8 @@ async function main() {
   // --profile open as typed, without link routing.
   const args = ['--use-mock-keychain', `--remote-debugging-port=${port}`, '--profile=smoke', 'about:blank'];
   if (kInternalPages) args.push('brouk://credits');
+  // The profile manager (005) in its own window; on macOS it is opened from the menu.
+  if (kWindows) args.push('brouk://profiles');
   brouk = spawn(executable, args, {
     env: { ...process.env, BROUK_DEV_DATA_DIR: dataDir },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -471,6 +473,38 @@ async function main() {
     });
     await sleep(2500);
     desktopScreenshot('dialogs');
+  }
+
+  // Profiles (Windows app, 024 W2): the profile manager is open in its own
+  // window; a profile created there opens in a new window, in its group.
+  if (kWindows) {
+    const all = await devtoolsJson(port, '/json/list');
+    const profilesTarget = all.find((t) => t.url.startsWith('brouk://profiles'));
+    if (check(profilesTarget !== undefined, 'the profile manager opens')) {
+      const manager = await Cdp.connect(profilesTarget.webSocketDebuggerUrl);
+      const title = await waitForTitle(manager, 'Profiles');
+      // The page's own bridge, as its buttons use it.
+      const ask = async (request) => {
+        const { result } = await manager.send('Runtime.evaluate', {
+          expression:
+            'new Promise((ok) => window.cefQuery({ request: ' +
+            JSON.stringify(JSON.stringify(request)) +
+            ", onSuccess: (r) => ok('ok ' + r), onFailure: (c, m) => ok('failed ' + m) }))",
+          awaitPromise: true,
+          returnByValue: true,
+        });
+        return result.value ?? '';
+      };
+      const created = await ask({ type: 'profiles.create', name: 'Work', color: 'blue' });
+      check(title === 'Profiles' && created.startsWith('ok '), `a profile can be created (${created})`);
+      if (created.startsWith('ok ')) {
+        const opened = await ask({ type: 'profiles.open', id: JSON.parse(created.slice(3)).id });
+        check(opened.startsWith('ok'), `the new profile opens in a window (${opened})`);
+        await sleep(2000);
+        desktopScreenshot('profiles');
+      }
+      manager.close();
+    }
   }
 
   // A crashed renderer shows the crash page (012); Brouk keeps running.

@@ -35,8 +35,8 @@ class TabStrip {
   };
   struct Hit {
     Part part = Part::kNone;
-    TabId tab = 0;      // For kTab and kTabClose.
-    ProfileId profile;  // For kNewTab and kGroupLabel.
+    TabId tab = 0;           // For kTab and kTabClose.
+    ProfileId profile = {};  // For kNewTab and kGroupLabel.
     bool operator==(const Hit&) const = default;
   };
 

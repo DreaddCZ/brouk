@@ -65,6 +65,7 @@ enum MenuCommand : UINT {
   kLicencesCommand,
   kExitCommand,
   kAllowPopupsCommand,
+  kManageProfilesCommand,
   kNewTabToTheRightCommand,
   kReloadTabCommand,
   kDuplicateTabCommand,
@@ -75,6 +76,7 @@ enum MenuCommand : UINT {
   kCloseTabsLeftCommand,
   kCloseTabsRightCommand,
   kFirstBlockedPopupCommand = 1000,
+  kFirstProfileCommand = 2000,
 };
 
 // Glyphs of the "Segoe MDL2 Assets" icon font, on Windows 10 and 11.
@@ -542,6 +544,33 @@ void BrowserWindow::ShowFullscreenHint(const wchar_t* text) {
   SetTimer(window_, kFullscreenHintTimer, kFullscreenHintTime, nullptr);
 }
 
+int BrowserWindow::TabCountInProfile(const ProfileId& profile) const {
+  int count = 0;
+  for (const auto& [id, tab] : tabs_) {
+    if (tab->profile() == profile && !tab->closing()) {
+      ++count;
+    }
+  }
+  return count;
+}
+
+void BrowserWindow::CloseTabsInProfile(const ProfileId& profile) {
+  std::vector<TabId> ids;
+  for (const auto& [id, tab] : tabs_) {
+    if (tab->profile() == profile) {
+      ids.push_back(id);
+    }
+  }
+  for (TabId id : ids) {
+    CloseTab(id);
+  }
+}
+
+void BrowserWindow::ProfilesChanged() {
+  model_.SetDefaultProfile(owner_.DefaultProfile());
+  ModelChanged();
+}
+
 void BrowserWindow::LayoutStrip() {
   strip_.Layout(
       StripBounds(), GetDpiForWindow(window_), model_, kind_ == Kind::kNormal,
@@ -764,6 +793,23 @@ void BrowserWindow::ShowAppMenu() {
   HMENU menu = CreatePopupMenu();
   AppendMenuW(menu, MF_STRING, kNewTabCommand, L"New tab\tCtrl+T");
   AppendMenuW(menu, MF_STRING, kNewWindowCommand, L"New window\tCtrl+N");
+  // Profiles (005): a new tab in one, or the profile manager.
+  HMENU profiles = CreatePopupMenu();
+  const std::vector<ProfileInfo> profile_list = owner_.ProfileList();
+  const ProfileId default_profile = owner_.DefaultProfile();
+  for (size_t i = 0; i < profile_list.size(); ++i) {
+    std::wstring title = L"New tab in " + Utf8ToWide(profile_list[i].name);
+    if (profile_list[i].id == default_profile) {
+      title += L" (default)";
+    }
+    AppendMenuW(profiles, MF_STRING,
+                kFirstProfileCommand + static_cast<UINT>(i), title.c_str());
+  }
+  AppendMenuW(profiles, MF_SEPARATOR, 0, nullptr);
+  AppendMenuW(profiles, MF_STRING, kManageProfilesCommand,
+              L"Manage profiles\u2026");
+  AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(profiles),
+              L"Profiles");
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
   AppendMenuW(menu, MF_STRING, kZoomInCommand, L"Zoom in\tCtrl++");
   AppendMenuW(menu, MF_STRING, kZoomOutCommand, L"Zoom out\tCtrl+-");
@@ -781,8 +827,17 @@ void BrowserWindow::ShowAppMenu() {
   const UINT command = static_cast<UINT>(TrackPopupMenuEx(
       menu, TPM_RIGHTALIGN | TPM_TOPALIGN | TPM_RETURNCMD | TPM_NONOTIFY,
       button.right, button.bottom, window_, nullptr));
-  DestroyMenu(menu);
+  DestroyMenu(menu);  // With its submenu.
+  if (command >= kFirstProfileCommand &&
+      command - kFirstProfileCommand < profile_list.size()) {
+    OpenTab(std::string(), true,
+            profile_list[command - kFirstProfileCommand].id);
+    return;
+  }
   switch (command) {
+    case kManageProfilesCommand:
+      owner_.OpenProfileManager();
+      break;
     case kNewTabCommand:
       OpenTab(std::string(), true);
       break;
@@ -831,6 +886,10 @@ void BrowserWindow::OpenInternalPage(const std::string& url) {
     owner_.OpenHelp(std::string());
     return;
   }
+  if (*page == "profiles") {
+    owner_.OpenProfileManager();  // Its own window, as on macOS.
+    return;
+  }
   std::unique_ptr<CefMessageRouterBrowserSide::Handler> handler =
       owner_.InternalPageHandler(*page);
   if (!handler) {
@@ -868,6 +927,10 @@ void BrowserWindow::OpenTab(const std::string& url,
     if (std::optional<std::string> page = InternalPageOf(url)) {
       if (*page == "help") {
         owner_.OpenHelp(std::string());
+        return;
+      }
+      if (*page == "profiles") {
+        owner_.OpenProfileManager();
         return;
       }
       if (auto handler = owner_.InternalPageHandler(*page)) {
