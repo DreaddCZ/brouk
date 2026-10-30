@@ -2,9 +2,11 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <numbers>
 #include <string>
 
+#include "core/profile_colors.h"
 #include "core/tab_strip_layout.h"
 #include "platform/win/tab.h"
 #include "platform/win/wide_string.h"
@@ -19,7 +21,12 @@ constexpr int kCaptionButtonWidth = 46;
 constexpr int kTabTopMargin = 6;
 constexpr int kStripLeftMargin = 8;
 constexpr int kNewTabButtonSize = 28;
-constexpr int kNewTabGap = 4;
+// A profile group: [label] gap [tabs] [+] group gap.
+constexpr int kLabelGap = 4;
+constexpr int kGroupGap = 8;
+constexpr int kMaxLabelWidth = 160;
+constexpr int kLabelHeight = 20;
+constexpr int kGroupLineHeight = 2;
 // Empty title bar always left for dragging the window.
 constexpr int kMinDragWidth = 48;
 constexpr int kTabMaxWidth = 240;
@@ -36,6 +43,32 @@ constexpr wchar_t kRestoreGlyph[] = L"\uE923";
 constexpr wchar_t kCloseGlyph[] = L"\uE8BB";
 constexpr wchar_t kAddGlyph[] = L"\uE710";
 constexpr wchar_t kPageGlyph[] = L"\uE774";  // Globe: a page without icon.
+
+COLORREF FromRgb(std::uint32_t rgb) {
+  return RGB((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+}
+
+COLORREF ProfileFill(const std::string& color, bool dark) {
+  const ProfileColorShades shades = ShadesOfProfileColor(color);
+  return FromRgb(dark ? shades.dark : shades.light);
+}
+
+// Text on the profile colour: black on light fills (and every dark-mode
+// shade), else white; as on macOS.
+COLORREF ProfileText(const std::string& color, bool dark) {
+  return !dark && ShadesOfProfileColor(color).light_text_on_fill
+             ? RGB(255, 255, 255)
+             : RGB(0, 0, 0);
+}
+
+COLORREF Blend(COLORREF over, COLORREF under, double alpha) {
+  auto mix = [alpha](int a, int b) {
+    return static_cast<int>(std::lround(a * alpha + b * (1 - alpha)));
+  };
+  return RGB(mix(GetRValue(over), GetRValue(under)),
+             mix(GetGValue(over), GetGValue(under)),
+             mix(GetBValue(over), GetBValue(under)));
+}
 
 bool Contains(const RECT& rect, POINT point) {
   return PtInRect(&rect, point) != FALSE;
@@ -59,7 +92,8 @@ HFONT GlyphFont(UINT dpi, int dips) {
 }  // namespace
 
 TabStrip::~TabStrip() {
-  for (HFONT font : {title_font_, glyph_font_, small_glyph_font_}) {
+  for (HFONT font :
+       {title_font_, label_font_, glyph_font_, small_glyph_font_}) {
     if (font) {
       DeleteObject(font);
     }
@@ -71,7 +105,8 @@ int TabStrip::Scale(int dips) const {
 }
 
 void TabStrip::UpdateFonts() {
-  for (HFONT* font : {&title_font_, &glyph_font_, &small_glyph_font_}) {
+  for (HFONT* font :
+       {&title_font_, &label_font_, &glyph_font_, &small_glyph_font_}) {
     if (*font) {
       DeleteObject(*font);
       *font = nullptr;
@@ -82,6 +117,10 @@ void TabStrip::UpdateFonts() {
   SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS, sizeof(metrics), &metrics,
                              0, dpi_);
   title_font_ = CreateFontIndirectW(&metrics.lfMessageFont);
+  LOGFONTW label = metrics.lfMessageFont;
+  label.lfWeight = FW_SEMIBOLD;
+  label.lfHeight = -Scale(11);
+  label_font_ = CreateFontIndirectW(&label);
   glyph_font_ = GlyphFont(dpi_, 10);
   small_glyph_font_ = GlyphFont(dpi_, 8);
 }
@@ -89,7 +128,8 @@ void TabStrip::UpdateFonts() {
 void TabStrip::Layout(const RECT& bounds,
                       UINT dpi,
                       const TabStripModel& model,
-                      bool caption_buttons) {
+                      bool caption_buttons,
+                      const LookOf& look) {
   if (dpi != dpi_ || !title_font_) {
     dpi_ = dpi;
     UpdateFonts();
@@ -111,10 +151,36 @@ void TabStrip::Layout(const RECT& bounds,
 
   const int tab_top = bounds.top + Scale(kTabTopMargin);
   const int left = bounds.left + Scale(kStripLeftMargin);
-  const int reserved =
-      Scale(kNewTabGap + kNewTabButtonSize + kNewTabGap + kMinDragWidth);
+  const int reserved = Scale(kMinDragWidth);
 
-  // One layout group per profile group; W1 has no group labels yet.
+  // One layout group per profile group, with its label and "+" as fixed
+  // width.
+  const std::vector<TabStripModel::Group> groups = model.groups();
+  groups_.clear();
+  HDC dc = GetDC(nullptr);
+  HGDIOBJ previous_font = SelectObject(dc, label_font_);
+  for (const TabStripModel::Group& group : groups) {
+    GroupGeometry geometry;
+    geometry.profile = group.profile;
+    const GroupLook group_look = look(group.profile);
+    geometry.name = Utf8ToWide(group_look.name);
+    geometry.color = group_look.color;
+    geometry.count = group.count;
+    geometry.collapsed = group.collapsed;
+    const std::wstring text =
+        group.count > 0 ? geometry.name + L"  " + std::to_wstring(group.count)
+                        : geometry.name;
+    SIZE size = {};
+    GetTextExtentPoint32W(dc, text.c_str(), static_cast<int>(text.size()),
+                          &size);
+    const int width =
+        std::min(static_cast<int>(size.cx) + Scale(16), Scale(kMaxLabelWidth));
+    geometry.label = {0, 0, width, 0};
+    groups_.push_back(geometry);
+  }
+  SelectObject(dc, previous_font);
+  ReleaseDC(nullptr, dc);
+
   TabStripLayoutInput input;
   input.width = std::max(0, right - left - reserved);
   input.metrics.max_tab_width = Scale(kTabMaxWidth);
@@ -122,11 +188,12 @@ void TabStrip::Layout(const RECT& bounds,
   input.metrics.pinned_min_width = Scale(96);
   input.metrics.tab_gap = 0;
   input.metrics.more_button_width = Scale(40);
-  const std::vector<TabStripModel::Group> groups = model.groups();
   const std::optional<std::size_t> active = model.active_index();
   for (std::size_t g = 0; g < groups.size(); ++g) {
     const TabStripModel::Group& group = groups[g];
-    input.groups.push_back({.fixed_width = 0,
+    input.groups.push_back({.fixed_width = static_cast<double>(
+                                groups_[g].label.right + Scale(kLabelGap) +
+                                Scale(kNewTabButtonSize) + Scale(kGroupGap)),
                             .tab_count = group.count,
                             .pinned_count = group.pinned_count,
                             .collapsed = group.collapsed});
@@ -140,32 +207,73 @@ void TabStrip::Layout(const RECT& bounds,
 
   tabs_.clear();
   double x = left;
+  const int label_height = Scale(kLabelHeight);
+  const int label_top = tab_top + (bounds.bottom - tab_top - label_height) / 2;
+  const int button = Scale(kNewTabButtonSize);
+  const int button_top = tab_top + (bounds.bottom - tab_top - button) / 2;
   for (std::size_t g = 0; g < groups.size() && g < layout.size(); ++g) {
     const TabStripGroupLayout& group_layout = layout[g];
-    for (std::size_t i = 0; i < group_layout.tab_widths.size(); ++i) {
-      const double width = group_layout.tab_widths[i];
-      if (width <= 0) {
-        continue;
-      }
-      TabGeometry geometry;
-      geometry.id = model.id_at(groups[g].start + i);
-      geometry.rect = {static_cast<int>(std::lround(x)), tab_top,
-                       static_cast<int>(std::lround(x + width)), bounds.bottom};
-      const int close_size = Scale(kCloseButtonSize);
-      const int close_right = geometry.rect.right - Scale(kTabPadding) / 2;
-      const int close_top =
-          tab_top + (bounds.bottom - tab_top - close_size) / 2;
-      geometry.close = {close_right - close_size, close_top, close_right,
-                        close_top + close_size};
-      tabs_.push_back(geometry);
-      x += width;
+    GroupGeometry& group = groups_[g];
+    group.auto_collapsed = group_layout.auto_collapsed;
+    const int label_left = static_cast<int>(std::lround(x));
+    group.label = {label_left, label_top, label_left + group.label.right,
+                   label_top + label_height};
+    x = group.label.right + Scale(kLabelGap);
+    const int tabs_left = static_cast<int>(std::lround(x));
+    const double width = group_layout.tab_widths[i];
+    if (width <= 0) {
+      continue;
+    }
+    TabGeometry geometry;
+    geometry.id = model.id_at(groups[g].start + i);
+    geometry.rect = {static_cast<int>(std::lround(x)), tab_top,
+                     static_cast<int>(std::lround(x + width)), bounds.bottom};
+    const int close_size = Scale(kCloseButtonSize);
+    const int close_right = geometry.rect.right - Scale(kTabPadding) / 2;
+    const int close_top = tab_top + (bounds.bottom - tab_top - close_size) / 2;
+    geometry.close = {close_right - close_size, close_top, close_right,
+                      close_top + close_size};
+    tabs_.push_back(geometry);
+    x += width;
+  }
+  const int tabs_right = static_cast<int>(std::lround(x));
+  group.line = tabs_right > tabs_left
+                   ? RECT{tabs_left, bounds.bottom - Scale(kGroupLineHeight),
+                          tabs_right, bounds.bottom}
+                   : RECT{};
+  group.plus = {tabs_right, button_top, tabs_right + button,
+                button_top + button};
+  x = tabs_right + button + Scale(kGroupGap);
+}
+}
+
+bool TabStrip::IsAutoCollapsed(const ProfileId& profile) const {
+  for (const GroupGeometry& group : groups_) {
+    if (group.profile == profile) {
+      return group.auto_collapsed;
     }
   }
-  const int button = Scale(kNewTabButtonSize);
-  const int new_tab_left = static_cast<int>(std::lround(x)) + Scale(kNewTabGap);
-  const int new_tab_top = tab_top + (bounds.bottom - tab_top - button) / 2;
-  new_tab_ = {new_tab_left, new_tab_top, new_tab_left + button,
-              new_tab_top + button};
+  return false;
+}
+
+std::wstring TabStrip::ToolTip(const Hit& hit) const {
+  for (const GroupGeometry& group : groups_) {
+    if (group.profile != hit.profile) {
+      continue;
+    }
+    if (hit.part == Part::kNewTab) {
+      return L"New tab in " + group.name;
+    }
+    if (hit.part == Part::kGroupLabel) {
+      const std::wstring action = group.auto_collapsed ? L"show its tabs"
+                                  : group.collapsed    ? L"expand"
+                                                       : L"collapse";
+      return group.name + L": " + std::to_wstring(group.count) +
+             (group.count == 1 ? L" tab" : L" tabs") + L". Click to " + action +
+             L".";
+    }
+  }
+  return {};
 }
 
 TabStrip::Hit TabStrip::HitTest(POINT point) const {
@@ -194,8 +302,13 @@ TabStrip::Hit TabStrip::HitTest(POINT point) const {
       return {Part::kTab, tab.id};
     }
   }
-  if (Contains(new_tab_, point)) {
-    return {Part::kNewTab, 0};
+  for (const GroupGeometry& group : groups_) {
+    if (Contains(group.label, point)) {
+      return {Part::kGroupLabel, 0, group.profile};
+    }
+    if (Contains(group.plus, point)) {
+      return {Part::kNewTab, 0, group.profile};
+    }
   }
   return {};
 }
@@ -335,6 +448,57 @@ void TabStrip::PaintTab(HDC dc,
   }
 }
 
+void TabStrip::PaintGroup(HDC dc,
+                          const GroupGeometry& group,
+                          const PaintState& state) const {
+  const Theme& theme = *state.theme;
+  const COLORREF color = ProfileFill(group.color, state.dark);
+  const COLORREF frame =
+      state.window_active ? theme.frame : theme.frame_inactive;
+  // The label: a chip in the profile's colour, outlined when collapsed so
+  // it reads as "closed" at a glance (as on macOS).
+  const bool collapsed = group.collapsed || group.auto_collapsed;
+  SetDCPenColor(dc, color);
+  SetDCBrushColor(dc, collapsed ? Blend(color, frame, 0.15) : color);
+  HGDIOBJ brush = SelectObject(dc, GetStockObject(DC_BRUSH));
+  HGDIOBJ pen = SelectObject(dc, GetStockObject(DC_PEN));
+  const int radius = Scale(12);
+  RoundRect(dc, group.label.left, group.label.top, group.label.right,
+            group.label.bottom, radius, radius);
+  const std::wstring text =
+      group.count > 0 ? group.name + L"  " + std::to_wstring(group.count)
+                      : group.name;
+  RECT text_area = group.label;
+  InflateRect(&text_area, -Scale(6), 0);
+  HGDIOBJ previous = SelectObject(dc, label_font_);
+  SetTextColor(dc,
+               collapsed ? theme.text : ProfileText(group.color, state.dark));
+  DrawTextW(
+      dc, text.c_str(), static_cast<int>(text.size()), &text_area,
+      DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS);
+  SelectObject(dc, previous);
+  if (group.line.right > group.line.left) {
+    Fill(dc, group.line, color);
+  }
+  // The group's "+", in its colour.
+  const bool hovered =
+      state.hover.part == Part::kNewTab && state.hover.profile == group.profile;
+  if (hovered) {
+    SetDCBrushColor(dc, theme.hover);
+    SetDCPenColor(dc, theme.hover);
+    Ellipse(dc, group.plus.left, group.plus.top, group.plus.right,
+            group.plus.bottom);
+  }
+  SelectObject(dc, brush);
+  SelectObject(dc, pen);
+  RECT plus = group.plus;
+  previous = SelectObject(dc, glyph_font_);
+  SetTextColor(dc, color);
+  DrawTextW(dc, kAddGlyph, -1, &plus,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+  SelectObject(dc, previous);
+}
+
 void TabStrip::Paint(HDC dc, const PaintState& state) const {
   const Theme& theme = *state.theme;
   const COLORREF frame =
@@ -361,23 +525,8 @@ void TabStrip::Paint(HDC dc, const PaintState& state) const {
     PaintTab(dc, geometry, state);
   }
 
-  const bool new_tab_hovered = state.hover.part == Part::kNewTab;
-  if (new_tab_hovered) {
-    SetDCBrushColor(dc, theme.hover);
-    SetDCPenColor(dc, theme.hover);
-    HGDIOBJ brush = SelectObject(dc, GetStockObject(DC_BRUSH));
-    HGDIOBJ pen = SelectObject(dc, GetStockObject(DC_PEN));
-    Ellipse(dc, new_tab_.left, new_tab_.top, new_tab_.right, new_tab_.bottom);
-    SelectObject(dc, brush);
-    SelectObject(dc, pen);
-  }
-  {
-    RECT area = new_tab_;
-    HGDIOBJ previous = SelectObject(dc, glyph_font_);
-    SetTextColor(dc, theme.text);
-    DrawTextW(dc, kAddGlyph, -1, &area,
-              DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
-    SelectObject(dc, previous);
+  for (const GroupGeometry& group : groups_) {
+    PaintGroup(dc, group, state);
   }
 
   if (caption_buttons_) {

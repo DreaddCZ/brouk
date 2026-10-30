@@ -24,11 +24,16 @@ class BrowserWindow;
 // The app, as the browser windows see it. UI thread.
 class BrowserWindowOwner {
  public:
-  virtual CefRefPtr<CefRequestContext> RequestContext() = 0;
+  // The request context of `profile`'s web data (005).
+  virtual CefRefPtr<CefRequestContext> RequestContext(
+      const ProfileId& profile) = 0;
+  virtual ProfileId DefaultProfile() = 0;
+  // A profile's name and colour for its group in the tab strip.
+  virtual TabStrip::GroupLook ProfileLook(const ProfileId& profile) = 0;
   virtual TabClientDelegate::SearchEngine SearchEngine() = 0;
   // Opens a new browser window with a tab for `url` (empty: a new, empty
-  // tab).
-  virtual void OpenWindow(const std::string& url) = 0;
+  // tab) in `profile` (empty: the default profile).
+  virtual void OpenWindow(const std::string& url, const ProfileId& profile) = 0;
   // Opens an empty popup window (window.open() with a size, as Chrome) for
   // content of `width` x `height` pixels; null if it failed.
   virtual BrowserWindow* OpenPopupWindow(int width, int height) = 0;
@@ -73,11 +78,15 @@ class BrowserWindow final : public TabHost {
   bool Create(int content_width = 0, int content_height = 0);
   void Show();
   void Activate();
-  // Opens a tab with `url` at the end of the strip (an empty tab, with the
-  // address bar focused, if `url` is empty).
-  void OpenTab(const std::string& url, bool foreground);
-  // A tab for a popup or link from `opener` (in this or another window),
-  // after the opener if it is here. The caller creates its browser.
+  // Opens a tab with `url` at the end of `profile`'s group (empty: the
+  // default profile); an empty tab, with the address bar focused, if `url`
+  // is empty.
+  void OpenTab(const std::string& url,
+               bool foreground,
+               const ProfileId& profile = ProfileId());
+  // A tab for a popup or link from `opener` (in this or another window), in
+  // its profile, after the opener if it is here. The caller creates its
+  // browser.
   Tab* InsertTabFromOpener(const Tab* opener, bool foreground);
   // Opens an internal page (brouk://...) in a tab, in place of an empty
   // active tab; help opens its own window.
@@ -147,6 +156,10 @@ class BrowserWindow final : public TabHost {
   RECT ContentBounds() const;
   int Scale(int dips) const;
   void InvalidateStrip();
+  void LayoutStrip();
+  // A click on a profile group's label: collapses or expands it, or shows
+  // its tabs when it was collapsed for lack of room.
+  void ToggleGroup(const ProfileId& profile);
 
   // After tabs were added, removed, moved or activated: shows the active
   // tab and updates the strip, toolbar and window title.

@@ -45,6 +45,19 @@ void App::OnRelaunch(const LaunchRequest& request) {
 }
 
 void App::OpenLaunchRequest(const LaunchRequest& request) {
+  ProfileId profile = profiles_.default_profile().id;
+  if (request.profile) {
+    const ProfileInfo* named = profiles_.FindByName(*request.profile);
+    if (!named) {
+      named = profiles_.Find(*request.profile);
+    }
+    if (named) {
+      profile = named->id;
+    } else {
+      LOG(WARNING) << "No profile called \"" << *request.profile
+                   << "\"; opening the default profile.";
+    }
+  }
   std::vector<std::string> urls;
   for (const std::string& url : request.urls) {
     // Untrusted, like text typed into the address bar.
@@ -54,7 +67,7 @@ void App::OpenLaunchRequest(const LaunchRequest& request) {
     }
   }
   if (urls.empty()) {
-    OpenWindow(std::string());
+    OpenWindow(std::string(), profile);
     return;
   }
   auto window =
@@ -68,7 +81,7 @@ void App::OpenLaunchRequest(const LaunchRequest& request) {
     return;
   }
   for (std::size_t i = 0; i < urls.size(); ++i) {
-    window->OpenTab(urls[i], /*foreground=*/i == 0);
+    window->OpenTab(urls[i], /*foreground=*/i == 0, profile);
   }
   window->Show();
   windows_.push_back(std::move(window));
@@ -77,19 +90,37 @@ void App::OpenLaunchRequest(const LaunchRequest& request) {
 void App::ReleaseBrowserObjects() {
   help_window_.reset();
   windows_.clear();
-  context_ = nullptr;
+  contexts_.clear();
   internal_context_ = nullptr;
 }
 
-CefRefPtr<CefRequestContext> App::RequestContext() {
+CefRefPtr<CefRequestContext> App::RequestContext(const ProfileId& profile) {
   CEF_REQUIRE_UI_THREAD();
-  if (!context_) {
-    CefRequestContextSettings settings;
-    CefString(&settings.cache_path) =
-        ProfileWebDataDirectory(profiles_.default_profile().id).wstring();
-    context_ = CefRequestContext::CreateContext(settings, nullptr);
+  // Only ids of existing profiles become folder names (they are validated
+  // when profiles are read); anything else gets the default profile.
+  const ProfileId id =
+      profiles_.Find(profile) ? profile : profiles_.default_profile().id;
+  auto it = contexts_.find(id);
+  if (it != contexts_.end()) {
+    return it->second;
   }
-  return context_;
+  CefRequestContextSettings settings;
+  CefString(&settings.cache_path) = ProfileWebDataDirectory(id).wstring();
+  CefRefPtr<CefRequestContext> context =
+      CefRequestContext::CreateContext(settings, nullptr);
+  contexts_[id] = context;
+  return context;
+}
+
+ProfileId App::DefaultProfile() {
+  return profiles_.default_profile().id;
+}
+
+TabStrip::GroupLook App::ProfileLook(const ProfileId& profile) {
+  if (const ProfileInfo* info = profiles_.Find(profile)) {
+    return {info->name, info->color};
+  }
+  return {profile, "grey"};
 }
 
 CefRefPtr<CefRequestContext> App::InternalContext() {
@@ -159,7 +190,7 @@ void App::OpenHelp(const std::string& anchor) {
 
 void App::OpenWebLink(const std::string& url) {
   if (windows_.empty()) {
-    OpenWindow(url);
+    OpenWindow(url, ProfileId());
     return;
   }
   // The window used last: the front one of Brouk's normal windows.
@@ -173,7 +204,7 @@ void App::OpenWebLink(const std::string& url) {
       }
     }
   }
-  OpenWindow(url);
+  OpenWindow(url, ProfileId());
 }
 
 void App::CloseAllWindows() {
@@ -190,7 +221,7 @@ TabClientDelegate::SearchEngine App::SearchEngine() {
   return {SearchEngineName(global), SearchTemplate(global)};
 }
 
-void App::OpenWindow(const std::string& url) {
+void App::OpenWindow(const std::string& url, const ProfileId& profile) {
   CEF_REQUIRE_UI_THREAD();
   auto window =
       std::make_unique<BrowserWindow>(*this, BrowserWindow::Kind::kNormal);
@@ -202,7 +233,7 @@ void App::OpenWindow(const std::string& url) {
     }
     return;
   }
-  window->OpenTab(url, true);
+  window->OpenTab(url, true, profile);
   window->Show();
   windows_.push_back(std::move(window));
 }

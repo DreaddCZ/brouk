@@ -428,7 +428,7 @@ async function main() {
   if (kWindows) {
     await cdp.send('Page.navigate', { url: `${pagesBase}/context-menu.html` });
     await waitForTitle(cdp, 'Context menu test');
-    rightClick(100, 22);
+    rightClick(200, 22);
     await sleep(800);
     desktopScreenshot('tab-menu');
     sendKeys(['{ESC}', '+{F10}']);

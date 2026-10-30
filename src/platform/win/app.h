@@ -1,6 +1,7 @@
 #ifndef BROUK_PLATFORM_WIN_APP_H_
 #define BROUK_PLATFORM_WIN_APP_H_
 
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -33,25 +34,29 @@ class App final : public BrowserWindowOwner {
   void ReleaseBrowserObjects();
 
   // BrowserWindowOwner:
-  CefRefPtr<CefRequestContext> RequestContext() override;
+  CefRefPtr<CefRequestContext> RequestContext(
+      const ProfileId& profile) override;
+  ProfileId DefaultProfile() override;
+  TabStrip::GroupLook ProfileLook(const ProfileId& profile) override;
   TabClientDelegate::SearchEngine SearchEngine() override;
   CefRefPtr<CefRequestContext> InternalContext() override;
   std::unique_ptr<CefMessageRouterBrowserSide::Handler> InternalPageHandler(
       const std::string& page) override;
   void OpenHelp(const std::string& anchor) override;
   void CloseAllWindows() override;
-  void OpenWindow(const std::string& url) override;
+  void OpenWindow(const std::string& url, const ProfileId& profile) override;
   BrowserWindow* OpenPopupWindow(int width, int height) override;
   bool IsOpenWindow(const BrowserWindow* window) const override;
   void OnWindowDestroyed(BrowserWindow* window) override;
 
  private:
   // A launch's URLs as tabs of a new window (Chrome), or an empty tab when
-  // none is usable. --profile waits for profiles (W2).
+  // none is usable, in the profile named by --profile (005).
   void OpenLaunchRequest(const LaunchRequest& request);
 
   ProfileRegistry profiles_;
-  CefRefPtr<CefRequestContext> context_;
+  // One per profile, made when its first tab opens.
+  std::map<ProfileId, CefRefPtr<CefRequestContext>> contexts_;
   CefRefPtr<CefRequestContext> internal_context_;
   std::unique_ptr<InternalPageWindow> help_window_;
   // The last browser window closed: Brouk quits once help has closed too.

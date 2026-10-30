@@ -80,7 +80,8 @@ bool RegisterContainerClass(WNDPROC procedure) {
 
 }  // namespace
 
-Tab::Tab(TabHost& host, TabId id, HWND parent) : host_(host), id_(id) {
+Tab::Tab(TabHost& host, TabId id, HWND parent, ProfileId profile)
+    : host_(host), id_(id), profile_(std::move(profile)) {
   client_ = new TabClient(this);
   if (RegisterContainerClass(&Tab::ContainerProc)) {
     container_ = CreateWindowExW(0, kContainerClass, L"",

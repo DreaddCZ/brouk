@@ -96,6 +96,8 @@ set(BROUK_CORE_SOURCES
   permissions.cc
   permissions.h
   process_runner.h
+  profile_colors.cc
+  profile_colors.h
   profile_export.cc
   profile_export.h
   profile_id.h

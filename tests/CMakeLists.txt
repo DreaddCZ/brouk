@@ -63,6 +63,7 @@ add_executable(brouk_core_tests
   core/password_store_test.cc
   core/permissions_test.cc
   core/process_runner_test.cc
+  core/profile_colors_test.cc
   core/profile_export_test.cc
   core/profile_registry_test.cc
   core/request_log_test.cc
