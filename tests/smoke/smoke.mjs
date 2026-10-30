@@ -77,12 +77,18 @@ function sendKeys(keys) {
   const sends = keys
     .map((k) => `[System.Windows.Forms.SendKeys]::SendWait('${k.replaceAll("'", "''")}'); Start-Sleep -Milliseconds 300`)
     .join('; ');
+  // Which control has the keyboard focus (UI Automation), for the log.
+  const focus =
+    '$f = [System.Windows.Automation.AutomationElement]::FocusedElement; ' +
+    '"$($f.Current.ClassName) ""$($f.Current.Name)"""';
   const script = [
-    'Add-Type -AssemblyName System.Windows.Forms',
+    'Add-Type -AssemblyName System.Windows.Forms, UIAutomationClient, UIAutomationTypes',
     `$active = (New-Object -ComObject WScript.Shell).AppActivate(${brouk.pid})`,
     'Start-Sleep -Milliseconds 500',
+    `$before = ${focus}`,
     sends,
-    'Write-Output "Brouk in front: $active"',
+    `$after = ${focus}`,
+    'Write-Output "Brouk in front: $active, focus before: $before, after: $after"',
   ].join('; ');
   try {
     const output = execFileSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8', timeout: 30000 });
