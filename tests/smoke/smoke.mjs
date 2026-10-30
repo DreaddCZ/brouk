@@ -91,12 +91,8 @@ function logFocus(label) {
 // front ("<title> - Brouk"): Brouk has several windows (the profile
 // manager, tooltips), and keys must reach this one. Returns whether it did.
 const frontFunction = (title) =>
-  'function Set-BroukFront { Add-Type -Namespace Smoke -Name Front -MemberDefinition ' +
-  '\'[DllImport("user32.dll")] public static extern bool SetForegroundWindow(System.IntPtr w); ' +
-  '[DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern System.IntPtr FindWindow(string c, string t);\' ' +
-  '-ErrorAction SilentlyContinue; ' +
-  `$w = [Smoke.Front]::FindWindow($null, '${`${title} - Brouk`.replaceAll("'", "''")}'); ` +
-  '(New-Object -ComObject WScript.Shell).SendKeys(""); [Smoke.Front]::SetForegroundWindow($w) }';
+  'function Set-BroukFront { (New-Object -ComObject WScript.Shell).AppActivate(' +
+  `'${`${title} - Brouk`.replaceAll("'", "''")}') }`;
 
 // Windows: brings Brouk's window to the front and types `keys`
 // (System.Windows.Forms.SendKeys syntax: "^f" is Ctrl+F), one after another.
