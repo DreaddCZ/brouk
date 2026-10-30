@@ -576,15 +576,34 @@ async function main() {
             returnByValue: true,
           })
         ).result.value;
+      // The theme Brouk has read, through the page's own bridge.
+      const theme = async () => {
+        const { result } = await settingsPage.send('Runtime.evaluate', {
+          expression:
+            "new Promise((ok) => window.cefQuery({ request: JSON.stringify({ type: 'settings.state' }), " +
+            "onSuccess: (r) => ok(JSON.parse(r).global.find((i) => i.key === 'appearance.theme')?.value ?? ''), " +
+            "onFailure: (c, m) => ok('failed ' + m) }))",
+          awaitPromise: true,
+          returnByValue: true,
+        });
+        return result.value ?? '';
+      };
       const before = await dark();
+      const wanted = before ? 'light' : 'dark';
       const settingsFile = join(dataDir, 'settings.yaml');
-      writeFileSync(settingsFile, `appearance:\n  theme: ${before ? 'light' : 'dark'}\n`);
+      writeFileSync(settingsFile, `appearance:\n  theme: ${wanted}\n`);
+      let read = await theme();
+      for (let i = 0; i < 25 && read !== wanted; i++) {
+        await sleep(200);
+        read = await theme();
+      }
+      check(read === wanted, `Brouk reads settings.yaml again after it changed ("${read}")`);
       let now = before;
-      for (let i = 0; i < 25 && now === before; i++) {
+      for (let i = 0; i < 15 && now === before; i++) {
         await sleep(200);
         now = await dark();
       }
-      check(now === !before, `editing settings.yaml changes the pages' colour scheme (dark: ${before} → ${now})`);
+      check(now === !before, `the pages' colour scheme follows appearance.theme (dark: ${before} → ${now})`);
       desktopScreenshot('theme');
       writeFileSync(settingsFile, 'appearance:\n  theme: system\n');
       await sleep(1000);
