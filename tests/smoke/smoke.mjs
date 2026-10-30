@@ -402,23 +402,31 @@ async function main() {
     const zoom = async () =>
       (await cdp.send('Runtime.evaluate', { expression: 'Math.round(devicePixelRatio * 100)' })).result.value;
     const before = await zoom();
-    sendKeys('Find and zoom test', ['^{ADD}', '^{ADD}', '^f', 'beetle']);
+    // Each zoom step reaches the page a moment later: wait up to 3 seconds.
+    const zoomTo = async (expected) => {
+      let now = await zoom();
+      for (let i = 0; i < 15 && now !== expected; i++) {
+        await sleep(200);
+        now = await zoom();
+      }
+      return now;
+    };
+    // One key at a time: a busy runner loses keys sent in a quick row.
+    sendKeys('Find and zoom test', ['^{ADD}']);
+    const first = await zoomTo(Math.round(before * 1.1));
+    sendKeys('Find and zoom test', ['^{ADD}']);
+    const zoomed = await zoomTo(Math.round(before * 1.25));
+    check(zoomed === Math.round(before * 1.25), `Ctrl+Plus twice zooms to 125 % (${before} → ${first} → ${zoomed})`);
+    sendKeys('Find and zoom test', ['^f', 'beetle']);
     await sleep(1000);
     logFocus('after typing in the find bar');
-    // Each zoom step reaches the page a moment later: wait up to 3 seconds.
-    let zoomed = await zoom();
-    for (let i = 0; i < 15 && zoomed !== Math.round(before * 1.25); i++) {
-      await sleep(200);
-      zoomed = await zoom();
-    }
-    check(zoomed === Math.round(before * 1.25), `Ctrl+Plus twice zooms to 125 % (${before} → ${zoomed})`);
     desktopScreenshot('find-bar');
     logFocus('after the screenshot');
     // The screenshot took the focus away; Brouk gives it back to the find
     // bar, where Escape closes it, then Ctrl+0 resets the zoom.
-    sendKeys('Find and zoom test', ['{ESC}', '^0']);
-    await sleep(500);
-    const reset = await zoom();
+    sendKeys('Find and zoom test', ['{ESC}']);
+    sendKeys('Find and zoom test', ['^0']);
+    const reset = await zoomTo(before);
     check(reset === before, `Ctrl+0 resets the zoom (${reset})`);
     desktopScreenshot('find-bar-closed');
   }
