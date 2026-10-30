@@ -3,6 +3,7 @@
 
 #include <windows.h>
 
+#include <deque>
 #include <memory>
 #include <optional>
 #include <string>
@@ -14,6 +15,7 @@
 #include "include/cef_browser.h"
 #include "include/cef_request_context.h"
 #include "platform/win/favicon.h"
+#include "platform/win/tab_panel.h"
 
 namespace brouk::win {
 
@@ -75,6 +77,7 @@ class Tab final : public TabClientDelegate, public InternalPageDelegate {
   void GoBack();
   void GoForward();
   void Reload();
+  // Focuses the page, or a dialog over it.
   void Focus();
   // Runs the page's unload handlers and closes the browser; OnTabClosed
   // follows. A page may cancel ("leave site?").
@@ -176,7 +179,27 @@ class Tab final : public TabClientDelegate, public InternalPageDelegate {
   void OpenAutofillSettings() override;
 
  private:
+  // A permission prompt waiting for its turn (one is shown at a time).
+  struct PendingPermission {
+    PermissionRequest request;
+    PermissionDone done;
+  };
+
   HWND BrowserWindowHandle() const;
+  void OnContainerSize();
+
+  // Panels over the page (TabPanel). The dialogs are tab-modal: while one
+  // is open the page gets no input.
+  std::unique_ptr<TabPanel> MakePanel(TabPanel::Content content,
+                                      TabPanel::Done done);
+  TabPanel* ModalPanel() const;
+  // Whether keyboard focus is in this tab (its page or a panel), or nowhere.
+  bool FocusInTab() const;
+  // After a panel came or went: blocks the page while a dialog is open, and
+  // moves focus to the dialog or back to the page if `refocus`.
+  void UpdatePanels(bool refocus);
+  void ClosePanel(std::unique_ptr<TabPanel>& panel);
+  void ShowNextPermissionPrompt();
 
   static LRESULT CALLBACK ContainerProc(HWND window,
                                         UINT message,
@@ -199,8 +222,15 @@ class Tab final : public TabClientDelegate, public InternalPageDelegate {
   bool can_go_forward_ = false;
   // A navigation asked for before the browser exists.
   std::string pending_url_;
-  // The answer to an open JavaScript dialog, until it is shown.
-  JsDialogDone dialog_done_;
+  std::unique_ptr<TabPanel> js_dialog_;
+  // The dialog came while no page was loading: a new navigation cancels it.
+  bool js_dialog_while_idle_ = false;
+  std::unique_ptr<TabPanel> unresponsive_;
+  std::unique_ptr<TabPanel> external_protocol_;
+  std::unique_ptr<TabPanel> sad_tab_;
+  // The first one is shown in permission_prompt_.
+  std::deque<PendingPermission> permission_requests_;
+  std::unique_ptr<TabPanel> permission_prompt_;
   bool closing_ = false;
   // Expires with the tab, for tasks posted while it is open.
   std::shared_ptr<int> alive_ = std::make_shared<int>(0);

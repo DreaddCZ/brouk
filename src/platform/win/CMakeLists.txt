@@ -13,6 +13,8 @@ add_library(brouk_app SHARED
   app.h
   browser_window.cc
   browser_window.h
+  controls.cc
+  controls.h
   data_paths.cc
   data_paths.h
   favicon.cc
@@ -22,6 +24,8 @@ add_library(brouk_app SHARED
   main.cc
   tab.cc
   tab.h
+  tab_panel.cc
+  tab_panel.h
   tab_strip.cc
   tab_strip.h
   theme.cc
@@ -32,7 +36,7 @@ add_library(brouk_app SHARED
 brouk_target_options(brouk_app CEF APP)
 target_link_libraries(brouk_app PRIVATE
   brouk_cef brouk_renderer brouk_core libcef_lib ${CEF_STANDARD_LIBS}
-  dwmapi msimg32 ole32 oleacc shell32 user32 windowscodecs)
+  dwmapi msimg32 ole32 oleacc shell32 shlwapi user32 uxtheme windowscodecs)
 # Chromium's delay-loaded system DLLs: some must not load in sandboxed
 # processes, which run this DLL too.
 target_link_options(brouk_app PRIVATE ${CEF_SHARED_LINKER_FLAGS})

@@ -21,7 +21,7 @@ if (!outDir) {
   process.exit(2);
 }
 const kWindows = process.platform === 'win32';
-// Not yet in the Windows app (024, W1–W4): the crash page and the updater.
+// The licences page (023) opens in a tab on every platform.
 const kInternalPages = true;
 const kTotalLimitMs = 5 * 60 * 1000;
 const kPagesDir = resolve(import.meta.dirname, '../../docs/testing/pages');
@@ -288,11 +288,28 @@ async function main() {
     credits.close();
   }
 
+  // The Windows app draws the permission prompt and the dialogs over the
+  // page itself (024): a screenshot of both for a look. The navigation
+  // below must then take the open dialog away.
+  if (kWindows) {
+    await cdp.send('Page.navigate', { url: `${pagesBase}/dialogs.html` });
+    await waitForTitle(cdp, 'Dialogs test');
+    await cdp.send('Runtime.evaluate', {
+      expression:
+        'navigator.geolocation.getCurrentPosition(() => {}, () => {}); ' +
+        'setTimeout(() => prompt("Smoke test question", "An answer"), 500)',
+    });
+    await sleep(2500);
+    desktopScreenshot('dialogs');
+  }
+
   // A crashed renderer shows the crash page (012); Brouk keeps running.
   await cdp.send('Page.navigate', { url: `${pagesBase}/crash-and-hang.html` });
-  await waitForTitle(cdp, 'Crash and hang test');
+  const crashPage = await waitForTitle(cdp, 'Crash and hang test');
+  check(crashPage === 'Crash and hang test', `crash-and-hang.html loads ("${crashPage}")`);
   cdp.send('Page.crash').catch(() => {});
   await sleep(3000);
+  desktopScreenshot('crash');
   cdp.close();
   check(brouk.exitCode === null, 'Brouk keeps running after a renderer crash');
   const after = await pageTarget(port).catch(() => null);

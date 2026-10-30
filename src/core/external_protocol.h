@@ -1,6 +1,7 @@
 #ifndef BROUK_CORE_EXTERNAL_PROTOCOL_H_
 #define BROUK_CORE_EXTERNAL_PROTOCOL_H_
 
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -24,6 +25,13 @@ std::string SchemeOf(std::string_view url);
 // "<origin> <scheme>". Origins never contain spaces.
 std::string ExternalProtocolAllowKey(std::string_view origin,
                                      std::string_view scheme);
+
+// The URL as handed to the OS to open another app (ShellExecute on
+// Windows), as Chrome does: characters that could split the app's command
+// line (spaces, quotes, ...) and non-ASCII bytes are percent-escaped.
+// Nullopt for a one-letter scheme, which the shell takes for a drive
+// ("C:\..."), or for a URL longer than the shell accepts.
+std::optional<std::string> ExternalUrlForShell(std::string_view url);
 
 }  // namespace brouk
 
