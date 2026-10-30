@@ -138,6 +138,10 @@ class BrowserWindow final : public TabHost {
   // The "⋮" menu (Chrome's "Customise and control"): new tab and window,
   // help, licences, exit.
   void ShowAppMenu();
+  // Chrome's tab menu (right-click on a tab).
+  void ShowTabMenu(TabId id, POINT screen_point);
+  // A new tab right after `after` with `url` (empty: a new, empty tab).
+  void OpenTabAfter(TabId after, const std::string& url);
   RECT StripBounds() const;
   RECT ToolbarBounds() const;
   RECT ContentBounds() const;
@@ -182,6 +186,9 @@ class BrowserWindow final : public TabHost {
   HWND menu_ = nullptr;
   HWND zoom_ = nullptr;
   HWND popups_ = nullptr;
+  // Tab titles and the strip's buttons on hover.
+  HWND tooltip_ = nullptr;
+  std::wstring tooltip_text_;
   HWND address_ = nullptr;
   HFONT text_font_ = nullptr;
   HFONT icon_font_ = nullptr;

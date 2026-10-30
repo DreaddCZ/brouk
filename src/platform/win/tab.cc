@@ -402,6 +402,14 @@ void Tab::ExitFullscreen() {
   }
 }
 
+void Tab::SetMuted(bool muted) {
+  muted_ = muted;
+  if (browser_) {
+    browser_->GetHost()->SetAudioMuted(muted);
+  }
+  host_.OnTabChanged(*this);
+}
+
 void Tab::Close() {
   closing_ = true;
   if (browser_) {

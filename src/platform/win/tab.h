@@ -96,6 +96,9 @@ class Tab final : public TabClientDelegate,
   void Print();
   // Leaves the page's HTML full screen, if it is in it.
   void ExitFullscreen();
+  // Mutes or unmutes the tab's sound ("Mute Tab").
+  void SetMuted(bool muted);
+  bool muted() const { return muted_; }
   // Runs the page's unload handlers and closes the browser; OnTabClosed
   // follows. A page may cancel ("leave site?").
   void Close();
@@ -271,6 +274,7 @@ class Tab final : public TabClientDelegate,
   // A search typed in the find bar is running: the page, which takes the
   // focus when it shows a match, gives it back to the bar.
   bool finding_from_bar_ = false;
+  bool muted_ = false;
   bool closing_ = false;
   // Expires with the tab, for tasks posted while it is open.
   std::shared_ptr<int> alive_ = std::make_shared<int>(0);

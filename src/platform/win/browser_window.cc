@@ -65,6 +65,15 @@ enum MenuCommand : UINT {
   kLicencesCommand,
   kExitCommand,
   kAllowPopupsCommand,
+  kNewTabToTheRightCommand,
+  kReloadTabCommand,
+  kDuplicateTabCommand,
+  kPinTabCommand,
+  kMuteTabCommand,
+  kCloseTabCommand,
+  kCloseOtherTabsCommand,
+  kCloseTabsLeftCommand,
+  kCloseTabsRightCommand,
   kFirstBlockedPopupCommand = 1000,
 };
 
@@ -214,6 +223,19 @@ void BrowserWindow::CreateControls() {
       window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kPopupsId)),
       instance, nullptr);
   SetAccessibleName(popups_, L"Pop-ups blocked");
+  if (kind_ == Kind::kNormal) {
+    // One tool over the tab strip; its text follows the hovered part.
+    tooltip_ = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr,
+                               WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP, 0, 0, 0,
+                               0, window_, nullptr, instance, nullptr);
+    TTTOOLINFOW tool = {};
+    tool.cbSize = sizeof(tool);
+    tool.uFlags = TTF_SUBCLASS;
+    tool.hwnd = window_;
+    tool.uId = 1;
+    tool.lpszText = LPSTR_TEXTCALLBACKW;
+    SendMessageW(tooltip_, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&tool));
+  }
 }
 
 int BrowserWindow::Scale(int dips) const {
@@ -299,6 +321,15 @@ RECT BrowserWindow::ContentBounds() const {
 void BrowserWindow::Layout() {
   strip_.Layout(StripBounds(), GetDpiForWindow(window_), model_,
                 kind_ == Kind::kNormal);
+  if (tooltip_) {
+    TTTOOLINFOW tool = {};
+    tool.cbSize = sizeof(tool);
+    tool.hwnd = window_;
+    tool.uId = 1;
+    tool.rect = StripBounds();
+    SendMessageW(tooltip_, TTM_NEWTOOLRECTW, 0,
+                 reinterpret_cast<LPARAM>(&tool));
+  }
   const RECT toolbar = ToolbarBounds();
   const int toolbar_height = toolbar.bottom - toolbar.top;
   const int button = Scale(kButtonSize);
@@ -509,6 +540,92 @@ void BrowserWindow::ShowFullscreenHint(const wchar_t* text) {
       tab->container(), theme_, std::move(content),
       [](const TabPanel::Answer&) {}, nullptr);
   SetTimer(window_, kFullscreenHintTimer, kFullscreenHintTime, nullptr);
+}
+
+void BrowserWindow::OpenTabAfter(TabId after, const std::string& url) {
+  const TabId id = NextTabId();
+  auto tab = std::make_unique<Tab>(*this, id, window_);
+  tab->SetBounds(ContentBounds());
+  Tab* created = tab.get();
+  tabs_[id] = std::move(tab);
+  model_.InsertAfter(id, after, /*activate=*/true);
+  created->CreateBrowser(url.empty() ? std::string("about:blank") : url,
+                         owner_.RequestContext());
+  ModelChanged();
+  FocusActiveTab();
+}
+
+void BrowserWindow::ShowTabMenu(TabId id, POINT screen_point) {
+  Tab* tab = FindTab(id);
+  if (!tab) {
+    return;
+  }
+  using Scope = TabStripModel::CloseScope;
+  const bool others = !model_.TabsToClose(id, Scope::kOthers).empty();
+  const bool left = !model_.TabsToClose(id, Scope::kLeft).empty();
+  const bool right = !model_.TabsToClose(id, Scope::kRight).empty();
+  HMENU menu = CreatePopupMenu();
+  auto add = [menu](UINT command, const wchar_t* title, bool enabled) {
+    AppendMenuW(menu, MF_STRING | (enabled ? 0 : MF_GRAYED), command, title);
+  };
+  // Chrome's tab menu.
+  add(kNewTabToTheRightCommand, L"New tab to the right", true);
+  AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+  add(kReloadTabCommand, L"Reload", true);
+  add(kDuplicateTabCommand, L"Duplicate", !tab->internal());
+  add(kPinTabCommand, model_.IsPinned(id) ? L"Unpin" : L"Pin", true);
+  add(kMuteTabCommand, tab->muted() ? L"Unmute site" : L"Mute site", true);
+  AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+  add(kCloseTabCommand, L"Close\tCtrl+W", true);
+  add(kCloseOtherTabsCommand, L"Close other tabs", others);
+  add(kCloseTabsLeftCommand, L"Close tabs to the left", left);
+  add(kCloseTabsRightCommand, L"Close tabs to the right", right);
+  const UINT command = static_cast<UINT>(TrackPopupMenuEx(
+      menu, TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD | TPM_NONOTIFY,
+      screen_point.x, screen_point.y, window_, nullptr));
+  DestroyMenu(menu);
+  // The tab may have closed while the menu was open.
+  tab = FindTab(id);
+  if (!tab || !command) {
+    return;
+  }
+  auto close_all = [this](const std::vector<TabId>& ids) {
+    for (TabId close : ids) {
+      CloseTab(close);
+    }
+  };
+  switch (command) {
+    case kNewTabToTheRightCommand:
+      OpenTabAfter(id, std::string());
+      break;
+    case kReloadTabCommand:
+      tab->Reload();
+      break;
+    case kDuplicateTabCommand:
+      OpenTabAfter(id, tab->url());
+      break;
+    case kPinTabCommand:
+      model_.SetPinned(id, !model_.IsPinned(id));
+      ModelChanged();
+      break;
+    case kMuteTabCommand:
+      tab->SetMuted(!tab->muted());
+      break;
+    case kCloseTabCommand:
+      CloseTab(id);
+      break;
+    case kCloseOtherTabsCommand:
+      close_all(model_.TabsToClose(id, Scope::kOthers));
+      break;
+    case kCloseTabsLeftCommand:
+      close_all(model_.TabsToClose(id, Scope::kLeft));
+      break;
+    case kCloseTabsRightCommand:
+      close_all(model_.TabsToClose(id, Scope::kRight));
+      break;
+    default:
+      break;
+  }
 }
 
 void BrowserWindow::ShowBlockedPopups() {
@@ -1250,6 +1367,11 @@ void BrowserWindow::OnMouse(UINT message, POINT point) {
       if (!(hover_ == hit)) {
         hover_ = hit;
         InvalidateStrip();
+        if (tooltip_) {
+          // The next tip asks for its text again (TTN_GETDISPINFO).
+          SendMessageW(tooltip_, TTM_POP, 0, 0);
+          SendMessageW(tooltip_, TTM_UPDATE, 0, 0);
+        }
       }
       break;
     }
@@ -1285,6 +1407,14 @@ void BrowserWindow::OnMouse(UINT message, POINT point) {
       InvalidateStrip();
       break;
     }
+    case WM_RBUTTONUP:
+      if (hit.part == TabStrip::Part::kTab ||
+          hit.part == TabStrip::Part::kTabClose) {
+        POINT screen = point;
+        ClientToScreen(window_, &screen);
+        ShowTabMenu(hit.tab, screen);
+      }
+      break;
     case WM_MBUTTONUP:
       // Middle-click closes a tab (Chrome).
       if (hit.part == TabStrip::Part::kTab ||
@@ -1391,8 +1521,29 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
     case WM_LBUTTONDOWN:
     case WM_LBUTTONUP:
     case WM_MBUTTONUP:
+    case WM_RBUTTONUP:
       OnMouse(message, {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
       return 0;
+    case WM_NOTIFY:
+      if (const auto* header = reinterpret_cast<const NMHDR*>(lparam);
+          tooltip_ && header->hwndFrom == tooltip_ &&
+          header->code == TTN_GETDISPINFOW) {
+        auto* info = reinterpret_cast<NMTTDISPINFOW*>(lparam);
+        tooltip_text_.clear();
+        if (hover_.part == TabStrip::Part::kTab) {
+          if (const Tab* tab = FindTab(hover_.tab)) {
+            tooltip_text_ = Utf8ToWide(tab->DisplayTitle());
+          }
+        } else if (hover_.part == TabStrip::Part::kTabClose) {
+          tooltip_text_ = L"Close tab";
+        } else if (hover_.part == TabStrip::Part::kNewTab) {
+          tooltip_text_ = L"New tab";
+        }
+        // An empty text shows no tip.
+        info->lpszText = tooltip_text_.data();
+        return 0;
+      }
+      break;
     case WM_CAPTURECHANGED:
       drag_tab_.reset();
       dragging_ = false;

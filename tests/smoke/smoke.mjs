@@ -74,7 +74,7 @@ function desktopScreenshot(name) {
 // Which control has the keyboard focus (UI Automation), for the log.
 const kFocusFunction =
   'function Get-Focus { $f = [System.Windows.Automation.AutomationElement]::FocusedElement; ' +
-  'if ($f) { "$($f.Current.ClassName) ''$($f.Current.Name)''" } else { "none" } }';
+  'if ($f) { "$($f.Current.ClassName) [$($f.Current.Name)]" } else { "none" } }';
 
 function logFocus(label) {
   if (!kWindows) return;
@@ -108,6 +108,25 @@ function sendKeys(keys) {
     log(`(keys ${keys.join(' ')}: ${output.trim()})`);
   } catch (error) {
     log(`(keys not sent: ${error.message})`);
+  }
+}
+
+// Windows: a right-click at screen pixel (x, y).
+function rightClick(x, y) {
+  const script = [
+    'Add-Type -Namespace Smoke -Name Mouse -MemberDefinition \'' +
+      '[DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y); ' +
+      '[DllImport("user32.dll")] public static extern void mouse_event(int f, int x, int y, int d, int e);\'',
+    `(New-Object -ComObject WScript.Shell).AppActivate(${brouk.pid}) | Out-Null`,
+    'Start-Sleep -Milliseconds 300',
+    `[Smoke.Mouse]::SetCursorPos(${x}, ${y}) | Out-Null`,
+    'Start-Sleep -Milliseconds 200',
+    '[Smoke.Mouse]::mouse_event(0x0008, 0, 0, 0, 0); [Smoke.Mouse]::mouse_event(0x0010, 0, 0, 0, 0)',
+  ].join('; ');
+  try {
+    execFileSync('powershell', ['-NoProfile', '-Command', script], { timeout: 30000 });
+  } catch (error) {
+    log(`(no right-click: ${error.message})`);
   }
 }
 
@@ -388,6 +407,20 @@ async function main() {
     await cdp.send('Page.navigate', { url: `${pagesBase}/sign-in` });
     await sleep(2000);
     desktopScreenshot('sign-in');
+  }
+
+  // Menus (Windows app, 024): the tab menu on a right-click on the first
+  // tab, and the page's context menu (Shift+F10). Screenshots for a look.
+  if (kWindows) {
+    await cdp.send('Page.navigate', { url: `${pagesBase}/context-menu.html` });
+    await waitForTitle(cdp, 'Context menu test');
+    rightClick(100, 22);
+    await sleep(800);
+    desktopScreenshot('tab-menu');
+    sendKeys(['{ESC}', '+{F10}']);
+    await sleep(800);
+    desktopScreenshot('page-menu');
+    sendKeys(['{ESC}']);
   }
 
   // Screen sharing (Windows app, 024): getDisplayMedia() shows Brouk's
