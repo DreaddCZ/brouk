@@ -261,6 +261,7 @@ class Tab final : public TabClientDelegate,
   bool js_dialog_while_idle_ = false;
   std::unique_ptr<TabPanel> unresponsive_;
   std::unique_ptr<TabPanel> external_protocol_;
+  std::unique_ptr<TabPanel> screen_picker_;
   std::unique_ptr<TabPanel> sad_tab_;
   // The first one is shown in permission_prompt_.
   std::deque<PendingPermission> permission_requests_;

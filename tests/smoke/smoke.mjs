@@ -368,6 +368,27 @@ async function main() {
     desktopScreenshot('sign-in');
   }
 
+  // Screen sharing (Windows app, 024): getDisplayMedia() shows Brouk's
+  // picker over the tab (screenshot); Escape cancels it and the page gets
+  // an error instead of a stream.
+  if (kWindows) {
+    await cdp.send('Page.navigate', { url: `${pagesBase}/screen-share.html` });
+    await waitForTitle(cdp, 'Screen sharing test');
+    await cdp.send('Runtime.evaluate', {
+      expression:
+        'window.shareResult = "pending"; navigator.mediaDevices.getDisplayMedia({ video: true }).then(' +
+        '(s) => { window.shareResult = "shared"; s.getTracks().forEach((t) => t.stop()); }, ' +
+        '(e) => { window.shareResult = e.name; })',
+      userGesture: true,
+    });
+    await sleep(1500);
+    desktopScreenshot('screen-picker');
+    sendKeys(['{ESC}']);
+    await sleep(1000);
+    const { result } = await cdp.send('Runtime.evaluate', { expression: 'window.shareResult' });
+    check(result.value !== 'pending' && result.value !== 'shared', `Escape cancels the screen picker (${result.value})`);
+  }
+
   // The Windows app draws the permission prompt and the dialogs over the
   // page itself (024): a screenshot of both for a look. The navigation
   // below must then take the open dialog away.

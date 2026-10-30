@@ -17,6 +17,8 @@ add_library(brouk_app SHARED
   controls.h
   data_paths.cc
   data_paths.h
+  desktop_sources.cc
+  desktop_sources.h
   favicon.cc
   favicon.h
   find_bar.cc
