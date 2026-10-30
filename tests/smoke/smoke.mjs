@@ -11,7 +11,7 @@
 // check passed.
 import { spawn, execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, appendFileSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, appendFileSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { join, extname, resolve } from 'node:path';
 
@@ -142,8 +142,31 @@ function rightClick(title, x, y) {
   }
 }
 
+// The top-level windows a process still has, for the log.
+function logWindowsOf(pid) {
+  const script = [
+    'Add-Type -AssemblyName UIAutomationClient',
+    `$c = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, ${pid})`,
+    '[System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $c) | ForEach-Object { "$($_.Current.ClassName) [$($_.Current.Name)]" }',
+  ].join('; ');
+  try {
+    const out = execFileSync('powershell', ['-NoProfile', '-Command', script], { timeout: 30000 });
+    log(`(windows left: ${out.toString().trim().split(/\r?\n/).join(', ')})`);
+  } catch (error) {
+    log(`(no window list: ${error.message})`);
+  }
+}
+
 function finish(code) {
   if (code !== 0) desktopScreenshot('desktop');
+  // Chromium's own log, next to the executable on Windows.
+  if (code !== 0 && kWindows) {
+    try {
+      copyFileSync(join(appPath, 'debug.log'), join(outDir, 'debug.log'));
+    } catch (error) {
+      log(`(no debug.log: ${error.message})`);
+    }
+  }
   if (brouk && brouk.exitCode === null) brouk.kill('SIGKILL');
   server?.close();
   try {
@@ -528,6 +551,8 @@ async function main() {
 
   // Quit as the user does (Brouk → Quit; on Windows closing the window),
   // aimed at this copy's pid only.
+  const pagesBeforeQuit = await devtoolsJson(port, '/json/list').catch(() => []);
+  log(`(pages before quitting: ${pagesBeforeQuit.map((t) => `${t.type} ${t.url}`).join(', ')})`);
   const quitStarted = Date.now();
   if (kWindows) {
     // Without /F, taskkill asks the process's windows to close (WM_CLOSE).
@@ -541,7 +566,9 @@ async function main() {
     ]);
   }
   while (brouk.exitCode === null && Date.now() - quitStarted < 10000) await sleep(200);
-  check(brouk.exitCode === 0, `Brouk quits cleanly within 10 seconds (exit code ${brouk.exitCode})`);
+  if (!check(brouk.exitCode === 0, `Brouk quits cleanly within 10 seconds (exit code ${brouk.exitCode})`) && kWindows) {
+    logWindowsOf(brouk.pid);
+  }
 
   await sleep(2000); // ReportCrash writes its report a moment later.
   const newReports = crashReports().filter((name) => !reportsBefore.has(name));
