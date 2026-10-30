@@ -111,11 +111,15 @@ function sendKeys(title, keys) {
     '$after = Get-Focus',
     'Write-Output "Brouk in front: $active, focus before: $before, after: $after"',
   ].join('; ');
-  try {
-    const output = execFileSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8', timeout: 30000 });
-    log(`(keys ${keys.join(' ')}: ${output.trim()})`);
-  } catch (error) {
-    log(`(keys not sent: ${error.message})`);
+  // PowerShell can take long to start on a busy runner: one more try.
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const output = execFileSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8', timeout: 60000 });
+      log(`(keys ${keys.join(' ')}: ${output.trim()})`);
+      return;
+    } catch (error) {
+      log(`(keys not sent, attempt ${attempt}: ${error.message})`);
+    }
   }
 }
 
