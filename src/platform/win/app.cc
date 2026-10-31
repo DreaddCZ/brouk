@@ -1,7 +1,10 @@
 #include "platform/win/app.h"
 
 #include <algorithm>
+#include <chrono>
+#include <cstdint>
 #include <filesystem>
+#include <format>
 #include <utility>
 
 #include "cef/browser_app.h"
@@ -13,16 +16,26 @@
 #include "cef/static_page_handler.h"
 #include "core/address_input.h"
 #include "core/help.h"
+#include "core/profile_export.h"
 #include "core/search_engines.h"
+#include "core/text_file.h"
 #include "include/base/cef_logging.h"
 #include "include/cef_app.h"
 #include "include/cef_command_line.h"
 #include "include/cef_task.h"
 #include "include/wrapper/cef_helpers.h"
 #include "platform/win/data_paths.h"
+#include "platform/win/file_dialogs.h"
 #include "platform/win/wide_string.h"
 
 namespace brouk::win {
+
+namespace {
+
+// Profile export files are small (005); bigger files are not ones.
+constexpr std::uintmax_t kMaxProfileExportBytes = 16 * 1024 * 1024;
+
+}  // namespace
 
 App::App() : profiles_(AppDataDirectory()) {
   profiles_.Load();
@@ -441,12 +454,88 @@ void App::DeleteProfile(const ProfileId& id, DeleteDone done) {
               }));
 }
 
-void App::ExportProfile(const ProfileId& /*id*/, ExportDone done) {
-  done(false, Error{"Exporting profiles comes later on Windows."});
+void App::ExportProfile(const ProfileId& id, ExportDone done) {
+  std::optional<Settings> settings = profiles_.ProfileSettings(id);
+  const ProfileInfo* info = profiles_.Find(id);
+  if (!settings || !info) {
+    done(false, Error{"There is no such profile."});
+    return;
+  }
+  // Bookmarks (011) and passwords (008) come to Windows later; the file
+  // then has the profile's settings only.
+  const std::string exported_at =
+      std::format("{:%FT%TZ}", std::chrono::floor<std::chrono::seconds>(
+                                   std::chrono::system_clock::now()));
+  std::string text = brouk::ExportProfile(*settings, exported_at);
+  FileDialogOptions options;
+  options.title = L"Export \u201C" + Utf8ToWide(info->name) + L"\u201D";
+  options.type_name = L"Brouk profile";
+  options.extension = Utf8ToWide(kProfileExportExtension);
+  options.file_name = SafeFileName(Utf8ToWide(info->name));
+  options.note =
+      L"The file contains the profile's name, colour and settings. It "
+      L"contains no sign-ins, cookies or cache.";
+  // Asked from a task: the dialog runs its own message loop, which must not
+  // run inside the page's request.
+  HWND owner = profiles_window_ ? profiles_window_->hwnd() : nullptr;
+  CefPostTask(
+      TID_UI, new FunctionTask([options, owner, text, done] {
+        std::optional<std::filesystem::path> path = AskSavePath(owner, options);
+        if (!path) {
+          done(false, std::nullopt);
+          return;
+        }
+        std::optional<Error> error = WriteTextFileAtomically(*path, text);
+        done(!error, error);
+      }));
 }
 
 void App::ImportProfile(ImportDone done) {
-  done(Error{"Importing profiles comes later on Windows."});
+  FileDialogOptions options;
+  options.title = L"Import a Profile";
+  options.type_name = L"Brouk profile";
+  options.extension = Utf8ToWide(kProfileExportExtension);
+  HWND owner = profiles_window_ ? profiles_window_->hwnd() : nullptr;
+  // From a task, as ExportProfile.
+  CefPostTask(
+      TID_UI, new FunctionTask([this, options, owner, done] {
+        std::optional<std::filesystem::path> path = AskOpenPath(owner, options);
+        if (!path || quitting_) {
+          done(ImportResult{});
+          return;
+        }
+        // Export files are small; anything big is not one (the
+        // parser has a limit too).
+        Result<std::string> text = ReadTextFile(*path, kMaxProfileExportBytes);
+        if (!text) {
+          done(Error{"This file is not a Brouk profile export."});
+          return;
+        }
+        Result<ImportedProfile> parsed = ParseProfileExport(text.value());
+        if (!parsed) {
+          done(parsed.error());
+          return;
+        }
+        Result<ProfileId> created =
+            profiles_.ImportProfile(parsed.value().settings);
+        if (!created) {
+          done(created.error());
+          return;
+        }
+        std::vector<std::string> problems = parsed.value().problems;
+        if (parsed.value().bookmarks) {
+          problems.emplace_back(
+              "The bookmarks were not imported: Brouk on Windows "
+              "has no bookmarks yet.");
+        }
+        if (parsed.value().passwords) {
+          problems.emplace_back(
+              "The passwords were not imported: Brouk on Windows "
+              "has no password manager yet.");
+        }
+        ProfilesChanged();
+        done(ImportResult{created.value(), problems});
+      }));
 }
 
 const LinkRoutingConfig* App::LinkRouting() {

@@ -327,6 +327,19 @@ std::optional<TabId> TabStrip::TabAtX(int x) const {
   return tabs_.back().id;
 }
 
+std::optional<ProfileId> TabStrip::GroupAt(POINT point) const {
+  if (!Contains(bounds_, point)) {
+    return std::nullopt;
+  }
+  // Groups are laid out left to right, each from its label to its "+".
+  for (const GroupGeometry& group : groups_) {
+    if (point.x >= group.label.left && point.x < group.plus.right) {
+      return group.profile;
+    }
+  }
+  return std::nullopt;
+}
+
 std::optional<RECT> TabStrip::TabRect(TabId tab) const {
   for (const TabGeometry& geometry : tabs_) {
     if (geometry.id == tab) {

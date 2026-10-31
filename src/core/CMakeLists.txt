@@ -140,6 +140,8 @@ set(BROUK_CORE_SOURCES
   tab_strip_model.h
   task_list.cc
   task_list.h
+  text_file.cc
+  text_file.h
   totp.cc
   totp.h
   url_display.cc

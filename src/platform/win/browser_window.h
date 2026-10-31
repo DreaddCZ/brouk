@@ -161,6 +161,11 @@ class BrowserWindow final : public TabHost {
   void ShowTabMenu(TabId id, POINT screen_point);
   // A new tab right after `after` with `url` (empty: a new, empty tab).
   void OpenTabAfter(TabId after, const std::string& url);
+  // A tab dropped on another profile's group (005): asks, then reopens its
+  // address in that profile and closes it.
+  void MoveTabToProfile(TabId id, const ProfileId& profile);
+  // The profile group a dragged tab is over, if not its own.
+  std::optional<ProfileId> DropTarget(POINT point) const;
   RECT StripBounds() const;
   RECT ToolbarBounds() const;
   RECT ContentBounds() const;

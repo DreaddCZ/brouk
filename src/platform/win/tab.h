@@ -4,6 +4,7 @@
 #include <windows.h>
 
 #include <deque>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -100,6 +101,12 @@ class Tab final : public TabClientDelegate,
   // Mutes or unmutes the tab's sound ("Mute Tab").
   void SetMuted(bool muted);
   bool muted() const { return muted_; }
+  // Moving the tab to another profile (005) reloads its page there and
+  // loses what was typed into it: asks first, in a panel over the page.
+  // `done(true)` when the user chose to move it; not called if the tab
+  // closes first.
+  void AskMoveToProfile(const std::wstring& profile_name,
+                        std::function<void(bool move)> done);
   // Runs the page's unload handlers and closes the browser; OnTabClosed
   // follows. A page may cancel ("leave site?").
   void Close();
@@ -269,6 +276,7 @@ class Tab final : public TabClientDelegate,
   std::unique_ptr<TabPanel> external_protocol_;
   std::unique_ptr<TabPanel> screen_picker_;
   std::unique_ptr<TabPanel> sad_tab_;
+  std::unique_ptr<TabPanel> move_question_;
   // The first one is shown in permission_prompt_.
   std::deque<PendingPermission> permission_requests_;
   std::unique_ptr<TabPanel> permission_prompt_;
