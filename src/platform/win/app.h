@@ -5,12 +5,17 @@
 #include <cstdint>
 #include <deque>
 #include <filesystem>
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
+#include <string_view>
 #include <vector>
 
+#include "cef/history_page_handler.h"
+#include "cef/history_service.h"
 #include "cef/profile_manager_handler.h"
 #include "cef/settings_handler.h"
 #include "core/closed_tabs.h"
@@ -46,6 +51,19 @@ class App final : public BrowserWindowOwner,
   void ReleaseBrowserObjects();
   // content.json_viewer (006), for new renderer processes.
   bool JsonViewerEnabled() const;
+  // For the history page (013): the view it opens with, Clean up's keep
+  // list of a profile, and clearing cookies, site data and the cache.
+  std::string HistoryView() const;
+  std::vector<std::string> KeepList(const ProfileId& profile);
+  void PreviewProfileData(const ProfileId& profile,
+                          std::int64_t since,
+                          HistoryPageDelegate::DataPreviewDone done);
+  void ClearProfileData(const ProfileId& profile,
+                        std::int64_t since,
+                        bool cookies,
+                        bool cache,
+                        std::set<std::string> sites,
+                        std::function<void(bool cookies_ok)> done);
 
   // BrowserWindowOwner:
   CefRefPtr<CefRequestContext> RequestContext(
@@ -55,7 +73,13 @@ class App final : public BrowserWindowOwner,
   TabClientDelegate::SearchEngine SearchEngine() override;
   CefRefPtr<CefRequestContext> InternalContext() override;
   std::unique_ptr<CefMessageRouterBrowserSide::Handler> InternalPageHandler(
-      const std::string& page) override;
+      const std::string& page,
+      BrowserWindow& window,
+      TabId tab) override;
+  HistoryService* History() override;
+  void OnHistoryChanged(const ProfileId& profile) override;
+  const std::vector<HistoryMatch>* RecentPages(
+      const ProfileId& profile) override;
   void OpenHelp(const std::string& anchor) override;
   void CloseAllWindows() override;
   void OpenWindow(const std::string& url, const ProfileId& profile) override;
@@ -127,6 +151,12 @@ class App final : public BrowserWindowOwner,
   Session CurrentSession() const;
   // The front normal window that is not closing, or null.
   BrowserWindow* FrontWindow() const;
+  // A browser of `profile` for the DevTools protocol: one of its tabs, or a
+  // hidden helper browser that `release` closes again (013).
+  void WithBrowserInProfile(
+      const ProfileId& profile,
+      std::function<void(CefRefPtr<CefBrowser> browser,
+                         std::function<void()> release)> work);
   void SaveSessionFile(const Session& session);
   // Brouk quits: the session to continue with next time is final.
   void SaveSessionAtQuit();
@@ -171,6 +201,12 @@ class App final : public BrowserWindowOwner,
   std::optional<Session> frozen_session_;
   // Tabs and windows closed in this run (013).
   ClosedTabList closed_tabs_;
+  // History (013): one database per profile, on its own thread; each
+  // profile's latest pages for the History menu, read after each visit.
+  std::unique_ptr<HistoryService> history_;
+  std::map<ProfileId, std::vector<HistoryMatch>> recent_pages_;
+  // Hidden helper browsers still open (clearing data); Brouk quits after.
+  int helper_browsers_ = 0;
   std::vector<std::unique_ptr<BrowserWindow>> windows_;
 };
 

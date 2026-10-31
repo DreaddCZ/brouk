@@ -77,9 +77,12 @@ enum MenuCommand : UINT {
   kCloseTabsLeftCommand,
   kCloseTabsRightCommand,
   kReopenClosedTabCommand,
+  kHistoryCommand,
+  kClearBrowsingDataCommand,
   kFirstBlockedPopupCommand = 1000,
   kFirstProfileCommand = 2000,
   kFirstClosedCommand = 3000,
+  kFirstRecentPageCommand = 4000,
 };
 
 // Glyphs of the "Segoe MDL2 Assets" icon font, on Windows 10 and 11.
@@ -837,15 +840,18 @@ void BrowserWindow::ShowAppMenu() {
               L"Manage profiles\u2026");
   AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(profiles),
               L"Profiles");
-  // Recently closed tabs and windows (013), newest first.
+  // History (013), as Chrome's: the history page, clearing it, recently
+  // closed tabs and windows (newest first) and recently visited pages of
+  // the active tab's profile.
   HMENU closed = CreatePopupMenu();
+  AppendMenuW(closed, MF_STRING, kHistoryCommand, L"History\tCtrl+H");
+  AppendMenuW(closed, MF_STRING, kClearBrowsingDataCommand,
+              L"Clear browsing data\u2026\tCtrl+Shift+Del");
+  AppendMenuW(closed, MF_SEPARATOR, 0, nullptr);
   std::vector<std::int64_t> closed_ids;
   const std::deque<ClosedEntry>& entries = owner_.RecentlyClosed();
   AppendMenuW(closed, MF_STRING | (entries.empty() ? MF_GRAYED : 0),
               kReopenClosedTabCommand, L"Reopen closed tab\tCtrl+Shift+T");
-  if (!entries.empty()) {
-    AppendMenuW(closed, MF_SEPARATOR, 0, nullptr);
-  }
   for (const ClosedEntry& entry : entries) {
     const ClosedTab& first = entry.tabs.front();
     const std::wstring title =
@@ -858,8 +864,28 @@ void BrowserWindow::ShowAppMenu() {
                 title.c_str());
     closed_ids.push_back(entry.id);
   }
-  AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(closed),
-              L"Recently closed");
+  AppendMenuW(closed, MF_SEPARATOR, 0, nullptr);
+  const Tab* active_tab = ActiveTab();
+  const ProfileId recent_profile =
+      active_tab ? active_tab->profile() : owner_.DefaultProfile();
+  std::vector<std::string> recent_urls;
+  if (const std::vector<HistoryMatch>* recent =
+          owner_.RecentPages(recent_profile)) {
+    AppendMenuW(
+        closed, MF_STRING | MF_GRAYED, 0,
+        recent->empty() ? L"No recently visited pages" : L"Recently visited");
+    for (const HistoryMatch& page : *recent) {
+      AppendMenuW(
+          closed, MF_STRING,
+          kFirstRecentPageCommand + static_cast<UINT>(recent_urls.size()),
+          MenuText(page.title.empty() ? page.url : page.title).c_str());
+      recent_urls.push_back(page.url);
+    }
+  } else {
+    // Read from the history in the background; shown next time.
+    AppendMenuW(closed, MF_STRING | MF_GRAYED, 0, L"Loading\u2026");
+  }
+  AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(closed), L"History");
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
   AppendMenuW(menu, MF_STRING, kZoomInCommand, L"Zoom in\tCtrl++");
   AppendMenuW(menu, MF_STRING, kZoomOutCommand, L"Zoom out\tCtrl+-");
@@ -882,6 +908,12 @@ void BrowserWindow::ShowAppMenu() {
   if (command >= kFirstClosedCommand &&
       command - kFirstClosedCommand < closed_ids.size()) {
     owner_.ReopenClosed(closed_ids[command - kFirstClosedCommand]);
+    return;
+  }
+  if (command >= kFirstRecentPageCommand &&
+      command - kFirstRecentPageCommand < recent_urls.size()) {
+    OpenTab(recent_urls[command - kFirstRecentPageCommand], true,
+            recent_profile);
     return;
   }
   if (command >= kFirstProfileCommand &&
@@ -934,6 +966,12 @@ void BrowserWindow::ShowAppMenu() {
     case kReopenClosedTabCommand:
       owner_.ReopenClosed(std::nullopt);
       break;
+    case kHistoryCommand:
+      OpenInternalPage("brouk://history/");
+      break;
+    case kClearBrowsingDataCommand:
+      owner_.OpenClearBrowsingData();
+      break;
     default:
       break;
   }
@@ -972,20 +1010,81 @@ void BrowserWindow::OpenInternalPage(const std::string& url) {
     owner_.OpenSettings(url);  // Its own window, as on macOS.
     return;
   }
-  std::unique_ptr<CefMessageRouterBrowserSide::Handler> handler =
-      owner_.InternalPageHandler(*page);
-  if (!handler) {
-    return;  // Not on Windows yet.
+  Tab* active = ActiveTab();
+  if (active && active->internal() && !active->closing() &&
+      InternalPageOf(active->url()) == page) {
+    if (url != active->url()) {
+      active->Navigate(url);  // Same page: only the fragment changes.
+    }
+    FocusActiveTab();
+    return;
   }
   // In place of an empty tab, as Chrome loads chrome:// pages there.
-  Tab* active = ActiveTab();
   const bool replace = active && IsBlank(active->url()) && !active->internal();
   Tab* tab = InsertTabFromOpener(active, true);
+  std::unique_ptr<CefMessageRouterBrowserSide::Handler> handler =
+      owner_.InternalPageHandler(*page, *this, tab->id());
+  if (!handler) {
+    RemoveUncreatedTab(tab->id());  // Not on Windows yet.
+    return;
+  }
   tab->CreateInternalPage(url, std::move(handler), owner_.InternalContext());
   if (replace) {
+    replaced_tabs_.insert(active->id());
     CloseTab(active->id());
   }
   FocusActiveTab();
+}
+
+void BrowserWindow::OpenPageFromTab(TabId from,
+                                    const ProfileId& requested,
+                                    const std::string& url,
+                                    bool new_tab) {
+  Tab* source = FindTab(from);
+  const bool exists = std::ranges::any_of(
+      owner_.ProfileList(),
+      [&requested](const ProfileInfo& p) { return p.id == requested; });
+  const ProfileId profile = exists ? requested : ProfileOfTab(from);
+  if (!source || source->closing() || source->profile() != profile) {
+    OpenTab(url, !new_tab, profile);
+    if (!new_tab) {
+      Activate();
+    }
+    return;
+  }
+  // The history tab cannot load web pages (internal context): a web tab
+  // takes its place, or opens next to it.
+  Tab* web = InsertTabFromOpener(source, !new_tab);
+  web->CreateBrowser(url, owner_.RequestContext(profile));
+  if (!new_tab) {
+    replaced_tabs_.insert(from);
+    CloseTab(from);
+    FocusActiveTab();
+  }
+}
+
+ProfileId BrowserWindow::ProfileOfTab(TabId id) {
+  const Tab* tab = FindTab(id);
+  return tab ? tab->profile() : owner_.DefaultProfile();
+}
+
+CefRefPtr<CefBrowser> BrowserWindow::AnyBrowserInProfile(
+    const ProfileId& profile) const {
+  for (const auto& [id, tab] : tabs_) {
+    if (tab->profile() == profile && !tab->internal() && !tab->closing() &&
+        tab->browser()) {
+      return tab->browser();
+    }
+  }
+  return nullptr;
+}
+
+HistoryService* BrowserWindow::TabHistory() {
+  return owner_.History();
+}
+
+void BrowserWindow::OnTabHistoryChanged(Tab& tab) {
+  owner_.OnHistoryChanged(tab.profile());
 }
 
 std::optional<SessionWindow> BrowserWindow::SessionState() const {
@@ -1064,16 +1163,16 @@ void BrowserWindow::Restore(const SessionWindow& saved) {
         [&](const ProfileInfo& p) { return p.id == saved_tab.profile; });
     const ProfileId profile =
         exists ? saved_tab.profile : owner_.DefaultProfile();
+    const TabId id = NextTabId();
     std::unique_ptr<CefMessageRouterBrowserSide::Handler> handler;
     if (IsInternalPageUrl(saved_tab.url)) {
       // Pages with their own window (help, settings) do not come back.
       const std::optional<std::string> page = InternalPageOf(saved_tab.url);
-      handler = page ? owner_.InternalPageHandler(*page) : nullptr;
+      handler = page ? owner_.InternalPageHandler(*page, *this, id) : nullptr;
       if (!handler) {
         continue;
       }
     }
-    const TabId id = NextTabId();
     auto tab = std::make_unique<Tab>(*this, id, window_, profile);
     tab->SetBounds(ContentBounds());
     Tab* created = tab.get();
@@ -1149,8 +1248,8 @@ void BrowserWindow::OpenTab(const std::string& url,
         owner_.OpenSettings(url);
         return;
       }
-      if (auto handler = owner_.InternalPageHandler(*page)) {
-        const TabId id = NextTabId();
+      const TabId id = NextTabId();
+      if (auto handler = owner_.InternalPageHandler(*page, *this, id)) {
         auto tab = std::make_unique<Tab>(*this, id, window_, profile);
         tab->SetBounds(ContentBounds());
         Tab* created = tab.get();
@@ -1259,7 +1358,7 @@ void BrowserWindow::RestoreClosedTab(const ClosedTab& closed, bool activate) {
   }
   std::unique_ptr<CefMessageRouterBrowserSide::Handler> handler;
   if (const std::optional<std::string> page = InternalPageOf(closed.url)) {
-    handler = owner_.InternalPageHandler(*page);
+    handler = owner_.InternalPageHandler(*page, *this, id);
   }
   if (handler) {
     created->CreateInternalPage(closed.url, std::move(handler),
@@ -1349,11 +1448,14 @@ void BrowserWindow::NavigateToAddressBarText() {
     // place.
     const TabId internal = tab->id();
     Tab* web = InsertTabFromOpener(tab, true);
+    web->MarkNextVisitTyped();
     web->CreateBrowser(input.url, owner_.RequestContext(web->profile()));
+    replaced_tabs_.insert(internal);
     CloseTab(internal);
     FocusActiveTab();
     return;
   }
+  tab->MarkNextVisitTyped();
   tab->Navigate(input.url);
   tab->Focus();
 }
@@ -1443,6 +1545,14 @@ bool BrowserWindow::HandleShortcut(int key,
   }
   if (control && !alt && !shift && key == 'T') {
     OpenTab(std::string(), true);
+    return true;
+  }
+  if (control && !alt && !shift && key == 'H') {
+    OpenInternalPage("brouk://history/");
+    return true;
+  }
+  if (control && !alt && shift && key == VK_DELETE) {
+    owner_.OpenClearBrowsingData();
     return true;
   }
   if (control && !alt && shift && key == 'T') {

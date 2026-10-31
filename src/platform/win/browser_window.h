@@ -48,10 +48,22 @@ class BrowserWindowOwner {
   // The request context of internal pages (in memory only); only it can
   // load brouk:// pages.
   virtual CefRefPtr<CefRequestContext> InternalContext() = 0;
-  // The bridge handler of an internal page shown in a tab (the licences,
-  // 023), or null for pages that do not open in a tab (yet).
+  // The bridge handler of an internal page shown in tab `tab` of `window`
+  // (the licences, 023; history, 013), or null for pages that do not open
+  // in a tab (yet).
   virtual std::unique_ptr<CefMessageRouterBrowserSide::Handler>
-  InternalPageHandler(const std::string& page) = 0;
+  InternalPageHandler(const std::string& page,
+                      BrowserWindow& window,
+                      TabId tab) = 0;
+  // History (013): null before CEF is ready. A profile's history changed;
+  // its most recent pages for the menu (null until read, which starts
+  // reading them).
+  virtual HistoryService* History() = 0;
+  virtual void OnHistoryChanged(const ProfileId& profile) = 0;
+  virtual const std::vector<HistoryMatch>* RecentPages(
+      const ProfileId& profile) = 0;
+  // History → Clear browsing data (013): the dialog on the history page.
+  virtual void OpenClearBrowsingData() = 0;
   virtual const std::vector<ProfileInfo>& ProfileList() = 0;
   // Opens the profile manager (brouk://profiles, 005) in its own window.
   virtual void OpenProfileManager() = 0;
@@ -120,8 +132,20 @@ class BrowserWindow final : public TabHost {
   // browser.
   Tab* InsertTabFromOpener(const Tab* opener, bool foreground);
   // Opens an internal page (brouk://...) in a tab, in place of an empty
-  // active tab; help opens its own window.
+  // active tab; an active tab already showing it is reused (only the
+  // fragment changes). Help, settings and profiles open their own windows.
   void OpenInternalPage(const std::string& url);
+  // A page chosen on the history page in tab `from` (013): in place of the
+  // history tab when it is in `profile` (empty: the tab's own), else, or
+  // with `new_tab`, as a new tab of `profile`.
+  void OpenPageFromTab(TabId from,
+                       const ProfileId& profile,
+                       const std::string& url,
+                       bool new_tab);
+  // A tab's profile (the default profile if it is gone), and any web
+  // browser of `profile` here (for the DevTools protocol).
+  ProfileId ProfileOfTab(TabId id);
+  CefRefPtr<CefBrowser> AnyBrowserInProfile(const ProfileId& profile) const;
   // Removes a tab whose browser never came (the popup was aborted).
   void RemoveUncreatedTab(TabId id);
   Tab* FindTab(TabId id);
@@ -161,6 +185,8 @@ class BrowserWindow final : public TabHost {
   bool OnTabKey(const CefKeyEvent& event) override;
   TabClientDelegate::SearchEngine TabSearchEngine() override;
   int FaviconSize() override;
+  HistoryService* TabHistory() override;
+  void OnTabHistoryChanged(Tab& tab) override;
 
  private:
   static LRESULT CALLBACK WindowProc(HWND window,
