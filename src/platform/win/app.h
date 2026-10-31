@@ -19,6 +19,7 @@
 #include "cef/history_service.h"
 #include "cef/profile_manager_handler.h"
 #include "cef/settings_handler.h"
+#include "cef/task_manager_handler.h"
 #include "core/closed_tabs.h"
 #include "core/download_paths.h"
 #include "core/launch_args.h"
@@ -89,6 +90,11 @@ class App final : public BrowserWindowOwner,
   bool BookmarkSuggestionsEnabled() override;
   bool BookmarksBarAlwaysShown() override;
   void SetBookmarksBarAlwaysShown(bool always) override;
+  void OpenTaskManager(const std::string& row) override;
+  // For the task manager (020): every tab of every window (in the order
+  // the windows were opened) and Brouk's page windows, and acting on one.
+  std::vector<TaskManagerPage> TaskPages();
+  void ActOnTaskPage(const std::string& key, TaskPageAction action);
   bool AskWhereToSaveDownloads() override;
   DownloadTarget ReserveDownloadPath(const std::string& suggested,
                                      const ProfileId& profile) override;
@@ -193,7 +199,7 @@ class App final : public BrowserWindowOwner,
   void QuitWhenDone();
   // Brouk's page windows (help, profile manager, settings), for closing
   // them all.
-  std::array<std::unique_ptr<InternalPageWindow>*, 3> PageWindows();
+  std::array<std::unique_ptr<InternalPageWindow>*, 4> PageWindows();
   // A settings file changed on disk (004, live reload).
   void SettingsFilesChanged();
   // Applies the global settings Brouk on Windows has so far: theme and
@@ -209,6 +215,7 @@ class App final : public BrowserWindowOwner,
   std::unique_ptr<InternalPageWindow> help_window_;
   std::unique_ptr<InternalPageWindow> profiles_window_;
   std::unique_ptr<InternalPageWindow> settings_window_;
+  std::unique_ptr<InternalPageWindow> task_manager_window_;
   std::unique_ptr<SettingsWatcher> settings_watcher_;
   // appearance.theme for web pages (Chromium's colour scheme).
   cef_color_variant_t color_variant_ = CEF_COLOR_VARIANT_SYSTEM;

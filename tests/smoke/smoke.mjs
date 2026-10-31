@@ -762,6 +762,49 @@ async function main() {
     await sleep(500);
     desktopScreenshot('bookmarks-bar');
     sendKeys('Downloads test', ['^+b']);
+
+    // Task manager (020): Shift+Esc opens its window, which lists the
+    // tabs; pausing a tab there shows in its row, and Resume undoes it.
+    sendKeys('Downloads test', ['+{ESC}']);
+    let tasksTarget;
+    for (let i = 0; i < 20 && !tasksTarget; i++) {
+      await sleep(500);
+      tasksTarget = await devtoolsJson(port, '/json/list')
+        .then((list) => list.find((t) => t.type === 'page' && t.url.startsWith('brouk://task-manager')))
+        .catch(() => undefined);
+    }
+    if (check(tasksTarget !== undefined, 'Shift+Esc opens the task manager')) {
+      const tasks = await Cdp.connect(tasksTarget.webSocketDebuggerUrl);
+      const ask = async (request) => {
+        const { result } = await tasks.send('Runtime.evaluate', {
+          expression:
+            'new Promise((ok) => window.cefQuery({ request: ' +
+            JSON.stringify(JSON.stringify(request)) +
+            ", onSuccess: (r) => ok('ok ' + r), onFailure: (c, m) => ok('failed ' + m) }))",
+          awaitPromise: true,
+          returnByValue: true,
+        });
+        return result.value ?? '';
+      };
+      const pageOf = async () => {
+        const answer = await ask({ type: 'tasks.list', jsMemory: false });
+        if (!answer.startsWith('ok ')) return undefined;
+        const pages = JSON.parse(answer.slice(3)).pages ?? {};
+        const key = Object.keys(pages).find((k) => (pages[k].url ?? '').includes('/downloads.html'));
+        return key ? { key, ...pages[key] } : undefined;
+      };
+      const row = await pageOf();
+      if (check(row !== undefined, 'the task manager lists the tabs')) {
+        await ask({ type: 'tasks.action', action: 'pause', pages: [row.key] });
+        const paused = await pageOf();
+        check(paused?.paused === true, 'Pause in the task manager pauses the tab');
+        desktopScreenshot('task-manager');
+        await ask({ type: 'tasks.action', action: 'resume', pages: [row.key] });
+        const resumed = await pageOf();
+        check(resumed?.paused === false, 'Resume runs it again');
+      }
+      tasks.close();
+    }
   }
 
   // A crashed renderer shows the crash page (012); Brouk keeps running.

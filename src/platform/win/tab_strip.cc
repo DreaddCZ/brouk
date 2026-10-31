@@ -42,7 +42,8 @@ constexpr wchar_t kMaximizeGlyph[] = L"\uE922";
 constexpr wchar_t kRestoreGlyph[] = L"\uE923";
 constexpr wchar_t kCloseGlyph[] = L"\uE8BB";
 constexpr wchar_t kAddGlyph[] = L"\uE710";
-constexpr wchar_t kPageGlyph[] = L"\uE774";  // Globe: a page without icon.
+constexpr wchar_t kPageGlyph[] = L"\uE774";    // Globe: a page without icon.
+constexpr wchar_t kPausedGlyph[] = L"\uE769";  // Pause.
 
 COLORREF FromRgb(std::uint32_t rgb) {
   return RGB((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
@@ -413,13 +414,15 @@ void TabStrip::PaintTab(HDC dc,
     SelectObject(dc, previous_brush);
     SelectObject(dc, previous_pen);
     DeleteObject(pen);
-  } else if (tab && !tab->favicon().empty()) {
+  } else if (tab && !tab->paused() && !tab->favicon().empty()) {
     tab->favicon().Draw(dc, icon_x, icon_y);
   } else {
+    // A paused tab (020) shows a pause sign in place of its icon.
+    const bool paused = tab && tab->paused();
     RECT glyph = {icon_x, icon_y, icon_x + icon, icon_y + icon};
     HGDIOBJ previous = SelectObject(dc, glyph_font_);
     SetTextColor(dc, theme.text_dim);
-    DrawTextW(dc, kPageGlyph, -1, &glyph,
+    DrawTextW(dc, paused ? kPausedGlyph : kPageGlyph, -1, &glyph,
               DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     SelectObject(dc, previous);
   }
@@ -434,7 +437,8 @@ void TabStrip::PaintTab(HDC dc,
     const std::wstring text =
         tab ? Utf8ToWide(tab->DisplayTitle()) : std::wstring(L"New Tab");
     HGDIOBJ previous = SelectObject(dc, title_font_);
-    SetTextColor(dc, active ? theme.text : theme.text_dim);
+    SetTextColor(
+        dc, active && !(tab && tab->paused()) ? theme.text : theme.text_dim);
     DrawTextW(
         dc, text.c_str(), static_cast<int>(text.size()), &title,
         DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS);

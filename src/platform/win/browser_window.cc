@@ -21,6 +21,7 @@
 #include "core/internal_pages.h"
 #include "core/profile_id.h"
 #include "core/zoom.h"
+#include "include/cef_parser.h"
 #include "include/cef_task.h"
 #include "include/wrapper/cef_helpers.h"
 #include "platform/win/controls.h"
@@ -81,6 +82,9 @@ enum MenuCommand : UINT {
   kCloseOtherTabsCommand,
   kCloseTabsLeftCommand,
   kCloseTabsRightCommand,
+  kPauseTabCommand,
+  kShowInTaskManagerCommand,
+  kTaskManagerCommand,
   kReopenClosedTabCommand,
   kHistoryCommand,
   kClearBrowsingDataCommand,
@@ -603,6 +607,83 @@ void BrowserWindow::RetryDownload(const DownloadEntry& entry) {
   }
   // No tab of the profile here: the address in a new tab starts it again.
   OpenTab(entry.record.url, false, entry.profile);
+}
+
+void BrowserWindow::AppendTaskPages(std::vector<TaskManagerPage>& pages) {
+  const std::string window_name = "Window " + std::to_string(window_id_);
+  const std::optional<TabId> active = model_.active_id();
+  for (std::size_t i = 0; i < model_.count(); ++i) {
+    const TabId id = model_.id_at(i);
+    const Tab* tab = FindTab(id);
+    if (!tab || tab->closing()) {
+      continue;
+    }
+    const TabStrip::GroupLook look = owner_.ProfileLook(tab->profile());
+    TaskManagerPage page;
+    page.key = "tab-" + std::to_string(id);
+    page.browser = tab->browser();
+    page.pid = tab->renderer_pid();
+    page.brouk_page = tab->internal();
+    page.title = tab->DisplayTitle();
+    page.url = tab->url();
+    if (!tab->favicon_png().empty()) {
+      page.icon =
+          "data:image/png;base64," +
+          CefBase64Encode(tab->favicon_png().data(), tab->favicon_png().size())
+              .ToString();
+    }
+    page.profile_name = look.name;
+    page.profile_color = look.color;
+    page.window = window_name;
+    page.received_bytes = tab->received_bytes();
+    page.audible = tab->audible();
+    page.muted = tab->muted();
+    page.camera = tab->uses_camera();
+    page.microphone = tab->uses_microphone();
+    page.paused = tab->paused();
+    page.loading = tab->loading();
+    page.crashed = tab->crashed();
+    page.shown = active == id;
+    pages.push_back(std::move(page));
+  }
+}
+
+bool BrowserWindow::ActOnTab(TabId id, TaskPageAction action) {
+  Tab* tab = FindTab(id);
+  if (!tab) {
+    return false;
+  }
+  switch (action) {
+    case TaskPageAction::kGoTo:
+      if (model_.ActivateTab(id)) {
+        ModelChanged();
+      }
+      Activate();
+      FocusActiveTab();
+      break;
+    case TaskPageAction::kPause:
+      tab->SetPaused(true);
+      break;
+    case TaskPageAction::kResume:
+      tab->SetPaused(false);
+      break;
+    case TaskPageAction::kUnload:
+      // The shown tab stays loaded, as in Chrome.
+      if (model_.active_id() != id) {
+        tab->Unload();
+      }
+      break;
+    case TaskPageAction::kMute:
+    case TaskPageAction::kUnmute:
+      tab->SetMuted(action == TaskPageAction::kMute);
+      break;
+    case TaskPageAction::kReload:
+      tab->Reload();
+      break;
+    case TaskPageAction::kDevTools:
+      break;  // Developer tools (006) come to Windows in W3.
+  }
+  return true;
 }
 
 bool BrowserWindow::CanBookmark(const Tab* tab) const {
@@ -1277,6 +1358,10 @@ void BrowserWindow::ShowTabMenu(TabId id, POINT screen_point) {
   add(kDuplicateTabCommand, L"Duplicate", !tab->internal());
   add(kPinTabCommand, model_.IsPinned(id) ? L"Unpin" : L"Pin", true);
   add(kMuteTabCommand, tab->muted() ? L"Unmute site" : L"Mute site", true);
+  // Task manager (020).
+  add(kPauseTabCommand, tab->paused() ? L"Resume" : L"Pause",
+      tab->paused() || (tab->has_browser() && !tab->internal()));
+  add(kShowInTaskManagerCommand, L"Show in task manager", true);
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
   add(kCloseTabCommand, L"Close\tCtrl+W", true);
   add(kCloseOtherTabsCommand, L"Close other tabs", others);
@@ -1312,6 +1397,12 @@ void BrowserWindow::ShowTabMenu(TabId id, POINT screen_point) {
       break;
     case kMuteTabCommand:
       tab->SetMuted(!tab->muted());
+      break;
+    case kPauseTabCommand:
+      tab->SetPaused(!tab->paused());
+      break;
+    case kShowInTaskManagerCommand:
+      owner_.OpenTaskManager("tab-" + std::to_string(id));
       break;
     case kCloseTabCommand:
       CloseTab(id);
@@ -1537,6 +1628,7 @@ void BrowserWindow::ShowAppMenu() {
   }
   AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(closed), L"History");
   AppendMenuW(menu, MF_STRING, kDownloadsCommand, L"Downloads\tCtrl+J");
+  AppendMenuW(menu, MF_STRING, kTaskManagerCommand, L"Task manager\tShift+Esc");
   // Bookmarks (011), as Chrome's submenu: the actions, then the bar's
   // items and Other bookmarks visible in the active tab's profile.
   HMENU bookmarks = CreatePopupMenu();
@@ -1658,6 +1750,9 @@ void BrowserWindow::ShowAppMenu() {
       break;
     case kDownloadsCommand:
       ShowDownloads();
+      break;
+    case kTaskManagerCommand:
+      owner_.OpenTaskManager(std::string());
       break;
     case kBookmarkThisTabCommand:
       BookmarkPage();
@@ -2490,6 +2585,11 @@ bool BrowserWindow::HandleShortcut(int key,
     ToggleBookmarksBar();
     return true;
   }
+  // Shift+Esc: the task manager, as in Chrome on Windows (020).
+  if (!control && !alt && shift && key == VK_ESCAPE) {
+    owner_.OpenTaskManager(std::string());
+    return true;
+  }
   if (control && !alt && !shift && key == 'J') {
     ShowDownloads();
     return true;
@@ -3022,6 +3122,9 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
         if (hover_.part == TabStrip::Part::kTab) {
           if (const Tab* tab = FindTab(hover_.tab)) {
             tooltip_text_ = Utf8ToWide(tab->DisplayTitle());
+            if (tab->paused()) {
+              tooltip_text_ += L" \u2013 Paused";
+            }
           }
         } else if (hover_.part == TabStrip::Part::kTabClose) {
           tooltip_text_ = L"Close tab";

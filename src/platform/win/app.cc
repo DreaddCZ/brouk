@@ -39,6 +39,7 @@
 #include "include/cef_command_line.h"
 #include "include/cef_task.h"
 #include "include/wrapper/cef_helpers.h"
+#include "platform/win/controls.h"
 #include "platform/win/data_paths.h"
 #include "platform/win/file_dialogs.h"
 #include "platform/win/theme.h"
@@ -357,6 +358,31 @@ class AppBookmarksPage final : public BookmarksPageDelegate {
   BrowserWindow* window_;
   TabId tab_;
   int watcher_ = 0;
+};
+
+// Answers the task manager window (020): every tab of every window, and
+// the windows of Brouk's pages; its actions on them.
+class AppTaskManager final : public TaskManagerDelegate {
+ public:
+  explicit AppTaskManager(App& app) : app_(app) {}
+
+  std::vector<TaskManagerPage> Pages() override { return app_.TaskPages(); }
+  void Act(const std::string& key, TaskPageAction action) override {
+    app_.ActOnTaskPage(key, action);
+  }
+  const Settings& GlobalSettings() override {
+    return app_.Registry().global_settings();
+  }
+  std::optional<Error> SetGlobalSetting(std::string_view key,
+                                        SettingValue value) override {
+    return app_.SetGlobalSetting(key, std::move(value));
+  }
+  void CopyText(const std::string& text) override {
+    SetClipboardText(nullptr, Utf8ToWide(text));
+  }
+
+ private:
+  App& app_;
 };
 
 // Answers one history tab's page (013). Actions go to the app and the
@@ -764,6 +790,7 @@ void App::ReleaseBrowserObjects() {
   help_window_.reset();
   profiles_window_.reset();
   settings_window_.reset();
+  task_manager_window_.reset();
   windows_.clear();
   bookmarks_.reset();  // Writes pending changes.
   download_watchers_.clear();
@@ -870,6 +897,110 @@ const std::vector<HistoryMatch>* App::RecentPages(const ProfileId& profile) {
     return nullptr;
   }
   return &it->second;
+}
+
+// One task manager window (020), as on macOS; `row` ("tab-12") is
+// selected in it.
+void App::OpenTaskManager(const std::string& row) {
+  CEF_REQUIRE_UI_THREAD();
+  if (quitting_) {
+    return;
+  }
+  // Only "tab-" and digits (made by the windows).
+  const bool valid_row =
+      row.starts_with("tab-") && row.size() > 4 &&
+      row.find_first_not_of("0123456789", 4) == std::string::npos;
+  if (task_manager_window_) {
+    if (valid_row) {
+      task_manager_window_->ExecuteJavaScript("selectTaskRow('" + row + "')");
+    }
+    task_manager_window_->Activate();
+    return;
+  }
+  auto window = std::make_unique<InternalPageWindow>([this] {
+    CefPostTask(TID_UI, new FunctionTask([this] {
+                  task_manager_window_.reset();
+                  QuitWhenDone();
+                }));
+  });
+  const std::string url = valid_row ? "brouk://task-manager/#" + row
+                                    : std::string("brouk://task-manager/");
+  if (window->Create(url, L"Task Manager", 920, 640,
+                     std::make_unique<TaskManagerHandler>(
+                         std::make_unique<AppTaskManager>(*this)),
+                     InternalContext())) {
+    task_manager_window_ = std::move(window);
+  }
+}
+
+std::vector<TaskManagerPage> App::TaskPages() {
+  std::vector<TaskManagerPage> pages;
+  // In the order the windows were opened, so rows do not move around.
+  std::vector<BrowserWindow*> ordered;
+  for (const std::unique_ptr<BrowserWindow>& window : windows_) {
+    ordered.push_back(window.get());
+  }
+  std::ranges::sort(ordered, {}, &BrowserWindow::window_id);
+  for (BrowserWindow* window : ordered) {
+    window->AppendTaskPages(pages);
+  }
+  const std::array<std::pair<const char*, InternalPageWindow*>, 4> windows = {{
+      {"help", help_window_.get()},
+      {"profiles", profiles_window_.get()},
+      {"settings", settings_window_.get()},
+      {"task-manager", task_manager_window_.get()},
+  }};
+  for (const auto& [name, window] : windows) {
+    if (!window) {
+      continue;
+    }
+    TaskManagerPage page;
+    page.key = std::string("window-") + name;
+    page.browser = window->browser();
+    page.pid = window->renderer_pid();
+    page.brouk_page = true;
+    page.own_window = true;
+    page.title = WideToUtf8(WindowText(window->hwnd()));
+    page.url = std::string("brouk://") + name + "/";
+    page.window = page.title;
+    page.shown = true;
+    pages.push_back(std::move(page));
+  }
+  return pages;
+}
+
+void App::ActOnTaskPage(const std::string& key, TaskPageAction action) {
+  if (key.starts_with("window-")) {
+    // Only going to a page window; its page is Brouk's own.
+    const std::string name = key.substr(7);
+    const std::array<std::pair<const char*, InternalPageWindow*>, 4> windows = {
+        {
+            {"help", help_window_.get()},
+            {"profiles", profiles_window_.get()},
+            {"settings", settings_window_.get()},
+            {"task-manager", task_manager_window_.get()},
+        }};
+    for (const auto& [window_name, window] : windows) {
+      if (window && name == window_name && action == TaskPageAction::kGoTo) {
+        window->Activate();
+      }
+    }
+    return;
+  }
+  if (!key.starts_with("tab-")) {
+    return;
+  }
+  TabId id = 0;
+  const auto [end, error] =
+      std::from_chars(key.data() + 4, key.data() + key.size(), id);
+  if (error != std::errc() || end != key.data() + key.size()) {
+    return;
+  }
+  for (const std::unique_ptr<BrowserWindow>& window : windows_) {
+    if (window->ActOnTab(id, action)) {
+      return;
+    }
+  }
 }
 
 BookmarkStore* App::Bookmarks() {
@@ -1514,8 +1645,9 @@ std::optional<Error> App::SetLinkRouting(LinkRoutingConfig /*config*/) {
   return Error{"Link routing comes later on Windows."};
 }
 
-std::array<std::unique_ptr<InternalPageWindow>*, 3> App::PageWindows() {
-  return {&help_window_, &profiles_window_, &settings_window_};
+std::array<std::unique_ptr<InternalPageWindow>*, 4> App::PageWindows() {
+  return {&help_window_, &profiles_window_, &settings_window_,
+          &task_manager_window_};
 }
 
 HWND App::DialogOwner() const {

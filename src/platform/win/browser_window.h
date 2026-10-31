@@ -16,6 +16,7 @@
 
 #include "cef/search_suggest_request.h"
 #include "cef/tab_client.h"
+#include "cef/task_manager_handler.h"
 #include "core/address_suggestions.h"
 #include "core/closed_tabs.h"
 #include "core/profile_registry.h"
@@ -89,6 +90,9 @@ class BrowserWindowOwner {
   // The setting bookmarks.bar: "always" or only on the new tab page.
   virtual bool BookmarksBarAlwaysShown() = 0;
   virtual void SetBookmarksBarAlwaysShown(bool always) = 0;
+  // The task manager window (020), with the row `row` ("tab-12") selected
+  // when not empty.
+  virtual void OpenTaskManager(const std::string& row) = 0;
   virtual const std::vector<ProfileInfo>& ProfileList() = 0;
   // Opens the profile manager (brouk://profiles, 005) in its own window.
   virtual void OpenProfileManager() = 0;
@@ -185,6 +189,10 @@ class BrowserWindow final : public TabHost, public BookmarksBar::Delegate {
   // manager page in tab `from`: in place of it when it may).
   void BookmarksChanged();
   void OpenBookmark(BookmarkId id, BookmarkOpen how) override;
+  // Task manager (020): this window's tabs as rows, in strip order, and
+  // an action on one of them (false if it is not here).
+  void AppendTaskPages(std::vector<TaskManagerPage>& pages);
+  bool ActOnTab(TabId id, TaskPageAction action);
   void OpenBookmarkFromTab(TabId from, BookmarkId id, bool new_tab);
   // Removes a tab whose browser never came (the popup was aborted).
   void RemoveUncreatedTab(TabId id);

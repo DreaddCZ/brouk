@@ -102,6 +102,19 @@ class Tab final : public TabClientDelegate,
   // The next visit was typed in the address bar (013: CEF has no "typed"
   // transition of its own).
   void MarkNextVisitTyped() { next_visit_typed_ = true; }
+  // Task manager (020): Pause freezes the page (scripts, timers, media)
+  // until Resume, with a bar over it; Unload closes its browser but keeps
+  // the tab, which loads again when shown, like a restored tab.
+  void SetPaused(bool paused);
+  void Unload();
+  bool paused() const { return paused_; }
+  const std::vector<std::uint8_t>& favicon_png() const { return favicon_png_; }
+  bool audible() const { return audible_; }
+  bool uses_camera() const { return camera_; }
+  bool uses_microphone() const { return microphone_; }
+  bool crashed() const { return sad_tab_ != nullptr; }
+  int renderer_pid() const;
+  std::int64_t received_bytes() const;
   // The next visit opens a bookmark (011).
   void MarkNextVisitBookmark() { next_visit_bookmark_ = true; }
   void SetBounds(const RECT& bounds);
@@ -307,6 +320,14 @@ class Tab final : public TabClientDelegate,
   std::unique_ptr<TabPanel> restore_pages_;
   // History (013): how the next visit started, and the last visit (a page
   // that forwards by itself is not kept, only the end of the chain).
+  // Task manager (020).
+  bool paused_ = false;
+  std::unique_ptr<TabPanel> paused_bar_;
+  bool unloading_ = false;
+  CefRefPtr<CefRequestContext> unload_context_;
+  bool audible_ = false;
+  bool camera_ = false;
+  bool microphone_ = false;
   bool next_visit_typed_ = false;
   bool next_visit_bookmark_ = false;
   std::string last_visit_url_;

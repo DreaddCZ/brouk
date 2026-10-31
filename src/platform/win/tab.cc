@@ -9,10 +9,12 @@
 
 #include "brouk/app_info.h"
 #include "cef/color_scheme.h"
+#include "cef/devtools_call.h"
 #include "cef/function_task.h"
 #include "core/external_protocol.h"
 #include "core/permissions.h"
 #include "include/cef_task.h"
+#include "include/cef_values.h"
 #include "include/wrapper/cef_helpers.h"
 #include "platform/win/desktop_sources.h"
 #include "platform/win/theme.h"
@@ -109,7 +111,8 @@ Tab::~Tab() {
   }
   // The panels' windows go before the container they are in.
   for (auto* panel : {&js_dialog_, &unresponsive_, &external_protocol_,
-                      &screen_picker_, &sad_tab_, &permission_prompt_}) {
+                      &screen_picker_, &sad_tab_, &permission_prompt_,
+                      &move_question_, &restore_pages_, &paused_bar_}) {
     panel->reset();
   }
   find_bar_.reset();
@@ -353,6 +356,7 @@ void Tab::GoForward() {
 }
 
 void Tab::Reload() {
+  SetPaused(false);
   if (browser_) {
     browser_->Reload();
   }
@@ -618,7 +622,91 @@ void Tab::OnCloseReady() {
   }
 }
 
+int Tab::renderer_pid() const {
+  if (client_) {
+    return client_->renderer_pid();
+  }
+  return internal_client_ ? internal_client_->renderer_pid() : 0;
+}
+
+std::int64_t Tab::received_bytes() const {
+  return client_ ? client_->received_bytes() : 0;
+}
+
+void Tab::SetPaused(bool paused) {
+  CEF_REQUIRE_UI_THREAD();
+  if (paused == paused_ ||
+      (paused && (!browser_ || internal() || sad_tab_ || unloading_))) {
+    return;
+  }
+  paused_ = paused;
+  if (paused) {
+    // A paused tab stays paused when shown (unlike Chrome), with a bar
+    // that says so (020).
+    TabPanel::Content content;
+    content.placement = TabPanel::Placement::kTopCenter;
+    content.width = 380;
+    content.title = L"This page is paused";
+    content.message =
+        L"The task manager paused it: its scripts, timers and "
+        L"media are stopped.";
+    content.buttons = {L"Resume"};
+    std::weak_ptr<int> alive = alive_;
+    paused_bar_ =
+        MakePanel(std::move(content), [this, alive](const TabPanel::Answer&) {
+          if (!alive.expired()) {
+            // From a task: this runs inside the panel.
+            CefPostTask(TID_UI, new FunctionTask([this, alive] {
+                          if (!alive.expired()) {
+                            SetPaused(false);
+                          }
+                        }));
+          }
+        });
+  } else {
+    paused_bar_.reset();
+  }
+  if (browser_) {
+    CefRefPtr<CefDictionaryValue> params = CefDictionaryValue::Create();
+    params->SetString("state", paused ? "frozen" : "active");
+    CallDevToolsMethod(browser_, "Page.setWebLifecycleState", params,
+                       [](bool, const std::string&) {});
+  }
+  host_.OnTabChanged(*this);
+}
+
+void Tab::Unload() {
+  CEF_REQUIRE_UI_THREAD();
+  if (!browser_ || internal() || closing_ || unloading_) {
+    return;
+  }
+  SetPaused(false);
+  unloading_ = true;
+  unload_context_ = browser_->GetHost()->GetRequestContext();
+  // As Chrome discards a tab: no "leave site?" question.
+  browser_->GetHost()->CloseBrowser(true);
+}
+
 void Tab::OnBrowserClosed() {
+  if (unloading_ && !closing_) {
+    // Unloaded (020): the tab stays, like a restored tab that loads when
+    // shown; a new client for the browser it gets then.
+    unloading_ = false;
+    if (client_) {
+      client_->DetachDelegate();
+    }
+    browser_ = nullptr;
+    client_ = new TabClient(this);
+    client_->SetDownloads(host_.TabDownloads(), profile_);
+    deferred_context_ = std::move(unload_context_);
+    loading_ = false;
+    audible_ = false;
+    camera_ = false;
+    microphone_ = false;
+    sad_tab_.reset();
+    host_.OnTabChanged(*this);
+    return;
+  }
   if (client_) {
     client_->DetachDelegate();
     client_ = nullptr;
@@ -890,9 +978,16 @@ void Tab::OnFullscreenModeChanged(bool fullscreen) {
   host_.OnTabFullscreenChanged(*this, fullscreen);
 }
 
-void Tab::OnAudibleChanged(bool /*audible*/) {}
+void Tab::OnAudibleChanged(bool audible) {
+  audible_ = audible;
+  host_.OnTabChanged(*this);
+}
 
-void Tab::OnMediaAccessChanged(bool /*video*/, bool /*audio*/) {}
+void Tab::OnMediaAccessChanged(bool video, bool audio) {
+  camera_ = video;
+  microphone_ = audio;
+  host_.OnTabChanged(*this);
+}
 
 // Windows has no system picker that names Chromium's sources, so Brouk
 // lists the screens and windows itself (Chrome's picker, without the
