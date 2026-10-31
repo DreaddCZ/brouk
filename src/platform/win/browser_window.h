@@ -253,7 +253,6 @@ class BrowserWindow final : public TabHost, public BookmarksBar::Delegate {
   DownloadTarget TabReserveDownloadPath(const std::string& suggested,
                                         const ProfileId& profile) override;
   void TabReleaseDownloadPath(const std::string& path) override;
-  bool IsActiveTab(const Tab& tab) override;
 
  private:
   static LRESULT CALLBACK WindowProc(HWND window,

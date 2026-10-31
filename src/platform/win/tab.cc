@@ -667,42 +667,34 @@ void Tab::SetPaused(bool paused) {
     paused_bar_.reset();
   }
   if (browser_) {
-    CefRefPtr<CefDictionaryValue> params = CefDictionaryValue::Create();
-    params->SetString("state", paused ? "frozen" : "active");
-    std::weak_ptr<int> alive = alive_;
-    CallDevToolsMethod(browser_, "Page.setWebLifecycleState", params,
-                       [this, alive, paused](bool, const std::string&) {
-                         if (!paused && !alive.expired() && !paused_) {
-                           ShowAgainAfterResume();
-                         }
-                       });
+    // Not Page.setWebLifecycleState "frozen" as on macOS: on Windows it
+    // leaves the page marked hidden after "active", and a hidden page takes
+    // no keys (also after a reload). Instead the page's media stop and its
+    // scripts are switched off (timers and events run no code), and back.
+    constexpr char kPauseMedia[] =
+        "for (const m of document.querySelectorAll('audio, video')) "
+        "{ if (!m.paused) { m.__broukPaused = true; m.pause(); } }";
+    constexpr char kResumeMedia[] =
+        "for (const m of document.querySelectorAll('audio, video')) "
+        "{ if (m.__broukPaused) { delete m.__broukPaused; m.play(); } }";
+    auto evaluate = [this](const char* code) {
+      CefRefPtr<CefDictionaryValue> params = CefDictionaryValue::Create();
+      params->SetString("expression", code);
+      CallDevToolsMethod(browser_, "Runtime.evaluate", params,
+                         [](bool, const std::string&) {});
+    };
+    CefRefPtr<CefDictionaryValue> scripts = CefDictionaryValue::Create();
+    scripts->SetBool("value", paused);
+    if (paused) {
+      evaluate(kPauseMedia);
+    }
+    CallDevToolsMethod(browser_, "Emulation.setScriptExecutionDisabled",
+                       scripts, [](bool, const std::string&) {});
+    if (!paused) {
+      evaluate(kResumeMedia);
+    }
   }
   host_.OnTabChanged(*this);
-}
-
-// Freezing told the page it is hidden, and "active" does not show it again:
-// it then takes no keys, also after a reload. Hiding the tab for a moment
-// and showing it, as switching tabs does, makes Chromium see it as shown
-// (on macOS its view is hidden and shown).
-void Tab::ShowAgainAfterResume() {
-  HWND browser = BrowserWindowHandle();
-  if (!browser || !IsWindowVisible(container_)) {
-    return;  // Shown when the user switches to it.
-  }
-  ShowWindow(browser, SW_HIDE);
-  std::weak_ptr<int> alive = alive_;
-  CefPostDelayedTask(TID_UI, new FunctionTask([this, alive] {
-                       if (alive.expired()) {
-                         return;
-                       }
-                       if (HWND shown = BrowserWindowHandle()) {
-                         ShowWindow(shown, SW_SHOWNA);
-                       }
-                       if (!closing_ && host_.IsActiveTab(*this)) {
-                         Focus();
-                       }
-                     }),
-                     300);
 }
 
 void Tab::Unload() {

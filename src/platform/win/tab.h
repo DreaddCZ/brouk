@@ -60,8 +60,6 @@ class TabHost {
   virtual DownloadTarget TabReserveDownloadPath(const std::string& suggested,
                                                 const ProfileId& profile) = 0;
   virtual void TabReleaseDownloadPath(const std::string& path) = 0;
-  // Whether `tab` is the one its window shows.
-  virtual bool IsActiveTab(const Tab& tab) = 0;
 
  protected:
   virtual ~TabHost() = default;
@@ -294,7 +292,6 @@ class Tab final : public TabClientDelegate,
   void UpdatePanels(bool refocus);
   void ClosePanel(std::unique_ptr<TabPanel>& panel);
   void ShowNextPermissionPrompt();
-  void ShowAgainAfterResume();
 
   static LRESULT CALLBACK ContainerProc(HWND window,
                                         UINT message,
