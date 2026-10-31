@@ -96,10 +96,14 @@ const frontFunction = (title) =>
 
 // Windows: brings Brouk's window to the front and types `keys`
 // (System.Windows.Forms.SendKeys syntax: "^f" is Ctrl+F), one after another.
-function sendKeys(title, keys) {
-  const sends = keys
-    .map((k) => `[System.Windows.Forms.SendKeys]::SendWait('${k.replaceAll("'", "''")}'); Start-Sleep -Milliseconds 300`)
-    .join('; ');
+// With `windowsOf`, also lists that process's visible windows afterwards
+// and then types `thenKeys`, all from the same PowerShell: starting another
+// one may deactivate Brouk, which closes its popups. Returns PowerShell's
+// output.
+function sendKeys(title, keys, { windowsOf: pid, thenKeys = [] } = {}) {
+  const typed = (list) =>
+    list.map((k) => `[System.Windows.Forms.SendKeys]::SendWait('${k.replaceAll("'", "''")}'); Start-Sleep -Milliseconds 300`).join('; ');
+  const sends = typed(keys);
   const script = [
     'Add-Type -AssemblyName System.Windows.Forms, UIAutomationClient, UIAutomationTypes',
     kFocusFunction,
@@ -110,17 +114,27 @@ function sendKeys(title, keys) {
     sends,
     '$after = Get-Focus',
     'Write-Output "Brouk in front: $active, focus before: $before, after: $after"',
+    ...(pid
+      ? [
+          'Start-Sleep -Milliseconds 1500',
+          `$c = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, ${pid})`,
+          '$w = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $c) | ForEach-Object { "$($_.Current.ClassName) [$($_.Current.Name)]" }',
+          'Write-Output "windows: $($w -join \', \')"',
+          ...(thenKeys.length ? [typed(thenKeys), 'Write-Output "then focus: $(Get-Focus)"'] : []),
+        ]
+      : []),
   ].join('; ');
   // PowerShell can take long to start on a busy runner: one more try.
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       const output = execFileSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8', timeout: 60000 });
       log(`(keys ${keys.join(' ')}: ${output.trim()})`);
-      return;
+      return output;
     } catch (error) {
       log(`(keys not sent, attempt ${attempt}: ${error.message})`);
     }
   }
+  return '';
 }
 
 // Windows: a right-click at screen pixel (x, y).
@@ -703,11 +717,10 @@ async function main() {
           (t) => t.type === 'page' && t.url.includes('/find-and-zoom.html'),
         ).length;
       const before = await zoomPages();
-      sendKeys('History', ['^l', 'find-and-zoom']);
-      await sleep(1500);
-      const windows = windowsOf(brouk.pid);
-      check(windows.some((w) => w.startsWith('BroukSuggestions')), `typing in the address bar shows suggestions (${windows.join(', ')})`);
-      sendKeys('History', ['{DOWN}', '{ENTER}']);
+      // One PowerShell for typing, looking and choosing: another one
+      // would deactivate Brouk and close the list.
+      const shown = sendKeys('History', ['^l', 'find-and-zoom'], { windowsOf: brouk.pid, thenKeys: ['{DOWN}', '{ENTER}'] });
+      check(/windows: .*BroukSuggestions/.test(shown), 'typing in the address bar shows suggestions');
       let after = before;
       for (let i = 0; i < 20 && after <= before; i++) {
         await sleep(500);
