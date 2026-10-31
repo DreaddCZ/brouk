@@ -76,8 +76,10 @@ enum MenuCommand : UINT {
   kCloseOtherTabsCommand,
   kCloseTabsLeftCommand,
   kCloseTabsRightCommand,
+  kReopenClosedTabCommand,
   kFirstBlockedPopupCommand = 1000,
   kFirstProfileCommand = 2000,
+  kFirstClosedCommand = 3000,
 };
 
 // Glyphs of the "Segoe MDL2 Assets" icon font, on Windows 10 and 11.
@@ -86,6 +88,23 @@ constexpr wchar_t kForwardGlyph[] = L"\uE72A";
 constexpr wchar_t kReloadGlyph[] = L"\uE72C";
 constexpr wchar_t kMoreGlyph[] = L"\uE712";
 constexpr wchar_t kBlockedGlyph[] = L"\uE8A7";  // OpenInNewWindow.
+
+std::int64_t NextWindowId() {
+  static std::int64_t next = 1;
+  return next++;
+}
+
+// Menu text shows "&" as a mnemonic unless doubled.
+std::wstring MenuText(const std::string& text) {
+  std::wstring escaped;
+  for (wchar_t c : Utf8ToWide(text)) {
+    escaped += c;
+    if (c == L'&') {
+      escaped += L'&';
+    }
+  }
+  return escaped;
+}
 
 TabId NextTabId() {
   static TabId next = 0;
@@ -118,7 +137,10 @@ bool IsBlank(const std::string& url) {
 }  // namespace
 
 BrowserWindow::BrowserWindow(BrowserWindowOwner& owner, Kind kind)
-    : owner_(owner), kind_(kind), model_(owner.DefaultProfile()) {}
+    : owner_(owner),
+      kind_(kind),
+      window_id_(NextWindowId()),
+      model_(owner.DefaultProfile()) {}
 
 BrowserWindow::~BrowserWindow() {
   fullscreen_hint_.reset();
@@ -556,6 +578,10 @@ int BrowserWindow::TabCountInProfile(const ProfileId& profile) const {
 }
 
 void BrowserWindow::CloseTabsInProfile(const ProfileId& profile) {
+  discarded_profiles_.insert(profile);  // Gone for good (005).
+  std::erase_if(closed_snapshot_, [&profile](const ClosedTab& tab) {
+    return tab.profile == profile;
+  });
   std::vector<TabId> ids;
   for (const auto& [id, tab] : tabs_) {
     if (tab->profile() == profile) {
@@ -811,6 +837,29 @@ void BrowserWindow::ShowAppMenu() {
               L"Manage profiles\u2026");
   AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(profiles),
               L"Profiles");
+  // Recently closed tabs and windows (013), newest first.
+  HMENU closed = CreatePopupMenu();
+  std::vector<std::int64_t> closed_ids;
+  const std::deque<ClosedEntry>& entries = owner_.RecentlyClosed();
+  AppendMenuW(closed, MF_STRING | (entries.empty() ? MF_GRAYED : 0),
+              kReopenClosedTabCommand, L"Reopen closed tab\tCtrl+Shift+T");
+  if (!entries.empty()) {
+    AppendMenuW(closed, MF_SEPARATOR, 0, nullptr);
+  }
+  for (const ClosedEntry& entry : entries) {
+    const ClosedTab& first = entry.tabs.front();
+    const std::wstring title =
+        entry.is_window
+            ? L"Window (" + std::to_wstring(entry.tabs.size()) +
+                  (entry.tabs.size() == 1 ? L" tab)" : L" tabs)")
+            : MenuText(first.title.empty() ? first.url : first.title);
+    AppendMenuW(closed, MF_STRING,
+                kFirstClosedCommand + static_cast<UINT>(closed_ids.size()),
+                title.c_str());
+    closed_ids.push_back(entry.id);
+  }
+  AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(closed),
+              L"Recently closed");
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
   AppendMenuW(menu, MF_STRING, kZoomInCommand, L"Zoom in\tCtrl++");
   AppendMenuW(menu, MF_STRING, kZoomOutCommand, L"Zoom out\tCtrl+-");
@@ -829,7 +878,12 @@ void BrowserWindow::ShowAppMenu() {
   const UINT command = static_cast<UINT>(TrackPopupMenuEx(
       menu, TPM_RIGHTALIGN | TPM_TOPALIGN | TPM_RETURNCMD | TPM_NONOTIFY,
       button.right, button.bottom, window_, nullptr));
-  DestroyMenu(menu);  // With its submenu.
+  DestroyMenu(menu);  // With its submenus.
+  if (command >= kFirstClosedCommand &&
+      command - kFirstClosedCommand < closed_ids.size()) {
+    owner_.ReopenClosed(closed_ids[command - kFirstClosedCommand]);
+    return;
+  }
   if (command >= kFirstProfileCommand &&
       command - kFirstProfileCommand < profile_list.size()) {
     OpenTab(std::string(), true,
@@ -876,6 +930,9 @@ void BrowserWindow::ShowAppMenu() {
       break;
     case kExitCommand:
       owner_.CloseAllWindows();
+      break;
+    case kReopenClosedTabCommand:
+      owner_.ReopenClosed(std::nullopt);
       break;
     default:
       break;
@@ -1175,6 +1232,49 @@ void BrowserWindow::ModelChanged() {
   InvalidateStrip();
 }
 
+ClosedTab BrowserWindow::ClosedTabFor(const Tab& tab, std::size_t index) const {
+  std::size_t start = index;
+  for (const TabStripModel::Group& group : model_.groups()) {
+    if (group.profile == tab.profile()) {
+      start = group.start;
+    }
+  }
+  return {.url = tab.url(),
+          .title = tab.title(),
+          .profile = tab.profile(),
+          .pinned = model_.IsPinned(tab.id()),
+          .window_id = window_id_,
+          .position = index - start};
+}
+
+void BrowserWindow::RestoreClosedTab(const ClosedTab& closed, bool activate) {
+  const TabId id = NextTabId();
+  auto tab = std::make_unique<Tab>(*this, id, window_, closed.profile);
+  tab->SetBounds(ContentBounds());
+  Tab* created = tab.get();
+  tabs_[id] = std::move(tab);
+  model_.InsertInGroup(id, closed.profile, closed.position, activate);
+  if (closed.pinned) {
+    model_.SetPinned(id, true);
+  }
+  std::unique_ptr<CefMessageRouterBrowserSide::Handler> handler;
+  if (const std::optional<std::string> page = InternalPageOf(closed.url)) {
+    handler = owner_.InternalPageHandler(*page);
+  }
+  if (handler) {
+    created->CreateInternalPage(closed.url, std::move(handler),
+                                owner_.InternalContext());
+  } else {
+    created->CreateBrowser(
+        IsInternalPageUrl(closed.url) ? std::string("about:blank") : closed.url,
+        owner_.RequestContext(closed.profile));
+  }
+  ModelChanged();
+  if (activate) {
+    FocusActiveTab();
+  }
+}
+
 void BrowserWindow::FocusActiveTab() {
   Tab* tab = ActiveTab();
   if (!tab) {
@@ -1345,6 +1445,10 @@ bool BrowserWindow::HandleShortcut(int key,
     OpenTab(std::string(), true);
     return true;
   }
+  if (control && !alt && shift && key == 'T') {
+    owner_.ReopenClosed(std::nullopt);
+    return true;
+  }
   if (control && !alt && !shift && key == 'N') {
     owner_.OpenWindow(std::string(), ProfileId());
     return true;
@@ -1397,6 +1501,15 @@ void BrowserWindow::OnTabClosed(Tab& tab) {
   }
   if (fullscreen_tab_ == id) {
     OnTabFullscreenChanged(tab, false);
+  }
+  // A tab closed on its own can be reopened; a window closing as a whole
+  // is kept as one entry (WM_DESTROY). The last tab of a window counts as
+  // a tab (Chrome).
+  const bool replaced = replaced_tabs_.erase(id) > 0;
+  if (const std::optional<std::size_t> index = model_.IndexOf(id);
+      index && !replaced && !closing_ && kind_ == Kind::kNormal &&
+      !discarded_profiles_.contains(tab.profile())) {
+    owner_.OnTabClosedToReopen(ClosedTabFor(tab, *index));
   }
   model_.RemoveTab(id);
   // Deleted from a task: this is called from inside the tab.
@@ -1631,6 +1744,7 @@ void BrowserWindow::MoveTabToProfile(TabId id, const ProfileId& profile) {
     const std::string url =
         IsBlank(moved->url()) ? std::string() : moved->url();
     OpenTab(url, true, profile);
+    replaced_tabs_.insert(id);
     CloseTab(id);
   });
 }
@@ -1983,6 +2097,14 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
       }
       if (!closing_) {
         owner_.OnWindowClosing(*this);
+        closed_snapshot_.clear();
+        for (std::size_t i = 0; i < model_.count() && is_normal(); ++i) {
+          const Tab* tab = FindTab(model_.id_at(i));
+          if (tab && !tab->closing() &&
+              !discarded_profiles_.contains(tab->profile())) {
+            closed_snapshot_.push_back(ClosedTabFor(*tab, i));
+          }
+        }
       }
       closing_ = true;
       std::vector<TabId> ids;
@@ -1999,6 +2121,10 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
       HWND window = window_;
       window_ = nullptr;
       SetWindowLongPtrW(window, GWLP_USERDATA, 0);
+      if (!closed_snapshot_.empty()) {
+        owner_.OnWindowClosedToReopen(window_id_, std::move(closed_snapshot_));
+        closed_snapshot_.clear();
+      }
       owner_.OnWindowDestroyed(this);
       return 0;
     }

@@ -5,7 +5,7 @@
 - **When tabs don't fit,** they shrink to their icon; then other groups collapse to make room for the one you are using. Click a collapsed group's label to go back to it. If one group alone still doesn't fit, a **+N** menu next to its **+** lists the hidden tabs.
 - **Tab menu** (right-click a tab): New Tab to the Right, Reload, Duplicate, Pin/Unpin, Mute/Unmute, Close Tab, Close Other Tabs, Close Tabs to the Left/Right. The "Close…" commands act only within the tab's profile group and keep pinned tabs.
 - A speaker icon on a tab playing sound mutes it.
-- **Reopen a closed tab** with <kbd>⇧⌘T</kbd> ([History menu](#history-menu)).
+- **Reopen a closed tab** with <kbd>⇧⌘T</kbd> ([History menu](#history-menu)); on Windows <kbd>Ctrl+Shift+T</kbd>, or "⋮" → Recently closed.
 - Duplicating or reopening a tab brings back its page, not its back/forward list.
 
 ### Address bar {#address-bar}

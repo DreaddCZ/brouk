@@ -3,14 +3,19 @@
 
 #include <windows.h>
 
+#include <cstdint>
+#include <deque>
 #include <functional>
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "cef/tab_client.h"
+#include "core/closed_tabs.h"
 #include "core/profile_registry.h"
 #include "core/session.h"
 #include "core/tab_strip_model.h"
@@ -67,6 +72,14 @@ class BrowserWindowOwner {
   // close its tabs (while its session state is still complete).
   virtual void OnSessionChanged() = 0;
   virtual void OnWindowClosing(BrowserWindow& window) = 0;
+  // Reopen closed tabs (013): a tab closed on its own, a window closed as a
+  // whole with its tabs, the list for the menu, and reopening one (nullopt:
+  // the newest, Ctrl+Shift+T).
+  virtual void OnTabClosedToReopen(ClosedTab tab) = 0;
+  virtual void OnWindowClosedToReopen(std::int64_t window_id,
+                                      std::vector<ClosedTab> tabs) = 0;
+  virtual const std::deque<ClosedEntry>& RecentlyClosed() = 0;
+  virtual void ReopenClosed(std::optional<std::int64_t> entry_id) = 0;
 
  protected:
   virtual ~BrowserWindowOwner() = default;
@@ -121,6 +134,10 @@ class BrowserWindow final : public TabHost {
   HWND hwnd() const { return window_; }
   bool is_normal() const { return kind_ == Kind::kNormal; }
   bool closing() const { return closing_; }
+  // Unique in this run: where a closed tab came from (013).
+  std::int64_t window_id() const { return window_id_; }
+  // A closed tab back at its place in its profile group (013).
+  void RestoreClosedTab(const ClosedTab& closed, bool activate);
 
   // Session restore (015). The window as the session saves it (nullopt for
   // popups and closing windows), and bringing a saved one back before
@@ -207,6 +224,8 @@ class BrowserWindow final : public TabHost {
   void FocusActiveTab();
   Tab* ActiveTab();
   void CloseTab(TabId id);
+  // The tab as Reopen Closed Tab needs it; `index` is its model index.
+  ClosedTab ClosedTabFor(const Tab& tab, std::size_t index) const;
   void UpdateToolbar();
   void UpdateSpinner();
 
@@ -224,6 +243,13 @@ class BrowserWindow final : public TabHost {
 
   BrowserWindowOwner& owner_;
   const Kind kind_;
+  const std::int64_t window_id_;
+  // Closed tabs (013): the window's tabs when it started closing as a
+  // whole (one entry), tabs replaced by another (moved to a profile) and
+  // profiles being deleted, whose tabs are not kept.
+  std::vector<ClosedTab> closed_snapshot_;
+  std::set<TabId> replaced_tabs_;
+  std::set<ProfileId> discarded_profiles_;
   TabStripModel model_;
   std::map<TabId, std::unique_ptr<Tab>> tabs_;
   // Popups being created from this window's tabs: (opener, popup id) to

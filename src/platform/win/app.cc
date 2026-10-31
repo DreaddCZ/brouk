@@ -191,6 +191,88 @@ void App::RestoreSession(const Session& session) {
   OnSessionChanged();
 }
 
+BrowserWindow* App::FrontWindow() const {
+  for (HWND hwnd = GetTopWindow(nullptr); hwnd;
+       hwnd = GetWindow(hwnd, GW_HWNDNEXT)) {
+    for (const std::unique_ptr<BrowserWindow>& window : windows_) {
+      if (window->hwnd() == hwnd && window->is_normal() && !window->closing()) {
+        return window.get();
+      }
+    }
+  }
+  return nullptr;
+}
+
+void App::OnTabClosedToReopen(ClosedTab tab) {
+  if (!quitting_ && !frozen_session_) {
+    closed_tabs_.AddTab(std::move(tab));
+  }
+}
+
+void App::OnWindowClosedToReopen(std::int64_t window_id,
+                                 std::vector<ClosedTab> tabs) {
+  // Quitting (the last window, or Exit) adds nothing, as on macOS.
+  if (!quitting_ && !frozen_session_) {
+    closed_tabs_.AddWindow(window_id, std::move(tabs));
+  }
+}
+
+const std::deque<ClosedEntry>& App::RecentlyClosed() {
+  return closed_tabs_.entries();
+}
+
+// A window comes back as a new window with its tabs; a tab goes back into
+// its window if that is still open, else into the front window (013).
+void App::ReopenClosed(std::optional<std::int64_t> entry_id) {
+  CEF_REQUIRE_UI_THREAD();
+  std::optional<ClosedEntry> entry =
+      entry_id ? closed_tabs_.Take(*entry_id) : closed_tabs_.TakeNewest();
+  if (!entry || entry->tabs.empty()) {
+    return;
+  }
+  BrowserWindow* target = nullptr;
+  if (!entry->is_window) {
+    for (const std::unique_ptr<BrowserWindow>& window : windows_) {
+      if (window->window_id() == entry->window_id && window->is_normal() &&
+          !window->closing()) {
+        target = window.get();
+      }
+    }
+    if (!target) {
+      target = FrontWindow();
+    }
+  }
+  bool created = false;
+  if (!target) {
+    auto window =
+        std::make_unique<BrowserWindow>(*this, BrowserWindow::Kind::kNormal);
+    if (!window->Create()) {
+      LOG(ERROR) << "Could not create a browser window (error "
+                 << GetLastError() << ")";
+      return;
+    }
+    target = window.get();
+    windows_.push_back(std::move(window));
+    frozen_session_.reset();
+    created = true;
+  }
+  for (std::size_t i = 0; i < entry->tabs.size(); ++i) {
+    ClosedTab tab = entry->tabs[i];
+    if (!profiles_.Find(tab.profile)) {
+      tab.profile = profiles_.default_profile().id;  // Deleted meanwhile.
+    }
+    if (entry->is_window) {
+      tab.position = i;
+    }
+    target->RestoreClosedTab(tab, /*activate=*/i == 0);
+  }
+  if (created) {
+    target->Show();
+  } else {
+    target->Activate();
+  }
+}
+
 Session App::CurrentSession() const {
   // Z-order, front to back.
   std::vector<const BrowserWindow*> front_to_back;
@@ -619,6 +701,7 @@ void App::DeleteProfile(const ProfileId& id, DeleteDone done) {
                 for (const std::unique_ptr<BrowserWindow>& window : windows_) {
                   window->CloseTabsInProfile(id);
                 }
+                closed_tabs_.RemoveProfile(id);
                 contexts_.erase(id);
                 // The web data goes at the next start, when Chromium no
                 // longer uses it.

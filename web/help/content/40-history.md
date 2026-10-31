@@ -88,8 +88,8 @@ It shows how much will be cleared before it does. Bookmarked sites keep their ic
 ### History menu {#history-menu}
 
 - Back, Forward, Home (<kbd>⇧⌘H</kbd>, the new tab page).
-- **Reopen Closed Tab** (<kbd>⇧⌘T</kbd>): the last closed tab — or window — goes back where it was, in its profile, pinned if it was. Brouk remembers the last 10 closed tabs and windows until you quit.
-- **Recently Closed** and **Recently Visited** (the last pages of the active tab's profile).
+- **Reopen Closed Tab** (<kbd>⇧⌘T</kbd>, on Windows <kbd>Ctrl+Shift+T</kbd>): the last closed tab — or window — goes back where it was, in its profile, pinned if it was. Brouk remembers the last 10 closed tabs and windows until you quit.
+- **Recently Closed** (on Windows in the "⋮" menu) and **Recently Visited** (the last pages of the active tab's profile).
 - Show Full History (<kbd>⌘Y</kbd>).
 
 ### Never record these sites {#history-never-record}
