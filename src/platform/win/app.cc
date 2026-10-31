@@ -61,8 +61,36 @@ void App::OnContextInitialized() {
   // Changes made in the files apply while Brouk runs (004).
   settings_watcher_ = std::make_unique<SettingsWatcher>(
       AppDataDirectory(), [this] { SettingsFilesChanged(); });
-  OpenLaunchRequest(
-      BrowserApp::LaunchRequestFrom(CefCommandLine::GetGlobalCommandLine()));
+  const LaunchRequest request =
+      BrowserApp::LaunchRequestFrom(CefCommandLine::GetGlobalCommandLine());
+  const Session last = StartSession();
+  const StartupAction action = DecideStartup(
+      profiles_.global_settings().GetString("startup.restore"), last);
+  if (action == StartupAction::kRestore) {
+    RestoreSession(last);
+    if (!windows_.empty()) {
+      // Like Chrome, URLs given on the command line open as tabs of the
+      // front restored window.
+      if (!request.urls.empty()) {
+        OpenLaunchRequest(request, windows_.back().get());
+      }
+      session_ready_ = true;
+      return;
+    }
+  }
+  session_ready_ = true;
+  OpenLaunchRequest(request);
+  if (action == StartupAction::kNewWindowOfferRestore && !windows_.empty()) {
+    BrowserWindow* front = windows_.back().get();
+    front->ShowRestorePagesBar([this, front, last] {
+      // The new tab the start opened is not needed any more (Chrome).
+      const bool replace = IsOpenWindow(front) && front->HasOnlyNewTab();
+      RestoreSession(last);
+      if (replace) {
+        PostMessageW(front->hwnd(), WM_CLOSE, 0, 0);
+      }
+    });
+  }
 }
 
 void App::OnRelaunch(const LaunchRequest& request) {
@@ -70,7 +98,7 @@ void App::OnRelaunch(const LaunchRequest& request) {
   OpenLaunchRequest(request);
 }
 
-void App::OpenLaunchRequest(const LaunchRequest& request) {
+void App::OpenLaunchRequest(const LaunchRequest& request, BrowserWindow* into) {
   ProfileId profile = profiles_.default_profile().id;
   if (request.profile) {
     const ProfileInfo* named = profiles_.FindByName(*request.profile);
@@ -106,6 +134,13 @@ void App::OpenLaunchRequest(const LaunchRequest& request) {
     OpenWindow(std::string(), profile);
     return;
   }
+  if (into && IsOpenWindow(into)) {
+    for (std::size_t i = 0; i < urls.size(); ++i) {
+      into->OpenTab(urls[i], /*foreground=*/i == 0, profile);
+    }
+    into->Activate();
+    return;
+  }
   auto window =
       std::make_unique<BrowserWindow>(*this, BrowserWindow::Kind::kNormal);
   if (!window->Create()) {
@@ -121,9 +156,121 @@ void App::OpenLaunchRequest(const LaunchRequest& request) {
   }
   window->Show();
   windows_.push_back(std::move(window));
+  frozen_session_.reset();  // A window again: the session goes on.
+}
+
+Session App::StartSession() {
+  session_path_ = AppDataDirectory() / "session.yaml";
+  Result<Session> loaded = LoadSession(session_path_);
+  if (!loaded) {
+    LOG(WARNING) << "Session: " << loaded.error().message;
+  }
+  const Session last = loaded ? loaded.value() : Session{};
+  Session running = last;
+  running.clean_exit = false;
+  SaveSessionFile(running);
+  return last;
+}
+
+void App::RestoreSession(const Session& session) {
+  CEF_REQUIRE_UI_THREAD();
+  // Saved back to front: the last one restored ends up in front.
+  for (const SessionWindow& saved : session.windows) {
+    auto window =
+        std::make_unique<BrowserWindow>(*this, BrowserWindow::Kind::kNormal);
+    if (!window->Create()) {
+      LOG(ERROR) << "Could not create a browser window (error "
+                 << GetLastError() << ")";
+      continue;
+    }
+    window->Restore(saved);
+    window->Show();
+    windows_.push_back(std::move(window));
+  }
+  frozen_session_.reset();
+  OnSessionChanged();
+}
+
+Session App::CurrentSession() const {
+  // Z-order, front to back.
+  std::vector<const BrowserWindow*> front_to_back;
+  for (HWND hwnd = GetTopWindow(nullptr); hwnd;
+       hwnd = GetWindow(hwnd, GW_HWNDNEXT)) {
+    for (const std::unique_ptr<BrowserWindow>& window : windows_) {
+      if (window->hwnd() == hwnd) {
+        front_to_back.push_back(window.get());
+        break;
+      }
+    }
+  }
+  Session session;
+  session.clean_exit = false;
+  for (auto it = front_to_back.rbegin(); it != front_to_back.rend(); ++it) {
+    if (std::optional<SessionWindow> saved = (*it)->SessionState()) {
+      session.windows.push_back(std::move(*saved));
+    }
+  }
+  return session;
+}
+
+void App::SaveSessionFile(const Session& session) {
+  if (session_path_.empty()) {
+    return;
+  }
+  if (std::optional<Error> error = SaveSession(session_path_, session)) {
+    LOG(WARNING) << "Session: " << error->message;
+  }
+}
+
+void App::OnSessionChanged() {
+  CEF_REQUIRE_UI_THREAD();
+  if (!session_ready_ || frozen_session_ || session_save_scheduled_) {
+    return;
+  }
+  session_save_scheduled_ = true;
+  CefPostDelayedTask(TID_UI, new FunctionTask([this] {
+                       session_save_scheduled_ = false;
+                       if (session_ready_ && !frozen_session_) {
+                         SaveSessionFile(CurrentSession());
+                       }
+                     }),
+                     1500);
+}
+
+void App::OnWindowClosing(BrowserWindow& window) {
+  CEF_REQUIRE_UI_THREAD();
+  if (!session_ready_ || frozen_session_ || !window.is_normal()) {
+    return;
+  }
+  const bool last = std::ranges::none_of(
+      windows_, [&window](const std::unique_ptr<BrowserWindow>& other) {
+        return other.get() != &window && other->is_normal() &&
+               !other->closing();
+      });
+  if (!last) {
+    OnSessionChanged();
+    return;
+  }
+  // Closing the last window quits Brouk (as Chrome on Windows): the next
+  // start continues with this window, not with what is left of it once
+  // its tabs have closed.
+  frozen_session_ = CurrentSession();
+  SaveSessionFile(*frozen_session_);
+}
+
+void App::SaveSessionAtQuit() {
+  if (!session_ready_) {
+    return;
+  }
+  Session session = frozen_session_ ? *frozen_session_ : CurrentSession();
+  session.clean_exit = true;
+  SaveSessionFile(session);
+  frozen_session_ = std::move(session);
+  session_ready_ = false;
 }
 
 void App::ReleaseBrowserObjects() {
+  session_ready_ = false;
   settings_watcher_.reset();
   help_window_.reset();
   profiles_window_.reset();
@@ -247,6 +394,11 @@ void App::OpenWebLink(const std::string& url) {
 }
 
 void App::CloseAllWindows() {
+  // Exit: the windows open now are the session to continue with (015).
+  if (session_ready_ && !frozen_session_) {
+    frozen_session_ = CurrentSession();
+    SaveSessionFile(*frozen_session_);
+  }
   for (const auto* page : PageWindows()) {
     if (*page) {
       PostMessageW((*page)->hwnd(), WM_CLOSE, 0, 0);
@@ -277,6 +429,7 @@ void App::OpenWindow(const std::string& url, const ProfileId& profile) {
   window->OpenTab(url, true, profile);
   window->Show();
   windows_.push_back(std::move(window));
+  frozen_session_.reset();  // A window again: the session goes on.
 }
 
 BrowserWindow* App::OpenPopupWindow(int width, int height) {
@@ -323,6 +476,7 @@ void App::QuitWhenDone() {
   if (quitting_ && std::ranges::none_of(PageWindows(), [](const auto* page) {
         return *page != nullptr;
       })) {
+    SaveSessionAtQuit();
     CefQuitMessageLoop();
   }
 }

@@ -2,8 +2,10 @@
 #define BROUK_PLATFORM_WIN_APP_H_
 
 #include <array>
+#include <filesystem>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -11,6 +13,7 @@
 #include "cef/settings_handler.h"
 #include "core/launch_args.h"
 #include "core/profile_registry.h"
+#include "core/session.h"
 #include "include/cef_request_context.h"
 #include "platform/win/browser_window.h"
 #include "platform/win/internal_page_window.h"
@@ -59,6 +62,8 @@ class App final : public BrowserWindowOwner,
   const std::vector<ProfileInfo>& ProfileList() override;
   void OpenProfileManager() override;
   void OpenSettings(const std::string& url) override;
+  void OnSessionChanged() override;
+  void OnWindowClosing(BrowserWindow& window) override;
 
   // ProfileManagerDelegate (the brouk://profiles page, 005):
   std::vector<Summary> Profiles() override;
@@ -101,9 +106,20 @@ class App final : public BrowserWindowOwner,
       std::function<void(std::optional<Error> error)> done) override;
 
  private:
-  // A launch's URLs as tabs of a new window (Chrome), or an empty tab when
-  // none is usable, in the profile named by --profile (005).
-  void OpenLaunchRequest(const LaunchRequest& request);
+  // A launch's URLs as tabs of a new window (Chrome), or of `into` (the
+  // front restored window, 015), or an empty tab when none is usable, in the
+  // profile named by --profile (005).
+  void OpenLaunchRequest(const LaunchRequest& request,
+                         BrowserWindow* into = nullptr);
+  // Session restore (015). Reads the last run's session and marks this run
+  // as running (clean_exit: false), so a crash is noticed next time.
+  Session StartSession();
+  void RestoreSession(const Session& session);
+  // The open normal windows, back to front.
+  Session CurrentSession() const;
+  void SaveSessionFile(const Session& session);
+  // Brouk quits: the session to continue with next time is final.
+  void SaveSessionAtQuit();
   // Names, colours or the default profile changed: the windows' groups
   // follow.
   void ProfilesChanged();
@@ -136,6 +152,13 @@ class App final : public BrowserWindowOwner,
   bool profile_manager_at_startup_ = false;
   // The last browser window closed: Brouk quits once help has closed too.
   bool quitting_ = false;
+  // Session restore (015): session.yaml is written 1.5 s after a change.
+  // Once the last normal window starts closing (or Exit), the session is
+  // frozen as it was then, and saved with clean_exit: true at quit.
+  std::filesystem::path session_path_;
+  bool session_ready_ = false;
+  bool session_save_scheduled_ = false;
+  std::optional<Session> frozen_session_;
   std::vector<std::unique_ptr<BrowserWindow>> windows_;
 };
 

@@ -76,6 +76,16 @@ class Tab final : public TabClientDelegate,
   // Where CEF creates a popup's browser for this tab instead
   // (TabHost::OnTabPopup).
   PopupHost PopupHostForBrowser();
+  // A restored tab (015): shows `title` and gets its browser when first
+  // shown (CreateDeferredBrowser), to keep startup fast.
+  void DeferBrowser(const std::string& url,
+                    const std::string& title,
+                    CefRefPtr<CefRequestContext> context);
+  bool has_deferred_browser() const { return deferred_context_ != nullptr; }
+  void CreateDeferredBrowser();
+  // Chrome's "Restore pages?" after a crash (015); `restore` runs on
+  // Restore.
+  void ShowRestorePagesPanel(std::function<void()> restore);
   void SetBounds(const RECT& bounds);
   void SetVisible(bool visible);
   // The icon again at a new size (the window's DPI changed).
@@ -274,6 +284,9 @@ class Tab final : public TabClientDelegate,
   bool can_go_forward_ = false;
   // A navigation asked for before the browser exists.
   std::string pending_url_;
+  // A restored tab's context until its browser is created.
+  CefRefPtr<CefRequestContext> deferred_context_;
+  std::unique_ptr<TabPanel> restore_pages_;
   std::unique_ptr<TabPanel> js_dialog_;
   // The dialog came while no page was loading: a new navigation cancels it.
   bool js_dialog_while_idle_ = false;

@@ -183,6 +183,21 @@ function finish(code) {
   process.exit(code);
 }
 
+// Windows: closes the windows of `child` as the user does. Without /F,
+// taskkill asks one of the process's windows to close (WM_CLOSE); Brouk runs
+// until its last window has closed, so ask again while it still has windows
+// (profile windows, the manager).
+async function closeWindowsOf(child) {
+  for (let i = 0; i < 10 && child.exitCode === null; ++i) {
+    try {
+      execFileSync('taskkill', ['/PID', String(child.pid)], { stdio: 'ignore' });
+    } catch {
+      // No window left to ask: Brouk is quitting.
+    }
+    await sleep(500);
+  }
+}
+
 // ---- Chrome DevTools Protocol ----
 
 class Cdp {
@@ -638,17 +653,7 @@ async function main() {
   log(`(pages before quitting: ${pagesBeforeQuit.map((t) => `${t.type} ${t.url}`).join(', ')})`);
   const quitStarted = Date.now();
   if (kWindows) {
-    // Without /F, taskkill asks one of the process's windows to close
-    // (WM_CLOSE); Brouk runs until its last window has closed, so ask
-    // again while it still has windows (profile windows, the manager).
-    for (let i = 0; i < 10 && brouk.exitCode === null; ++i) {
-      try {
-        execFileSync('taskkill', ['/PID', String(brouk.pid)], { stdio: 'ignore' });
-      } catch {
-        // No window left to ask: Brouk is quitting.
-      }
-      await sleep(500);
-    }
+    await closeWindowsOf(brouk);
   } else {
     execFileSync('osascript', [
       '-l',
@@ -660,6 +665,56 @@ async function main() {
   while (brouk.exitCode === null && Date.now() - quitStarted < 10000) await sleep(200);
   if (!check(brouk.exitCode === 0, `Brouk quits cleanly within 10 seconds (exit code ${brouk.exitCode})`) && kWindows) {
     logWindowsOf(brouk.pid);
+  }
+
+  // Session restore (015): quitting saves the session; starting again
+  // brings its windows back, with only their active tabs loaded.
+  if (kWindows && brouk.exitCode === 0) {
+    let session = '';
+    try {
+      session = readFileSync(join(dataDir, 'session.yaml'), 'utf8');
+    } catch (error) {
+      log(`(no session.yaml: ${error.message})`);
+    }
+    const urls = [...session.matchAll(/^\s*-?\s*url: "?([^"\n]+)"?$/gm)].map((m) => m[1]);
+    const windows = (session.match(/^\s*-?\s*tabs:/gm) ?? []).length;
+    log(`(session.yaml: ${windows} window(s), tabs ${urls.join(', ')})`);
+    check(/^clean_exit: true$/m.test(session) && urls.length > 0, 'quitting saves the session with its tabs');
+    // Which window closed last depends on taskkill's order: restore a
+    // known session of two windows instead, active tabs in the middle.
+    const tab = (name, extra = '') => `      - url: "${pagesBase}/${name}"\n        title: "${name}"\n        profile: "default"\n${extra}`;
+    writeFileSync(
+      join(dataDir, 'session.yaml'),
+      'clean_exit: true\nwindows:\n' +
+        `  - active: 1\n    tabs:\n${tab('audio.html')}${tab('dialogs.html')}` +
+        `  - active: 0\n    tabs:\n${tab('print.html')}${tab('popups.html', '        pinned: true\n')}`,
+    );
+    const shown = [`${pagesBase}/dialogs.html`, `${pagesBase}/print.html`];
+    const hidden = [`${pagesBase}/audio.html`, `${pagesBase}/popups.html`];
+    const restartPort = port + 500;
+    brouk = spawn(executable, ['--use-mock-keychain', `--remote-debugging-port=${restartPort}`], {
+      env: { ...process.env, BROUK_DEV_DATA_DIR: dataDir },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    brouk.stdout.on('data', (chunk) => appendFileSync(appLog, chunk));
+    brouk.stderr.on('data', (chunk) => appendFileSync(appLog, chunk));
+    log(`Started Brouk again (pid ${brouk.pid})`);
+    let loaded = [];
+    for (let i = 0; i < 40 && brouk.exitCode === null; i++) {
+      await sleep(500);
+      const list = await devtoolsJson(restartPort, '/json/list').catch(() => []);
+      // Internal pages (the licences) load at once; about:blank is a new tab.
+      loaded = list.filter((t) => t.type === 'page' && !/^(brouk|devtools):/.test(t.url)).map((t) => t.url);
+      if (shown.every((url) => loaded.includes(url))) break;
+    }
+    log(`(pages after the restart: ${loaded.join(', ')})`);
+    check(shown.every((url) => loaded.includes(url)), 'starting again brings both windows back with their active tabs');
+    check(!hidden.some((url) => loaded.includes(url)), 'the background tabs load only when first shown');
+    desktopScreenshot('restored');
+    const quitAgain = Date.now();
+    await closeWindowsOf(brouk);
+    while (brouk.exitCode === null && Date.now() - quitAgain < 10000) await sleep(200);
+    check(brouk.exitCode === 0, `the restored Brouk quits cleanly (exit code ${brouk.exitCode})`);
   }
 
   await sleep(2000); // ReportCrash writes its report a moment later.

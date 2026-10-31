@@ -48,7 +48,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 021 | [File viewers for text formats](021-file-viewers.md) | idea | P3 |
 | 022 | [History in profile export](022-history-export.md) | ready | P3 |
 | 023 | [Open-source licences (credits)](023-credits.md) | done | P1 |
-| 024 | [Windows app](024-windows-app.md) | in-progress — W1 | P2 |
+| 024 | [Windows app](024-windows-app.md) | in-progress — W2 (W1 done, apart from screen readers) | P2 |
 
 ## Roadmap
 

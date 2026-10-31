@@ -3,6 +3,7 @@
 
 #include <windows.h>
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
@@ -11,6 +12,7 @@
 
 #include "cef/tab_client.h"
 #include "core/profile_registry.h"
+#include "core/session.h"
 #include "core/tab_strip_model.h"
 #include "include/cef_request_context.h"
 #include "platform/win/tab.h"
@@ -60,6 +62,11 @@ class BrowserWindowOwner {
   // The window is gone; the owner deletes it (later, not from inside its
   // window procedure).
   virtual void OnWindowDestroyed(BrowserWindow* window) = 0;
+  // Session restore (015): what a session holds changed (tabs, pages,
+  // order, pinning, collapsing, the frame), and a normal window is about to
+  // close its tabs (while its session state is still complete).
+  virtual void OnSessionChanged() = 0;
+  virtual void OnWindowClosing(BrowserWindow& window) = 0;
 
  protected:
   virtual ~BrowserWindowOwner() = default;
@@ -113,6 +120,16 @@ class BrowserWindow final : public TabHost {
   void ProfilesChanged();
   HWND hwnd() const { return window_; }
   bool is_normal() const { return kind_ == Kind::kNormal; }
+  bool closing() const { return closing_; }
+
+  // Session restore (015). The window as the session saves it (nullopt for
+  // popups and closing windows), and bringing a saved one back before
+  // Show(): only the active tab loads, the others when first shown.
+  std::optional<SessionWindow> SessionState() const;
+  void Restore(const SessionWindow& saved);
+  // Only one new, empty tab (the start's window, which Restore replaces).
+  bool HasOnlyNewTab() const;
+  void ShowRestorePagesBar(std::function<void()> restore);
 
   // TabHost:
   void OnTabChanged(Tab& tab) override;
@@ -251,6 +268,8 @@ class BrowserWindow final : public TabHost {
   // it with the page.
   bool fullscreen_for_page_ = false;
   std::optional<TabId> fullscreen_tab_;
+  // How Show() shows the window (maximised if restored so, 015).
+  int show_command_ = SW_SHOWNORMAL;
   // To restore the window after full screen.
   WINDOWPLACEMENT saved_placement_ = {};
   LONG_PTR saved_style_ = 0;

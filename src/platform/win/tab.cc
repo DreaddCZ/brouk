@@ -7,6 +7,7 @@
 #include <memory>
 #include <utility>
 
+#include "brouk/app_info.h"
 #include "cef/color_scheme.h"
 #include "cef/function_task.h"
 #include "core/external_protocol.h"
@@ -163,6 +164,47 @@ void Tab::CreateInternalPage(
                                 context);
 }
 
+void Tab::DeferBrowser(const std::string& url,
+                       const std::string& title,
+                       CefRefPtr<CefRequestContext> context) {
+  url_ = url;
+  title_ = title;
+  deferred_context_ = context;
+}
+
+void Tab::CreateDeferredBrowser() {
+  CEF_REQUIRE_UI_THREAD();
+  if (!deferred_context_) {
+    return;
+  }
+  CefRefPtr<CefRequestContext> context = std::move(deferred_context_);
+  CreateBrowser(url_, context);
+}
+
+void Tab::ShowRestorePagesPanel(std::function<void()> restore) {
+  TabPanel::Content content;
+  content.placement = TabPanel::Placement::kTopLeft;
+  content.width = 340;
+  content.title = L"Restore pages?";
+  content.message =
+      Utf8ToWide(std::string(kAppName) + " didn't shut down correctly.");
+  content.buttons = {L"Restore"};
+  content.close_button = true;
+  content.escape_answer = TabPanel::kClosed;
+  std::weak_ptr<int> alive = alive_;
+  restore_pages_ =
+      MakePanel(std::move(content), [this, alive, restore = std::move(restore)](
+                                        const TabPanel::Answer& answer) {
+        if (!alive.expired() && restore_pages_ && restore_pages_->answered()) {
+          ClosePanel(restore_pages_);
+        }
+        if (answer.button == 0) {
+          restore();
+        }
+      });
+  UpdatePanels(false);
+}
+
 std::string Tab::DisplayTitle() const {
   if (url_.empty() || url_ == "about:blank") {
     return "New Tab";
@@ -284,6 +326,11 @@ void Tab::UpdateFaviconSize() {
 }
 
 void Tab::Navigate(const std::string& url) {
+  if (has_deferred_browser()) {
+    url_ = url;
+    CreateDeferredBrowser();
+    return;
+  }
   if (!browser_) {
     pending_url_ = url;
     return;
@@ -417,6 +464,16 @@ void Tab::Close() {
   closing_ = true;
   if (browser_) {
     browser_->GetHost()->CloseBrowser(false);
+  }
+  if (has_deferred_browser()) {
+    // A restored tab never shown has no page to ask: it just goes.
+    deferred_context_ = nullptr;
+    std::weak_ptr<int> alive = alive_;
+    CefPostTask(TID_UI, new FunctionTask([this, alive] {
+                  if (!alive.expired()) {
+                    host_.OnTabClosed(*this);
+                  }
+                }));
   }
   // Without a browser yet, OnBrowserCreated closes it as soon as it exists.
 }
