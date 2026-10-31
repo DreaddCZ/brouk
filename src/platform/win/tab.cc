@@ -685,19 +685,24 @@ void Tab::SetPaused(bool paused) {
 // and showing it, as switching tabs does, makes Chromium see it as shown
 // (on macOS its view is hidden and shown).
 void Tab::ShowAgainAfterResume() {
-  if (!IsWindowVisible(container_)) {
+  HWND browser = BrowserWindowHandle();
+  if (!browser || !IsWindowVisible(container_)) {
     return;  // Shown when the user switches to it.
   }
-  ShowWindow(container_, SW_HIDE);
+  ShowWindow(browser, SW_HIDE);
   std::weak_ptr<int> alive = alive_;
-  CefPostDelayedTask(
-      TID_UI, new FunctionTask([this, alive] {
-        if (!alive.expired() && !closing_ && host_.IsActiveTab(*this)) {
-          ShowWindow(container_, SW_SHOWNA);
-          Focus();
-        }
-      }),
-      150);
+  CefPostDelayedTask(TID_UI, new FunctionTask([this, alive] {
+                       if (alive.expired()) {
+                         return;
+                       }
+                       if (HWND shown = BrowserWindowHandle()) {
+                         ShowWindow(shown, SW_SHOWNA);
+                       }
+                       if (!closing_ && host_.IsActiveTab(*this)) {
+                         Focus();
+                       }
+                     }),
+                     300);
 }
 
 void Tab::Unload() {

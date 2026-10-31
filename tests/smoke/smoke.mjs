@@ -804,6 +804,11 @@ async function main() {
         check(resumed?.paused === false, 'Resume runs it again');
         // A resumed page takes keys again: Ctrl+L reaches the browser.
         await sleep(1000);
+        const { result: visibility } = await cdp.send('Runtime.evaluate', {
+          expression: 'document.visibilityState + " " + document.hasFocus()',
+          returnByValue: true,
+        });
+        log(`(resumed page: ${visibility.value})`);
         const keys = sendKeys('Downloads test', ['^l']);
         check(/after: Edit/.test(keys), 'shortcuts work in a resumed tab (Ctrl+L)');
         sendKeys('Downloads test', ['{ESC}']);
