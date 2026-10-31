@@ -120,6 +120,11 @@ function sendKeys(title, keys, { windowsOf: pid, thenKeys = [] } = {}) {
           `$c = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, ${pid})`,
           '$w = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $c) | ForEach-Object { "$($_.Current.ClassName) [$($_.Current.Name)]" }',
           'Write-Output "windows: $($w -join \', \')"',
+          // The address bar's suggestion list, an owned tool window that
+          // UI Automation does not list at the top level.
+          "Add-Type -Namespace Smoke -Name Win -MemberDefinition '[DllImport(\"user32.dll\", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string c, string n); [DllImport(\"user32.dll\")] public static extern bool IsWindowVisible(IntPtr h);'",
+          '$s = [Smoke.Win]::FindWindow("BroukSuggestions", $null)',
+          'Write-Output "suggestions visible: $($s -ne [IntPtr]::Zero -and [Smoke.Win]::IsWindowVisible($s))"',
           ...(thenKeys.length ? [typed(thenKeys), 'Write-Output "then focus: $(Get-Focus)"'] : []),
         ]
       : []),
@@ -720,7 +725,7 @@ async function main() {
       // One PowerShell for typing, looking and choosing: another one
       // would deactivate Brouk and close the list.
       const shown = sendKeys('History', ['^l', 'find-and-zoom'], { windowsOf: brouk.pid, thenKeys: ['{DOWN}', '{ENTER}'] });
-      check(/windows: .*BroukSuggestions/.test(shown), 'typing in the address bar shows suggestions');
+      check(/suggestions visible: True/.test(shown), 'typing in the address bar shows suggestions');
       let after = before;
       for (let i = 0; i < 20 && after <= before; i++) {
         await sleep(500);

@@ -73,9 +73,10 @@ void SuggestionsPopup::Show(std::span<const AddressSuggestion> rows,
       return;
     }
     // Owned by the browser window: above it, never activated.
-    window_ = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, kWindowClass,
-                              L"", WS_POPUP | WS_BORDER, 0, 0, 0, 0, owner_,
-                              nullptr, GetModuleHandleW(nullptr), nullptr);
+    window_ =
+        CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE, kWindowClass,
+                        L"Suggestions", WS_POPUP | WS_BORDER, 0, 0, 0, 0,
+                        owner_, nullptr, GetModuleHandleW(nullptr), nullptr);
     if (!window_) {
       return;
     }
