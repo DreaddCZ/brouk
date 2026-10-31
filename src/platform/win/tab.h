@@ -52,6 +52,14 @@ class TabHost {
   // that the tab's profile's history changed (the Recently visited menu).
   virtual HistoryService* TabHistory() = 0;
   virtual void OnTabHistoryChanged(Tab& tab) = 0;
+  // Downloads (014): the app's list (null before it exists), whether every
+  // download asks where to save, and a unique path in `profile`'s download
+  // folder (released when the download ends).
+  virtual DownloadService* TabDownloads() = 0;
+  virtual bool TabAskWhereToSaveDownloads() = 0;
+  virtual DownloadTarget TabReserveDownloadPath(const std::string& suggested,
+                                                const ProfileId& profile) = 0;
+  virtual void TabReleaseDownloadPath(const std::string& path) = 0;
 
  protected:
   virtual ~TabHost() = default;

@@ -14,11 +14,13 @@
 #include <string_view>
 #include <vector>
 
+#include "cef/download_service.h"
 #include "cef/history_page_handler.h"
 #include "cef/history_service.h"
 #include "cef/profile_manager_handler.h"
 #include "cef/settings_handler.h"
 #include "core/closed_tabs.h"
+#include "core/download_paths.h"
 #include "core/launch_args.h"
 #include "core/profile_registry.h"
 #include "core/session.h"
@@ -82,6 +84,15 @@ class App final : public BrowserWindowOwner,
       const ProfileId& profile) override;
   std::string SearchSuggestTemplate() override;
   bool HistorySuggestionsEnabled() override;
+  DownloadService* Downloads() override;
+  bool AskWhereToSaveDownloads() override;
+  DownloadTarget ReserveDownloadPath(const std::string& suggested,
+                                     const ProfileId& profile) override;
+  void ReleaseDownloadPath(const std::string& path) override;
+  // The downloads page (014) follows the list while it is open: `changed`
+  // runs after every change; the id removes it again.
+  int WatchDownloads(std::function<void()> changed);
+  void UnwatchDownloads(int id);
   void OpenHelp(const std::string& anchor) override;
   void CloseAllWindows() override;
   void OpenWindow(const std::string& url, const ProfileId& profile) override;
@@ -92,7 +103,7 @@ class App final : public BrowserWindowOwner,
   void OpenProfileManager() override;
   void OpenSettings(const std::string& url) override;
   void OnSessionChanged() override;
-  void OnWindowClosing(BrowserWindow& window) override;
+  bool OnWindowClosing(BrowserWindow& window) override;
   void OnTabClosedToReopen(ClosedTab tab) override;
   void OnWindowClosedToReopen(std::int64_t window_id,
                               std::vector<ClosedTab> tabs) override;
@@ -153,6 +164,11 @@ class App final : public BrowserWindowOwner,
   Session CurrentSession() const;
   // The front normal window that is not closing, or null.
   BrowserWindow* FrontWindow() const;
+  // Quitting would cancel running downloads (014): asks first, as Chrome.
+  // True to go on.
+  bool ConfirmQuitWithDownloads(HWND owner);
+  // The windows' downloads buttons and the open downloads pages follow.
+  void DownloadsChanged();
   // A browser of `profile` for the DevTools protocol: one of its tabs, or a
   // hidden helper browser that `release` closes again (013).
   void WithBrowserInProfile(
@@ -209,6 +225,12 @@ class App final : public BrowserWindowOwner,
   std::map<ProfileId, std::vector<HistoryMatch>> recent_pages_;
   // Hidden helper browsers still open (clearing data); Brouk quits after.
   int helper_browsers_ = 0;
+  // Downloads (014): every download of the app, recorded in the history;
+  // unique paths of the running ones; open downloads pages.
+  std::unique_ptr<DownloadService> downloads_;
+  DownloadPathReserver download_paths_;
+  std::map<int, std::function<void()>> download_watchers_;
+  int next_download_watcher_ = 1;
   std::vector<std::unique_ptr<BrowserWindow>> windows_;
 };
 

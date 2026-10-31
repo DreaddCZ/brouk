@@ -85,6 +85,8 @@ bool RegisterContainerClass(WNDPROC procedure) {
 Tab::Tab(TabHost& host, TabId id, HWND parent, ProfileId profile)
     : host_(host), id_(id), profile_(std::move(profile)) {
   client_ = new TabClient(this);
+  // Downloads (014) go to the app's list.
+  client_->SetDownloads(host_.TabDownloads(), profile_);
   if (RegisterContainerClass(&Tab::ContainerProc)) {
     container_ = CreateWindowExW(0, kContainerClass, L"",
                                  WS_CHILD | WS_CLIPCHILDREN, 0, 0, 0, 0, parent,
@@ -963,14 +965,16 @@ void Tab::InspectElement(int /*x*/, int /*y*/) {}
 void Tab::OnInspectElement(int /*x*/, int /*y*/) {}  // Dev tools (006): W3.
 
 bool Tab::AskWhereToSaveDownloads() {
-  return false;
+  return host_.TabAskWhereToSaveDownloads();
 }
 
-DownloadTarget Tab::ReserveDownloadPath(const std::string& /*suggested*/) {
-  return {std::string(), true};
+DownloadTarget Tab::ReserveDownloadPath(const std::string& suggested) {
+  return host_.TabReserveDownloadPath(suggested, profile_);
 }
 
-void Tab::ReleaseDownloadPath(const std::string& /*path*/) {}
+void Tab::ReleaseDownloadPath(const std::string& path) {
+  host_.TabReleaseDownloadPath(path);
+}
 
 void Tab::OnAdblockRequest(const AdblockRequestInfo& /*info*/) {}
 

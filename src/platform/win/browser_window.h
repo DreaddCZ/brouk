@@ -71,6 +71,14 @@ class BrowserWindowOwner {
   // template (empty: none), and whether history pages are suggested.
   virtual std::string SearchSuggestTemplate() = 0;
   virtual bool HistorySuggestionsEnabled() = 0;
+  // Downloads (014): the app's list (null before CEF is ready), the
+  // setting downloads.ask_where_to_save, and unique paths in a profile's
+  // download folder.
+  virtual DownloadService* Downloads() = 0;
+  virtual bool AskWhereToSaveDownloads() = 0;
+  virtual DownloadTarget ReserveDownloadPath(const std::string& suggested,
+                                             const ProfileId& profile) = 0;
+  virtual void ReleaseDownloadPath(const std::string& path) = 0;
   virtual const std::vector<ProfileInfo>& ProfileList() = 0;
   // Opens the profile manager (brouk://profiles, 005) in its own window.
   virtual void OpenProfileManager() = 0;
@@ -90,7 +98,9 @@ class BrowserWindowOwner {
   // order, pinning, collapsing, the frame), and a normal window is about to
   // close its tabs (while its session state is still complete).
   virtual void OnSessionChanged() = 0;
-  virtual void OnWindowClosing(BrowserWindow& window) = 0;
+  // Also asks first when closing would quit Brouk with downloads running
+  // (014); false: the window stays open.
+  virtual bool OnWindowClosing(BrowserWindow& window) = 0;
   // Reopen closed tabs (013): a tab closed on its own, a window closed as a
   // whole with its tabs, the list for the menu, and reopening one (nullopt:
   // the newest, Ctrl+Shift+T).
@@ -153,6 +163,13 @@ class BrowserWindow final : public TabHost {
   // browser of `profile` here (for the DevTools protocol).
   ProfileId ProfileOfTab(TabId id);
   CefRefPtr<CefBrowser> AnyBrowserInProfile(const ProfileId& profile) const;
+  // Downloads (014): the toolbar button follows the app's list (shown once
+  // something was downloaded in this run, with the progress of running
+  // downloads and a dot for finished ones not seen yet); Retry on the
+  // downloads page starts a download again with a browser of its profile,
+  // or loads its address in a new tab.
+  void DownloadsChanged();
+  void RetryDownload(const DownloadEntry& entry);
   // Removes a tab whose browser never came (the popup was aborted).
   void RemoveUncreatedTab(TabId id);
   Tab* FindTab(TabId id);
@@ -194,6 +211,11 @@ class BrowserWindow final : public TabHost {
   int FaviconSize() override;
   HistoryService* TabHistory() override;
   void OnTabHistoryChanged(Tab& tab) override;
+  DownloadService* TabDownloads() override;
+  bool TabAskWhereToSaveDownloads() override;
+  DownloadTarget TabReserveDownloadPath(const std::string& suggested,
+                                        const ProfileId& profile) override;
+  void TabReleaseDownloadPath(const std::string& path) override;
 
  private:
   static LRESULT CALLBACK WindowProc(HWND window,
@@ -221,6 +243,11 @@ class BrowserWindow final : public TabHost {
   void Paint();
   void PaintToolbar(HDC dc);
   void DrawToolbarButton(const DRAWITEMSTRUCT& item);
+  // The downloads button: its glyph, a progress line under it while
+  // downloads run, a dot for unseen finished ones.
+  void DrawDownloadsButton(const DRAWITEMSTRUCT& item);
+  // The downloads page (brouk://downloads, Ctrl+J); everything is seen.
+  void ShowDownloads();
   // The indicators at the right of the address bar: zoom ("110 %", click
   // resets to 100 %) and "Pop-ups blocked" (click lists them).
   void DrawIndicator(const DRAWITEMSTRUCT& item);
@@ -313,6 +340,7 @@ class BrowserWindow final : public TabHost {
   HWND forward_ = nullptr;
   HWND reload_ = nullptr;
   HWND menu_ = nullptr;
+  HWND downloads_ = nullptr;
   HWND zoom_ = nullptr;
   HWND popups_ = nullptr;
   // Tab titles and the strip's buttons on hover.
