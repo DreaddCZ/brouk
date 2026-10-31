@@ -8,10 +8,12 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 #include "brouk/app_info.h"
 #include "cef/function_task.h"
+#include "cef/site_info.h"
 #include "core/address_input.h"
 #include "core/internal_pages.h"
 #include "core/profile_id.h"
@@ -47,6 +49,7 @@ enum ControlId : int {
   kMenuId,
   kAddressId,
   kZoomId,
+  kPopupsId,
 };
 
 // Items of the "⋮" menu.
@@ -61,6 +64,17 @@ enum MenuCommand : UINT {
   kHelpCommand,
   kLicencesCommand,
   kExitCommand,
+  kAllowPopupsCommand,
+  kNewTabToTheRightCommand,
+  kReloadTabCommand,
+  kDuplicateTabCommand,
+  kPinTabCommand,
+  kMuteTabCommand,
+  kCloseTabCommand,
+  kCloseOtherTabsCommand,
+  kCloseTabsLeftCommand,
+  kCloseTabsRightCommand,
+  kFirstBlockedPopupCommand = 1000,
 };
 
 // Glyphs of the "Segoe MDL2 Assets" icon font, on Windows 10 and 11.
@@ -68,6 +82,7 @@ constexpr wchar_t kBackGlyph[] = L"\uE72B";
 constexpr wchar_t kForwardGlyph[] = L"\uE72A";
 constexpr wchar_t kReloadGlyph[] = L"\uE72C";
 constexpr wchar_t kMoreGlyph[] = L"\uE712";
+constexpr wchar_t kBlockedGlyph[] = L"\uE8A7";  // OpenInNewWindow.
 
 TabId NextTabId() {
   static TabId next = 0;
@@ -203,6 +218,24 @@ void BrowserWindow::CreateControls() {
       0, WC_BUTTONW, L"", WS_CHILD | BS_OWNERDRAW, 0, 0, 0, 0, window_,
       reinterpret_cast<HMENU>(static_cast<INT_PTR>(kZoomId)), instance,
       nullptr);
+  popups_ = CreateWindowExW(
+      0, WC_BUTTONW, kBlockedGlyph, WS_CHILD | BS_OWNERDRAW, 0, 0, 0, 0,
+      window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kPopupsId)),
+      instance, nullptr);
+  SetAccessibleName(popups_, L"Pop-ups blocked");
+  if (kind_ == Kind::kNormal) {
+    // One tool over the tab strip; its text follows the hovered part.
+    tooltip_ = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr,
+                               WS_POPUP | TTS_NOPREFIX | TTS_ALWAYSTIP, 0, 0, 0,
+                               0, window_, nullptr, instance, nullptr);
+    TTTOOLINFOW tool = {};
+    tool.cbSize = sizeof(tool);
+    tool.uFlags = TTF_SUBCLASS;
+    tool.hwnd = window_;
+    tool.uId = 1;
+    tool.lpszText = LPSTR_TEXTCALLBACKW;
+    SendMessageW(tooltip_, TTM_ADDTOOLW, 0, reinterpret_cast<LPARAM>(&tool));
+  }
 }
 
 int BrowserWindow::Scale(int dips) const {
@@ -288,6 +321,15 @@ RECT BrowserWindow::ContentBounds() const {
 void BrowserWindow::Layout() {
   strip_.Layout(StripBounds(), GetDpiForWindow(window_), model_,
                 kind_ == Kind::kNormal);
+  if (tooltip_) {
+    TTTOOLINFOW tool = {};
+    tool.cbSize = sizeof(tool);
+    tool.hwnd = window_;
+    tool.uId = 1;
+    tool.rect = StripBounds();
+    SendMessageW(tooltip_, TTM_NEWTOOLRECTW, 0,
+                 reinterpret_cast<LPARAM>(&tool));
+  }
   const RECT toolbar = ToolbarBounds();
   const int toolbar_height = toolbar.bottom - toolbar.top;
   const int button = Scale(kButtonSize);
@@ -315,17 +357,20 @@ void BrowserWindow::Layout() {
                     field_top + field_height};
   const int padding = Scale(kAddressPadding);
   const int edit_height = text_height_ + Scale(2);
-  int edit_right = static_cast<int>(address_field_.right) - padding;
-  if (HasVisibleStyle(zoom_)) {
-    // The zoom indicator at the right end of the address bar.
-    const int zoom_width = Scale(56);
-    const int zoom_height = field_height - Scale(8);
-    SetWindowPos(zoom_, nullptr,
-                 static_cast<int>(address_field_.right) - Scale(4) - zoom_width,
-                 field_top + Scale(4), zoom_width, zoom_height,
-                 SWP_NOZORDER | SWP_NOACTIVATE);
-    edit_right -= zoom_width;
+  // The indicators at the right end of the address bar, right to left.
+  int indicator_right = static_cast<int>(address_field_.right) - Scale(4);
+  for (const auto& [indicator, width] :
+       {std::pair{zoom_, Scale(56)}, std::pair{popups_, Scale(30)}}) {
+    if (HasVisibleStyle(indicator)) {
+      indicator_right -= width;
+      SetWindowPos(indicator, nullptr, indicator_right, field_top + Scale(4),
+                   width, field_height - Scale(8),
+                   SWP_NOZORDER | SWP_NOACTIVATE);
+      indicator_right -= Scale(4);
+    }
   }
+  const int edit_right = std::min(
+      static_cast<int>(address_field_.right) - padding, indicator_right);
   SetWindowPos(
       address_, nullptr, address_field_.left + padding,
       field_top + (field_height - edit_height) / 2,
@@ -474,8 +519,9 @@ void BrowserWindow::SetFullscreen(bool fullscreen) {
   ShowWindow(address_, fullscreen ? SW_HIDE : SW_SHOWNA);
   if (fullscreen) {
     ShowWindow(zoom_, SW_HIDE);
+    ShowWindow(popups_, SW_HIDE);
   }
-  UpdateZoomIndicator();
+  UpdateIndicators();
   Layout();
   InvalidateRect(window_, nullptr, TRUE);
 }
@@ -496,7 +542,144 @@ void BrowserWindow::ShowFullscreenHint(const wchar_t* text) {
   SetTimer(window_, kFullscreenHintTimer, kFullscreenHintTime, nullptr);
 }
 
-void BrowserWindow::DrawZoomButton(const DRAWITEMSTRUCT& item) {
+void BrowserWindow::OpenTabAfter(TabId after, const std::string& url) {
+  const TabId id = NextTabId();
+  auto tab = std::make_unique<Tab>(*this, id, window_);
+  tab->SetBounds(ContentBounds());
+  Tab* created = tab.get();
+  tabs_[id] = std::move(tab);
+  model_.InsertAfter(id, after, /*activate=*/true);
+  created->CreateBrowser(url.empty() ? std::string("about:blank") : url,
+                         owner_.RequestContext());
+  ModelChanged();
+  FocusActiveTab();
+}
+
+void BrowserWindow::ShowTabMenu(TabId id, POINT screen_point) {
+  Tab* tab = FindTab(id);
+  if (!tab) {
+    return;
+  }
+  using Scope = TabStripModel::CloseScope;
+  const bool others = !model_.TabsToClose(id, Scope::kOthers).empty();
+  const bool left = !model_.TabsToClose(id, Scope::kLeft).empty();
+  const bool right = !model_.TabsToClose(id, Scope::kRight).empty();
+  HMENU menu = CreatePopupMenu();
+  auto add = [menu](UINT command, const wchar_t* title, bool enabled) {
+    AppendMenuW(menu, MF_STRING | (enabled ? 0 : MF_GRAYED), command, title);
+  };
+  // Chrome's tab menu.
+  add(kNewTabToTheRightCommand, L"New tab to the right", true);
+  AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+  add(kReloadTabCommand, L"Reload", true);
+  add(kDuplicateTabCommand, L"Duplicate", !tab->internal());
+  add(kPinTabCommand, model_.IsPinned(id) ? L"Unpin" : L"Pin", true);
+  add(kMuteTabCommand, tab->muted() ? L"Unmute site" : L"Mute site", true);
+  AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+  add(kCloseTabCommand, L"Close\tCtrl+W", true);
+  add(kCloseOtherTabsCommand, L"Close other tabs", others);
+  add(kCloseTabsLeftCommand, L"Close tabs to the left", left);
+  add(kCloseTabsRightCommand, L"Close tabs to the right", right);
+  const UINT command = static_cast<UINT>(TrackPopupMenuEx(
+      menu, TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD | TPM_NONOTIFY,
+      screen_point.x, screen_point.y, window_, nullptr));
+  DestroyMenu(menu);
+  // The tab may have closed while the menu was open.
+  tab = FindTab(id);
+  if (!tab || !command) {
+    return;
+  }
+  auto close_all = [this](const std::vector<TabId>& ids) {
+    for (TabId close : ids) {
+      CloseTab(close);
+    }
+  };
+  switch (command) {
+    case kNewTabToTheRightCommand:
+      OpenTabAfter(id, std::string());
+      break;
+    case kReloadTabCommand:
+      tab->Reload();
+      break;
+    case kDuplicateTabCommand:
+      OpenTabAfter(id, tab->url());
+      break;
+    case kPinTabCommand:
+      model_.SetPinned(id, !model_.IsPinned(id));
+      ModelChanged();
+      break;
+    case kMuteTabCommand:
+      tab->SetMuted(!tab->muted());
+      break;
+    case kCloseTabCommand:
+      CloseTab(id);
+      break;
+    case kCloseOtherTabsCommand:
+      close_all(model_.TabsToClose(id, Scope::kOthers));
+      break;
+    case kCloseTabsLeftCommand:
+      close_all(model_.TabsToClose(id, Scope::kLeft));
+      break;
+    case kCloseTabsRightCommand:
+      close_all(model_.TabsToClose(id, Scope::kRight));
+      break;
+    default:
+      break;
+  }
+}
+
+void BrowserWindow::ShowBlockedPopups() {
+  Tab* tab = ActiveTab();
+  if (!tab || tab->blocked_popups().empty()) {
+    return;
+  }
+  HMENU menu = CreatePopupMenu();
+  AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, L"Pop-ups blocked on this page:");
+  const std::vector<std::string> urls = tab->blocked_popups();
+  for (size_t i = 0; i < urls.size(); ++i) {
+    std::wstring title = Utf8ToWide(urls[i]);
+    if (title.size() > 70) {
+      title = title.substr(0, 67) + L"\u2026";
+    }
+    AppendMenuW(menu, MF_STRING,
+                kFirstBlockedPopupCommand + static_cast<UINT>(i),
+                title.c_str());
+  }
+  const CefRefPtr<CefBrowser> browser = tab->browser();
+  const std::string origin = browser ? GetSiteInfo(browser).origin : "";
+  if (!origin.empty()) {
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    const std::wstring allow =
+        L"Always allow pop-ups and redirects from " + Utf8ToWide(origin);
+    AppendMenuW(menu, MF_STRING, kAllowPopupsCommand, allow.c_str());
+  }
+  RECT button = {};
+  GetWindowRect(popups_, &button);
+  const UINT command = static_cast<UINT>(TrackPopupMenuEx(
+      menu, TPM_RIGHTALIGN | TPM_TOPALIGN | TPM_RETURNCMD | TPM_NONOTIFY,
+      button.right, button.bottom, window_, nullptr));
+  DestroyMenu(menu);
+  // The tab may have gone while the menu was open.
+  tab = ActiveTab();
+  if (!tab || !command) {
+    return;
+  }
+  if (command == kAllowPopupsCommand) {
+    if (CefRefPtr<CefBrowser> current = tab->browser()) {
+      SetSitePermission(current, origin, PermissionKind::kPopups,
+                        PermissionSetting::kAllow);
+    }
+    tab->ClearBlockedPopups();
+  } else if (command >= kFirstBlockedPopupCommand &&
+             command - kFirstBlockedPopupCommand < urls.size()) {
+    Tab* popup = InsertTabFromOpener(tab, true);
+    popup->CreateBrowser(urls[command - kFirstBlockedPopupCommand],
+                         owner_.RequestContext());
+    FocusActiveTab();
+  }
+}
+
+void BrowserWindow::DrawIndicator(const DRAWITEMSTRUCT& item) {
   const bool pressed = (item.itemState & ODS_SELECTED) != 0;
   SetDCBrushColor(item.hDC, theme_.field);
   FillRect(item.hDC, &item.rcItem,
@@ -511,17 +694,20 @@ void BrowserWindow::DrawZoomButton(const DRAWITEMSTRUCT& item) {
   SelectObject(item.hDC, brush);
   SelectObject(item.hDC, pen);
   const std::wstring text = WindowText(item.hwndItem);
-  HGDIOBJ previous = SelectObject(item.hDC, text_font_);
+  // The pop-up indicator is an icon, the zoom indicator text.
+  HGDIOBJ previous = SelectObject(
+      item.hDC, item.hwndItem == popups_ ? icon_font_ : text_font_);
   SetBkMode(item.hDC, TRANSPARENT);
-  SetTextColor(item.hDC, theme_.text);
+  // The pop-up icon in orange, as on macOS.
+  SetTextColor(item.hDC,
+               item.hwndItem == popups_ ? RGB(0xE8, 0x6E, 0x00) : theme_.text);
   RECT area = item.rcItem;
   DrawTextW(item.hDC, text.c_str(), -1, &area,
             DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
   SelectObject(item.hDC, previous);
 }
 
-// Shown while the active tab's zoom is not 100 %, as on macOS.
-void BrowserWindow::UpdateZoomIndicator() {
+void BrowserWindow::UpdateIndicators() {
   Tab* tab = ActiveTab();
   const double level = tab ? tab->ZoomLevel() : 0.0;
   const bool shown = !fullscreen_ && IsZoomIndicatorShown(level);
@@ -536,8 +722,12 @@ void BrowserWindow::UpdateZoomIndicator() {
       InvalidateRect(zoom_, nullptr, FALSE);
     }
   }
-  if (shown != HasVisibleStyle(zoom_)) {
+  const bool popups_shown =
+      !fullscreen_ && tab && !tab->blocked_popups().empty();
+  if (shown != HasVisibleStyle(zoom_) ||
+      popups_shown != HasVisibleStyle(popups_)) {
     ShowWindow(zoom_, shown ? SW_SHOWNA : SW_HIDE);
+    ShowWindow(popups_, popups_shown ? SW_SHOWNA : SW_HIDE);
     Layout();
   }
 }
@@ -745,7 +935,7 @@ void BrowserWindow::UpdateToolbar() {
   if (GetFocus() != address_) {
     ShowAddress();
   }
-  UpdateZoomIndicator();
+  UpdateIndicators();
   // "Page - Brouk", as Chrome's "Page - Google Chrome".
   std::wstring title = Utf8ToWide(kAppName);
   if (tab) {
@@ -1177,6 +1367,11 @@ void BrowserWindow::OnMouse(UINT message, POINT point) {
       if (!(hover_ == hit)) {
         hover_ = hit;
         InvalidateStrip();
+        if (tooltip_) {
+          // The next tip asks for its text again (TTN_GETDISPINFO).
+          SendMessageW(tooltip_, TTM_POP, 0, 0);
+          SendMessageW(tooltip_, TTM_UPDATE, 0, 0);
+        }
       }
       break;
     }
@@ -1212,6 +1407,14 @@ void BrowserWindow::OnMouse(UINT message, POINT point) {
       InvalidateStrip();
       break;
     }
+    case WM_RBUTTONUP:
+      if (hit.part == TabStrip::Part::kTab ||
+          hit.part == TabStrip::Part::kTabClose) {
+        POINT screen = point;
+        ClientToScreen(window_, &screen);
+        ShowTabMenu(hit.tab, screen);
+      }
+      break;
     case WM_MBUTTONUP:
       // Middle-click closes a tab (Chrome).
       if (hit.part == TabStrip::Part::kTab ||
@@ -1318,8 +1521,29 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
     case WM_LBUTTONDOWN:
     case WM_LBUTTONUP:
     case WM_MBUTTONUP:
+    case WM_RBUTTONUP:
       OnMouse(message, {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)});
       return 0;
+    case WM_NOTIFY:
+      if (const auto* header = reinterpret_cast<const NMHDR*>(lparam);
+          tooltip_ && header->hwndFrom == tooltip_ &&
+          header->code == TTN_GETDISPINFOW) {
+        auto* info = reinterpret_cast<NMTTDISPINFOW*>(lparam);
+        tooltip_text_.clear();
+        if (hover_.part == TabStrip::Part::kTab) {
+          if (const Tab* tab = FindTab(hover_.tab)) {
+            tooltip_text_ = Utf8ToWide(tab->DisplayTitle());
+          }
+        } else if (hover_.part == TabStrip::Part::kTabClose) {
+          tooltip_text_ = L"Close tab";
+        } else if (hover_.part == TabStrip::Part::kNewTab) {
+          tooltip_text_ = L"New tab";
+        }
+        // An empty text shows no tip.
+        info->lpszText = tooltip_text_.data();
+        return 0;
+      }
+      break;
     case WM_CAPTURECHANGED:
       drag_tab_.reset();
       dragging_ = false;
@@ -1334,11 +1558,16 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
       return 0;
     case WM_ACTIVATE:
       active_ = LOWORD(wparam) != WA_INACTIVE;
+      InvalidateStrip();
       if (!active_) {
         HWND focus = GetFocus();
         saved_focus_ = focus && IsChild(window_, focus) ? focus : nullptr;
+      } else if (HWND focus = GetFocus(); focus && IsChild(window_, focus)) {
+        // Activated again while the focus is still inside (the window was
+        // already in front): leave it where it is. DefWindowProc would move
+        // it to the window and from there to the page.
+        return 0;
       }
-      InvalidateStrip();
       break;
     case WM_SETFOCUS:
       // Back to where the user was, as in Chrome. The page itself is
@@ -1348,6 +1577,7 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
                                   IsWindowEnabled(saved_focus_) &&
                                   !(tab && tab->IsPageWindow(saved_focus_))) {
         SetFocus(saved_focus_);
+        saved_focus_ = nullptr;
       } else if (tab) {
         tab->Focus();
       }
@@ -1389,8 +1619,9 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
       return 0;
     }
     case WM_DRAWITEM:
-      if (reinterpret_cast<const DRAWITEMSTRUCT*>(lparam)->hwndItem == zoom_) {
-        DrawZoomButton(*reinterpret_cast<const DRAWITEMSTRUCT*>(lparam));
+      if (const auto* item = reinterpret_cast<const DRAWITEMSTRUCT*>(lparam);
+          item->hwndItem == zoom_ || item->hwndItem == popups_) {
+        DrawIndicator(*item);
       } else {
         DrawToolbarButton(*reinterpret_cast<const DRAWITEMSTRUCT*>(lparam));
       }
@@ -1416,6 +1647,9 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
             return 0;
           case kZoomId:
             tab->Zoom(CEF_ZOOM_COMMAND_RESET);
+            return 0;
+          case kPopupsId:
+            ShowBlockedPopups();
             return 0;
           case kMenuId:
             ShowAppMenu();

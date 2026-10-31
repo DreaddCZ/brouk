@@ -12,6 +12,7 @@
 #include "core/permissions.h"
 #include "include/cef_task.h"
 #include "include/wrapper/cef_helpers.h"
+#include "platform/win/desktop_sources.h"
 #include "platform/win/theme.h"
 #include "platform/win/wide_string.h"
 
@@ -103,7 +104,7 @@ Tab::~Tab() {
   }
   // The panels' windows go before the container they are in.
   for (auto* panel : {&js_dialog_, &unresponsive_, &external_protocol_,
-                      &sad_tab_, &permission_prompt_}) {
+                      &screen_picker_, &sad_tab_, &permission_prompt_}) {
     panel->reset();
   }
   find_bar_.reset();
@@ -197,7 +198,7 @@ void Tab::OnContainerSize() {
   }
   for (TabPanel* panel :
        {js_dialog_.get(), unresponsive_.get(), external_protocol_.get(),
-        sad_tab_.get(), permission_prompt_.get()}) {
+        screen_picker_.get(), sad_tab_.get(), permission_prompt_.get()}) {
     if (panel) {
       panel->Place();
     }
@@ -229,8 +230,8 @@ std::unique_ptr<TabPanel> Tab::MakePanel(TabPanel::Content content,
 }
 
 TabPanel* Tab::ModalPanel() const {
-  for (TabPanel* panel :
-       {unresponsive_.get(), js_dialog_.get(), external_protocol_.get()}) {
+  for (TabPanel* panel : {unresponsive_.get(), js_dialog_.get(),
+                          external_protocol_.get(), screen_picker_.get()}) {
     if (panel && !panel->answered()) {
       return panel;
     }
@@ -328,6 +329,7 @@ void Tab::FindNext(bool forward) {
     return;
   }
   if (browser_) {
+    finding_from_bar_ = find_bar_->HasFocus();
     browser_->GetHost()->Find(WideToUtf8(find_bar_->text()), forward,
                               /*matchCase=*/false, /*findNext=*/true);
   }
@@ -343,6 +345,7 @@ void Tab::OnFindTextChanged() {
     find_bar_->SetResult(0, 0);
     return;
   }
+  finding_from_bar_ = find_bar_->HasFocus();
   // As Chrome's find bar: a new text starts a new search (Chromium sees
   // the text changed) and makes the first match the current one ("1/6");
   // without it all matches are only highlighted ("0/6").
@@ -399,6 +402,14 @@ void Tab::ExitFullscreen() {
   }
 }
 
+void Tab::SetMuted(bool muted) {
+  muted_ = muted;
+  if (browser_) {
+    browser_->GetHost()->SetAudioMuted(muted);
+  }
+  host_.OnTabChanged(*this);
+}
+
 void Tab::Close() {
   closing_ = true;
   if (browser_) {
@@ -430,6 +441,13 @@ void Tab::OnTitleChanged(const std::string& title) {
 }
 
 void Tab::OnAddressChanged(const std::string& url) {
+  // Like Chrome, the list of blocked popups belongs to the page shown.
+  auto without_fragment = [](const std::string& address) {
+    return address.substr(0, address.find('#'));
+  };
+  if (without_fragment(url) != without_fragment(url_)) {
+    blocked_popups_.clear();
+  }
   url_ = url;
   host_.OnTabChanged(*this);
 }
@@ -471,8 +489,17 @@ std::optional<PopupHost> Tab::OnBeforePopup(const PopupRequest& request) {
   return host_.OnTabPopup(*this, request);
 }
 
-void Tab::OnPopupBlocked(const std::string& /*target_url*/) {
-  // The address bar's "popup blocked" icon comes with W1.
+void Tab::OnPopupBlocked(const std::string& target_url) {
+  constexpr size_t kMaxBlockedPopups = 20;
+  if (blocked_popups_.size() < kMaxBlockedPopups) {
+    blocked_popups_.push_back(target_url);
+  }
+  host_.OnTabChanged(*this);
+}
+
+void Tab::ClearBlockedPopups() {
+  blocked_popups_.clear();
+  host_.OnTabChanged(*this);
 }
 
 void Tab::OnPopupAborted(int popup_id) {
@@ -729,13 +756,58 @@ void Tab::OnAudibleChanged(bool /*audible*/) {}
 
 void Tab::OnMediaAccessChanged(bool /*video*/, bool /*audio*/) {}
 
+// Windows has no system picker that names Chromium's sources, so Brouk
+// lists the screens and windows itself (Chrome's picker, without the
+// thumbnails).
 void Tab::ChooseDesktopSource(DesktopSourceDone done) {
-  done(std::nullopt);  // The screen picker comes with W1.
+  // Only the tab the user is looking at may open the picker.
+  if ((screen_picker_ && !screen_picker_->answered()) ||
+      !IsWindowVisible(container_)) {
+    done(std::nullopt);
+    return;
+  }
+  constexpr size_t kMaxWindows = 12;
+  const std::vector<DesktopSourceOption> options =
+      ListDesktopSources(kMaxWindows);
+  TabPanel::Content content;
+  content.title = L"Choose what to share";
+  content.message =
+      L"The site will be able to see the contents of your "
+      L"screen or of the window you choose.";
+  std::vector<DesktopSource> sources;
+  for (const DesktopSourceOption& option : options) {
+    content.buttons.push_back(option.title);
+    sources.push_back(option.source);
+  }
+  content.buttons.emplace_back(L"Cancel");
+  content.first_is_default = false;
+  content.stacked_buttons = true;
+  content.escape_answer = static_cast<int>(sources.size());
+  std::weak_ptr<int> alive = alive_;
+  screen_picker_ = MakePanel(
+      std::move(content), [this, alive, sources, done = std::move(done)](
+                              const TabPanel::Answer& answer) {
+        if (!alive.expired() && screen_picker_ && screen_picker_->answered()) {
+          ClosePanel(screen_picker_);
+        }
+        const auto index = static_cast<size_t>(answer.button);
+        done(answer.button >= 0 && index < sources.size()
+                 ? std::optional<DesktopSource>(sources[index])
+                 : std::nullopt);
+      });
+  UpdatePanels(true);
 }
 
-void Tab::OnFindResult(int count, int active, bool /*final_update*/) {
-  if (find_bar_) {
-    find_bar_->SetResult(active, count);
+void Tab::OnFindResult(int count, int active, bool final_update) {
+  if (!find_bar_) {
+    return;
+  }
+  find_bar_->SetResult(active, count);
+  if (finding_from_bar_ && IsPageWindow(GetFocus())) {
+    find_bar_->Refocus();
+  }
+  if (final_update) {
+    finding_from_bar_ = false;
   }
 }
 

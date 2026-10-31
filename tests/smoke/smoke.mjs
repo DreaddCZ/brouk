@@ -71,6 +71,31 @@ function desktopScreenshot(name) {
   }
 }
 
+// Which control has the keyboard focus (UI Automation), for the log.
+const kFocusFunction =
+  'function Get-Focus { $f = [System.Windows.Automation.AutomationElement]::FocusedElement; ' +
+  'if ($f) { "$($f.Current.ClassName) [$($f.Current.Name)]" } else { "none" } }';
+
+function logFocus(label) {
+  if (!kWindows) return;
+  const script = ['Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes', kFocusFunction, 'Get-Focus'].join('; ');
+  try {
+    const output = execFileSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8', timeout: 30000 });
+    log(`(focus ${label}: ${output.trim()})`);
+  } catch (error) {
+    log(`(focus ${label}: ${error.message})`);
+  }
+}
+
+// Brings Brouk's main window to the front (AppActivate by process could
+// pick another of its windows, such as a tooltip). Returns whether it did.
+const frontFunction = () =>
+  'function Set-BroukFront { Add-Type -Namespace Smoke -Name Front -MemberDefinition ' +
+  '\'[DllImport("user32.dll")] public static extern bool SetForegroundWindow(System.IntPtr w);\' ' +
+  '-ErrorAction SilentlyContinue; ' +
+  `$w = (Get-Process -Id ${brouk.pid}).MainWindowHandle; ` +
+  '(New-Object -ComObject WScript.Shell).SendKeys(""); [Smoke.Front]::SetForegroundWindow($w) }';
+
 // Windows: brings Brouk's window to the front and types `keys`
 // (System.Windows.Forms.SendKeys syntax: "^f" is Ctrl+F), one after another.
 function sendKeys(keys) {
@@ -78,17 +103,44 @@ function sendKeys(keys) {
     .map((k) => `[System.Windows.Forms.SendKeys]::SendWait('${k.replaceAll("'", "''")}'); Start-Sleep -Milliseconds 300`)
     .join('; ');
   const script = [
-    'Add-Type -AssemblyName System.Windows.Forms',
-    `$active = (New-Object -ComObject WScript.Shell).AppActivate(${brouk.pid})`,
+    'Add-Type -AssemblyName System.Windows.Forms, UIAutomationClient, UIAutomationTypes',
+    kFocusFunction,
+    frontFunction(),
+    '$active = Set-BroukFront',
     'Start-Sleep -Milliseconds 500',
+    '$before = Get-Focus',
     sends,
-    'Write-Output "Brouk in front: $active"',
+    '$after = Get-Focus',
+    'Write-Output "Brouk in front: $active, focus before: $before, after: $after"',
   ].join('; ');
   try {
     const output = execFileSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8', timeout: 30000 });
     log(`(keys ${keys.join(' ')}: ${output.trim()})`);
   } catch (error) {
     log(`(keys not sent: ${error.message})`);
+  }
+}
+
+// Windows: a right-click at screen pixel (x, y).
+function rightClick(x, y) {
+  const script = [
+    'Add-Type -Namespace Smoke -Name Mouse -MemberDefinition \'' +
+      '[DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y); ' +
+      '[DllImport("user32.dll")] public static extern void mouse_event(int f, int x, int y, int d, int e);\'',
+    frontFunction(),
+    'Set-BroukFront | Out-Null',
+    'Start-Sleep -Milliseconds 300',
+    `[Smoke.Mouse]::SetCursorPos(${x}, ${y}) | Out-Null`,
+    'Start-Sleep -Milliseconds 200',
+    '[Smoke.Mouse]::mouse_event(0x0008, 0, 0, 0, 0); [Smoke.Mouse]::mouse_event(0x0010, 0, 0, 0, 0)',
+    // Away from the tabs again, so no tooltip stays open.
+    'Start-Sleep -Milliseconds 200',
+    `[Smoke.Mouse]::SetCursorPos(${x}, ${y} + 400) | Out-Null`,
+  ].join('; ');
+  try {
+    execFileSync('powershell', ['-NoProfile', '-Command', script], { timeout: 30000 });
+  } catch (error) {
+    log(`(no right-click: ${error.message})`);
   }
 }
 
@@ -195,6 +247,11 @@ function startServer() {
   return new Promise((ok) => {
     const s = createServer((request, response) => {
       const path = decodeURIComponent(new URL(request.url, 'http://x').pathname);
+      if (path === '/sign-in') {
+        // HTTP basic authentication (012): the browser asks for a login.
+        response.writeHead(401, { 'WWW-Authenticate': 'Basic realm="Smoke test"' }).end('Sign in');
+        return;
+      }
       const file = resolve(kPagesDir, '.' + path);
       if (!file.startsWith(kPagesDir)) {
         response.writeHead(403).end();
@@ -320,15 +377,18 @@ async function main() {
     const before = await zoom();
     sendKeys(['^{ADD}', '^{ADD}', '^f', 'beetle']);
     await sleep(1000);
+    logFocus('after typing in the find bar');
     const zoomed = await zoom();
     check(zoomed === Math.round(before * 1.25), `Ctrl+Plus twice zooms to 125 % (${before} → ${zoomed})`);
     desktopScreenshot('find-bar');
+    logFocus('after the screenshot');
     // The screenshot took the focus away; Brouk gives it back to the find
     // bar, where Escape closes it, then Ctrl+0 resets the zoom.
     sendKeys(['{ESC}', '^0']);
     await sleep(500);
     const reset = await zoom();
     check(reset === before, `Ctrl+0 resets the zoom (${reset})`);
+    desktopScreenshot('find-bar-closed');
   }
 
   // HTML full screen (Windows app, 024): the window covers the screen
@@ -348,6 +408,54 @@ async function main() {
     const { result } = await cdp.send('Runtime.evaluate', { expression: 'document.fullscreenElement === null' });
     check(result.value === true, 'Escape leaves HTML full screen');
     desktopScreenshot('fullscreen-left');
+  }
+
+  // Windows app (024): the page's blocked popup shows the "Pop-ups blocked"
+  // indicator in the address bar; an HTTP sign-in shows Chromium's login
+  // dialog. Screenshots of both for a look.
+  if (kWindows) {
+    await cdp.send('Page.navigate', { url: `${pagesBase}/popups.html` });
+    await waitForTitle(cdp, 'Popups test');
+    await sleep(1500);
+    desktopScreenshot('popup-blocked');
+    await cdp.send('Page.navigate', { url: `${pagesBase}/sign-in` });
+    await sleep(2000);
+    desktopScreenshot('sign-in');
+  }
+
+  // Menus (Windows app, 024): the tab menu on a right-click on the first
+  // tab, and the page's context menu (Shift+F10). Screenshots for a look.
+  if (kWindows) {
+    await cdp.send('Page.navigate', { url: `${pagesBase}/context-menu.html` });
+    await waitForTitle(cdp, 'Context menu test');
+    rightClick(100, 22);
+    await sleep(800);
+    desktopScreenshot('tab-menu');
+    sendKeys(['{ESC}', '+{F10}']);
+    await sleep(800);
+    desktopScreenshot('page-menu');
+    sendKeys(['{ESC}']);
+  }
+
+  // Screen sharing (Windows app, 024): getDisplayMedia() shows Brouk's
+  // picker over the tab (screenshot); Escape cancels it and the page gets
+  // an error instead of a stream.
+  if (kWindows) {
+    await cdp.send('Page.navigate', { url: `${pagesBase}/screen-share.html` });
+    await waitForTitle(cdp, 'Screen sharing test');
+    await cdp.send('Runtime.evaluate', {
+      expression:
+        'window.shareResult = "pending"; navigator.mediaDevices.getDisplayMedia({ video: true }).then(' +
+        '(s) => { window.shareResult = "shared"; s.getTracks().forEach((t) => t.stop()); }, ' +
+        '(e) => { window.shareResult = e.name; })',
+      userGesture: true,
+    });
+    await sleep(1500);
+    desktopScreenshot('screen-picker');
+    sendKeys(['{ESC}']);
+    await sleep(1000);
+    const { result } = await cdp.send('Runtime.evaluate', { expression: 'window.shareResult' });
+    check(result.value !== 'pending' && result.value !== 'shared', `Escape cancels the screen picker (${result.value})`);
   }
 
   // The Windows app draws the permission prompt and the dialogs over the

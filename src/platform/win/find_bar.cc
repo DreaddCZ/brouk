@@ -185,6 +185,14 @@ void FindBar::Focus() {
   SendMessageW(field_, EM_SETSEL, 0, -1);
 }
 
+bool FindBar::HasFocus() const {
+  return field_ && GetFocus() == field_;
+}
+
+void FindBar::Refocus() {
+  SetFocus(field_);
+}
+
 std::wstring FindBar::text() const {
   return WindowText(field_);
 }

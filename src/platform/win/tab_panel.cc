@@ -548,8 +548,11 @@ void TabPanel::DrawButton(const DRAWITEMSTRUCT& item) {
     previous_font = SelectObject(dc, text_font_);
     SetTextColor(dc, is_default ? RGB(255, 255, 255) : theme_.text);
     const std::wstring title = WindowText(item.hwndItem);
-    DrawTextW(dc, title.c_str(), -1, &area,
-              DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    RECT text_area = area;
+    InflateRect(&text_area, -Scale(8), 0);
+    DrawTextW(
+        dc, title.c_str(), -1, &text_area,
+        DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS);
   }
   SelectObject(dc, previous_font);
   if ((item.itemState & ODS_FOCUS) != 0 &&
