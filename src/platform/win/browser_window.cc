@@ -5,6 +5,8 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <optional>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -13,6 +15,7 @@
 #include "core/address_input.h"
 #include "core/internal_pages.h"
 #include "core/profile_id.h"
+#include "core/zoom.h"
 #include "include/cef_task.h"
 #include "include/wrapper/cef_helpers.h"
 #include "platform/win/controls.h"
@@ -41,12 +44,17 @@ enum ControlId : int {
   kReloadId,
   kMenuId,
   kAddressId,
+  kZoomId,
 };
 
 // Items of the "⋮" menu.
 enum MenuCommand : UINT {
   kNewTabCommand = 100,
   kNewWindowCommand,
+  kZoomInCommand,
+  kZoomOutCommand,
+  kZoomResetCommand,
+  kFindCommand,
   kHelpCommand,
   kLicencesCommand,
   kExitCommand,
@@ -74,6 +82,12 @@ bool RegisterWindowClass() {
     return RegisterClassExW(&window_class) != 0;
   }();
   return registered;
+}
+
+// Whether `window` itself is shown (IsWindowVisible also needs its
+// parents to be).
+bool HasVisibleStyle(HWND window) {
+  return (GetWindowLongPtrW(window, GWL_STYLE) & WS_VISIBLE) != 0;
 }
 
 bool IsBlank(const std::string& url) {
@@ -181,6 +195,10 @@ void BrowserWindow::CreateControls() {
   SetAccessibleName(address_, L"Address and search bar");
   SetWindowSubclass(address_, &BrowserWindow::AddressProc, 0,
                     reinterpret_cast<DWORD_PTR>(this));
+  zoom_ = CreateWindowExW(
+      0, WC_BUTTONW, L"", WS_CHILD | BS_OWNERDRAW, 0, 0, 0, 0, window_,
+      reinterpret_cast<HMENU>(static_cast<INT_PTR>(kZoomId)), instance,
+      nullptr);
 }
 
 int BrowserWindow::Scale(int dips) const {
@@ -290,11 +308,21 @@ void BrowserWindow::Layout() {
                     field_top + field_height};
   const int padding = Scale(kAddressPadding);
   const int edit_height = text_height_ + Scale(2);
+  int edit_right = static_cast<int>(address_field_.right) - padding;
+  if (HasVisibleStyle(zoom_)) {
+    // The zoom indicator at the right end of the address bar.
+    const int zoom_width = Scale(56);
+    const int zoom_height = field_height - Scale(8);
+    SetWindowPos(zoom_, nullptr,
+                 static_cast<int>(address_field_.right) - Scale(4) - zoom_width,
+                 field_top + Scale(4), zoom_width, zoom_height,
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+    edit_right -= zoom_width;
+  }
   SetWindowPos(
       address_, nullptr, address_field_.left + padding,
       field_top + (field_height - edit_height) / 2,
-      std::max(0, static_cast<int>(address_field_.right - address_field_.left) -
-                      padding * 2),
+      std::max(0, edit_right - static_cast<int>(address_field_.left) - padding),
       edit_height, SWP_NOZORDER | SWP_NOACTIVATE);
   const RECT content = ContentBounds();
   for (const auto& [id, tab] : tabs_) {
@@ -379,10 +407,62 @@ void BrowserWindow::DrawToolbarButton(const DRAWITEMSTRUCT& item) {
   SelectObject(item.hDC, previous);
 }
 
+void BrowserWindow::DrawZoomButton(const DRAWITEMSTRUCT& item) {
+  const bool pressed = (item.itemState & ODS_SELECTED) != 0;
+  SetDCBrushColor(item.hDC, theme_.field);
+  FillRect(item.hDC, &item.rcItem,
+           static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
+  HGDIOBJ pen = SelectObject(item.hDC, GetStockObject(DC_PEN));
+  HGDIOBJ brush = SelectObject(item.hDC, GetStockObject(DC_BRUSH));
+  SetDCPenColor(item.hDC, theme_.separator);
+  SetDCBrushColor(item.hDC, pressed ? theme_.hover : theme_.field);
+  const int radius = item.rcItem.bottom - item.rcItem.top;
+  RoundRect(item.hDC, item.rcItem.left, item.rcItem.top, item.rcItem.right,
+            item.rcItem.bottom, radius, radius);
+  SelectObject(item.hDC, brush);
+  SelectObject(item.hDC, pen);
+  const std::wstring text = WindowText(item.hwndItem);
+  HGDIOBJ previous = SelectObject(item.hDC, text_font_);
+  SetBkMode(item.hDC, TRANSPARENT);
+  SetTextColor(item.hDC, theme_.text);
+  RECT area = item.rcItem;
+  DrawTextW(item.hDC, text.c_str(), -1, &area,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+  SelectObject(item.hDC, previous);
+}
+
+// Shown while the active tab's zoom is not 100 %, as on macOS.
+void BrowserWindow::UpdateZoomIndicator() {
+  Tab* tab = ActiveTab();
+  const double level = tab ? tab->ZoomLevel() : 0.0;
+  const bool shown = IsZoomIndicatorShown(level);
+  if (shown) {
+    const int percent = ZoomPercentFromLevel(level);
+    const std::wstring text = std::to_wstring(percent) + L" %";
+    if (WindowText(zoom_) != text) {
+      SetWindowTextW(zoom_, text.c_str());
+      const std::wstring name =
+          L"Zoom " + std::to_wstring(percent) + L" percent, reset";
+      SetAccessibleName(zoom_, name.c_str());
+      InvalidateRect(zoom_, nullptr, FALSE);
+    }
+  }
+  if (shown != HasVisibleStyle(zoom_)) {
+    ShowWindow(zoom_, shown ? SW_SHOWNA : SW_HIDE);
+    Layout();
+  }
+}
+
 void BrowserWindow::ShowAppMenu() {
   HMENU menu = CreatePopupMenu();
   AppendMenuW(menu, MF_STRING, kNewTabCommand, L"New tab\tCtrl+T");
   AppendMenuW(menu, MF_STRING, kNewWindowCommand, L"New window\tCtrl+N");
+  AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+  AppendMenuW(menu, MF_STRING, kZoomInCommand, L"Zoom in\tCtrl++");
+  AppendMenuW(menu, MF_STRING, kZoomOutCommand, L"Zoom out\tCtrl+-");
+  AppendMenuW(menu, MF_STRING, kZoomResetCommand, L"Actual size\tCtrl+0");
+  AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+  AppendMenuW(menu, MF_STRING, kFindCommand, L"Find\u2026\tCtrl+F");
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
   AppendMenuW(menu, MF_STRING, kHelpCommand, L"Brouk Help\tF1");
   AppendMenuW(menu, MF_STRING, kLicencesCommand, L"Open-source licences");
@@ -403,6 +483,20 @@ void BrowserWindow::ShowAppMenu() {
       break;
     case kHelpCommand:
       owner_.OpenHelp(std::string());
+      break;
+    case kZoomInCommand:
+    case kZoomOutCommand:
+    case kZoomResetCommand:
+      if (Tab* tab = ActiveTab()) {
+        tab->Zoom(command == kZoomInCommand    ? CEF_ZOOM_COMMAND_IN
+                  : command == kZoomOutCommand ? CEF_ZOOM_COMMAND_OUT
+                                               : CEF_ZOOM_COMMAND_RESET);
+      }
+      break;
+    case kFindCommand:
+      if (Tab* tab = ActiveTab()) {
+        tab->ShowFindBar();
+      }
       break;
     case kLicencesCommand:
       OpenInternalPage("brouk://credits/");
@@ -550,6 +644,7 @@ void BrowserWindow::UpdateToolbar() {
   if (GetFocus() != address_) {
     ShowAddress();
   }
+  UpdateZoomIndicator();
   // "Page - Brouk", as Chrome's "Page - Google Chrome".
   std::wstring title = Utf8ToWide(kAppName);
   if (tab) {
@@ -641,6 +736,35 @@ bool BrowserWindow::HandleShortcut(int key,
       tab->GoForward();
     }
     return true;
+  }
+  if (control && !alt && !shift && key == 'F') {
+    if (tab) {
+      tab->ShowFindBar();
+    }
+    return true;
+  }
+  // F3 and Ctrl+G: next match; with Shift the previous one.
+  if ((!control && !alt && key == VK_F3) || (control && !alt && key == 'G')) {
+    if (tab) {
+      tab->FindNext(!shift);
+    }
+    return true;
+  }
+  if (control && !alt) {
+    std::optional<cef_zoom_command_t> zoom;
+    if (key == VK_OEM_PLUS || key == VK_ADD) {
+      zoom = CEF_ZOOM_COMMAND_IN;
+    } else if (key == VK_OEM_MINUS || key == VK_SUBTRACT) {
+      zoom = CEF_ZOOM_COMMAND_OUT;
+    } else if (!shift && (key == '0' || key == VK_NUMPAD0)) {
+      zoom = CEF_ZOOM_COMMAND_RESET;
+    }
+    if (zoom) {
+      if (tab) {
+        tab->Zoom(*zoom);
+      }
+      return true;
+    }
   }
   if (kind_ == Kind::kPopup) {
     return false;
@@ -1124,7 +1248,11 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
       return 0;
     }
     case WM_DRAWITEM:
-      DrawToolbarButton(*reinterpret_cast<const DRAWITEMSTRUCT*>(lparam));
+      if (reinterpret_cast<const DRAWITEMSTRUCT*>(lparam)->hwndItem == zoom_) {
+        DrawZoomButton(*reinterpret_cast<const DRAWITEMSTRUCT*>(lparam));
+      } else {
+        DrawToolbarButton(*reinterpret_cast<const DRAWITEMSTRUCT*>(lparam));
+      }
       return TRUE;
     case WM_CTLCOLOREDIT:
     case WM_CTLCOLORSTATIC: {  // A read-only edit asks for "static" colours.
@@ -1144,6 +1272,9 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
             return 0;
           case kReloadId:
             tab->Reload();
+            return 0;
+          case kZoomId:
+            tab->Zoom(CEF_ZOOM_COMMAND_RESET);
             return 0;
           case kMenuId:
             ShowAppMenu();

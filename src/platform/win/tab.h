@@ -15,6 +15,7 @@
 #include "include/cef_browser.h"
 #include "include/cef_request_context.h"
 #include "platform/win/favicon.h"
+#include "platform/win/find_bar.h"
 #include "platform/win/tab_panel.h"
 
 namespace brouk::win {
@@ -48,7 +49,9 @@ class TabHost {
   virtual ~TabHost() = default;
 };
 
-class Tab final : public TabClientDelegate, public InternalPageDelegate {
+class Tab final : public TabClientDelegate,
+                  public InternalPageDelegate,
+                  public FindBar::Delegate {
  public:
   // Creates the tab's (hidden) container window in `parent`.
   Tab(TabHost& host, TabId id, HWND parent);
@@ -79,6 +82,14 @@ class Tab final : public TabClientDelegate, public InternalPageDelegate {
   void Reload();
   // Focuses the page, or a dialog over it.
   void Focus();
+  // Find in page (012): opens the find bar and focuses it (Ctrl+F); the
+  // next or previous match (F3), or the bar if there is nothing to find.
+  void ShowFindBar();
+  void FindNext(bool forward);
+  // Zoom in, out or back to 100 % (Ctrl+Plus, Ctrl+Minus, Ctrl+0), and the
+  // current zoom level (0 is 100 %).
+  void Zoom(cef_zoom_command_t command);
+  double ZoomLevel() const;
   // Runs the page's unload handlers and closes the browser; OnTabClosed
   // follows. A page may cancel ("leave site?").
   void Close();
@@ -110,6 +121,12 @@ class Tab final : public TabClientDelegate, public InternalPageDelegate {
 
   // InternalPageDelegate:
   void OnInspectElement(int x, int y) override;
+
+  // FindBar::Delegate:
+  void OnFindTextChanged() override;
+  void OnFindNext(bool forward) override;
+  void OnFindClose() override;
+  bool OnFindShortcut(int key, bool control, bool alt, bool shift) override;
 
   // TabClientDelegate:
   void OnAddressChanged(const std::string& url) override;
@@ -187,6 +204,8 @@ class Tab final : public TabClientDelegate, public InternalPageDelegate {
 
   HWND BrowserWindowHandle() const;
   void OnContainerSize();
+  // A browser shortcut typed in a panel or the find bar, as in the page.
+  bool ForwardShortcut(int key, bool control, bool alt, bool shift);
 
   // Panels over the page (TabPanel). The dialogs are tab-modal: while one
   // is open the page gets no input.
@@ -231,6 +250,7 @@ class Tab final : public TabClientDelegate, public InternalPageDelegate {
   // The first one is shown in permission_prompt_.
   std::deque<PendingPermission> permission_requests_;
   std::unique_ptr<TabPanel> permission_prompt_;
+  std::unique_ptr<FindBar> find_bar_;
   bool closing_ = false;
   // Expires with the tab, for tasks posted while it is open.
   std::shared_ptr<int> alive_ = std::make_shared<int>(0);
