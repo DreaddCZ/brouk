@@ -15,6 +15,8 @@
 
 **The downloads page** (<kbd>⌥⌘L</kbd>, View → Downloads) lists all downloads of all profiles, with a profile filter and search by file name and address. A file you moved or deleted shows as "Deleted". **Clear all** empties the list (only the shown profile's when filtered); the files stay.
 
+**On Windows:** the downloads button opens the downloads page (the list under the button comes later), as do <kbd>Ctrl+J</kbd> and "⋮" → Downloads. "Show in folder" opens File Explorer, a deleted file goes to the Recycle Bin, and a download folder in the settings is a full path such as `C:\Users\me\Downloads` or starts with a variable such as `%USERPROFILE%`.
+
 **Good to know:**
 
 - While files download, the Dock icon shows their progress and number.

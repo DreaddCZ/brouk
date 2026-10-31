@@ -7,7 +7,7 @@ import { cefSubscriber, cefTransport } from '../shared/bridge.js';
 import { button, byId, element, errorText } from '../shared/dom.js';
 import { wireHelpButtons } from '../shared/help.js';
 import { DownloadsApi, type Download, type Profile } from './api.js';
-import { actionsFor, dayLabel, kActionLabels, searchDownloads, statusOf } from './logic.js';
+import { actionLabel, actionsFor, dayLabel, searchDownloads, statusOf } from './logic.js';
 
 const api = new DownloadsApi(cefTransport(), cefSubscriber());
 let profiles: Profile[] = [];
@@ -59,7 +59,7 @@ function render(): void {
     }
     const actions = element('div', { className: 'actions' });
     for (const action of actionsFor(download)) {
-      actions.append(button(kActionLabels[action], () => {
+      actions.append(button(actionLabel(action, navigator.platform), () => {
         void api.action(download, action).then(reload, showError);
       }, action === 'delete' ? 'danger' : undefined));
     }

@@ -1,5 +1,6 @@
 #include "platform/win/app.h"
 
+#include <shellapi.h>
 #include <shlobj.h>
 
 #include <algorithm>
@@ -14,8 +15,10 @@
 #include <system_error>
 #include <utility>
 
+#include "brouk/app_info.h"
 #include "cef/browser_app.h"
 #include "cef/browsing_data.h"
+#include "cef/downloads_page_handler.h"
 #include "cef/function_task.h"
 #include "cef/help_link.h"
 #include "cef/help_page_handler.h"
@@ -90,6 +93,139 @@ std::int64_t FolderSize(const std::filesystem::path& folder) {
   return total;
 }
 
+// The user's Downloads folder (Explorer's "Downloads"), created if
+// missing; empty if Windows has none.
+std::string UserDownloadsFolder() {
+  PWSTR path = nullptr;
+  std::string folder;
+  if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Downloads, KF_FLAG_CREATE,
+                                     nullptr, &path))) {
+    folder = WideToUtf8(path);
+  }
+  CoTaskMemFree(path);
+  return folder;
+}
+
+// A folder the downloads setting names, with %VARIABLES% expanded, if it
+// exists and is a folder.
+std::optional<std::string> UsableFolder(const std::string& configured) {
+  const std::wstring wide = Utf8ToWide(configured);
+  std::wstring expanded(32768, L'\0');
+  const DWORD length = ExpandEnvironmentStringsW(
+      wide.c_str(), expanded.data(), static_cast<DWORD>(expanded.size()));
+  if (length == 0 || length > expanded.size()) {
+    return std::nullopt;
+  }
+  expanded.resize(length - 1);
+  std::error_code error;
+  if (!std::filesystem::is_directory(expanded, error)) {
+    return std::nullopt;
+  }
+  return WideToUtf8(expanded);
+}
+
+// File actions on a finished download, for the downloads page (014). The
+// paths are the downloads' own, as the service recorded them.
+bool DownloadedFileExists(const std::string& path) {
+  std::error_code error;
+  return !path.empty() &&
+         std::filesystem::is_regular_file(Utf8ToWide(path), error);
+}
+
+void OpenDownloadedFile(const std::string& path) {
+  if (DownloadedFileExists(path)) {
+    // The file's own app, as a double-click in Explorer opens it (Chrome's
+    // "Open"); the path is a download the service recorded, never a
+    // command line, and Windows checks files from the internet itself.
+    ShellExecuteW(  // nosemgrep: cpp-process-spawn
+        nullptr, L"open", Utf8ToWide(path).c_str(), nullptr, nullptr,
+        SW_SHOWNORMAL);
+  }
+}
+
+void RevealDownloadedFile(const std::string& path) {
+  if (path.empty()) {
+    return;
+  }
+  // File Explorer with the file selected ("Show in folder").
+  std::wstring wide = Utf8ToWide(path);
+  std::ranges::replace(wide, L'/', L'\\');
+  if (PIDLIST_ABSOLUTE item = ILCreateFromPathW(wide.c_str())) {
+    SHOpenFolderAndSelectItems(item, 0, nullptr, 0);
+    ILFree(item);
+  }
+}
+
+// Moves the file to the Recycle Bin (Chrome's "Delete" on Windows).
+bool RecycleDownloadedFile(const std::string& path) {
+  if (!DownloadedFileExists(path)) {
+    return false;
+  }
+  std::wstring from = Utf8ToWide(path);
+  std::ranges::replace(from, L'/', L'\\');
+  from.push_back(L'\0');  // A list of paths, ended by an empty one.
+  SHFILEOPSTRUCTW operation = {};
+  operation.wFunc = FO_DELETE;
+  operation.pFrom = from.c_str();
+  operation.fFlags =
+      FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT;
+  return SHFileOperationW(&operation) == 0 && !operation.fAnyOperationsAborted;
+}
+
+// Answers one downloads tab's page (014): the app's downloads, and file
+// actions through Windows.
+class AppDownloadsPage final : public DownloadsPageDelegate {
+ public:
+  AppDownloadsPage(App& app, BrowserWindow& window, TabId tab)
+      : app_(app), window_(&window), tab_(tab) {}
+  ~AppDownloadsPage() override {
+    if (watcher_) {
+      app_.UnwatchDownloads(watcher_);
+    }
+  }
+  AppDownloadsPage(const AppDownloadsPage&) = delete;
+  AppDownloadsPage& operator=(const AppDownloadsPage&) = delete;
+
+  std::vector<ProfileInfo> Profiles() override { return app_.ProfileList(); }
+  ProfileId CurrentProfile() override {
+    return app_.IsOpenWindow(window_) ? window_->ProfileOfTab(tab_)
+                                      : app_.DefaultProfile();
+  }
+  DownloadService* Service() override { return app_.Downloads(); }
+  bool FileExists(const std::string& path) override {
+    return DownloadedFileExists(path);
+  }
+  void OpenFile(const std::string& path) override { OpenDownloadedFile(path); }
+  void RevealFile(const std::string& path) override {
+    RevealDownloadedFile(path);
+  }
+  bool TrashFile(const std::string& path) override {
+    return RecycleDownloadedFile(path);
+  }
+  void CopyText(const std::string& text) override {
+    SetClipboardText(app_.IsOpenWindow(window_) ? window_->hwnd() : nullptr,
+                     Utf8ToWide(text));
+  }
+  void Retry(const DownloadEntry& entry) override {
+    if (app_.IsOpenWindow(window_)) {
+      window_->RetryDownload(entry);
+    }
+  }
+  void Watch(std::function<void()> changed) override {
+    if (watcher_) {
+      app_.UnwatchDownloads(watcher_);
+    }
+    watcher_ = app_.WatchDownloads(std::move(changed));
+  }
+
+ private:
+  App& app_;
+  // Checked with IsOpenWindow before use: the window may close first.
+  BrowserWindow* window_;
+  TabId tab_;
+  int watcher_ = 0;
+};
+
 // Answers one history tab's page (013). Actions go to the app and the
 // window holding the tab, if it is still open.
 class AppHistoryPage final : public HistoryPageDelegate {
@@ -155,7 +291,12 @@ class AppHistoryPage final : public HistoryPageDelegate {
 
 }  // namespace
 
-App::App() : profiles_(AppDataDirectory()) {
+App::App()
+    : profiles_(AppDataDirectory()),
+      download_paths_([](const std::string& path) {
+        std::error_code error;
+        return std::filesystem::exists(Utf8ToWide(path), error);
+      }) {
   profiles_.Load();
   // Web data of profiles deleted earlier; Chromium is not running yet.
   profiles_.RemoveWebDataOfDeletedProfiles(WebDataRootDirectory());
@@ -173,6 +314,9 @@ void App::OnContextInitialized() {
       [profiles_dir](const ProfileId& profile) {
         return profiles_dir / profile / "history.db";
       });
+  // Downloads (014), recorded in the history.
+  downloads_ = std::make_unique<DownloadService>(history_.get());
+  downloads_->SetChangedCallback([this] { DownloadsChanged(); });
   ApplySettings();
   // Changes made in the files apply while Brouk runs (004).
   settings_watcher_ = std::make_unique<SettingsWatcher>(
@@ -435,25 +579,33 @@ void App::OnSessionChanged() {
                      1500);
 }
 
-void App::OnWindowClosing(BrowserWindow& window) {
+bool App::OnWindowClosing(BrowserWindow& window) {
   CEF_REQUIRE_UI_THREAD();
-  if (!session_ready_ || frozen_session_ || !window.is_normal()) {
-    return;
+  if (!window.is_normal()) {
+    return true;
   }
   const bool last = std::ranges::none_of(
       windows_, [&window](const std::unique_ptr<BrowserWindow>& other) {
         return other.get() != &window && other->is_normal() &&
                !other->closing();
       });
+  // Exit has asked already (and frozen the session).
+  if (last && !frozen_session_ && !ConfirmQuitWithDownloads(window.hwnd())) {
+    return false;
+  }
+  if (!session_ready_ || frozen_session_) {
+    return true;
+  }
   if (!last) {
     OnSessionChanged();
-    return;
+    return true;
   }
   // Closing the last window quits Brouk (as Chrome on Windows): the next
   // start continues with this window, not with what is left of it once
   // its tabs have closed.
   frozen_session_ = CurrentSession();
   SaveSessionFile(*frozen_session_);
+  return true;
 }
 
 void App::SaveSessionAtQuit() {
@@ -474,7 +626,9 @@ void App::ReleaseBrowserObjects() {
   profiles_window_.reset();
   settings_window_.reset();
   windows_.clear();
-  history_.reset();  // Finishes queued history work, closes the databases.
+  download_watchers_.clear();
+  downloads_.reset();  // Before the history it records into.
+  history_.reset();    // Finishes queued history work, closes the databases.
   contexts_.clear();
   internal_context_ = nullptr;
 }
@@ -539,6 +693,10 @@ std::unique_ptr<CefMessageRouterBrowserSide::Handler> App::InternalPageHandler(
   if (page == "credits") {
     return std::make_unique<StaticPageHandler>();
   }
+  if (page == "downloads" && downloads_) {
+    return std::make_unique<DownloadsPageHandler>(
+        std::make_unique<AppDownloadsPage>(*this, window, tab));
+  }
   if (page == "history" && history_) {
     return std::make_unique<HistoryPageHandler>(
         std::make_unique<AppHistoryPage>(*this, window, tab));
@@ -568,6 +726,78 @@ const std::vector<HistoryMatch>* App::RecentPages(const ProfileId& profile) {
     return nullptr;
   }
   return &it->second;
+}
+
+DownloadService* App::Downloads() {
+  return downloads_.get();
+}
+
+bool App::AskWhereToSaveDownloads() {
+  return profiles_.global_settings().GetBool("downloads.ask_where_to_save");
+}
+
+// Downloads (014): the profile's own folder if one is set, else the folder
+// for all profiles, else the user's Downloads folder. A set folder that is
+// missing makes the download ask, starting in Downloads.
+DownloadTarget App::ReserveDownloadPath(const std::string& suggested,
+                                        const ProfileId& profile) {
+  CEF_REQUIRE_UI_THREAD();
+  const std::string fallback = UserDownloadsFolder();
+  std::optional<Settings> settings = profiles_.ProfileSettings(profile);
+  std::string configured =
+      settings ? settings->GetString("downloads.folder") : std::string();
+  if (configured.empty()) {
+    configured = profiles_.global_settings().GetString("downloads.folder");
+  }
+  if (configured.empty()) {
+    return {download_paths_.Reserve(fallback, suggested), fallback.empty()};
+  }
+  if (std::optional<std::string> folder = UsableFolder(configured)) {
+    return {download_paths_.Reserve(*folder, suggested), false};
+  }
+  return {download_paths_.Reserve(fallback, suggested), true};
+}
+
+void App::ReleaseDownloadPath(const std::string& path) {
+  download_paths_.Release(path);
+}
+
+int App::WatchDownloads(std::function<void()> changed) {
+  const int id = next_download_watcher_++;
+  download_watchers_[id] = std::move(changed);
+  return id;
+}
+
+void App::UnwatchDownloads(int id) {
+  download_watchers_.erase(id);
+}
+
+void App::DownloadsChanged() {
+  for (const std::unique_ptr<BrowserWindow>& window : windows_) {
+    window->DownloadsChanged();
+  }
+  // A copy: a page may stop watching while it is told.
+  std::vector<std::function<void()>> watchers;
+  for (const auto& [id, changed] : download_watchers_) {
+    watchers.push_back(changed);
+  }
+  for (const std::function<void()>& changed : watchers) {
+    changed();
+  }
+}
+
+bool App::ConfirmQuitWithDownloads(HWND owner) {
+  const int running = downloads_ ? downloads_->RunningCount() : 0;
+  if (running == 0) {
+    return true;
+  }
+  const std::wstring text =
+      running == 1 ? L"1 download is in progress.\n\nCancel it and quit?"
+                   : std::to_wstring(running) +
+                         L" downloads are in progress.\n\nCancel them and "
+                         L"quit?";
+  return MessageBoxW(owner, text.c_str(), Utf8ToWide(kAppName).c_str(),
+                     MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2) == IDYES;
 }
 
 std::string App::SearchSuggestTemplate() {
@@ -758,6 +988,10 @@ void App::OpenWebLink(const std::string& url) {
 }
 
 void App::CloseAllWindows() {
+  BrowserWindow* front = FrontWindow();
+  if (!ConfirmQuitWithDownloads(front ? front->hwnd() : nullptr)) {
+    return;
+  }
   // Exit: the windows open now are the session to continue with (015).
   if (session_ready_ && !frozen_session_) {
     frozen_session_ = CurrentSession();

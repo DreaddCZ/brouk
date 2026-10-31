@@ -318,6 +318,9 @@ async function fileAction(action: () => Promise<{ finished: boolean; problems: r
 }
 
 function start(): void {
+  if (navigator.platform.startsWith('Win')) {
+    byId('open-folder').textContent = 'Show in File Explorer';
+  }
   byId('open-folder').addEventListener('click', () => {
     api.openFolder().catch((error: unknown) => showError(errorText(error)));
   });

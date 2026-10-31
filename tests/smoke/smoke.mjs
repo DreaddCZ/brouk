@@ -651,6 +651,64 @@ async function main() {
     }
   }
 
+  // Downloads (014): a download goes to the downloads folder without
+  // asking (here one in the test's data folder), and Ctrl+J shows it on
+  // the downloads page.
+  if (kWindows) {
+    const folder = join(dataDir, 'downloaded');
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(join(dataDir, 'settings.yaml'), `appearance:\n  theme: system\ndownloads:\n  folder: '${folder}'\n`);
+    await sleep(1500); // Live reload.
+    await cdp.send('Page.navigate', { url: `${pagesBase}/downloads.html` });
+    await waitForTitle(cdp, 'Downloads test');
+    const { result } = await cdp.send('Runtime.evaluate', {
+      expression: "JSON.stringify(document.querySelector('a[download]').getBoundingClientRect())",
+      returnByValue: true,
+    });
+    const link = JSON.parse(result.value ?? '{}');
+    const x = (link.left ?? 0) + 5;
+    const y = (link.top ?? 0) + 5;
+    for (const type of ['mousePressed', 'mouseReleased']) {
+      await cdp.send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 });
+    }
+    const file = join(folder, 'hello.txt');
+    let saved = false;
+    for (let i = 0; i < 20 && !saved; i++) {
+      await sleep(500);
+      try {
+        saved = readFileSync(file, 'utf8') === 'Hello from Brouk';
+      } catch {
+        // Not there yet.
+      }
+    }
+    check(saved, 'a download is saved to the downloads folder without asking');
+    sendKeys('Downloads test', ['^j']);
+    let downloadsTarget;
+    for (let i = 0; i < 20 && !downloadsTarget; i++) {
+      await sleep(500);
+      downloadsTarget = await devtoolsJson(port, '/json/list')
+        .then((list) => list.find((t) => t.type === 'page' && t.url.startsWith('brouk://downloads')))
+        .catch(() => undefined);
+    }
+    if (check(downloadsTarget !== undefined, 'Ctrl+J opens the downloads page')) {
+      const downloadsPage = await Cdp.connect(downloadsTarget.webSocketDebuggerUrl);
+      let listed = false;
+      for (let i = 0; i < 20 && !listed; i++) {
+        await sleep(500);
+        const { result: text } = await downloadsPage.send('Runtime.evaluate', {
+          expression: 'document.body.innerText',
+          returnByValue: true,
+        });
+        listed = (text.value ?? '').includes('hello.txt');
+      }
+      check(listed, 'the downloads page lists the download');
+      downloadsPage.close();
+      desktopScreenshot('downloaded');
+      // Back to the test page's tab for the tests that follow.
+      sendKeys('Downloads', ['^w']);
+    }
+  }
+
   // A crashed renderer shows the crash page (012); Brouk keeps running.
   await cdp.send('Page.navigate', { url: `${pagesBase}/crash-and-hang.html` });
   const crashPage = await waitForTitle(cdp, 'Crash and hang test');

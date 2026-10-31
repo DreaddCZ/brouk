@@ -50,6 +50,7 @@ enum ControlId : int {
   kAddressId,
   kZoomId,
   kPopupsId,
+  kDownloadsId,
 };
 
 // Items of the "⋮" menu.
@@ -79,6 +80,7 @@ enum MenuCommand : UINT {
   kReopenClosedTabCommand,
   kHistoryCommand,
   kClearBrowsingDataCommand,
+  kDownloadsCommand,
   kFirstBlockedPopupCommand = 1000,
   kFirstProfileCommand = 2000,
   kFirstClosedCommand = 3000,
@@ -91,6 +93,7 @@ constexpr wchar_t kForwardGlyph[] = L"\uE72A";
 constexpr wchar_t kReloadGlyph[] = L"\uE72C";
 constexpr wchar_t kMoreGlyph[] = L"\uE712";
 constexpr wchar_t kBlockedGlyph[] = L"\uE8A7";  // OpenInNewWindow.
+constexpr wchar_t kDownloadGlyph[] = L"\uE896";
 
 std::int64_t NextWindowId() {
   static std::int64_t next = 1;
@@ -229,6 +232,12 @@ void BrowserWindow::CreateControls() {
   forward_ = button(kForwardGlyph, kForwardId, L"Forward");
   reload_ = button(kReloadGlyph, kReloadId, L"Reload");
   menu_ = button(kMoreGlyph, kMenuId, L"Customise and control Brouk");
+  // Shown once something was downloaded in this run (Chrome).
+  downloads_ = CreateWindowExW(
+      0, WC_BUTTONW, kDownloadGlyph, WS_CHILD | BS_OWNERDRAW, 0, 0, 0, 0,
+      window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kDownloadsId)),
+      instance, nullptr);
+  SetAccessibleName(downloads_, L"Downloads");
   DWORD style = WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL;
   if (kind_ == Kind::kPopup) {
     style |= ES_READONLY;  // Popups show where they are (Chrome).
@@ -377,6 +386,13 @@ void BrowserWindow::Layout() {
                  toolbar.top + (toolbar_height - button) / 2, button, button,
                  SWP_NOZORDER | SWP_NOACTIVATE);
     right -= margin;
+    if (HasVisibleStyle(downloads_)) {
+      right -= button;
+      SetWindowPos(downloads_, nullptr, right,
+                   toolbar.top + (toolbar_height - button) / 2, button, button,
+                   SWP_NOZORDER | SWP_NOACTIVATE);
+      right -= margin;
+    }
   }
   const int field_height = Scale(kAddressHeight);
   const int field_top = toolbar.top + (toolbar_height - field_height) / 2;
@@ -485,6 +501,90 @@ void BrowserWindow::DrawToolbarButton(const DRAWITEMSTRUCT& item) {
   DrawTextW(item.hDC, glyph, -1, &area,
             DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
   SelectObject(item.hDC, previous);
+}
+
+void BrowserWindow::DrawDownloadsButton(const DRAWITEMSTRUCT& item) {
+  DrawToolbarButton(item);
+  DownloadService* service = owner_.Downloads();
+  if (!service) {
+    return;
+  }
+  const RECT& area = item.rcItem;
+  const int width = area.right - area.left;
+  if (service->RunningCount() > 0) {
+    // A line under the glyph: how far the running downloads are (a short
+    // one when their size is unknown).
+    const double progress = service->Progress();
+    const int left = area.left + width / 4;
+    const int full = width / 2;
+    const int done =
+        progress < 0 ? full / 4
+                     : static_cast<int>(full * std::clamp(progress, 0.0, 1.0));
+    const int top = area.bottom - Scale(6);
+    RECT track = {left, top, left + full, top + Scale(2)};
+    SetDCBrushColor(item.hDC, theme_.separator);
+    FillRect(item.hDC, &track, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
+    RECT bar = {left, top, left + std::max(done, Scale(2)), top + Scale(2)};
+    SetDCBrushColor(item.hDC, GetSysColor(COLOR_HIGHLIGHT));
+    FillRect(item.hDC, &bar, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
+  } else if (service->HasUnseen()) {
+    const int size = Scale(6);
+    const int x = area.right - Scale(9);
+    const int y = area.top + Scale(5);
+    SetDCBrushColor(item.hDC, GetSysColor(COLOR_HIGHLIGHT));
+    SetDCPenColor(item.hDC, GetSysColor(COLOR_HIGHLIGHT));
+    HGDIOBJ old_brush = SelectObject(item.hDC, GetStockObject(DC_BRUSH));
+    HGDIOBJ old_pen = SelectObject(item.hDC, GetStockObject(DC_PEN));
+    Ellipse(item.hDC, x, y, x + size, y + size);
+    SelectObject(item.hDC, old_pen);
+    SelectObject(item.hDC, old_brush);
+  }
+}
+
+void BrowserWindow::DownloadsChanged() {
+  DownloadService* service = owner_.Downloads();
+  const bool show = kind_ == Kind::kNormal && service && service->AnyThisRun();
+  if (show != HasVisibleStyle(downloads_)) {
+    ShowWindow(downloads_, show ? SW_SHOWNA : SW_HIDE);
+    Layout();
+  }
+  InvalidateRect(downloads_, nullptr, FALSE);
+}
+
+void BrowserWindow::ShowDownloads() {
+  if (DownloadService* service = owner_.Downloads()) {
+    service->MarkAllSeen();
+  }
+  OpenInternalPage("brouk://downloads/");
+}
+
+void BrowserWindow::RetryDownload(const DownloadEntry& entry) {
+  DownloadService* service = owner_.Downloads();
+  CefRefPtr<CefBrowser> browser = AnyBrowserInProfile(entry.profile);
+  if (browser && service) {
+    service->Retry(entry.profile, entry.record.id, entry.record.url, browser);
+    return;
+  }
+  // No tab of the profile here: the address in a new tab starts it again.
+  OpenTab(entry.record.url, false, entry.profile);
+}
+
+DownloadService* BrowserWindow::TabDownloads() {
+  return owner_.Downloads();
+}
+
+bool BrowserWindow::TabAskWhereToSaveDownloads() {
+  return owner_.AskWhereToSaveDownloads();
+}
+
+DownloadTarget BrowserWindow::TabReserveDownloadPath(
+    const std::string& suggested,
+    const ProfileId& profile) {
+  return owner_.ReserveDownloadPath(suggested, profile);
+}
+
+void BrowserWindow::TabReleaseDownloadPath(const std::string& path) {
+  owner_.ReleaseDownloadPath(path);
 }
 
 void BrowserWindow::OnTabFullscreenChanged(Tab& tab, bool fullscreen) {
@@ -886,6 +986,7 @@ void BrowserWindow::ShowAppMenu() {
     AppendMenuW(closed, MF_STRING | MF_GRAYED, 0, L"Loading\u2026");
   }
   AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(closed), L"History");
+  AppendMenuW(menu, MF_STRING, kDownloadsCommand, L"Downloads\tCtrl+J");
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
   AppendMenuW(menu, MF_STRING, kZoomInCommand, L"Zoom in\tCtrl++");
   AppendMenuW(menu, MF_STRING, kZoomOutCommand, L"Zoom out\tCtrl+-");
@@ -971,6 +1072,9 @@ void BrowserWindow::ShowAppMenu() {
       break;
     case kClearBrowsingDataCommand:
       owner_.OpenClearBrowsingData();
+      break;
+    case kDownloadsCommand:
+      ShowDownloads();
       break;
     default:
       break;
@@ -1754,6 +1858,10 @@ bool BrowserWindow::HandleShortcut(int key,
     OpenTab(std::string(), true);
     return true;
   }
+  if (control && !alt && !shift && key == 'J') {
+    ShowDownloads();
+    return true;
+  }
   if (control && !alt && !shift && key == 'H') {
     OpenInternalPage("brouk://history/");
     return true;
@@ -2370,6 +2478,8 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
       if (const auto* item = reinterpret_cast<const DRAWITEMSTRUCT*>(lparam);
           item->hwndItem == zoom_ || item->hwndItem == popups_) {
         DrawIndicator(*item);
+      } else if (item->hwndItem == downloads_) {
+        DrawDownloadsButton(*item);
       } else {
         DrawToolbarButton(*reinterpret_cast<const DRAWITEMSTRUCT*>(lparam));
       }
@@ -2407,6 +2517,9 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
           case kMenuId:
             ShowAppMenu();
             return 0;
+          case kDownloadsId:
+            ShowDownloads();
+            return 0;
           default:
             break;
         }
@@ -2426,7 +2539,9 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
         return 0;
       }
       if (!closing_) {
-        owner_.OnWindowClosing(*this);
+        if (!owner_.OnWindowClosing(*this)) {
+          return 0;  // The user kept downloads running.
+        }
         closed_snapshot_.clear();
         for (std::size_t i = 0; i < model_.count() && is_normal(); ++i) {
           const Tab* tab = FindTab(model_.id_at(i));
