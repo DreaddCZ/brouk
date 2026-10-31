@@ -672,20 +672,32 @@ void Tab::SetPaused(bool paused) {
     std::weak_ptr<int> alive = alive_;
     CallDevToolsMethod(browser_, "Page.setWebLifecycleState", params,
                        [this, alive, paused](bool, const std::string&) {
-                         // Freezing told the page it is hidden (and it then
-                         // takes no input); hiding and showing its window again
-                         // makes Chromium see it as shown, as on macOS.
-                         if (paused || alive.expired() || paused_) {
-                           return;
-                         }
-                         if (HWND browser = BrowserWindowHandle();
-                             browser && IsWindowVisible(container_)) {
-                           ShowWindow(browser, SW_HIDE);
-                           ShowWindow(browser, SW_SHOWNA);
+                         if (!paused && !alive.expired() && !paused_) {
+                           ShowAgainAfterResume();
                          }
                        });
   }
   host_.OnTabChanged(*this);
+}
+
+// Freezing told the page it is hidden, and "active" does not show it again:
+// it then takes no keys, also after a reload. Hiding the tab for a moment
+// and showing it, as switching tabs does, makes Chromium see it as shown
+// (on macOS its view is hidden and shown).
+void Tab::ShowAgainAfterResume() {
+  if (!IsWindowVisible(container_)) {
+    return;  // Shown when the user switches to it.
+  }
+  ShowWindow(container_, SW_HIDE);
+  std::weak_ptr<int> alive = alive_;
+  CefPostDelayedTask(
+      TID_UI, new FunctionTask([this, alive] {
+        if (!alive.expired() && !closing_ && host_.IsActiveTab(*this)) {
+          ShowWindow(container_, SW_SHOWNA);
+          Focus();
+        }
+      }),
+      150);
 }
 
 void Tab::Unload() {

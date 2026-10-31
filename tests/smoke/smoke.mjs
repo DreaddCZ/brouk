@@ -794,11 +794,6 @@ async function main() {
         return key ? { key, ...pages[key] } : undefined;
       };
       const row = await pageOf();
-      // Diagnostics: do shortcuts work with the task manager open, before
-      // any pause?
-      sendKeys('Downloads test', ['^l']);
-      logFocus('after Ctrl+L with the task manager open');
-      sendKeys('Downloads test', ['{ESC}']);
       if (check(row !== undefined, 'the task manager lists the tabs')) {
         await ask({ type: 'tasks.action', action: 'pause', pages: [row.key] });
         const paused = await pageOf();
@@ -807,14 +802,11 @@ async function main() {
         await ask({ type: 'tasks.action', action: 'resume', pages: [row.key] });
         const resumed = await pageOf();
         check(resumed?.paused === false, 'Resume runs it again');
-        // Diagnostics: where the keys go after a resume.
-        logFocus('after Resume');
-        sendKeys('Downloads test', ['^l']);
-        logFocus('after Ctrl+L in the resumed tab');
-        // A Shift press in this window: if Shift+Esc left Shift "held" for
-        // the page (released in the task manager window), this clears it.
-        sendKeys('Downloads test', ['{ESC}', '+a', '^l']);
-        logFocus('after Shift+A, Ctrl+L');
+        // A resumed page takes keys again: Ctrl+L reaches the browser.
+        await sleep(1000);
+        const keys = sendKeys('Downloads test', ['^l']);
+        check(/after: Edit/.test(keys), 'shortcuts work in a resumed tab (Ctrl+L)');
+        sendKeys('Downloads test', ['{ESC}']);
       }
       tasks.close();
       // Closed again, so that keys go to the browser windows that follow.
@@ -844,10 +836,6 @@ async function main() {
     again.close();
   }
 
-  if (kWindows) {
-    logFocus('before Ctrl+W');
-    desktopScreenshot('before-ctrl-w');
-  }
   // Reopen closed tab (013): Ctrl+W, then Ctrl+Shift+T brings the page
   // back in a new tab (a new target).
   if (kWindows && after) {

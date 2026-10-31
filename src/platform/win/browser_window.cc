@@ -1178,6 +1178,10 @@ DownloadTarget BrowserWindow::TabReserveDownloadPath(
   return owner_.ReserveDownloadPath(suggested, profile);
 }
 
+bool BrowserWindow::IsActiveTab(const Tab& tab) {
+  return model_.active_id() == tab.id();
+}
+
 void BrowserWindow::TabReleaseDownloadPath(const std::string& path) {
   owner_.ReleaseDownloadPath(path);
 }
