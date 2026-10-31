@@ -43,6 +43,11 @@ export function actionsFor(download: Download): DownloadAction[] {
   }
 }
 
+/** A button's label; "Show in Finder" is "Show in folder" on Windows (Chrome). */
+export function actionLabel(action: DownloadAction, platform: string): string {
+  return action === 'reveal' && platform.startsWith('Win') ? 'Show in folder' : kActionLabels[action];
+}
+
 export const kActionLabels: Readonly<Record<DownloadAction, string>> = {
   open: 'Open',
   reveal: 'Show in Finder',
