@@ -1310,6 +1310,7 @@ void BrowserWindow::CloseTab(TabId id) {
 }
 
 void BrowserWindow::ModelChanged() {
+  CloseSuggestions();  // Another tab, or the list's tab changed.
   const std::optional<TabId> active = model_.active_id();
   // Like Chrome, switching tabs ends a page's full screen.
   if (fullscreen_tab_ && fullscreen_tab_ != active) {
@@ -1425,22 +1426,224 @@ void BrowserWindow::ShowAddress() {
   // A new, empty tab shows an empty address bar (Chrome).
   const std::string shown =
       tab && !IsBlank(tab->url()) ? tab->url() : std::string();
+  setting_address_ = true;
   SetWindowTextW(address_, Utf8ToWide(shown).c_str());
+  setting_address_ = false;
+}
+
+void BrowserWindow::SetAddressText(const std::wstring& text, int select_from) {
+  setting_address_ = true;
+  SetWindowTextW(address_, text.c_str());
+  setting_address_ = false;
+  const int end = static_cast<int>(text.size());
+  SendMessageW(address_, EM_SETSEL, select_from < 0 ? end : select_from, end);
+}
+
+void BrowserWindow::OnAddressEdited() {
+  if (setting_address_ || GetFocus() != address_ || kind_ == Kind::kPopup) {
+    return;
+  }
+  const std::wstring text = WindowText(address_);
+  DWORD start = 0;
+  DWORD end = 0;
+  SendMessageW(address_, EM_GETSEL, reinterpret_cast<WPARAM>(&start),
+               reinterpret_cast<LPARAM>(&end));
+  allow_inline_ = start == end && end == text.size() &&
+                  text.size() > typed_text_.size() &&
+                  text.starts_with(typed_text_);
+  typed_text_ = text;
+  UpdateSuggestions();
+}
+
+void BrowserWindow::CloseSuggestions() {
+  ++suggest_generation_;
+  if (suggest_request_) {
+    suggest_request_->Cancel();
+    suggest_request_ = nullptr;
+  }
+  history_matches_.clear();
+  search_suggestions_.clear();
+  suggestion_rows_.clear();
+  suggesting_ = false;
+  if (suggestions_) {
+    suggestions_->Hide();
+  }
+}
+
+void BrowserWindow::UpdateSuggestions() {
+  Tab* tab = ActiveTab();
+  const std::string typed = WideToUtf8(typed_text_);
+  if (!tab || typed.find_first_not_of(" \t") == std::string::npos) {
+    CloseSuggestions();
+    return;
+  }
+  const std::uint64_t generation = ++suggest_generation_;
+  suggesting_ = true;
+  history_matches_.clear();
+  ShowSuggestions();
+  std::weak_ptr<int> alive = alive_;
+  HistoryService* history = owner_.History();
+  if (history && owner_.HistorySuggestionsEnabled()) {
+    history->Suggest(
+        tab->profile(), typed, kMaxHistorySuggestions,
+        [this, alive, generation](std::vector<HistoryMatch> m) {
+          if (alive.expired() || generation != suggest_generation_) {
+            return;
+          }
+          history_matches_ = std::move(m);
+          ShowSuggestions();
+        });
+  }
+  if (suggest_request_) {
+    suggest_request_->Cancel();
+    suggest_request_ = nullptr;
+  }
+  const std::string suggest_template = owner_.SearchSuggestTemplate();
+  if (suggest_template.empty() || !ShouldFetchSearchSuggestions(typed)) {
+    search_suggestions_.clear();
+    return;
+  }
+  suggest_request_ = SearchSuggestRequest::Start(
+      owner_.RequestContext(tab->profile()),
+      BuildSearchUrl(typed, suggest_template),
+      [this, alive, generation](std::vector<std::string> suggestions) {
+        if (alive.expired() || generation != suggest_generation_) {
+          return;
+        }
+        suggest_request_ = nullptr;
+        search_suggestions_ = std::move(suggestions);
+        ShowSuggestions();
+      });
+}
+
+void BrowserWindow::ShowSuggestions() {
+  if (!suggesting_ || GetFocus() != address_) {
+    return;
+  }
+  const TabClientDelegate::SearchEngine engine = owner_.SearchEngine();
+  const std::string typed = WideToUtf8(typed_text_);
+  suggestion_rows_ =
+      BuildAddressSuggestions({.text = typed,
+                               .search_template = engine.url_template,
+                               .search_engine_name = engine.name,
+                               .history = history_matches_,
+                               .search_suggestions = search_suggestions_,
+                               .bookmarks = {}});
+  if (!suggestions_) {
+    suggestions_ = std::make_unique<SuggestionsPopup>(
+        window_, [this](int row) { OpenSuggestionRow(row); });
+  }
+  RECT anchor = address_field_;
+  MapWindowPoints(window_, nullptr, reinterpret_cast<POINT*>(&anchor), 2);
+  suggestions_->Show(suggestion_rows_, anchor, theme_, text_font_, icon_font_);
+  // The first row's inline completion: the rest of an address typed
+  // before, selected so that typing on replaces it.
+  if (allow_inline_ && !suggestion_rows_.empty() &&
+      !suggestion_rows_.front().inline_completion.empty() &&
+      WindowText(address_) == typed_text_) {
+    SetAddressText(
+        typed_text_ + Utf8ToWide(suggestion_rows_.front().inline_completion),
+        static_cast<int>(typed_text_.size()));
+  }
+}
+
+bool BrowserWindow::HandleSuggestionKey(int key, bool shift) {
+  if (!suggestions_ || !suggestions_->visible() || suggestion_rows_.empty()) {
+    return false;
+  }
+  if (key == VK_DOWN || key == VK_UP) {
+    const int row =
+        std::clamp(suggestions_->selected() + (key == VK_DOWN ? 1 : -1), 0,
+                   suggestions_->count() - 1);
+    suggestions_->Select(row);
+    // The field shows the row's address or query; typed rows the typed
+    // text.
+    const AddressSuggestion& suggestion =
+        suggestion_rows_[static_cast<std::size_t>(row)];
+    switch (suggestion.kind) {
+      case AddressSuggestion::Kind::kHistory:
+      case AddressSuggestion::Kind::kBookmark:
+        SetAddressText(Utf8ToWide(suggestion.url));
+        break;
+      case AddressSuggestion::Kind::kSearch:
+        SetAddressText(Utf8ToWide(suggestion.text));
+        break;
+      case AddressSuggestion::Kind::kTypedUrl:
+      case AddressSuggestion::Kind::kTypedSearch:
+        SetAddressText(typed_text_);
+        break;
+    }
+    return true;
+  }
+  if (key == VK_ESCAPE) {
+    // The first Escape closes the list and drops the inline completion;
+    // the next one restores the page's address.
+    SetAddressText(typed_text_);
+    CloseSuggestions();
+    return true;
+  }
+  // Shift+Delete removes a history suggestion from the profile's history
+  // (013), as in Chrome.
+  const int row = suggestions_->selected();
+  if (key == VK_DELETE && shift && row >= 0 && row < suggestions_->count() &&
+      suggestion_rows_[static_cast<std::size_t>(row)].kind ==
+          AddressSuggestion::Kind::kHistory) {
+    const std::string url = suggestion_rows_[static_cast<std::size_t>(row)].url;
+    Tab* tab = ActiveTab();
+    if (HistoryService* history = owner_.History(); history && tab) {
+      history->DeletePage(tab->profile(), url);
+      owner_.OnHistoryChanged(tab->profile());
+    }
+    std::erase_if(history_matches_, [&url](const HistoryMatch& match) {
+      return match.url == url;
+    });
+    SetAddressText(typed_text_);
+    ShowSuggestions();
+    return true;
+  }
+  return false;
+}
+
+void BrowserWindow::OpenSuggestionRow(int row) {
+  if (row < 0 || row >= static_cast<int>(suggestion_rows_.size())) {
+    return;
+  }
+  const AddressSuggestion suggestion =
+      suggestion_rows_[static_cast<std::size_t>(row)];
+  CloseSuggestions();
+  // Addresses and history pages count as typed (Chrome); searches do not.
+  NavigateActiveTab(suggestion.url,
+                    suggestion.kind == AddressSuggestion::Kind::kTypedUrl ||
+                        suggestion.kind == AddressSuggestion::Kind::kHistory);
 }
 
 void BrowserWindow::NavigateToAddressBarText() {
-  Tab* tab = ActiveTab();
-  if (!tab || kind_ == Kind::kPopup) {
+  if (!ActiveTab() || kind_ == Kind::kPopup) {
     return;
   }
+  if (suggestions_ && suggestions_->visible() &&
+      suggestions_->selected() >= 0) {
+    OpenSuggestionRow(suggestions_->selected());
+    return;
+  }
+  CloseSuggestions();
   const TabClientDelegate::SearchEngine engine = owner_.SearchEngine();
   const AddressInputResult input = ClassifyAddressInput(
       WideToUtf8(WindowText(address_)), engine.url_template);
   if (input.kind == AddressInputResult::Kind::kEmpty) {
     return;
   }
-  if (IsInternalPageUrl(input.url)) {
-    OpenInternalPage(input.url);
+  // Typed addresses count for history ranking; searches do not (Chrome).
+  NavigateActiveTab(input.url, input.kind == AddressInputResult::Kind::kUrl);
+}
+
+void BrowserWindow::NavigateActiveTab(const std::string& url, bool typed) {
+  Tab* tab = ActiveTab();
+  if (!tab) {
+    return;
+  }
+  if (IsInternalPageUrl(url)) {
+    OpenInternalPage(url);
     return;
   }
   if (tab->internal()) {
@@ -1448,15 +1651,19 @@ void BrowserWindow::NavigateToAddressBarText() {
     // place.
     const TabId internal = tab->id();
     Tab* web = InsertTabFromOpener(tab, true);
-    web->MarkNextVisitTyped();
-    web->CreateBrowser(input.url, owner_.RequestContext(web->profile()));
+    if (typed) {
+      web->MarkNextVisitTyped();
+    }
+    web->CreateBrowser(url, owner_.RequestContext(web->profile()));
     replaced_tabs_.insert(internal);
     CloseTab(internal);
     FocusActiveTab();
     return;
   }
-  tab->MarkNextVisitTyped();
-  tab->Navigate(input.url);
+  if (typed) {
+    tab->MarkNextVisitTyped();
+  }
+  tab->Navigate(url);
   tab->Focus();
 }
 
@@ -1985,6 +2192,9 @@ LRESULT CALLBACK BrowserWindow::AddressProc(HWND window,
     case WM_KEYDOWN:
     case WM_SYSKEYDOWN: {
       const int key = static_cast<int>(wparam);
+      if (self->HandleSuggestionKey(key, KeyDown(VK_SHIFT))) {
+        return 0;
+      }
       if (key == VK_RETURN) {
         self->NavigateToAddressBarText();
         return 0;
@@ -2008,6 +2218,8 @@ LRESULT CALLBACK BrowserWindow::AddressProc(HWND window,
       }
       break;
     case WM_KILLFOCUS:
+      self->CloseSuggestions();
+      self->typed_text_.clear();
       self->ShowAddress();
       break;
     case WM_NCDESTROY:
@@ -2087,16 +2299,19 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
       Paint();
       return 0;
     case WM_SIZE:
+      CloseSuggestions();
       Layout();
       owner_.OnSessionChanged();
       return 0;
     case WM_MOVE:
+      CloseSuggestions();
       owner_.OnSessionChanged();
       return 0;
     case WM_ACTIVATE:
       active_ = LOWORD(wparam) != WA_INACTIVE;
       InvalidateStrip();
       if (!active_) {
+        CloseSuggestions();
         HWND focus = GetFocus();
         saved_focus_ = focus && IsChild(window_, focus) ? focus : nullptr;
       } else if (HWND focus = GetFocus(); focus && IsChild(window_, focus)) {
@@ -2167,6 +2382,11 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
       return reinterpret_cast<LRESULT>(field_brush_);
     }
     case WM_COMMAND:
+      if (reinterpret_cast<HWND>(lparam) == address_ &&
+          HIWORD(wparam) == EN_CHANGE) {
+        OnAddressEdited();
+        return 0;
+      }
       if (Tab* tab = ActiveTab()) {
         switch (LOWORD(wparam)) {
           case kBackId:

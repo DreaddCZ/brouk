@@ -14,7 +14,7 @@
 - Type an address or words to search. The search engine is in Settings → [Search](#settings-search).
 - **Suggestions** while typing: your history in this tab's profile, then bookmarks visible in this profile, then your search engine's suggestions. Each source can be turned off in Settings → Search.
 - An address you typed before is completed inline; keep typing to replace it.
-- <kbd>↑</kbd> <kbd>↓</kbd> move through the list, <kbd>Esc</kbd> closes it (twice restores the page's address), <kbd>⇧⌫</kbd> removes a highlighted history suggestion from the history.
+- <kbd>↑</kbd> <kbd>↓</kbd> move through the list, <kbd>Esc</kbd> closes it (twice restores the page's address), <kbd>⇧⌫</kbd> (on Windows <kbd>Shift+Delete</kbd>) removes a highlighted history suggestion from the history.
 - The icons in the address bar: the lock and site information (permissions, certificate), the [shield](#adblock-shield), the [key](#passwords), the star ([bookmarks](#bookmarks)), and the [developer tools toggle](#devtools).
 
 ### Command palette {#command-palette}

@@ -96,10 +96,14 @@ const frontFunction = (title) =>
 
 // Windows: brings Brouk's window to the front and types `keys`
 // (System.Windows.Forms.SendKeys syntax: "^f" is Ctrl+F), one after another.
-function sendKeys(title, keys) {
-  const sends = keys
-    .map((k) => `[System.Windows.Forms.SendKeys]::SendWait('${k.replaceAll("'", "''")}'); Start-Sleep -Milliseconds 300`)
-    .join('; ');
+// With `windowsOf`, also lists that process's visible windows afterwards
+// and then types `thenKeys`, all from the same PowerShell: starting another
+// one may deactivate Brouk, which closes its popups. Returns PowerShell's
+// output.
+function sendKeys(title, keys, { windowsOf: pid, thenKeys = [] } = {}) {
+  const typed = (list) =>
+    list.map((k) => `[System.Windows.Forms.SendKeys]::SendWait('${k.replaceAll("'", "''")}'); Start-Sleep -Milliseconds 300`).join('; ');
+  const sends = typed(keys);
   const script = [
     'Add-Type -AssemblyName System.Windows.Forms, UIAutomationClient, UIAutomationTypes',
     kFocusFunction,
@@ -110,17 +114,32 @@ function sendKeys(title, keys) {
     sends,
     '$after = Get-Focus',
     'Write-Output "Brouk in front: $active, focus before: $before, after: $after"',
+    ...(pid
+      ? [
+          'Start-Sleep -Milliseconds 1500',
+          `$c = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, ${pid})`,
+          '$w = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $c) | ForEach-Object { "$($_.Current.ClassName) [$($_.Current.Name)]" }',
+          'Write-Output "windows: $($w -join \', \')"',
+          // The address bar's suggestion list, an owned tool window that
+          // UI Automation does not list at the top level.
+          "Add-Type -Namespace Smoke -Name Win -MemberDefinition '[DllImport(\"user32.dll\", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string c, string n); [DllImport(\"user32.dll\")] public static extern bool IsWindowVisible(IntPtr h);'",
+          '$s = [Smoke.Win]::FindWindow("BroukSuggestions", "Suggestions")',
+          'Write-Output "suggestions visible: $($s -ne [IntPtr]::Zero -and [Smoke.Win]::IsWindowVisible($s))"',
+          ...(thenKeys.length ? [typed(thenKeys), 'Write-Output "then focus: $(Get-Focus)"'] : []),
+        ]
+      : []),
   ].join('; ');
   // PowerShell can take long to start on a busy runner: one more try.
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       const output = execFileSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8', timeout: 60000 });
       log(`(keys ${keys.join(' ')}: ${output.trim()})`);
-      return;
+      return output;
     } catch (error) {
       log(`(keys not sent, attempt ${attempt}: ${error.message})`);
     }
   }
+  return '';
 }
 
 // Windows: a right-click at screen pixel (x, y).
@@ -146,19 +165,25 @@ function rightClick(title, x, y) {
   }
 }
 
-// The top-level windows a process still has, for the log.
-function logWindowsOf(pid) {
+// The visible top-level windows of a process ("<class> [<name>]").
+function windowsOf(pid) {
   const script = [
     'Add-Type -AssemblyName UIAutomationClient',
     `$c = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, ${pid})`,
     '[System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $c) | ForEach-Object { "$($_.Current.ClassName) [$($_.Current.Name)]" }',
   ].join('; ');
   try {
-    const out = execFileSync('powershell', ['-NoProfile', '-Command', script], { timeout: 30000 });
-    log(`(windows left: ${out.toString().trim().split(/\r?\n/).join(', ')})`);
+    const out = execFileSync('powershell', ['-NoProfile', '-Command', script], { timeout: 60000 });
+    return out.toString().trim().split(/\r?\n/);
   } catch (error) {
     log(`(no window list: ${error.message})`);
+    return [];
   }
+}
+
+// The top-level windows a process still has, for the log.
+function logWindowsOf(pid) {
+  log(`(windows left: ${windowsOf(pid).join(', ')})`);
 }
 
 function finish(code) {
@@ -688,6 +713,25 @@ async function main() {
       }
       check(answer.includes('/find-and-zoom.html'), `the history has the visited test pages (${answer.slice(0, 200)})`);
       historyPage.close();
+
+      // Address bar suggestions (003): typing lists the history page under
+      // the field; Down selects it and Return loads it in place of the
+      // history tab.
+      const zoomPages = async () =>
+        (await devtoolsJson(port, '/json/list').catch(() => [])).filter(
+          (t) => t.type === 'page' && t.url.includes('/find-and-zoom.html'),
+        ).length;
+      const before = await zoomPages();
+      // One PowerShell for typing, looking and choosing: another one
+      // would deactivate Brouk and close the list.
+      const shown = sendKeys('History', ['^l', 'find-and-zoom'], { windowsOf: brouk.pid, thenKeys: ['{DOWN}', '{ENTER}'] });
+      check(/suggestions visible: True/.test(shown), 'typing in the address bar shows suggestions');
+      let after = before;
+      for (let i = 0; i < 20 && after <= before; i++) {
+        await sleep(500);
+        after = await zoomPages();
+      }
+      check(after > before, `Down and Return load the suggested history page (${before} → ${after} tabs)`);
     }
   }
 

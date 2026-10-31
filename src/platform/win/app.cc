@@ -570,6 +570,14 @@ const std::vector<HistoryMatch>* App::RecentPages(const ProfileId& profile) {
   return &it->second;
 }
 
+std::string App::SearchSuggestTemplate() {
+  return brouk::SearchSuggestTemplate(profiles_.global_settings());
+}
+
+bool App::HistorySuggestionsEnabled() {
+  return profiles_.global_settings().GetBool("suggestions.history");
+}
+
 std::string App::HistoryView() const {
   return profiles_.global_settings().GetString("history.view");
 }
