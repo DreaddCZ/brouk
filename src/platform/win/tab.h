@@ -39,6 +39,8 @@ class TabHost {
   virtual void OpenUrlFromTab(Tab& opener,
                               const std::string& url,
                               OpenDisposition disposition) = 0;
+  // The page entered or left HTML full screen (video, presentation).
+  virtual void OnTabFullscreenChanged(Tab& tab, bool fullscreen) = 0;
   // A key the page did not handle (shortcuts). True if handled.
   virtual bool OnTabKey(const CefKeyEvent& event) = 0;
   virtual TabClientDelegate::SearchEngine TabSearchEngine() = 0;
@@ -90,10 +92,16 @@ class Tab final : public TabClientDelegate,
   // current zoom level (0 is 100 %).
   void Zoom(cef_zoom_command_t command);
   double ZoomLevel() const;
+  // The system's print dialog for the page (Ctrl+P).
+  void Print();
+  // Leaves the page's HTML full screen, if it is in it.
+  void ExitFullscreen();
   // Runs the page's unload handlers and closes the browser; OnTabClosed
   // follows. A page may cancel ("leave site?").
   void Close();
   bool has_browser() const { return browser_ != nullptr; }
+  // Whether `window` is the page's (the browser's window or one inside it).
+  bool IsPageWindow(HWND window) const;
   bool closing() const { return closing_; }
   // Shows an internal page (CreateInternalPage), which cannot navigate to
   // web pages.

@@ -37,6 +37,8 @@ constexpr int kAddressPadding = 12;
 
 constexpr UINT_PTR kSpinnerTimer = 1;
 constexpr UINT kSpinnerInterval = 80;  // Milliseconds per step.
+constexpr UINT_PTR kFullscreenHintTimer = 2;
+constexpr UINT kFullscreenHintTime = 3000;  // Milliseconds.
 
 enum ControlId : int {
   kBackId = 1,
@@ -54,6 +56,7 @@ enum MenuCommand : UINT {
   kZoomInCommand,
   kZoomOutCommand,
   kZoomResetCommand,
+  kPrintCommand,
   kFindCommand,
   kHelpCommand,
   kLicencesCommand,
@@ -100,6 +103,7 @@ BrowserWindow::BrowserWindow(BrowserWindowOwner& owner, Kind kind)
     : owner_(owner), kind_(kind), model_(ProfileId(kFirstProfileId)) {}
 
 BrowserWindow::~BrowserWindow() {
+  fullscreen_hint_.reset();
   tabs_.clear();
   if (window_) {
     SetWindowLongPtrW(window_, GWLP_USERDATA, 0);
@@ -255,7 +259,7 @@ int BrowserWindow::ResizeBorderHeight() const {
 RECT BrowserWindow::StripBounds() const {
   RECT client = {};
   GetClientRect(window_, &client);
-  if (kind_ == Kind::kPopup) {
+  if (kind_ == Kind::kPopup || fullscreen_) {
     return {0, 0, client.right, 0};
   }
   return {0, 0, client.right,
@@ -266,6 +270,9 @@ RECT BrowserWindow::ToolbarBounds() const {
   RECT client = {};
   GetClientRect(window_, &client);
   const RECT strip = StripBounds();
+  if (fullscreen_) {
+    return {0, 0, client.right, 0};
+  }
   return {0, strip.bottom, client.right,
           std::min(static_cast<int>(client.bottom),
                    static_cast<int>(strip.bottom) + Scale(kToolbarHeight))};
@@ -407,6 +414,88 @@ void BrowserWindow::DrawToolbarButton(const DRAWITEMSTRUCT& item) {
   SelectObject(item.hDC, previous);
 }
 
+void BrowserWindow::OnTabFullscreenChanged(Tab& tab, bool fullscreen) {
+  if (fullscreen) {
+    if (model_.active_id() != tab.id()) {
+      tab.ExitFullscreen();
+      return;
+    }
+    fullscreen_tab_ = tab.id();
+    if (!fullscreen_) {
+      fullscreen_for_page_ = true;
+      SetFullscreen(true);
+    }
+    ShowFullscreenHint(L"Press Esc to exit full screen");
+  } else if (fullscreen_tab_ == tab.id()) {
+    fullscreen_tab_.reset();
+    if (fullscreen_for_page_) {
+      fullscreen_for_page_ = false;
+      SetFullscreen(false);
+    }
+  }
+}
+
+void BrowserWindow::SetFullscreen(bool fullscreen) {
+  if (fullscreen == fullscreen_) {
+    return;
+  }
+  if (fullscreen) {
+    saved_placement_ = {};
+    saved_placement_.length = sizeof(saved_placement_);
+    GetWindowPlacement(window_, &saved_placement_);
+    saved_style_ = GetWindowLongPtrW(window_, GWL_STYLE);
+    fullscreen_ = true;
+    SetWindowLongPtrW(
+        window_, GWL_STYLE,
+        saved_style_ & ~static_cast<LONG_PTR>(WS_CAPTION | WS_THICKFRAME));
+    MONITORINFO monitor = {};
+    monitor.cbSize = sizeof(monitor);
+    GetMonitorInfoW(MonitorFromWindow(window_, MONITOR_DEFAULTTONEAREST),
+                    &monitor);
+    const RECT& area = monitor.rcMonitor;
+    SetWindowPos(window_, HWND_TOP, area.left, area.top, area.right - area.left,
+                 area.bottom - area.top, SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
+  } else {
+    fullscreen_ = false;
+    fullscreen_hint_.reset();
+    SetWindowLongPtrW(window_, GWL_STYLE, saved_style_);
+    SetWindowPlacement(window_, &saved_placement_);
+    SetWindowPos(window_, nullptr, 0, 0, 0, 0,
+                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER |
+                     SWP_FRAMECHANGED);
+  }
+  // The toolbar's controls; the tab strip is painted and hit-tested only
+  // outside full screen.
+  for (HWND control : {back_, forward_, reload_, menu_}) {
+    if (kind_ == Kind::kNormal) {
+      ShowWindow(control, fullscreen ? SW_HIDE : SW_SHOWNA);
+    }
+  }
+  ShowWindow(address_, fullscreen ? SW_HIDE : SW_SHOWNA);
+  if (fullscreen) {
+    ShowWindow(zoom_, SW_HIDE);
+  }
+  UpdateZoomIndicator();
+  Layout();
+  InvalidateRect(window_, nullptr, TRUE);
+}
+
+void BrowserWindow::ShowFullscreenHint(const wchar_t* text) {
+  Tab* tab = ActiveTab();
+  if (!tab) {
+    return;
+  }
+  TabPanel::Content content;
+  content.title = text;
+  content.width = 300;
+  // Over the page, inside its tab: Chromium's page would cover a panel next
+  // to the tab.
+  fullscreen_hint_ = std::make_unique<TabPanel>(
+      tab->container(), theme_, std::move(content),
+      [](const TabPanel::Answer&) {}, nullptr);
+  SetTimer(window_, kFullscreenHintTimer, kFullscreenHintTime, nullptr);
+}
+
 void BrowserWindow::DrawZoomButton(const DRAWITEMSTRUCT& item) {
   const bool pressed = (item.itemState & ODS_SELECTED) != 0;
   SetDCBrushColor(item.hDC, theme_.field);
@@ -435,7 +524,7 @@ void BrowserWindow::DrawZoomButton(const DRAWITEMSTRUCT& item) {
 void BrowserWindow::UpdateZoomIndicator() {
   Tab* tab = ActiveTab();
   const double level = tab ? tab->ZoomLevel() : 0.0;
-  const bool shown = IsZoomIndicatorShown(level);
+  const bool shown = !fullscreen_ && IsZoomIndicatorShown(level);
   if (shown) {
     const int percent = ZoomPercentFromLevel(level);
     const std::wstring text = std::to_wstring(percent) + L" %";
@@ -462,6 +551,7 @@ void BrowserWindow::ShowAppMenu() {
   AppendMenuW(menu, MF_STRING, kZoomOutCommand, L"Zoom out\tCtrl+-");
   AppendMenuW(menu, MF_STRING, kZoomResetCommand, L"Actual size\tCtrl+0");
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+  AppendMenuW(menu, MF_STRING, kPrintCommand, L"Print\u2026\tCtrl+P");
   AppendMenuW(menu, MF_STRING, kFindCommand, L"Find\u2026\tCtrl+F");
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
   AppendMenuW(menu, MF_STRING, kHelpCommand, L"Brouk Help\tF1");
@@ -491,6 +581,11 @@ void BrowserWindow::ShowAppMenu() {
         tab->Zoom(command == kZoomInCommand    ? CEF_ZOOM_COMMAND_IN
                   : command == kZoomOutCommand ? CEF_ZOOM_COMMAND_OUT
                                                : CEF_ZOOM_COMMAND_RESET);
+      }
+      break;
+    case kPrintCommand:
+      if (Tab* tab = ActiveTab()) {
+        tab->Print();
       }
       break;
     case kFindCommand:
@@ -614,6 +709,12 @@ void BrowserWindow::CloseTab(TabId id) {
 
 void BrowserWindow::ModelChanged() {
   const std::optional<TabId> active = model_.active_id();
+  // Like Chrome, switching tabs ends a page's full screen.
+  if (fullscreen_tab_ && fullscreen_tab_ != active) {
+    if (Tab* tab = FindTab(*fullscreen_tab_)) {
+      tab->ExitFullscreen();
+    }
+  }
   for (const auto& [id, tab] : tabs_) {
     tab->SetVisible(active == id);
   }
@@ -737,6 +838,27 @@ bool BrowserWindow::HandleShortcut(int key,
     }
     return true;
   }
+  if (!control && !alt && !shift && key == VK_F11) {
+    if (fullscreen_tab_) {
+      // Leaves the page's full screen, and with it the window's.
+      if (Tab* fullscreen_tab = FindTab(*fullscreen_tab_)) {
+        fullscreen_tab->ExitFullscreen();
+      }
+    } else {
+      fullscreen_for_page_ = false;
+      SetFullscreen(!fullscreen_);
+      if (fullscreen_) {
+        ShowFullscreenHint(L"Press F11 to exit full screen");
+      }
+    }
+    return true;
+  }
+  if (control && !alt && !shift && key == 'P') {
+    if (tab) {
+      tab->Print();
+    }
+    return true;
+  }
   if (control && !alt && !shift && key == 'F') {
     if (tab) {
       tab->ShowFindBar();
@@ -821,6 +943,9 @@ void BrowserWindow::OnTabClosed(Tab& tab) {
   auto it = tabs_.find(id);
   if (it == tabs_.end()) {
     return;
+  }
+  if (fullscreen_tab_ == id) {
+    OnTabFullscreenChanged(tab, false);
   }
   model_.RemoveTab(id);
   // Deleted from a task: this is called from inside the tab.
@@ -911,6 +1036,9 @@ TabClientDelegate::SearchEngine BrowserWindow::TabSearchEngine() {
 }
 
 LRESULT BrowserWindow::OnNcCalcSize(WPARAM wparam, LPARAM lparam) {
+  if (wparam && fullscreen_) {
+    return 0;  // No frame: the client area is the whole window.
+  }
   if (!wparam || kind_ == Kind::kPopup) {
     return DefWindowProcW(window_, WM_NCCALCSIZE, wparam, lparam);
   }
@@ -928,6 +1056,9 @@ LRESULT BrowserWindow::OnNcCalcSize(WPARAM wparam, LPARAM lparam) {
 }
 
 LRESULT BrowserWindow::OnNcHitTest(LPARAM lparam) {
+  if (fullscreen_) {
+    return HTCLIENT;
+  }
   const LRESULT system = DefWindowProcW(window_, WM_NCHITTEST, 0, lparam);
   if (system != HTCLIENT || kind_ == Kind::kPopup) {
     return system;  // Side and bottom borders, or a normal title bar.
@@ -1204,19 +1335,29 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
     case WM_ACTIVATE:
       active_ = LOWORD(wparam) != WA_INACTIVE;
       if (!active_) {
-        address_had_focus_ = GetFocus() == address_;
+        HWND focus = GetFocus();
+        saved_focus_ = focus && IsChild(window_, focus) ? focus : nullptr;
       }
       InvalidateStrip();
       break;
     case WM_SETFOCUS:
-      // Back to where the user was: the address bar or the page.
-      if (address_had_focus_) {
-        SetFocus(address_);
-      } else if (Tab* tab = ActiveTab()) {
+      // Back to where the user was, as in Chrome. The page itself is
+      // focused through its browser.
+      if (Tab* tab = ActiveTab(); saved_focus_ && IsWindow(saved_focus_) &&
+                                  IsWindowVisible(saved_focus_) &&
+                                  IsWindowEnabled(saved_focus_) &&
+                                  !(tab && tab->IsPageWindow(saved_focus_))) {
+        SetFocus(saved_focus_);
+      } else if (tab) {
         tab->Focus();
       }
       return 0;
     case WM_TIMER:
+      if (wparam == kFullscreenHintTimer) {
+        KillTimer(window_, kFullscreenHintTimer);
+        fullscreen_hint_.reset();
+        return 0;
+      }
       if (wparam == kSpinnerTimer) {
         ++spinner_step_;
         InvalidateStrip();

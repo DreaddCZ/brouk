@@ -79,12 +79,14 @@ function sendKeys(keys) {
     .join('; ');
   const script = [
     'Add-Type -AssemblyName System.Windows.Forms',
-    `(New-Object -ComObject WScript.Shell).AppActivate(${brouk.pid}) | Out-Null`,
+    `$active = (New-Object -ComObject WScript.Shell).AppActivate(${brouk.pid})`,
     'Start-Sleep -Milliseconds 500',
     sends,
+    'Write-Output "Brouk in front: $active"',
   ].join('; ');
   try {
-    execFileSync('powershell', ['-NoProfile', '-Command', script], { timeout: 30000 });
+    const output = execFileSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8', timeout: 30000 });
+    log(`(keys ${keys.join(' ')}: ${output.trim()})`);
   } catch (error) {
     log(`(keys not sent: ${error.message})`);
   }
@@ -313,10 +315,39 @@ async function main() {
   if (kWindows) {
     await cdp.send('Page.navigate', { url: `${pagesBase}/find-and-zoom.html` });
     await waitForTitle(cdp, 'Find and zoom test');
+    const zoom = async () =>
+      (await cdp.send('Runtime.evaluate', { expression: 'Math.round(devicePixelRatio * 100)' })).result.value;
+    const before = await zoom();
     sendKeys(['^{ADD}', '^{ADD}', '^f', 'beetle']);
     await sleep(1000);
+    const zoomed = await zoom();
+    check(zoomed === Math.round(before * 1.25), `Ctrl+Plus twice zooms to 125 % (${before} → ${zoomed})`);
     desktopScreenshot('find-bar');
+    // The screenshot took the focus away; Brouk gives it back to the find
+    // bar, where Escape closes it, then Ctrl+0 resets the zoom.
     sendKeys(['{ESC}', '^0']);
+    await sleep(500);
+    const reset = await zoom();
+    check(reset === before, `Ctrl+0 resets the zoom (${reset})`);
+  }
+
+  // HTML full screen (Windows app, 024): the window covers the screen
+  // without tab strip and toolbar; Escape (a real key press) leaves it.
+  if (kWindows) {
+    await cdp.send('Page.navigate', { url: `${pagesBase}/fullscreen.html` });
+    await waitForTitle(cdp, 'Full screen test');
+    await cdp.send('Runtime.evaluate', {
+      expression: 'document.documentElement.requestFullscreen().then(() => "yes", (e) => String(e))',
+      userGesture: true,
+      awaitPromise: true,
+    });
+    await sleep(1500);
+    desktopScreenshot('fullscreen');
+    sendKeys(['{ESC}']);
+    await sleep(1000);
+    const { result } = await cdp.send('Runtime.evaluate', { expression: 'document.fullscreenElement === null' });
+    check(result.value === true, 'Escape leaves HTML full screen');
+    desktopScreenshot('fullscreen-left');
   }
 
   // The Windows app draws the permission prompt and the dialogs over the

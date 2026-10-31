@@ -181,6 +181,11 @@ HWND Tab::BrowserWindowHandle() const {
   return browser_ ? browser_->GetHost()->GetWindowHandle() : nullptr;
 }
 
+bool Tab::IsPageWindow(HWND window) const {
+  HWND browser = BrowserWindowHandle();
+  return browser && (window == browser || IsChild(browser, window));
+}
+
 void Tab::OnContainerSize() {
   // The browser's window fills its tab's container; the panels keep their
   // place over it.
@@ -380,6 +385,18 @@ void Tab::Zoom(cef_zoom_command_t command) {
 
 double Tab::ZoomLevel() const {
   return browser_ ? browser_->GetHost()->GetZoomLevel() : 0.0;
+}
+
+void Tab::Print() {
+  if (browser_) {
+    browser_->GetHost()->Print();
+  }
+}
+
+void Tab::ExitFullscreen() {
+  if (browser_ && browser_->GetHost()->IsFullscreen()) {
+    browser_->GetHost()->ExitFullscreen(/*will_cause_resize=*/true);
+  }
 }
 
 void Tab::Close() {
@@ -704,7 +721,9 @@ void Tab::OpenExternalUrl(const std::string& url) {
       SW_SHOWNORMAL);
 }
 
-void Tab::OnFullscreenModeChanged(bool /*fullscreen*/) {}
+void Tab::OnFullscreenModeChanged(bool fullscreen) {
+  host_.OnTabFullscreenChanged(*this, fullscreen);
+}
 
 void Tab::OnAudibleChanged(bool /*audible*/) {}
 
