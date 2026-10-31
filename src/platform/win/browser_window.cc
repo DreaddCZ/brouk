@@ -177,7 +177,7 @@ bool BrowserWindow::Create(int content_width, int content_height) {
 }
 
 void BrowserWindow::Show() {
-  ShowWindow(window_, SW_SHOWNORMAL);
+  ShowWindow(window_, show_command_);
   FocusActiveTab();
 }
 
@@ -931,6 +931,136 @@ void BrowserWindow::OpenInternalPage(const std::string& url) {
   FocusActiveTab();
 }
 
+std::optional<SessionWindow> BrowserWindow::SessionState() const {
+  if (kind_ != Kind::kNormal || closing_ || !window_ || model_.empty()) {
+    return std::nullopt;
+  }
+  SessionWindow saved;
+  for (std::size_t i = 0; i < model_.count(); ++i) {
+    const TabId id = model_.id_at(i);
+    auto it = tabs_.find(id);
+    if (it == tabs_.end() || it->second->closing()) {
+      continue;
+    }
+    const Tab& tab = *it->second;
+    if (model_.active_id() == id) {
+      saved.active = saved.tabs.size();
+    }
+    saved.tabs.push_back({.url = tab.url(),
+                          .title = tab.title(),
+                          .profile = tab.profile(),
+                          .pinned = model_.IsPinned(id)});
+  }
+  if (saved.tabs.empty()) {
+    return std::nullopt;
+  }
+  for (const TabStripModel::Group& group : model_.groups()) {
+    if (group.collapsed) {
+      saved.collapsed.push_back(group.profile);
+    }
+  }
+  // The frame to go back to from maximised (and from full screen).
+  WINDOWPLACEMENT placement = {};
+  placement.length = sizeof(WINDOWPLACEMENT);
+  if (fullscreen_) {
+    placement = saved_placement_;
+  } else if (!GetWindowPlacement(window_, &placement)) {
+    return saved;
+  }
+  const RECT& normal = placement.rcNormalPosition;
+  saved.x = normal.left;
+  saved.y = normal.top;
+  saved.width = normal.right - normal.left;
+  saved.height = normal.bottom - normal.top;
+  saved.maximized = placement.showCmd == SW_SHOWMAXIMIZED ||
+                    (placement.showCmd == SW_SHOWMINIMIZED &&
+                     (placement.flags & WPF_RESTORETOMAXIMIZED) != 0);
+  return saved;
+}
+
+void BrowserWindow::Restore(const SessionWindow& saved) {
+  if (saved.width > 0) {
+    // Workspace coordinates (as GetWindowPlacement gives them), only if
+    // still on a monitor: displays may have changed.
+    const RECT frame = {saved.x, saved.y, saved.x + saved.width,
+                        saved.y + saved.height};
+    if (MonitorFromRect(&frame, MONITOR_DEFAULTTONULL)) {
+      WINDOWPLACEMENT placement = {};
+      placement.length = sizeof(WINDOWPLACEMENT);
+      GetWindowPlacement(window_, &placement);
+      placement.flags = 0;
+      placement.showCmd = SW_HIDE;  // Shown by Show().
+      placement.rcNormalPosition = frame;
+      SetWindowPlacement(window_, &placement);
+    }
+  }
+  if (saved.maximized) {
+    show_command_ = SW_SHOWMAXIMIZED;
+  }
+  const std::vector<ProfileInfo>& profiles = owner_.ProfileList();
+  std::optional<TabId> active;
+  for (std::size_t i = 0; i < saved.tabs.size(); ++i) {
+    const SessionTab& saved_tab = saved.tabs[i];
+    // Tabs of a deleted profile open in the default profile.
+    const bool exists = std::ranges::any_of(
+        profiles,
+        [&](const ProfileInfo& p) { return p.id == saved_tab.profile; });
+    const ProfileId profile =
+        exists ? saved_tab.profile : owner_.DefaultProfile();
+    std::unique_ptr<CefMessageRouterBrowserSide::Handler> handler;
+    if (IsInternalPageUrl(saved_tab.url)) {
+      // Pages with their own window (help, settings) do not come back.
+      const std::optional<std::string> page = InternalPageOf(saved_tab.url);
+      handler = page ? owner_.InternalPageHandler(*page) : nullptr;
+      if (!handler) {
+        continue;
+      }
+    }
+    const TabId id = NextTabId();
+    auto tab = std::make_unique<Tab>(*this, id, window_, profile);
+    tab->SetBounds(ContentBounds());
+    Tab* created = tab.get();
+    tabs_[id] = std::move(tab);
+    model_.AppendTab(id, profile, false);
+    if (saved_tab.pinned) {
+      model_.SetPinned(id, true);
+    }
+    if (handler) {
+      created->CreateInternalPage(saved_tab.url, std::move(handler),
+                                  owner_.InternalContext());
+    } else if (i == saved.active) {
+      created->CreateBrowser(saved_tab.url, owner_.RequestContext(profile));
+    } else {
+      created->DeferBrowser(saved_tab.url, saved_tab.title,
+                            owner_.RequestContext(profile));
+    }
+    if (i == saved.active || !active) {
+      active = id;
+    }
+  }
+  if (active) {
+    model_.ActivateTab(*active);
+  }
+  for (const ProfileId& profile : saved.collapsed) {
+    model_.SetGroupCollapsed(profile, true);
+  }
+  ModelChanged();
+}
+
+bool BrowserWindow::HasOnlyNewTab() const {
+  if (tabs_.size() != 1) {
+    return false;
+  }
+  const Tab& tab = *tabs_.begin()->second;
+  return !tab.internal() && !tab.closing() && IsBlank(tab.url());
+}
+
+void BrowserWindow::ShowRestorePagesBar(std::function<void()> restore) {
+  if (Tab* tab = ActiveTab()) {
+    tab->ShowRestorePagesPanel(std::move(restore));
+  }
+}
+
 Tab* BrowserWindow::FindTab(TabId id) {
   auto it = tabs_.find(id);
   return it == tabs_.end() ? nullptr : it->second.get();
@@ -1034,6 +1164,11 @@ void BrowserWindow::ModelChanged() {
   for (const auto& [id, tab] : tabs_) {
     tab->SetVisible(active == id);
   }
+  // A restored tab gets its browser when first shown (015).
+  if (Tab* tab = ActiveTab(); tab && tab->has_deferred_browser()) {
+    tab->CreateDeferredBrowser();
+  }
+  owner_.OnSessionChanged();
   LayoutStrip();
   UpdateToolbar();
   UpdateSpinner();
@@ -1246,6 +1381,7 @@ bool BrowserWindow::HandleShortcut(int key,
 }
 
 void BrowserWindow::OnTabChanged(Tab& tab) {
+  owner_.OnSessionChanged();
   if (model_.active_id() == tab.id()) {
     UpdateToolbar();
   }
@@ -1728,6 +1864,10 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
       return 0;
     case WM_SIZE:
       Layout();
+      owner_.OnSessionChanged();
+      return 0;
+    case WM_MOVE:
+      owner_.OnSessionChanged();
       return 0;
     case WM_ACTIVATE:
       active_ = LOWORD(wparam) != WA_INACTIVE;
@@ -1840,6 +1980,9 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
       if (tabs_.empty()) {
         DestroyWindow(window_);
         return 0;
+      }
+      if (!closing_) {
+        owner_.OnWindowClosing(*this);
       }
       closing_ = true;
       std::vector<TabId> ids;

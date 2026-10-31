@@ -183,6 +183,21 @@ function finish(code) {
   process.exit(code);
 }
 
+// Windows: closes the windows of `child` as the user does. Without /F,
+// taskkill asks one of the process's windows to close (WM_CLOSE); Brouk runs
+// until its last window has closed, so ask again while it still has windows
+// (profile windows, the manager).
+async function closeWindowsOf(child) {
+  for (let i = 0; i < 10 && child.exitCode === null; ++i) {
+    try {
+      execFileSync('taskkill', ['/PID', String(child.pid)], { stdio: 'ignore' });
+    } catch {
+      // No window left to ask: Brouk is quitting.
+    }
+    await sleep(500);
+  }
+}
+
 // ---- Chrome DevTools Protocol ----
 
 class Cdp {
@@ -638,17 +653,7 @@ async function main() {
   log(`(pages before quitting: ${pagesBeforeQuit.map((t) => `${t.type} ${t.url}`).join(', ')})`);
   const quitStarted = Date.now();
   if (kWindows) {
-    // Without /F, taskkill asks one of the process's windows to close
-    // (WM_CLOSE); Brouk runs until its last window has closed, so ask
-    // again while it still has windows (profile windows, the manager).
-    for (let i = 0; i < 10 && brouk.exitCode === null; ++i) {
-      try {
-        execFileSync('taskkill', ['/PID', String(brouk.pid)], { stdio: 'ignore' });
-      } catch {
-        // No window left to ask: Brouk is quitting.
-      }
-      await sleep(500);
-    }
+    await closeWindowsOf(brouk);
   } else {
     execFileSync('osascript', [
       '-l',
@@ -660,6 +665,44 @@ async function main() {
   while (brouk.exitCode === null && Date.now() - quitStarted < 10000) await sleep(200);
   if (!check(brouk.exitCode === 0, `Brouk quits cleanly within 10 seconds (exit code ${brouk.exitCode})`) && kWindows) {
     logWindowsOf(brouk.pid);
+  }
+
+  // Session restore (015): the window closed last comes back, with only
+  // its active tab loaded.
+  if (kWindows && brouk.exitCode === 0) {
+    let session = '';
+    try {
+      session = readFileSync(join(dataDir, 'session.yaml'), 'utf8');
+    } catch (error) {
+      log(`(no session.yaml: ${error.message})`);
+    }
+    const urls = [...session.matchAll(/^\s*-?\s*url: "?([^"\n]+)"?$/gm)].map((m) => m[1]);
+    const windows = (session.match(/^\s*-?\s*tabs:/gm) ?? []).length;
+    log(`(session.yaml: ${windows} window(s), tabs ${urls.join(', ')})`);
+    check(/^clean_exit: true$/m.test(session) && urls.length > 0, 'quitting saves the session with its tabs');
+    const restartPort = port + 500;
+    brouk = spawn(executable, ['--use-mock-keychain', `--remote-debugging-port=${restartPort}`], {
+      env: { ...process.env, BROUK_DEV_DATA_DIR: dataDir },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    brouk.stdout.on('data', (chunk) => appendFileSync(appLog, chunk));
+    brouk.stderr.on('data', (chunk) => appendFileSync(appLog, chunk));
+    log(`Started Brouk again (pid ${brouk.pid})`);
+    let loaded = [];
+    for (let i = 0; i < 40 && brouk.exitCode === null; i++) {
+      await sleep(500);
+      const list = await devtoolsJson(restartPort, '/json/list').catch(() => []);
+      loaded = list.filter((t) => t.type === 'page' && /^https?:/.test(t.url)).map((t) => t.url);
+      if (loaded.some((url) => urls.includes(url))) break;
+    }
+    log(`(pages after the restart: ${loaded.join(', ')})`);
+    check(loaded.some((url) => urls.includes(url)), 'starting again brings the last session back');
+    check(loaded.length <= windows, `only the active tab of each restored window loads (${loaded.length} page(s), ${windows} window(s))`);
+    desktopScreenshot('restored');
+    const quitAgain = Date.now();
+    await closeWindowsOf(brouk);
+    while (brouk.exitCode === null && Date.now() - quitAgain < 10000) await sleep(200);
+    check(brouk.exitCode === 0, `the restored Brouk quits cleanly (exit code ${brouk.exitCode})`);
   }
 
   await sleep(2000); // ReportCrash writes its report a moment later.
