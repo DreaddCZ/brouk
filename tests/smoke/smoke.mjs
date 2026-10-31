@@ -804,6 +804,9 @@ async function main() {
         check(resumed?.paused === false, 'Resume runs it again');
       }
       tasks.close();
+      // Closed again, so that keys go to the browser windows that follow.
+      await devtoolsJson(port, `/json/close/${tasksTarget.id}`).catch(() => {});
+      await sleep(1000);
     }
   }
 
