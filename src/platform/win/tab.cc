@@ -500,6 +500,10 @@ void Tab::OnBrowserCreated(CefRefPtr<CefBrowser> browser) {
 
 void Tab::OnTitleChanged(const std::string& title) {
   title_ = title;
+  if (HistoryService* history = host_.TabHistory();
+      history && !internal() && !url_.empty()) {
+    history->SetTitle(profile_, url_, title_);
+  }
   host_.OnTabChanged(*this);
 }
 
@@ -515,10 +519,38 @@ void Tab::OnAddressChanged(const std::string& url) {
   host_.OnTabChanged(*this);
 }
 
-void Tab::OnPageVisited(const std::string& /*url*/,
-                        const std::string& /*title*/,
-                        cef_transition_type_t /*transition*/) {
-  // History (013) comes with W2.
+// For history (013): how the visit started.
+void Tab::OnPageVisited(const std::string& url,
+                        const std::string& title,
+                        cef_transition_type_t transition) {
+  VisitTransition kind = VisitTransition::kOther;
+  const int source = transition & TT_SOURCE_MASK;
+  if (next_visit_typed_) {
+    kind = VisitTransition::kTyped;
+  } else if (source == TT_RELOAD) {
+    kind = VisitTransition::kReload;
+  } else if (source == TT_AUTO_BOOKMARK) {
+    kind = VisitTransition::kBookmark;
+  } else if (source == TT_LINK || source == TT_FORM_SUBMIT) {
+    kind = VisitTransition::kLink;
+  }
+  next_visit_typed_ = false;
+  HistoryService* history = host_.TabHistory();
+  if (!history || internal()) {
+    return;
+  }
+  // A page that forwarded here by itself (meta refresh, script) is not
+  // kept: only the end of a redirect chain is. The chain keeps how it
+  // started (typed, link...).
+  if ((transition & TT_CLIENT_REDIRECT_FLAG) && !last_visit_url_.empty() &&
+      last_visit_url_ != url) {
+    history->RemoveRedirectSource(profile_, last_visit_url_);
+    kind = last_visit_kind_;
+  }
+  last_visit_url_ = url;
+  last_visit_kind_ = kind;
+  history->RecordVisit(profile_, url, title, kind);
+  host_.OnTabHistoryChanged(*this);
 }
 
 void Tab::OnLoadingStateChanged(bool is_loading,
@@ -541,8 +573,12 @@ void Tab::OnLoadingStateChanged(bool is_loading,
   host_.OnTabChanged(*this);
 }
 
-void Tab::OnFaviconChanged(const std::string& /*icon_url*/,
+void Tab::OnFaviconChanged(const std::string& icon_url,
                            const std::vector<std::uint8_t>& png) {
+  if (HistoryService* history = host_.TabHistory();
+      history && !internal() && !url_.empty()) {
+    history->SetFavicon(profile_, url_, icon_url, png);
+  }
   favicon_png_ = png;
   UpdateFaviconSize();
   host_.OnTabChanged(*this);

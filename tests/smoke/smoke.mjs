@@ -661,6 +661,36 @@ async function main() {
     check(reopened !== undefined, 'Ctrl+Shift+T reopens the tab closed with Ctrl+W');
   }
 
+  // History (013): Ctrl+H opens brouk://history in a tab, and the pages
+  // visited so far are in it.
+  if (kWindows) {
+    sendKeys('Crash and hang test', ['^h']);
+    let historyTarget;
+    for (let i = 0; i < 20 && !historyTarget; i++) {
+      await sleep(500);
+      historyTarget = await devtoolsJson(port, '/json/list')
+        .then((list) => list.find((t) => t.type === 'page' && t.url.startsWith('brouk://history')))
+        .catch(() => undefined);
+    }
+    if (check(historyTarget !== undefined, 'Ctrl+H opens the history page')) {
+      const historyPage = await Cdp.connect(historyTarget.webSocketDebuggerUrl);
+      let answer = '';
+      for (let i = 0; i < 20 && !answer.includes('/find-and-zoom.html'); i++) {
+        await sleep(500);
+        const { result } = await historyPage.send('Runtime.evaluate', {
+          expression:
+            "new Promise((ok) => window.cefQuery({ request: JSON.stringify({ type: 'history.sql', query: 'SELECT url FROM pages' }), " +
+            "onSuccess: (r) => ok('ok ' + r), onFailure: (c, m) => ok('failed ' + m) }))",
+          awaitPromise: true,
+          returnByValue: true,
+        });
+        answer = result.value ?? '';
+      }
+      check(answer.includes('/find-and-zoom.html'), `the history has the visited test pages (${answer.slice(0, 200)})`);
+      historyPage.close();
+    }
+  }
+
   // Quit as the user does (Brouk → Quit; on Windows closing the window),
   // aimed at this copy's pid only.
   const pagesBeforeQuit = await devtoolsJson(port, '/json/list').catch(() => []);

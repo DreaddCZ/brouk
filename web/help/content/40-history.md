@@ -9,7 +9,7 @@ Brouk remembers the pages you visit, **per profile**: a page visited in one prof
 
 ### History page {#history-page}
 
-<kbd>⌘Y</kbd> (History → Show Full History) opens the history of **all profiles** as a tab:
+<kbd>⌘Y</kbd> (History → Show Full History; on Windows <kbd>Ctrl+H</kbd> or "⋮" → History) opens the history of **all profiles** as a tab:
 
 - **By site** (default): one row per exact host and profile — `companya.atlassian.net` and `companyb.atlassian.net` are separate rows — with visits, pages and last visit. Sort by last visit, visits or site; click a row to see its pages.
 - **By day:** single visits under Today, Yesterday and dates.
@@ -76,7 +76,7 @@ In keep mode, the ticked sites become the profile's keep list for next time. Onl
 
 ### Clear browsing data {#history-clear-data}
 
-**Clear browsing data…** (<kbd>⇧⌘⌫</kbd>, also on the history page and in Settings → History) clears, for one profile or all, within a time range (last hour to all time):
+**Clear browsing data…** (<kbd>⇧⌘⌫</kbd>, on Windows <kbd>Ctrl+Shift+Del</kbd>, also on the history page and in Settings → History) clears, for one profile or all, within a time range (last hour to all time):
 
 - **Browsing history**;
 - **Download history** — the list only, the files stay;
@@ -89,7 +89,7 @@ It shows how much will be cleared before it does. Bookmarked sites keep their ic
 
 - Back, Forward, Home (<kbd>⇧⌘H</kbd>, the new tab page).
 - **Reopen Closed Tab** (<kbd>⇧⌘T</kbd>, on Windows <kbd>Ctrl+Shift+T</kbd>): the last closed tab — or window — goes back where it was, in its profile, pinned if it was. Brouk remembers the last 10 closed tabs and windows until you quit.
-- **Recently Closed** (on Windows in the "⋮" menu) and **Recently Visited** (the last pages of the active tab's profile).
+- **Recently Closed** (on Windows in "⋮" → History) and **Recently Visited** (the last pages of the active tab's profile).
 - Show Full History (<kbd>⌘Y</kbd>).
 
 ### Never record these sites {#history-never-record}

@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "cef/history_service.h"
 #include "cef/internal_page_client.h"
 #include "cef/tab_client.h"
 #include "core/tab_strip_model.h"
@@ -47,6 +48,10 @@ class TabHost {
   virtual TabClientDelegate::SearchEngine TabSearchEngine() = 0;
   // The tab icon's size in pixels at the window's current DPI.
   virtual int FaviconSize() = 0;
+  // History (013): where visits are recorded (null before it exists), and
+  // that the tab's profile's history changed (the Recently visited menu).
+  virtual HistoryService* TabHistory() = 0;
+  virtual void OnTabHistoryChanged(Tab& tab) = 0;
 
  protected:
   virtual ~TabHost() = default;
@@ -86,6 +91,12 @@ class Tab final : public TabClientDelegate,
   // Chrome's "Restore pages?" after a crash (015); `restore` runs on
   // Restore.
   void ShowRestorePagesPanel(std::function<void()> restore);
+  // The next visit was typed in the address bar (013: CEF has no "typed"
+  // transition of its own).
+  void MarkNextVisitTyped() { next_visit_typed_ = true; }
+  // The tab's browser, for the DevTools protocol (clearing site data);
+  // null before it exists.
+  CefRefPtr<CefBrowser> browser() const { return browser_; }
   void SetBounds(const RECT& bounds);
   void SetVisible(bool visible);
   // The icon again at a new size (the window's DPI changed).
@@ -287,6 +298,11 @@ class Tab final : public TabClientDelegate,
   // A restored tab's context until its browser is created.
   CefRefPtr<CefRequestContext> deferred_context_;
   std::unique_ptr<TabPanel> restore_pages_;
+  // History (013): how the next visit started, and the last visit (a page
+  // that forwards by itself is not kept, only the end of the chain).
+  bool next_visit_typed_ = false;
+  std::string last_visit_url_;
+  VisitTransition last_visit_kind_ = VisitTransition::kOther;
   std::unique_ptr<TabPanel> js_dialog_;
   // The dialog came while no page was loading: a new navigation cancels it.
   bool js_dialog_while_idle_ = false;

@@ -4,14 +4,18 @@
 
 #include <algorithm>
 #include <array>
+#include <charconv>
 #include <chrono>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <format>
+#include <set>
 #include <system_error>
 #include <utility>
 
 #include "cef/browser_app.h"
+#include "cef/browsing_data.h"
 #include "cef/function_task.h"
 #include "cef/help_link.h"
 #include "cef/help_page_handler.h"
@@ -24,6 +28,7 @@
 #include "core/search_engines.h"
 #include "core/settings_export.h"
 #include "core/text_file.h"
+#include "core/url_pattern.h"
 #include "include/base/cef_logging.h"
 #include "include/cef_app.h"
 #include "include/cef_command_line.h"
@@ -43,6 +48,111 @@ constexpr std::uintmax_t kMaxProfileExportBytes = 16 * 1024 * 1024;
 // Settings exports too (as on macOS).
 constexpr std::uintmax_t kMaxSettingsExportBytes = 1024 * 1024;
 
+// Puts `text` on the clipboard (the history page's "Copy as CSV").
+void SetClipboardText(HWND owner, const std::wstring& text) {
+  if (!OpenClipboard(owner)) {
+    return;
+  }
+  EmptyClipboard();
+  const SIZE_T bytes = (text.size() + 1) * sizeof(wchar_t);
+  if (HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, bytes)) {
+    if (void* data = GlobalLock(memory)) {
+      std::memcpy(data, text.c_str(), bytes);
+      GlobalUnlock(memory);
+      // The clipboard owns the memory once it has taken it.
+      if (!SetClipboardData(CF_UNICODETEXT, memory)) {
+        GlobalFree(memory);
+      }
+    } else {
+      GlobalFree(memory);
+    }
+  }
+  CloseClipboard();
+}
+
+// The size of a folder and everything in it, in bytes.
+std::int64_t FolderSize(const std::filesystem::path& folder) {
+  std::int64_t total = 0;
+  std::error_code error;
+  for (auto it = std::filesystem::recursive_directory_iterator(
+           folder, std::filesystem::directory_options::skip_permission_denied,
+           error);
+       !error && it != std::filesystem::recursive_directory_iterator();
+       it.increment(error)) {
+    std::error_code size_error;
+    if (it->is_regular_file(size_error)) {
+      const std::uintmax_t size = it->file_size(size_error);
+      if (!size_error) {
+        total += static_cast<std::int64_t>(size);
+      }
+    }
+  }
+  return total;
+}
+
+// Answers one history tab's page (013). Actions go to the app and the
+// window holding the tab, if it is still open.
+class AppHistoryPage final : public HistoryPageDelegate {
+ public:
+  AppHistoryPage(App& app, BrowserWindow& window, TabId tab)
+      : app_(app), window_(&window), tab_(tab) {}
+
+  std::vector<ProfileInfo> Profiles() override { return app_.ProfileList(); }
+  HistoryService* History() override { return app_.History(); }
+  void OpenPage(const ProfileId& profile,
+                const std::string& url,
+                bool new_tab) override {
+    if (app_.IsOpenWindow(window_)) {
+      window_->OpenPageFromTab(tab_, profile, url, new_tab);
+    } else {
+      app_.OpenWindow(url, profile);
+    }
+  }
+  std::string View() override { return app_.HistoryView(); }
+  void SetView(const std::string& view) override {
+    app_.SetGlobalSetting("history.view", SettingValue(view));
+  }
+  void CopyText(const std::string& text) override {
+    SetClipboardText(app_.IsOpenWindow(window_) ? window_->hwnd() : nullptr,
+                     Utf8ToWide(text));
+  }
+  ProfileId CurrentProfile() override {
+    return app_.IsOpenWindow(window_) ? window_->ProfileOfTab(tab_)
+                                      : app_.DefaultProfile();
+  }
+  std::vector<std::string> KeepList(const ProfileId& profile) override {
+    return app_.KeepList(profile);
+  }
+  void SetKeepList(const ProfileId& profile,
+                   const std::vector<std::string>& hosts) override {
+    std::string joined;
+    for (const std::string& host : hosts) {
+      joined += joined.empty() ? host : ", " + host;
+    }
+    app_.SetProfileSetting(profile, "history.keep_list", SettingValue(joined));
+  }
+  void PreviewProfileData(const ProfileId& profile,
+                          std::int64_t since,
+                          DataPreviewDone done) override {
+    app_.PreviewProfileData(profile, since, std::move(done));
+  }
+  void ClearProfileData(const ProfileId& profile,
+                        std::int64_t since,
+                        bool cookies_and_site_data,
+                        bool cache,
+                        std::set<std::string> sites,
+                        std::function<void(bool)> done) override {
+    app_.ClearProfileData(profile, since, cookies_and_site_data, cache,
+                          std::move(sites), std::move(done));
+  }
+
+ private:
+  App& app_;
+  // Checked with IsOpenWindow before use: the window may close first.
+  BrowserWindow* window_;
+  TabId tab_;
+};
+
 }  // namespace
 
 App::App() : profiles_(AppDataDirectory()) {
@@ -57,6 +167,12 @@ void App::OnContextInitialized() {
       .open_help = [this](const std::string& anchor) { OpenHelp(anchor); },
       .open_web_link = [this](const std::string& url) { OpenWebLink(url); },
   });
+  // History (013): one database per profile, as on macOS.
+  const std::filesystem::path profiles_dir = AppDataDirectory() / L"profiles";
+  history_ = std::make_unique<HistoryService>(
+      [profiles_dir](const ProfileId& profile) {
+        return profiles_dir / profile / "history.db";
+      });
   ApplySettings();
   // Changes made in the files apply while Brouk runs (004).
   settings_watcher_ = std::make_unique<SettingsWatcher>(
@@ -358,6 +474,7 @@ void App::ReleaseBrowserObjects() {
   profiles_window_.reset();
   settings_window_.reset();
   windows_.clear();
+  history_.reset();  // Finishes queued history work, closes the databases.
   contexts_.clear();
   internal_context_ = nullptr;
 }
@@ -415,12 +532,169 @@ CefRefPtr<CefRequestContext> App::InternalContext() {
 }
 
 std::unique_ptr<CefMessageRouterBrowserSide::Handler> App::InternalPageHandler(
-    const std::string& page) {
+    const std::string& page,
+    BrowserWindow& window,
+    TabId tab) {
   // The other pages come with their features (024, W2 and W3).
   if (page == "credits") {
     return std::make_unique<StaticPageHandler>();
   }
+  if (page == "history" && history_) {
+    return std::make_unique<HistoryPageHandler>(
+        std::make_unique<AppHistoryPage>(*this, window, tab));
+  }
   return nullptr;
+}
+
+HistoryService* App::History() {
+  return history_.get();
+}
+
+void App::OnHistoryChanged(const ProfileId& profile) {
+  if (!history_) {
+    return;
+  }
+  // Read in the background; the menu shows the result next time.
+  history_->RecentPages(profile, 10,
+                        [this, profile](std::vector<HistoryMatch> pages) {
+                          recent_pages_[profile] = std::move(pages);
+                        });
+}
+
+const std::vector<HistoryMatch>* App::RecentPages(const ProfileId& profile) {
+  auto it = recent_pages_.find(profile);
+  if (it == recent_pages_.end()) {
+    OnHistoryChanged(profile);
+    return nullptr;
+  }
+  return &it->second;
+}
+
+std::string App::HistoryView() const {
+  return profiles_.global_settings().GetString("history.view");
+}
+
+std::vector<std::string> App::KeepList(const ProfileId& profile) {
+  std::vector<std::string> hosts;
+  std::optional<Settings> settings = profiles_.ProfileSettings(profile);
+  if (!settings) {
+    return hosts;
+  }
+  for (const UrlPattern& pattern :
+       ParseUrlPatternList(settings->GetString("history.keep_list"))
+           .value_or(std::vector<UrlPattern>{})) {
+    hosts.push_back(pattern.host);
+  }
+  return hosts;
+}
+
+// Cookies are read and deleted with a browser of the profile running: a
+// profile's network context (and its cookies) exists only then.
+void App::PreviewProfileData(const ProfileId& profile,
+                             std::int64_t since,
+                             HistoryPageDelegate::DataPreviewDone done) {
+  CEF_REQUIRE_UI_THREAD();
+  const std::filesystem::path cache =
+      ProfileWebDataDirectory(profile) / L"Cache";
+  CefRefPtr<CefRequestContext> context = RequestContext(profile);
+  auto shared =
+      std::make_shared<HistoryPageDelegate::DataPreviewDone>(std::move(done));
+  WithBrowserInProfile(profile, [context, since, cache, shared](
+                                    CefRefPtr<CefBrowser> /*browser*/,
+                                    std::function<void()> release) {
+    VisitCookiesSince(
+        context, since, /*remove=*/false,
+        [cache, shared, release](int cookies, std::set<std::string> /*hosts*/) {
+          release();
+          // The cache can hold many files: counted on a file thread.
+          CefPostTask(TID_FILE_USER_BLOCKING,
+                      new FunctionTask([cache, shared, cookies] {
+                        const std::int64_t bytes = FolderSize(cache);
+                        CefPostTask(TID_UI,
+                                    new FunctionTask([shared, cookies, bytes] {
+                                      (*shared)(cookies, bytes);
+                                    }));
+                      }));
+        });
+  });
+}
+
+void App::ClearProfileData(const ProfileId& profile,
+                           std::int64_t since,
+                           bool cookies,
+                           bool cache,
+                           std::set<std::string> sites,
+                           std::function<void(bool cookies_ok)> done) {
+  CEF_REQUIRE_UI_THREAD();
+  CefRefPtr<CefRequestContext> context = RequestContext(profile);
+  auto finish = std::make_shared<std::function<void(bool)>>(std::move(done));
+  auto cookies_ok = std::make_shared<bool>(true);
+  // The cache last (it does not depend on the rest).
+  auto clear_cache = [context, cache, finish, cookies_ok] {
+    if (cache) {
+      ClearHttpCache(context, [finish, cookies_ok] { (*finish)(*cookies_ok); });
+    } else {
+      (*finish)(*cookies_ok);
+    }
+  };
+  if (!cookies) {
+    clear_cache();
+    return;
+  }
+  auto shared_sites = std::make_shared<std::set<std::string>>(std::move(sites));
+  WithBrowserInProfile(profile, [context, since, shared_sites, clear_cache,
+                                 cookies_ok](CefRefPtr<CefBrowser> browser,
+                                             std::function<void()> release) {
+    VisitCookiesSince(context, since, /*remove=*/true,
+                      [browser, release, shared_sites, clear_cache, cookies_ok](
+                          int count, std::set<std::string> cookie_hosts) {
+                        *cookies_ok = count >= 0;
+                        shared_sites->insert(cookie_hosts.begin(),
+                                             cookie_hosts.end());
+                        ClearSiteData(browser, OriginsOfHosts(*shared_sites),
+                                      [release, clear_cache] {
+                                        release();
+                                        clear_cache();
+                                      });
+                      });
+  });
+}
+
+void App::WithBrowserInProfile(
+    const ProfileId& profile,
+    std::function<void(CefRefPtr<CefBrowser> browser,
+                       std::function<void()> release)> work) {
+  CEF_REQUIRE_UI_THREAD();
+  for (const std::unique_ptr<BrowserWindow>& window : windows_) {
+    if (CefRefPtr<CefBrowser> browser = window->AnyBrowserInProfile(profile)) {
+      work(browser, [] {});
+      return;
+    }
+  }
+  // A hidden window holds the helper browser until it has closed.
+  HWND hidden =
+      CreateWindowExW(0, L"STATIC", L"", WS_POPUP, 0, 0, 200, 200, nullptr,
+                      nullptr, GetModuleHandleW(nullptr), nullptr);
+  if (!hidden) {
+    work(nullptr, [] {});
+    return;
+  }
+  ++helper_browsers_;
+  CefRefPtr<CefClient> client = MakeHelperBrowserClient(
+      [work](CefRefPtr<CefBrowser> browser) {
+        work(browser, [browser] { browser->GetHost()->CloseBrowser(true); });
+      },
+      [this, hidden] {
+        DestroyWindow(hidden);
+        --helper_browsers_;
+        QuitWhenDone();
+      });
+  CefWindowInfo info;
+  info.SetAsChild(hidden, CefRect(0, 0, 200, 200));
+  info.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
+  CefBrowserSettings settings;
+  CefBrowserHost::CreateBrowser(info, client, "about:blank", settings, nullptr,
+                                RequestContext(profile));
 }
 
 void App::OpenHelp(const std::string& anchor) {
@@ -555,9 +829,9 @@ void App::OnWindowDestroyed(BrowserWindow* window) {
 }
 
 void App::QuitWhenDone() {
-  if (quitting_ && std::ranges::none_of(PageWindows(), [](const auto* page) {
-        return *page != nullptr;
-      })) {
+  if (quitting_ && helper_browsers_ == 0 &&
+      std::ranges::none_of(PageWindows(),
+                           [](const auto* page) { return *page != nullptr; })) {
     SaveSessionAtQuit();
     CefQuitMessageLoop();
   }
@@ -702,6 +976,10 @@ void App::DeleteProfile(const ProfileId& id, DeleteDone done) {
                   window->CloseTabsInProfile(id);
                 }
                 closed_tabs_.RemoveProfile(id);
+                recent_pages_.erase(id);
+                if (history_) {
+                  history_->CloseProfile(id);  // Before its folder goes.
+                }
                 contexts_.erase(id);
                 // The web data goes at the next start, when Chromium no
                 // longer uses it.
@@ -846,6 +1124,19 @@ void App::ApplySettings() {
                              : theme == "dark" ? ThemeChoice::kDark
                                                : ThemeChoice::kSystem;
   SetThemeChoice(choice);
+  if (history_) {
+    const std::string& keep = global.GetString("history.keep");
+    history_->SetNeverRecord(
+        ParseUrlPatternList(global.GetString("history.never_record"))
+            .value_or(std::vector<UrlPattern>{}));
+    // A choice the settings schema has validated: days, or "forever".
+    int days = 0;
+    const bool is_days =
+        std::from_chars(keep.data(), keep.data() + keep.size(), days).ec ==
+        std::errc();
+    history_->SetRetentionDays(is_days && days > 0 ? std::optional<int>(days)
+                                                   : std::nullopt);
+  }
   // Web pages' prefers-color-scheme, and Chromium's own pages.
   color_variant_ = choice == ThemeChoice::kLight  ? CEF_COLOR_VARIANT_LIGHT
                    : choice == ThemeChoice::kDark ? CEF_COLOR_VARIANT_DARK
@@ -938,8 +1229,22 @@ void App::RevealSettingsFolder() {
   }
 }
 
+// History → Clear browsing data and the settings page: the dialog on the
+// history page of the front window (013).
 void App::OpenClearBrowsingData() {
-  // Clearing browsing data (013) comes with history (W2).
+  CEF_REQUIRE_UI_THREAD();
+  if (quitting_) {
+    return;
+  }
+  BrowserWindow* front = FrontWindow();
+  if (!front) {
+    OpenWindow(std::string(), ProfileId());
+    front = FrontWindow();
+  }
+  if (front) {
+    front->OpenInternalPage("brouk://history/#clear");
+    front->Activate();
+  }
 }
 
 AdblockService* App::Adblock() {
