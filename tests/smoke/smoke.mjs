@@ -123,7 +123,7 @@ function sendKeys(title, keys, { windowsOf: pid, thenKeys = [] } = {}) {
           // The address bar's suggestion list, an owned tool window that
           // UI Automation does not list at the top level.
           "Add-Type -Namespace Smoke -Name Win -MemberDefinition '[DllImport(\"user32.dll\", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string c, string n); [DllImport(\"user32.dll\")] public static extern bool IsWindowVisible(IntPtr h);'",
-          '$s = [Smoke.Win]::FindWindow("BroukSuggestions", $null)',
+          '$s = [Smoke.Win]::FindWindow("BroukSuggestions", "Suggestions")',
           'Write-Output "suggestions visible: $($s -ne [IntPtr]::Zero -and [Smoke.Win]::IsWindowVisible($s))"',
           ...(thenKeys.length ? [typed(thenKeys), 'Write-Output "then focus: $(Get-Focus)"'] : []),
         ]
