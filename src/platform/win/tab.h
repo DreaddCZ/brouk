@@ -94,9 +94,6 @@ class Tab final : public TabClientDelegate,
   // The next visit was typed in the address bar (013: CEF has no "typed"
   // transition of its own).
   void MarkNextVisitTyped() { next_visit_typed_ = true; }
-  // The tab's browser, for the DevTools protocol (clearing site data);
-  // null before it exists.
-  CefRefPtr<CefBrowser> browser() const { return browser_; }
   void SetBounds(const RECT& bounds);
   void SetVisible(bool visible);
   // The icon again at a new size (the window's DPI changed).
