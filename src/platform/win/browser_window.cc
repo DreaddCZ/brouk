@@ -777,7 +777,7 @@ void BrowserWindow::AddBookmark(BookmarkId folder, std::size_t index) {
                           values.folder == folder ? index : BookmarkModel::kEnd,
                           values.name.empty() ? values.url : values.name,
                           values.url, values.profile, NowSeconds())
-                      .has_value();
+                      .ok();
         });
         if (!added) {
           MessageBeep(MB_ICONWARNING);  // Not a valid address.
@@ -884,6 +884,7 @@ void BrowserWindow::BookmarkPage() {
   options.kind = BookmarkDialog::Kind::kBubble;
   options.title = added ? L"Bookmark added" : L"Edit bookmark";
   options.values = {.name = item->name,
+                    .url = item->url,
                     .folder = item->parent,
                     .profile = store->model().EffectiveProfile(bookmark)};
   options.active_profile = profile;
@@ -949,7 +950,8 @@ void BrowserWindow::BookmarkAllTabs() {
   BookmarkDialog::Options options;
   options.kind = BookmarkDialog::Kind::kNewFolder;
   options.title = L"Bookmark all tabs";
-  options.values = {.name = "", .folder = folder, .profile = profile};
+  options.values = {
+      .name = "", .url = "", .folder = folder, .profile = profile};
   options.active_profile = profile;
   options.profiles = owner_.ProfileList();
   bookmark_dialog_ = std::make_unique<BookmarkDialog>(
