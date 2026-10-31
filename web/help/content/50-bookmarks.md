@@ -7,6 +7,8 @@
 - Deleting a bookmark anywhere shows **Undo** for a few seconds; <kbd>⌘Z</kbd> on the bookmark manager undoes it too.
 - Bookmarks show their site's icon once you have visited the site in that profile.
 
+**On Windows:** <kbd>Ctrl+D</kbd> or the star bookmarks the page, <kbd>Ctrl+Shift+D</kbd> bookmarks all tabs, <kbd>Ctrl+Shift+O</kbd> opens the bookmark manager, and "⋮" → Bookmarks lists the bar's bookmarks and Other bookmarks. The bookmarks bar itself comes later.
+
 ### Bookmarks and profiles {#bookmarks-profiles}
 
 There is one bookmark tree for the whole app. Each bookmark or folder is either **General** — shown in every profile — or **linked to one profile**: shown only where the active tab belongs to that profile, and always opened in it.

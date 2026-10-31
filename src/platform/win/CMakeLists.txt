@@ -11,6 +11,10 @@ set(APP_DIR "${CMAKE_BINARY_DIR}/${APP_NAME}")
 add_library(brouk_app SHARED
   app.cc
   app.h
+  bookmark_dialog.cc
+  bookmark_dialog.h
+  bookmark_store.cc
+  bookmark_store.h
   browser_window.cc
   browser_window.h
   controls.cc

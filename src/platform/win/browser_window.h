@@ -22,6 +22,8 @@
 #include "core/session.h"
 #include "core/tab_strip_model.h"
 #include "include/cef_request_context.h"
+#include "platform/win/bookmark_dialog.h"
+#include "platform/win/bookmark_store.h"
 #include "platform/win/suggestions_popup.h"
 #include "platform/win/tab.h"
 #include "platform/win/tab_panel.h"
@@ -31,6 +33,15 @@
 namespace brouk::win {
 
 class BrowserWindow;
+
+// Where a bookmark opens (011): click, Ctrl-click or middle-click,
+// Ctrl+Shift-click, "Open in new window".
+enum class BookmarkOpen {
+  kCurrentTab,
+  kBackgroundTab,
+  kForegroundTab,
+  kNewWindow,
+};
 
 // The app, as the browser windows see it. UI thread.
 class BrowserWindowOwner {
@@ -79,6 +90,10 @@ class BrowserWindowOwner {
   virtual DownloadTarget ReserveDownloadPath(const std::string& suggested,
                                              const ProfileId& profile) = 0;
   virtual void ReleaseDownloadPath(const std::string& path) = 0;
+  // Bookmarks (011): the app's store (null before CEF is ready), and
+  // whether address bar suggestions include them.
+  virtual BookmarkStore* Bookmarks() = 0;
+  virtual bool BookmarkSuggestionsEnabled() = 0;
   virtual const std::vector<ProfileInfo>& ProfileList() = 0;
   // Opens the profile manager (brouk://profiles, 005) in its own window.
   virtual void OpenProfileManager() = 0;
@@ -170,6 +185,12 @@ class BrowserWindow final : public TabHost {
   // or loads its address in a new tab.
   void DownloadsChanged();
   void RetryDownload(const DownloadEntry& entry);
+  // Bookmarks (011): the star follows the bookmarks; a bookmark opens in
+  // its linked profile, or a general one in the active tab's (from the
+  // manager page in tab `from`: in place of it when it may).
+  void BookmarksChanged();
+  void OpenBookmark(BookmarkId id, BookmarkOpen how);
+  void OpenBookmarkFromTab(TabId from, BookmarkId id, bool new_tab);
   // Removes a tab whose browser never came (the popup was aborted).
   void RemoveUncreatedTab(TabId id);
   Tab* FindTab(TabId id);
@@ -248,6 +269,21 @@ class BrowserWindow final : public TabHost {
   void DrawDownloadsButton(const DRAWITEMSTRUCT& item);
   // The downloads page (brouk://downloads, Ctrl+J); everything is seen.
   void ShowDownloads();
+  // Bookmarks (011): whether a tab's page can be bookmarked (a web or file
+  // page); Ctrl+D (the star): bookmarks the page, or edits its bookmark, in
+  // a bubble under the star; Ctrl+Shift+D: the active profile's tabs into
+  // a new folder; the "⋮" → Bookmarks submenu with the bar and Other
+  // bookmarks, folders as submenus (`ids` maps its commands).
+  bool CanBookmark(const Tab* tab) const;
+  void BookmarkPage();
+  void BookmarkAllTabs();
+  void AppendBookmarkMenu(HMENU menu,
+                          BookmarkId folder,
+                          const ProfileId& profile,
+                          std::vector<BookmarkId>& ids);
+  // The bubble or folder dialog closed: deleted from a task.
+  void CloseBookmarkDialog();
+  RECT StarScreenRect() const;
   // The indicators at the right of the address bar: zoom ("110 %", click
   // resets to 100 %) and "Pop-ups blocked" (click lists them).
   void DrawIndicator(const DRAWITEMSTRUCT& item);
@@ -341,6 +377,8 @@ class BrowserWindow final : public TabHost {
   HWND reload_ = nullptr;
   HWND menu_ = nullptr;
   HWND downloads_ = nullptr;
+  HWND star_ = nullptr;  // In the address bar (011).
+  std::unique_ptr<BookmarkDialog> bookmark_dialog_;
   HWND zoom_ = nullptr;
   HWND popups_ = nullptr;
   // Tab titles and the strip's buttons on hover.

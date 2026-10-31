@@ -85,6 +85,8 @@ class App final : public BrowserWindowOwner,
   std::string SearchSuggestTemplate() override;
   bool HistorySuggestionsEnabled() override;
   DownloadService* Downloads() override;
+  BookmarkStore* Bookmarks() override;
+  bool BookmarkSuggestionsEnabled() override;
   bool AskWhereToSaveDownloads() override;
   DownloadTarget ReserveDownloadPath(const std::string& suggested,
                                      const ProfileId& profile) override;
@@ -169,6 +171,9 @@ class App final : public BrowserWindowOwner,
   bool ConfirmQuitWithDownloads(HWND owner);
   // The windows' downloads buttons and the open downloads pages follow.
   void DownloadsChanged();
+  // The windows' stars follow; bookmarked pages keep their icons in the
+  // history.
+  void BookmarksChanged();
   // A browser of `profile` for the DevTools protocol: one of its tabs, or a
   // hidden helper browser that `release` closes again (013).
   void WithBrowserInProfile(
@@ -225,6 +230,8 @@ class App final : public BrowserWindowOwner,
   std::map<ProfileId, std::vector<HistoryMatch>> recent_pages_;
   // Hidden helper browsers still open (clearing data); Brouk quits after.
   int helper_browsers_ = 0;
+  // Bookmarks (011), for the whole app; made when CEF is ready.
+  std::unique_ptr<BookmarkStore> bookmarks_;
   // Downloads (014): every download of the app, recorded in the history;
   // unique paths of the running ones; open downloads pages.
   std::unique_ptr<DownloadService> downloads_;

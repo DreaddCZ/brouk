@@ -16,6 +16,7 @@
 #include <utility>
 
 #include "brouk/app_info.h"
+#include "cef/bookmarks_page_handler.h"
 #include "cef/browser_app.h"
 #include "cef/browsing_data.h"
 #include "cef/downloads_page_handler.h"
@@ -26,6 +27,7 @@
 #include "cef/profile_manager_handler.h"
 #include "cef/static_page_handler.h"
 #include "core/address_input.h"
+#include "core/bookmark_profile.h"
 #include "core/help.h"
 #include "core/profile_export.h"
 #include "core/search_engines.h"
@@ -50,6 +52,14 @@ namespace {
 constexpr std::uintmax_t kMaxProfileExportBytes = 16 * 1024 * 1024;
 // Settings exports too (as on macOS).
 constexpr std::uintmax_t kMaxSettingsExportBytes = 1024 * 1024;
+// Bookmark files from other browsers can be large; more is not one.
+constexpr std::uintmax_t kMaxBookmarkHtmlBytes = 64 * 1024 * 1024;
+
+std::int64_t NowSeconds() {
+  return std::chrono::duration_cast<std::chrono::seconds>(
+             std::chrono::system_clock::now().time_since_epoch())
+      .count();
+}
 
 // Puts `text` on the clipboard (the history page's "Copy as CSV").
 void SetClipboardText(HWND owner, const std::wstring& text) {
@@ -226,6 +236,129 @@ class AppDownloadsPage final : public DownloadsPageDelegate {
   int watcher_ = 0;
 };
 
+// Answers one bookmark manager tab's page (011): the app's bookmarks, and
+// opening and file dialogs through the window holding the tab.
+class AppBookmarksPage final : public BookmarksPageDelegate {
+ public:
+  AppBookmarksPage(App& app, BrowserWindow& window, TabId tab)
+      : app_(app), window_(&window), tab_(tab) {}
+  ~AppBookmarksPage() override {
+    if (BookmarkStore* store = app_.Bookmarks(); store && watcher_) {
+      store->Unwatch(watcher_);
+    }
+  }
+  AppBookmarksPage(const AppBookmarksPage&) = delete;
+  AppBookmarksPage& operator=(const AppBookmarksPage&) = delete;
+
+  std::vector<ProfileInfo> Profiles() override { return app_.ProfileList(); }
+  ProfileId CurrentProfile() override {
+    return app_.IsOpenWindow(window_) ? window_->ProfileOfTab(tab_)
+                                      : app_.DefaultProfile();
+  }
+  // The store goes before the pages at quit: each call looks it up.
+  const BookmarkModel& Model() override {
+    static const BookmarkModel kEmpty;
+    BookmarkStore* store = app_.Bookmarks();
+    return store ? store->model() : kEmpty;
+  }
+  void Change(const std::function<void(BookmarkModel&)>& change) override {
+    if (BookmarkStore* store = app_.Bookmarks()) {
+      store->Change(change);
+    }
+  }
+  void Remove(const std::vector<BookmarkId>& ids) override {
+    if (BookmarkStore* store = app_.Bookmarks()) {
+      store->Remove(ids);
+    }
+  }
+  bool Undo() override {
+    BookmarkStore* store = app_.Bookmarks();
+    if (!store || !store->CanUndoRemove()) {
+      return false;
+    }
+    store->UndoRemove();
+    return true;
+  }
+  void Open(BookmarkId id, bool new_tab) override {
+    if (app_.IsOpenWindow(window_)) {
+      window_->OpenBookmarkFromTab(tab_, id, new_tab);
+    }
+  }
+  void Favicons(const ProfileId& profile,
+                std::vector<std::string> urls,
+                IconsDone done) override {
+    HistoryService* history = app_.History();
+    if (!history) {
+      done({});
+      return;
+    }
+    history->Favicons(profile, std::move(urls), std::move(done));
+  }
+  void Watch(std::function<void()> changed) override {
+    BookmarkStore* store = app_.Bookmarks();
+    if (!store) {
+      return;
+    }
+    if (watcher_) {
+      store->Unwatch(watcher_);
+    }
+    watcher_ = store->Watch(std::move(changed));
+  }
+  void SaveHtml(std::string html, SaveDone done) override {
+    FileDialogOptions options;
+    options.title = L"Export Bookmarks";
+    options.type_name = L"HTML bookmark file";
+    options.extension = L"html";
+    options.file_name = L"Bookmarks";
+    HWND owner = app_.IsOpenWindow(window_) ? window_->hwnd() : nullptr;
+    // Asked from a task: the dialog runs its own message loop, which must
+    // not run inside the page's request.
+    CefPostTask(TID_UI, new FunctionTask([options, owner, html, done] {
+                  std::optional<std::filesystem::path> path =
+                      AskSavePath(owner, options);
+                  if (!path) {
+                    done(false, std::nullopt);
+                    return;
+                  }
+                  std::optional<Error> error =
+                      WriteTextFileAtomically(*path, html);
+                  done(!error, error);
+                }));
+  }
+  void OpenHtml(OpenDone done) override {
+    FileDialogOptions options;
+    options.title = L"Import Bookmarks";
+    options.type_name = L"HTML bookmark file";
+    options.extension = L"html";
+    options.note =
+        L"An HTML bookmark file, as exported by Chrome, Edge or Firefox. The "
+        L"bookmarks go into \u201CImported\u201D under Other bookmarks.";
+    HWND owner = app_.IsOpenWindow(window_) ? window_->hwnd() : nullptr;
+    CefPostTask(TID_UI, new FunctionTask([options, owner, done] {
+                  std::optional<std::filesystem::path> path =
+                      AskOpenPath(owner, options);
+                  if (!path) {
+                    done(std::nullopt, std::nullopt);
+                    return;
+                  }
+                  Result<std::string> text =
+                      ReadTextFile(*path, kMaxBookmarkHtmlBytes);
+                  if (!text) {
+                    done(std::nullopt, text.error());
+                    return;
+                  }
+                  done(std::move(text.value()), std::nullopt);
+                }));
+  }
+
+ private:
+  App& app_;
+  // Checked with IsOpenWindow before use: the window may close first.
+  BrowserWindow* window_;
+  TabId tab_;
+  int watcher_ = 0;
+};
+
 // Answers one history tab's page (013). Actions go to the app and the
 // window holding the tab, if it is still open.
 class AppHistoryPage final : public HistoryPageDelegate {
@@ -314,6 +447,12 @@ void App::OnContextInitialized() {
       [profiles_dir](const ProfileId& profile) {
         return profiles_dir / profile / "history.db";
       });
+  // Bookmarks (011), one file for the app, as on macOS.
+  bookmarks_ =
+      std::make_unique<BookmarkStore>(AppDataDirectory() / L"bookmarks.json");
+  bookmarks_->Watch([this] { BookmarksChanged(); });
+  // Bookmarked pages keep their icons when they leave the history.
+  history_->SetKeptIconPages(bookmarks_->model().AllUrls());
   // Downloads (014), recorded in the history.
   downloads_ = std::make_unique<DownloadService>(history_.get());
   downloads_->SetChangedCallback([this] { DownloadsChanged(); });
@@ -626,6 +765,7 @@ void App::ReleaseBrowserObjects() {
   profiles_window_.reset();
   settings_window_.reset();
   windows_.clear();
+  bookmarks_.reset();  // Writes pending changes.
   download_watchers_.clear();
   downloads_.reset();  // Before the history it records into.
   history_.reset();    // Finishes queued history work, closes the databases.
@@ -693,6 +833,10 @@ std::unique_ptr<CefMessageRouterBrowserSide::Handler> App::InternalPageHandler(
   if (page == "credits") {
     return std::make_unique<StaticPageHandler>();
   }
+  if (page == "bookmarks" && bookmarks_) {
+    return std::make_unique<BookmarksPageHandler>(
+        std::make_unique<AppBookmarksPage>(*this, window, tab));
+  }
   if (page == "downloads" && downloads_) {
     return std::make_unique<DownloadsPageHandler>(
         std::make_unique<AppDownloadsPage>(*this, window, tab));
@@ -726,6 +870,23 @@ const std::vector<HistoryMatch>* App::RecentPages(const ProfileId& profile) {
     return nullptr;
   }
   return &it->second;
+}
+
+BookmarkStore* App::Bookmarks() {
+  return bookmarks_.get();
+}
+
+bool App::BookmarkSuggestionsEnabled() {
+  return profiles_.global_settings().GetBool("suggestions.bookmarks");
+}
+
+void App::BookmarksChanged() {
+  for (const std::unique_ptr<BrowserWindow>& window : windows_) {
+    window->BookmarksChanged();
+  }
+  if (history_ && bookmarks_) {
+    history_->SetKeptIconPages(bookmarks_->model().AllUrls());
+  }
 }
 
 DownloadService* App::Downloads() {
@@ -1201,6 +1362,14 @@ void App::DeleteProfile(const ProfileId& id, DeleteDone done) {
     text += L" Its " + std::to_wstring(tabs) + L" open " +
             (tabs == 1 ? L"tab" : L"tabs") + L" will close.";
   }
+  // Its linked bookmarks stay, as general ones (011).
+  if (const int linked = bookmarks_ ? bookmarks_->model().CountLinkedTo(id) : 0;
+      linked > 0) {
+    text += L" " + std::to_wstring(linked) +
+            (linked == 1 ? L" bookmark or folder linked to it becomes"
+                         : L" bookmarks and folders linked to it become") +
+            L" general.";
+  }
   const std::wstring title =
       L"Delete the profile \u201C" + Utf8ToWide(info->name) + L"\u201D?";
   // Asked from a task: the message box runs its own message loop, which
@@ -1218,6 +1387,10 @@ void App::DeleteProfile(const ProfileId& id, DeleteDone done) {
                   window->CloseTabsInProfile(id);
                 }
                 closed_tabs_.RemoveProfile(id);
+                if (bookmarks_) {
+                  bookmarks_->Change(
+                      [&id](BookmarkModel& model) { model.UnlinkProfile(id); });
+                }
                 recent_pages_.erase(id);
                 if (history_) {
                   history_->CloseProfile(id);  // Before its folder goes.
@@ -1238,20 +1411,22 @@ void App::ExportProfile(const ProfileId& id, ExportDone done) {
     done(false, Error{"There is no such profile."});
     return;
   }
-  // Bookmarks (011) and passwords (008) come to Windows later; the file
-  // then has the profile's settings only.
+  // Passwords (008) come to Windows later; the file then has the
+  // profile's settings and bookmarks.
   const std::string exported_at =
       std::format("{:%FT%TZ}", std::chrono::floor<std::chrono::seconds>(
                                    std::chrono::system_clock::now()));
-  std::string text = brouk::ExportProfile(*settings, exported_at);
+  const YamlNode bookmarks =
+      bookmarks_ ? ExportProfileBookmarks(bookmarks_->model(), id) : YamlNode();
+  std::string text = brouk::ExportProfile(*settings, exported_at, bookmarks);
   FileDialogOptions options;
   options.title = L"Export \u201C" + Utf8ToWide(info->name) + L"\u201D";
   options.type_name = L"Brouk profile";
   options.extension = Utf8ToWide(kProfileExportExtension);
   options.file_name = SafeFileName(Utf8ToWide(info->name));
   options.note =
-      L"The file contains the profile's name, colour and settings. It "
-      L"contains no sign-ins, cookies or cache.";
+      L"The file contains the profile's name, colour, settings and the "
+      L"bookmarks linked to it. It contains no sign-ins, cookies or cache.";
   // Asked from a task: the dialog runs its own message loop, which must not
   // run inside the page's request.
   HWND owner = DialogOwner();
@@ -1300,10 +1475,15 @@ void App::ImportProfile(ImportDone done) {
           return;
         }
         std::vector<std::string> problems = parsed.value().problems;
-        if (parsed.value().bookmarks) {
-          problems.emplace_back(
-              "The bookmarks were not imported: Brouk on Windows "
-              "has no bookmarks yet.");
+        if (parsed.value().bookmarks && bookmarks_) {
+          const ProfileId profile = created.value();
+          ProfileBookmarksImport imported;
+          bookmarks_->Change([&](BookmarkModel& model) {
+            imported = ImportProfileBookmarks(model, *parsed.value().bookmarks,
+                                              profile, NowSeconds());
+          });
+          problems.insert(problems.end(), imported.problems.begin(),
+                          imported.problems.end());
         }
         if (parsed.value().passwords) {
           problems.emplace_back(

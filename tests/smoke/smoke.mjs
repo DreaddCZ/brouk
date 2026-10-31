@@ -707,6 +707,45 @@ async function main() {
       // Back to the test page's tab for the tests that follow.
       sendKeys('Downloads', ['^w']);
     }
+
+    // Bookmarks (011): Ctrl+D bookmarks the page at once (the bubble
+    // opens over it), and Ctrl+Shift+O lists it in the bookmark manager.
+    sendKeys('Downloads test', ['^d', '{ENTER}']);
+    const bookmarksFile = join(dataDir, 'bookmarks.json');
+    let bookmarked = false;
+    for (let i = 0; i < 20 && !bookmarked; i++) {
+      await sleep(500);
+      try {
+        bookmarked = readFileSync(bookmarksFile, 'utf8').includes('/downloads.html');
+      } catch {
+        // Not written yet.
+      }
+    }
+    check(bookmarked, 'Ctrl+D bookmarks the page (bookmarks.json)');
+    sendKeys('Downloads test', ['^+o']);
+    let managerTarget;
+    for (let i = 0; i < 20 && !managerTarget; i++) {
+      await sleep(500);
+      managerTarget = await devtoolsJson(port, '/json/list')
+        .then((list) => list.find((t) => t.type === 'page' && t.url.startsWith('brouk://bookmarks')))
+        .catch(() => undefined);
+    }
+    if (check(managerTarget !== undefined, 'Ctrl+Shift+O opens the bookmark manager')) {
+      const manager = await Cdp.connect(managerTarget.webSocketDebuggerUrl);
+      let listed = false;
+      for (let i = 0; i < 20 && !listed; i++) {
+        await sleep(500);
+        const { result: text } = await manager.send('Runtime.evaluate', {
+          expression: 'document.body.innerText',
+          returnByValue: true,
+        });
+        listed = (text.value ?? '').includes('Downloads test');
+      }
+      check(listed, 'the bookmark manager lists the new bookmark');
+      manager.close();
+      desktopScreenshot('bookmarks');
+      sendKeys('Bookmarks', ['^w']);
+    }
   }
 
   // A crashed renderer shows the crash page (012); Brouk keeps running.

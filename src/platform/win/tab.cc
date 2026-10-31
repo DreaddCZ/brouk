@@ -529,6 +529,8 @@ void Tab::OnPageVisited(const std::string& url,
   const int source = transition & TT_SOURCE_MASK;
   if (next_visit_typed_) {
     kind = VisitTransition::kTyped;
+  } else if (next_visit_bookmark_) {
+    kind = VisitTransition::kBookmark;
   } else if (source == TT_RELOAD) {
     kind = VisitTransition::kReload;
   } else if (source == TT_AUTO_BOOKMARK) {
@@ -537,6 +539,7 @@ void Tab::OnPageVisited(const std::string& url,
     kind = VisitTransition::kLink;
   }
   next_visit_typed_ = false;
+  next_visit_bookmark_ = false;
   HistoryService* history = host_.TabHistory();
   if (!history || internal()) {
     return;

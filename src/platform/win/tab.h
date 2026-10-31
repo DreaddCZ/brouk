@@ -102,6 +102,8 @@ class Tab final : public TabClientDelegate,
   // The next visit was typed in the address bar (013: CEF has no "typed"
   // transition of its own).
   void MarkNextVisitTyped() { next_visit_typed_ = true; }
+  // The next visit opens a bookmark (011).
+  void MarkNextVisitBookmark() { next_visit_bookmark_ = true; }
   void SetBounds(const RECT& bounds);
   void SetVisible(bool visible);
   // The icon again at a new size (the window's DPI changed).
@@ -306,6 +308,7 @@ class Tab final : public TabClientDelegate,
   // History (013): how the next visit started, and the last visit (a page
   // that forwards by itself is not kept, only the end of the chain).
   bool next_visit_typed_ = false;
+  bool next_visit_bookmark_ = false;
   std::string last_visit_url_;
   VisitTransition last_visit_kind_ = VisitTransition::kOther;
   std::unique_ptr<TabPanel> js_dialog_;
