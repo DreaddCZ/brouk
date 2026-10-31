@@ -3,6 +3,7 @@
 #include <string_view>
 #include <utility>
 
+#include "cef/color_scheme.h"
 #include "include/wrapper/cef_helpers.h"
 #include "platform/win/theme.h"
 #include "platform/win/wide_string.h"
@@ -93,6 +94,17 @@ void InternalPageWindow::ExecuteJavaScript(const std::string& code) {
   }
 }
 
+void InternalPageWindow::LoadUrl(const std::string& url) {
+  if (browser_) {
+    browser_->GetMainFrame()->LoadURL(url);
+  }
+}
+
+void InternalPageWindow::RefreshTheme() {
+  ApplyThemeToFrame(window_, CurrentTheme());
+  EmulateColorScheme(browser_, PageColorScheme());
+}
+
 HWND InternalPageWindow::BrowserWindowHandle() const {
   return browser_ ? browser_->GetHost()->GetWindowHandle() : nullptr;
 }
@@ -107,6 +119,9 @@ void InternalPageWindow::OnBrowserCreated(CefRefPtr<CefBrowser> browser) {
   GetClientRect(window_, &bounds);
   SetWindowPos(BrowserWindowHandle(), nullptr, 0, 0, bounds.right,
                bounds.bottom, SWP_NOZORDER | SWP_NOACTIVATE);
+  if (!PageColorScheme().empty()) {
+    EmulateColorScheme(browser_, PageColorScheme());
+  }
   browser_->GetHost()->SetFocus(true);
 }
 

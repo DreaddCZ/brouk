@@ -88,4 +88,23 @@ std::optional<Error> SaveSettingsFile(const std::filesystem::path& path,
   return std::nullopt;
 }
 
+bool IsLiveReloadedFile(std::string_view relative_path) {
+  const std::size_t slash = relative_path.find_first_of("/\\");
+  if (slash != std::string_view::npos &&
+      relative_path.substr(0, slash) == "web") {
+    return false;
+  }
+  const std::size_t last = relative_path.find_last_of("/\\");
+  const std::string_view name = last == std::string_view::npos
+                                    ? relative_path
+                                    : relative_path.substr(last + 1);
+  for (std::string_view file :
+       {"settings.yaml", "request-rules.yaml", "link-routing.yaml"}) {
+    if (name.starts_with(file)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 }  // namespace brouk

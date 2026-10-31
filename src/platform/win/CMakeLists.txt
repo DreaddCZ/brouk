@@ -28,6 +28,8 @@ add_library(brouk_app SHARED
   internal_page_window.cc
   internal_page_window.h
   main.cc
+  settings_watcher.cc
+  settings_watcher.h
   tab.cc
   tab.h
   tab_panel.cc

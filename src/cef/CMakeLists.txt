@@ -21,6 +21,8 @@ add_library(brouk_cef STATIC
   browsing_data.cc
   browsing_data.h
   function_task.h
+  color_scheme.cc
+  color_scheme.h
   context_menu_model.cc
   context_menu_model.h
   devtools_call.cc

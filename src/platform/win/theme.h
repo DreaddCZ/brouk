@@ -3,6 +3,8 @@
 
 #include <windows.h>
 
+#include <string_view>
+
 namespace brouk::win {
 
 // The colours Brouk draws its own window parts with (title bar, tabs,
@@ -21,8 +23,16 @@ struct Theme {
   COLORREF field = 0;        // The address bar's background.
 };
 
-// The theme for the system's current app mode (Settings > Personalisation >
-// Colours > "Choose your app mode").
+// The user's choice (appearance.theme, 004): the system's app mode
+// (Settings > Personalisation > Colours > "Choose your app mode"), or
+// always light or dark. UI thread.
+enum class ThemeChoice { kSystem, kLight, kDark };
+void SetThemeChoice(ThemeChoice choice);
+// For web pages' prefers-color-scheme: "light", "dark", or empty for the
+// system's (EmulateColorScheme).
+std::string_view PageColorScheme();
+
+// The theme for the user's choice.
 Theme CurrentTheme();
 
 // Tells Windows to draw the window's border and shadow for the theme (dark
