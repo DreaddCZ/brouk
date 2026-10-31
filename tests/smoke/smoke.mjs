@@ -806,6 +806,10 @@ async function main() {
         logFocus('after Resume');
         sendKeys('Downloads test', ['^l']);
         logFocus('after Ctrl+L in the resumed tab');
+        // A Shift press in this window: if Shift+Esc left Shift "held" for
+        // the page (released in the task manager window), this clears it.
+        sendKeys('Downloads test', ['{ESC}', '+a', '^l']);
+        logFocus('after Shift+A, Ctrl+L');
       }
       tasks.close();
       // Closed again, so that keys go to the browser windows that follow.
