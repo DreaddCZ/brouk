@@ -669,8 +669,21 @@ void Tab::SetPaused(bool paused) {
   if (browser_) {
     CefRefPtr<CefDictionaryValue> params = CefDictionaryValue::Create();
     params->SetString("state", paused ? "frozen" : "active");
+    std::weak_ptr<int> alive = alive_;
     CallDevToolsMethod(browser_, "Page.setWebLifecycleState", params,
-                       [](bool, const std::string&) {});
+                       [this, alive, paused](bool, const std::string&) {
+                         // Freezing told the page it is hidden (and it then
+                         // takes no input); hiding and showing its window again
+                         // makes Chromium see it as shown, as on macOS.
+                         if (paused || alive.expired() || paused_) {
+                           return;
+                         }
+                         if (HWND browser = BrowserWindowHandle();
+                             browser && IsWindowVisible(container_)) {
+                           ShowWindow(browser, SW_HIDE);
+                           ShowWindow(browser, SW_SHOWNA);
+                         }
+                       });
   }
   host_.OnTabChanged(*this);
 }
