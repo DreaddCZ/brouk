@@ -11,7 +11,7 @@
 // check passed.
 import { spawn, execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, appendFileSync } from 'node:fs';
+import { copyFileSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync, appendFileSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { join, extname, resolve } from 'node:path';
 
@@ -87,25 +87,23 @@ function logFocus(label) {
   }
 }
 
-// Brings Brouk's main window to the front (AppActivate by process could
-// pick another of its windows, such as a tooltip). Returns whether it did.
-const frontFunction = () =>
-  'function Set-BroukFront { Add-Type -Namespace Smoke -Name Front -MemberDefinition ' +
-  '\'[DllImport("user32.dll")] public static extern bool SetForegroundWindow(System.IntPtr w);\' ' +
-  '-ErrorAction SilentlyContinue; ' +
-  `$w = (Get-Process -Id ${brouk.pid}).MainWindowHandle; ` +
-  '(New-Object -ComObject WScript.Shell).SendKeys(""); [Smoke.Front]::SetForegroundWindow($w) }';
+// Brings Brouk's browser window showing the page titled `title` to the
+// front ("<title> - Brouk"): Brouk has several windows (the profile
+// manager, tooltips), and keys must reach this one. Returns whether it did.
+const frontFunction = (title) =>
+  'function Set-BroukFront { (New-Object -ComObject WScript.Shell).AppActivate(' +
+  `'${`${title} - Brouk`.replaceAll("'", "''")}') }`;
 
 // Windows: brings Brouk's window to the front and types `keys`
 // (System.Windows.Forms.SendKeys syntax: "^f" is Ctrl+F), one after another.
-function sendKeys(keys) {
+function sendKeys(title, keys) {
   const sends = keys
     .map((k) => `[System.Windows.Forms.SendKeys]::SendWait('${k.replaceAll("'", "''")}'); Start-Sleep -Milliseconds 300`)
     .join('; ');
   const script = [
     'Add-Type -AssemblyName System.Windows.Forms, UIAutomationClient, UIAutomationTypes',
     kFocusFunction,
-    frontFunction(),
+    frontFunction(title),
     '$active = Set-BroukFront',
     'Start-Sleep -Milliseconds 500',
     '$before = Get-Focus',
@@ -113,21 +111,25 @@ function sendKeys(keys) {
     '$after = Get-Focus',
     'Write-Output "Brouk in front: $active, focus before: $before, after: $after"',
   ].join('; ');
-  try {
-    const output = execFileSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8', timeout: 30000 });
-    log(`(keys ${keys.join(' ')}: ${output.trim()})`);
-  } catch (error) {
-    log(`(keys not sent: ${error.message})`);
+  // PowerShell can take long to start on a busy runner: one more try.
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const output = execFileSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8', timeout: 60000 });
+      log(`(keys ${keys.join(' ')}: ${output.trim()})`);
+      return;
+    } catch (error) {
+      log(`(keys not sent, attempt ${attempt}: ${error.message})`);
+    }
   }
 }
 
 // Windows: a right-click at screen pixel (x, y).
-function rightClick(x, y) {
+function rightClick(title, x, y) {
   const script = [
     'Add-Type -Namespace Smoke -Name Mouse -MemberDefinition \'' +
       '[DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y); ' +
       '[DllImport("user32.dll")] public static extern void mouse_event(int f, int x, int y, int d, int e);\'',
-    frontFunction(),
+    frontFunction(title),
     'Set-BroukFront | Out-Null',
     'Start-Sleep -Milliseconds 300',
     `[Smoke.Mouse]::SetCursorPos(${x}, ${y}) | Out-Null`,
@@ -144,8 +146,31 @@ function rightClick(x, y) {
   }
 }
 
+// The top-level windows a process still has, for the log.
+function logWindowsOf(pid) {
+  const script = [
+    'Add-Type -AssemblyName UIAutomationClient',
+    `$c = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, ${pid})`,
+    '[System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $c) | ForEach-Object { "$($_.Current.ClassName) [$($_.Current.Name)]" }',
+  ].join('; ');
+  try {
+    const out = execFileSync('powershell', ['-NoProfile', '-Command', script], { timeout: 30000 });
+    log(`(windows left: ${out.toString().trim().split(/\r?\n/).join(', ')})`);
+  } catch (error) {
+    log(`(no window list: ${error.message})`);
+  }
+}
+
 function finish(code) {
   if (code !== 0) desktopScreenshot('desktop');
+  // Chromium's own log, next to the executable on Windows.
+  if (code !== 0 && kWindows) {
+    try {
+      copyFileSync(join(appPath, 'debug.log'), join(outDir, 'debug.log'));
+    } catch (error) {
+      log(`(no debug.log: ${error.message})`);
+    }
+  }
   if (brouk && brouk.exitCode === null) brouk.kill('SIGKILL');
   server?.close();
   try {
@@ -305,6 +330,8 @@ async function main() {
   // --profile open as typed, without link routing.
   const args = ['--use-mock-keychain', `--remote-debugging-port=${port}`, '--profile=smoke', 'about:blank'];
   if (kInternalPages) args.push('brouk://credits');
+  // The profile manager (005) in its own window; on macOS it is opened from the menu.
+  if (kWindows) args.push('brouk://profiles');
   brouk = spawn(executable, args, {
     env: { ...process.env, BROUK_DEV_DATA_DIR: dataDir },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -375,18 +402,40 @@ async function main() {
     const zoom = async () =>
       (await cdp.send('Runtime.evaluate', { expression: 'Math.round(devicePixelRatio * 100)' })).result.value;
     const before = await zoom();
-    sendKeys(['^{ADD}', '^{ADD}', '^f', 'beetle']);
+    // Each zoom step reaches the page a moment later: wait up to 3 seconds.
+    const zoomTo = async (expected) => {
+      let now = await zoom();
+      for (let i = 0; i < 15 && now !== expected; i++) {
+        await sleep(200);
+        now = await zoom();
+      }
+      return now;
+    };
+    // One key at a time: a busy runner loses keys sent in a quick row, and
+    // sometimes one right after activating the window, so a key without
+    // effect is sent once more (a broken shortcut still fails twice).
+    const pressUntil = async (keys, expected) => {
+      sendKeys('Find and zoom test', keys);
+      let now = await zoomTo(expected);
+      if (now !== expected) {
+        log(`(zoom ${now} after ${keys.join(' ')}, not ${expected}: sending again)`);
+        sendKeys('Find and zoom test', keys);
+        now = await zoomTo(expected);
+      }
+      return now;
+    };
+    const first = await pressUntil(['^{ADD}'], Math.round(before * 1.1));
+    const zoomed = await pressUntil(['^{ADD}'], Math.round(before * 1.25));
+    check(zoomed === Math.round(before * 1.25), `Ctrl+Plus twice zooms to 125 % (${before} → ${first} → ${zoomed})`);
+    sendKeys('Find and zoom test', ['^f', 'beetle']);
     await sleep(1000);
     logFocus('after typing in the find bar');
-    const zoomed = await zoom();
-    check(zoomed === Math.round(before * 1.25), `Ctrl+Plus twice zooms to 125 % (${before} → ${zoomed})`);
     desktopScreenshot('find-bar');
     logFocus('after the screenshot');
     // The screenshot took the focus away; Brouk gives it back to the find
     // bar, where Escape closes it, then Ctrl+0 resets the zoom.
-    sendKeys(['{ESC}', '^0']);
-    await sleep(500);
-    const reset = await zoom();
+    sendKeys('Find and zoom test', ['{ESC}']);
+    const reset = await pressUntil(['^0'], before);
     check(reset === before, `Ctrl+0 resets the zoom (${reset})`);
     desktopScreenshot('find-bar-closed');
   }
@@ -403,7 +452,7 @@ async function main() {
     });
     await sleep(1500);
     desktopScreenshot('fullscreen');
-    sendKeys(['{ESC}']);
+    sendKeys('Full screen test', ['{ESC}']);
     await sleep(1000);
     const { result } = await cdp.send('Runtime.evaluate', { expression: 'document.fullscreenElement === null' });
     check(result.value === true, 'Escape leaves HTML full screen');
@@ -428,13 +477,13 @@ async function main() {
   if (kWindows) {
     await cdp.send('Page.navigate', { url: `${pagesBase}/context-menu.html` });
     await waitForTitle(cdp, 'Context menu test');
-    rightClick(100, 22);
+    rightClick('Context menu test', 200, 22);
     await sleep(800);
     desktopScreenshot('tab-menu');
-    sendKeys(['{ESC}', '+{F10}']);
+    sendKeys('Context menu test', ['{ESC}', '+{F10}']);
     await sleep(800);
     desktopScreenshot('page-menu');
-    sendKeys(['{ESC}']);
+    sendKeys('Context menu test', ['{ESC}']);
   }
 
   // Screen sharing (Windows app, 024): getDisplayMedia() shows Brouk's
@@ -452,7 +501,7 @@ async function main() {
     });
     await sleep(1500);
     desktopScreenshot('screen-picker');
-    sendKeys(['{ESC}']);
+    sendKeys('Screen sharing test', ['{ESC}']);
     await sleep(1000);
     const { result } = await cdp.send('Runtime.evaluate', { expression: 'window.shareResult' });
     check(result.value !== 'pending' && result.value !== 'shared', `Escape cancels the screen picker (${result.value})`);
@@ -473,6 +522,38 @@ async function main() {
     desktopScreenshot('dialogs');
   }
 
+  // Profiles (Windows app, 024 W2): the profile manager is open in its own
+  // window; a profile created there opens in a new window, in its group.
+  if (kWindows) {
+    const all = await devtoolsJson(port, '/json/list');
+    const profilesTarget = all.find((t) => t.url.startsWith('brouk://profiles'));
+    if (check(profilesTarget !== undefined, 'the profile manager opens')) {
+      const manager = await Cdp.connect(profilesTarget.webSocketDebuggerUrl);
+      const title = await waitForTitle(manager, 'Profiles');
+      // The page's own bridge, as its buttons use it.
+      const ask = async (request) => {
+        const { result } = await manager.send('Runtime.evaluate', {
+          expression:
+            'new Promise((ok) => window.cefQuery({ request: ' +
+            JSON.stringify(JSON.stringify(request)) +
+            ", onSuccess: (r) => ok('ok ' + r), onFailure: (c, m) => ok('failed ' + m) }))",
+          awaitPromise: true,
+          returnByValue: true,
+        });
+        return result.value ?? '';
+      };
+      const created = await ask({ type: 'profiles.create', name: 'Work', color: 'blue' });
+      check(title === 'Profiles' && created.startsWith('ok '), `a profile can be created (${created})`);
+      if (created.startsWith('ok ')) {
+        const opened = await ask({ type: 'profiles.open', id: JSON.parse(created.slice(3)).id });
+        check(opened.startsWith('ok'), `the new profile opens in a window (${opened})`);
+        await sleep(2000);
+        desktopScreenshot('profiles');
+      }
+      manager.close();
+    }
+  }
+
   // A crashed renderer shows the crash page (012); Brouk keeps running.
   await cdp.send('Page.navigate', { url: `${pagesBase}/crash-and-hang.html` });
   const crashPage = await waitForTitle(cdp, 'Crash and hang test');
@@ -482,7 +563,10 @@ async function main() {
   desktopScreenshot('crash');
   cdp.close();
   check(brouk.exitCode === null, 'Brouk keeps running after a renderer crash');
-  const after = await pageTarget(port).catch(() => null);
+  // The crashed tab, by its address: other windows' tabs are pages too.
+  const after = await devtoolsJson(port, '/json/list')
+    .then((list) => list.find((t) => t.type === 'page' && t.url.includes('/crash-and-hang.html')))
+    .catch(() => null);
   if (check(after !== null && after !== undefined, 'the crashed tab is still there')) {
     const again = await Cdp.connect(after.webSocketDebuggerUrl);
     await again.send('Page.reload').catch(() => {});
@@ -493,10 +577,21 @@ async function main() {
 
   // Quit as the user does (Brouk → Quit; on Windows closing the window),
   // aimed at this copy's pid only.
+  const pagesBeforeQuit = await devtoolsJson(port, '/json/list').catch(() => []);
+  log(`(pages before quitting: ${pagesBeforeQuit.map((t) => `${t.type} ${t.url}`).join(', ')})`);
   const quitStarted = Date.now();
   if (kWindows) {
-    // Without /F, taskkill asks the process's windows to close (WM_CLOSE).
-    execFileSync('taskkill', ['/PID', String(brouk.pid)]);
+    // Without /F, taskkill asks one of the process's windows to close
+    // (WM_CLOSE); Brouk runs until its last window has closed, so ask
+    // again while it still has windows (profile windows, the manager).
+    for (let i = 0; i < 10 && brouk.exitCode === null; ++i) {
+      try {
+        execFileSync('taskkill', ['/PID', String(brouk.pid)], { stdio: 'ignore' });
+      } catch {
+        // No window left to ask: Brouk is quitting.
+      }
+      await sleep(500);
+    }
   } else {
     execFileSync('osascript', [
       '-l',
@@ -506,7 +601,9 @@ async function main() {
     ]);
   }
   while (brouk.exitCode === null && Date.now() - quitStarted < 10000) await sleep(200);
-  check(brouk.exitCode === 0, `Brouk quits cleanly within 10 seconds (exit code ${brouk.exitCode})`);
+  if (!check(brouk.exitCode === 0, `Brouk quits cleanly within 10 seconds (exit code ${brouk.exitCode})`) && kWindows) {
+    logWindowsOf(brouk.pid);
+  }
 
   await sleep(2000); // ReportCrash writes its report a moment later.
   const newReports = crashReports().filter((name) => !reportsBefore.has(name));

@@ -55,8 +55,9 @@ class Tab final : public TabClientDelegate,
                   public InternalPageDelegate,
                   public FindBar::Delegate {
  public:
-  // Creates the tab's (hidden) container window in `parent`.
-  Tab(TabHost& host, TabId id, HWND parent);
+  // Creates the tab's (hidden) container window in `parent`, for a tab of
+  // `profile` (005).
+  Tab(TabHost& host, TabId id, HWND parent, ProfileId profile);
   ~Tab() override;
   Tab(const Tab&) = delete;
   Tab& operator=(const Tab&) = delete;
@@ -118,6 +119,7 @@ class Tab final : public TabClientDelegate,
   bool internal() const { return internal_client_ != nullptr; }
 
   TabId id() const { return id_; }
+  const ProfileId& profile() const { return profile_; }
   HWND container() const { return container_; }
   const std::string& title() const { return title_; }
   // What the tab strip and the window title show: "New Tab" for an empty
@@ -245,6 +247,7 @@ class Tab final : public TabClientDelegate,
 
   TabHost& host_;
   const TabId id_;
+  const ProfileId profile_;
   HWND container_ = nullptr;
   CefRefPtr<TabClient> client_;
   // Instead of client_, for an internal page.

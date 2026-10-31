@@ -65,6 +65,7 @@ enum MenuCommand : UINT {
   kLicencesCommand,
   kExitCommand,
   kAllowPopupsCommand,
+  kManageProfilesCommand,
   kNewTabToTheRightCommand,
   kReloadTabCommand,
   kDuplicateTabCommand,
@@ -75,6 +76,7 @@ enum MenuCommand : UINT {
   kCloseTabsLeftCommand,
   kCloseTabsRightCommand,
   kFirstBlockedPopupCommand = 1000,
+  kFirstProfileCommand = 2000,
 };
 
 // Glyphs of the "Segoe MDL2 Assets" icon font, on Windows 10 and 11.
@@ -115,7 +117,7 @@ bool IsBlank(const std::string& url) {
 }  // namespace
 
 BrowserWindow::BrowserWindow(BrowserWindowOwner& owner, Kind kind)
-    : owner_(owner), kind_(kind), model_(ProfileId(kFirstProfileId)) {}
+    : owner_(owner), kind_(kind), model_(owner.DefaultProfile()) {}
 
 BrowserWindow::~BrowserWindow() {
   fullscreen_hint_.reset();
@@ -319,8 +321,7 @@ RECT BrowserWindow::ContentBounds() const {
 }
 
 void BrowserWindow::Layout() {
-  strip_.Layout(StripBounds(), GetDpiForWindow(window_), model_,
-                kind_ == Kind::kNormal);
+  LayoutStrip();
   if (tooltip_) {
     TTTOOLINFOW tool = {};
     tool.cbSize = sizeof(tool);
@@ -410,6 +411,7 @@ void BrowserWindow::Paint() {
       state.pressed = pressed_;
       state.window_active = active_;
       state.maximized = IsZoomed(window_) != FALSE;
+      state.dark = theme_.dark;
       state.spinner_step = spinner_step_;
       strip_.Paint(buffer, state);
     }
@@ -542,15 +544,70 @@ void BrowserWindow::ShowFullscreenHint(const wchar_t* text) {
   SetTimer(window_, kFullscreenHintTimer, kFullscreenHintTime, nullptr);
 }
 
+int BrowserWindow::TabCountInProfile(const ProfileId& profile) const {
+  int count = 0;
+  for (const auto& [id, tab] : tabs_) {
+    if (tab->profile() == profile && !tab->closing()) {
+      ++count;
+    }
+  }
+  return count;
+}
+
+void BrowserWindow::CloseTabsInProfile(const ProfileId& profile) {
+  std::vector<TabId> ids;
+  for (const auto& [id, tab] : tabs_) {
+    if (tab->profile() == profile) {
+      ids.push_back(id);
+    }
+  }
+  for (TabId id : ids) {
+    CloseTab(id);
+  }
+}
+
+void BrowserWindow::ProfilesChanged() {
+  model_.SetDefaultProfile(owner_.DefaultProfile());
+  ModelChanged();
+}
+
+void BrowserWindow::LayoutStrip() {
+  strip_.Layout(
+      StripBounds(), GetDpiForWindow(window_), model_, kind_ == Kind::kNormal,
+      [this](const ProfileId& profile) { return owner_.ProfileLook(profile); });
+}
+
+void BrowserWindow::ToggleGroup(const ProfileId& profile) {
+  if (strip_.IsAutoCollapsed(profile)) {
+    if (std::optional<TabId> last = model_.LastActiveTabOf(profile);
+        last && model_.ActivateTab(*last)) {
+      ModelChanged();
+      FocusActiveTab();
+    }
+    return;
+  }
+  for (const TabStripModel::Group& group : model_.groups()) {
+    if (group.profile == profile &&
+        model_.SetGroupCollapsed(profile, !group.collapsed)) {
+      ModelChanged();
+      FocusActiveTab();
+      return;
+    }
+  }
+}
+
 void BrowserWindow::OpenTabAfter(TabId after, const std::string& url) {
+  const Tab* neighbour = FindTab(after);
+  const ProfileId profile =
+      neighbour ? neighbour->profile() : owner_.DefaultProfile();
   const TabId id = NextTabId();
-  auto tab = std::make_unique<Tab>(*this, id, window_);
+  auto tab = std::make_unique<Tab>(*this, id, window_, profile);
   tab->SetBounds(ContentBounds());
   Tab* created = tab.get();
   tabs_[id] = std::move(tab);
   model_.InsertAfter(id, after, /*activate=*/true);
   created->CreateBrowser(url.empty() ? std::string("about:blank") : url,
-                         owner_.RequestContext());
+                         owner_.RequestContext(profile));
   ModelChanged();
   FocusActiveTab();
 }
@@ -674,7 +731,7 @@ void BrowserWindow::ShowBlockedPopups() {
              command - kFirstBlockedPopupCommand < urls.size()) {
     Tab* popup = InsertTabFromOpener(tab, true);
     popup->CreateBrowser(urls[command - kFirstBlockedPopupCommand],
-                         owner_.RequestContext());
+                         owner_.RequestContext(popup->profile()));
     FocusActiveTab();
   }
 }
@@ -736,6 +793,23 @@ void BrowserWindow::ShowAppMenu() {
   HMENU menu = CreatePopupMenu();
   AppendMenuW(menu, MF_STRING, kNewTabCommand, L"New tab\tCtrl+T");
   AppendMenuW(menu, MF_STRING, kNewWindowCommand, L"New window\tCtrl+N");
+  // Profiles (005): a new tab in one, or the profile manager.
+  HMENU profiles = CreatePopupMenu();
+  const std::vector<ProfileInfo> profile_list = owner_.ProfileList();
+  const ProfileId default_profile = owner_.DefaultProfile();
+  for (size_t i = 0; i < profile_list.size(); ++i) {
+    std::wstring title = L"New tab in " + Utf8ToWide(profile_list[i].name);
+    if (profile_list[i].id == default_profile) {
+      title += L" (default)";
+    }
+    AppendMenuW(profiles, MF_STRING,
+                kFirstProfileCommand + static_cast<UINT>(i), title.c_str());
+  }
+  AppendMenuW(profiles, MF_SEPARATOR, 0, nullptr);
+  AppendMenuW(profiles, MF_STRING, kManageProfilesCommand,
+              L"Manage profiles\u2026");
+  AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(profiles),
+              L"Profiles");
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
   AppendMenuW(menu, MF_STRING, kZoomInCommand, L"Zoom in\tCtrl++");
   AppendMenuW(menu, MF_STRING, kZoomOutCommand, L"Zoom out\tCtrl+-");
@@ -753,13 +827,22 @@ void BrowserWindow::ShowAppMenu() {
   const UINT command = static_cast<UINT>(TrackPopupMenuEx(
       menu, TPM_RIGHTALIGN | TPM_TOPALIGN | TPM_RETURNCMD | TPM_NONOTIFY,
       button.right, button.bottom, window_, nullptr));
-  DestroyMenu(menu);
+  DestroyMenu(menu);  // With its submenu.
+  if (command >= kFirstProfileCommand &&
+      command - kFirstProfileCommand < profile_list.size()) {
+    OpenTab(std::string(), true,
+            profile_list[command - kFirstProfileCommand].id);
+    return;
+  }
   switch (command) {
+    case kManageProfilesCommand:
+      owner_.OpenProfileManager();
+      break;
     case kNewTabCommand:
       OpenTab(std::string(), true);
       break;
     case kNewWindowCommand:
-      owner_.OpenWindow(std::string());
+      owner_.OpenWindow(std::string(), ProfileId());
       break;
     case kHelpCommand:
       owner_.OpenHelp(std::string());
@@ -803,6 +886,10 @@ void BrowserWindow::OpenInternalPage(const std::string& url) {
     owner_.OpenHelp(std::string());
     return;
   }
+  if (*page == "profiles") {
+    owner_.OpenProfileManager();  // Its own window, as on macOS.
+    return;
+  }
   std::unique_ptr<CefMessageRouterBrowserSide::Handler> handler =
       owner_.InternalPageHandler(*page);
   if (!handler) {
@@ -829,7 +916,11 @@ Tab* BrowserWindow::ActiveTab() {
   return active ? FindTab(*active) : nullptr;
 }
 
-void BrowserWindow::OpenTab(const std::string& url, bool foreground) {
+void BrowserWindow::OpenTab(const std::string& url,
+                            bool foreground,
+                            const ProfileId& requested) {
+  const ProfileId profile =
+      requested.empty() ? owner_.DefaultProfile() : requested;
   if (IsInternalPageUrl(url)) {
     // From the command line or a link: brouk:// pages load only in their
     // own request context.
@@ -838,13 +929,17 @@ void BrowserWindow::OpenTab(const std::string& url, bool foreground) {
         owner_.OpenHelp(std::string());
         return;
       }
+      if (*page == "profiles") {
+        owner_.OpenProfileManager();
+        return;
+      }
       if (auto handler = owner_.InternalPageHandler(*page)) {
         const TabId id = NextTabId();
-        auto tab = std::make_unique<Tab>(*this, id, window_);
+        auto tab = std::make_unique<Tab>(*this, id, window_, profile);
         tab->SetBounds(ContentBounds());
         Tab* created = tab.get();
         tabs_[id] = std::move(tab);
-        model_.AppendTab(id, foreground);
+        model_.AppendTab(id, profile, foreground);
         created->CreateInternalPage(url, std::move(handler),
                                     owner_.InternalContext());
         ModelChanged();
@@ -853,13 +948,13 @@ void BrowserWindow::OpenTab(const std::string& url, bool foreground) {
     }
   }
   const TabId id = NextTabId();
-  auto tab = std::make_unique<Tab>(*this, id, window_);
+  auto tab = std::make_unique<Tab>(*this, id, window_, profile);
   tab->SetBounds(ContentBounds());
   Tab* created = tab.get();
   tabs_[id] = std::move(tab);
-  model_.AppendTab(id, foreground);
+  model_.AppendTab(id, profile, foreground);
   created->CreateBrowser(url.empty() ? std::string("about:blank") : url,
-                         owner_.RequestContext());
+                         owner_.RequestContext(profile));
   ModelChanged();
   if (foreground) {
     FocusActiveTab();
@@ -867,15 +962,17 @@ void BrowserWindow::OpenTab(const std::string& url, bool foreground) {
 }
 
 Tab* BrowserWindow::InsertTabFromOpener(const Tab* opener, bool foreground) {
+  const ProfileId profile =
+      opener ? opener->profile() : owner_.DefaultProfile();
   const TabId id = NextTabId();
-  auto tab = std::make_unique<Tab>(*this, id, window_);
+  auto tab = std::make_unique<Tab>(*this, id, window_, profile);
   tab->SetBounds(ContentBounds());
   Tab* created = tab.get();
   tabs_[id] = std::move(tab);
   if (opener && model_.IndexOf(opener->id())) {
     model_.InsertFromOpener(id, opener->id(), foreground);
   } else {
-    model_.AppendTab(id, foreground);
+    model_.AppendTab(id, profile, foreground);
   }
   ModelChanged();
   return created;
@@ -908,8 +1005,7 @@ void BrowserWindow::ModelChanged() {
   for (const auto& [id, tab] : tabs_) {
     tab->SetVisible(active == id);
   }
-  strip_.Layout(StripBounds(), GetDpiForWindow(window_), model_,
-                kind_ == Kind::kNormal);
+  LayoutStrip();
   UpdateToolbar();
   UpdateSpinner();
   InvalidateStrip();
@@ -989,7 +1085,7 @@ void BrowserWindow::NavigateToAddressBarText() {
     // place.
     const TabId internal = tab->id();
     Tab* web = InsertTabFromOpener(tab, true);
-    web->CreateBrowser(input.url, owner_.RequestContext());
+    web->CreateBrowser(input.url, owner_.RequestContext(web->profile()));
     CloseTab(internal);
     FocusActiveTab();
     return;
@@ -1086,7 +1182,7 @@ bool BrowserWindow::HandleShortcut(int key,
     return true;
   }
   if (control && !alt && !shift && key == 'N') {
-    owner_.OpenWindow(std::string());
+    owner_.OpenWindow(std::string(), ProfileId());
     return true;
   }
   if (control && !alt && shift && key == 'W') {
@@ -1200,12 +1296,12 @@ void BrowserWindow::OpenUrlFromTab(Tab& opener,
                                    const std::string& url,
                                    OpenDisposition disposition) {
   if (disposition == OpenDisposition::kNewWindow) {
-    owner_.OpenWindow(url);
+    owner_.OpenWindow(url, opener.profile());
     return;
   }
   const bool foreground = disposition == OpenDisposition::kNewForegroundTab;
   Tab* tab = InsertTabFromOpener(&opener, foreground);
-  tab->CreateBrowser(url, owner_.RequestContext());
+  tab->CreateBrowser(url, owner_.RequestContext(tab->profile()));
   if (foreground) {
     FocusActiveTab();
   }
@@ -1281,6 +1377,7 @@ LRESULT BrowserWindow::OnNcHitTest(LPARAM lparam) {
       case TabStrip::Part::kTab:
       case TabStrip::Part::kTabClose:
       case TabStrip::Part::kNewTab:
+      case TabStrip::Part::kGroupLabel:
         return HTCLIENT;
       case TabStrip::Part::kNone:
         return HTCAPTION;  // Drags the window; double-click maximises.
@@ -1385,7 +1482,8 @@ void BrowserWindow::OnMouse(UINT message, POINT point) {
         drag_start_ = point;
         SetCapture(window_);
       } else if (hit.part == TabStrip::Part::kTabClose ||
-                 hit.part == TabStrip::Part::kNewTab) {
+                 hit.part == TabStrip::Part::kNewTab ||
+                 hit.part == TabStrip::Part::kGroupLabel) {
         pressed_ = hit;
         SetCapture(window_);
         InvalidateStrip();
@@ -1402,7 +1500,9 @@ void BrowserWindow::OnMouse(UINT message, POINT point) {
       if (pressed == hit && hit.part == TabStrip::Part::kTabClose) {
         CloseTab(hit.tab);
       } else if (pressed == hit && hit.part == TabStrip::Part::kNewTab) {
-        OpenTab(std::string(), true);
+        OpenTab(std::string(), true, hit.profile);
+      } else if (pressed == hit && hit.part == TabStrip::Part::kGroupLabel) {
+        ToggleGroup(hit.profile);
       }
       InvalidateStrip();
       break;
@@ -1536,8 +1636,8 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
           }
         } else if (hover_.part == TabStrip::Part::kTabClose) {
           tooltip_text_ = L"Close tab";
-        } else if (hover_.part == TabStrip::Part::kNewTab) {
-          tooltip_text_ = L"New tab";
+        } else {
+          tooltip_text_ = strip_.ToolTip(hover_);
         }
         // An empty text shows no tip.
         info->lpszText = tooltip_text_.data();

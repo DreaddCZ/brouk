@@ -9,6 +9,7 @@
 #include "cef/help_link.h"
 #include "cef/help_page_handler.h"
 #include "cef/internal_scheme.h"
+#include "cef/profile_manager_handler.h"
 #include "cef/static_page_handler.h"
 #include "core/address_input.h"
 #include "core/help.h"
@@ -45,7 +46,21 @@ void App::OnRelaunch(const LaunchRequest& request) {
 }
 
 void App::OpenLaunchRequest(const LaunchRequest& request) {
+  ProfileId profile = profiles_.default_profile().id;
+  if (request.profile) {
+    const ProfileInfo* named = profiles_.FindByName(*request.profile);
+    if (!named) {
+      named = profiles_.Find(*request.profile);
+    }
+    if (named) {
+      profile = named->id;
+    } else {
+      LOG(WARNING) << "No profile called \"" << *request.profile
+                   << "\"; opening the default profile.";
+    }
+  }
   std::vector<std::string> urls;
+  const bool profile_given = request.profile.has_value();
   for (const std::string& url : request.urls) {
     // Untrusted, like text typed into the address bar.
     const AddressInputResult input = ClassifyAddressInput(url);
@@ -54,7 +69,16 @@ void App::OpenLaunchRequest(const LaunchRequest& request) {
     }
   }
   if (urls.empty()) {
-    OpenWindow(std::string());
+    // The profile manager instead of a window, if the user chose so (005).
+    if (profiles_.show_manager_at_startup() && !profile_given &&
+        windows_.empty() && !profiles_window_) {
+      profile_manager_at_startup_ = true;
+      OpenProfileManager();
+      if (profiles_window_) {
+        return;
+      }
+    }
+    OpenWindow(std::string(), profile);
     return;
   }
   auto window =
@@ -68,7 +92,7 @@ void App::OpenLaunchRequest(const LaunchRequest& request) {
     return;
   }
   for (std::size_t i = 0; i < urls.size(); ++i) {
-    window->OpenTab(urls[i], /*foreground=*/i == 0);
+    window->OpenTab(urls[i], /*foreground=*/i == 0, profile);
   }
   window->Show();
   windows_.push_back(std::move(window));
@@ -76,20 +100,39 @@ void App::OpenLaunchRequest(const LaunchRequest& request) {
 
 void App::ReleaseBrowserObjects() {
   help_window_.reset();
+  profiles_window_.reset();
   windows_.clear();
-  context_ = nullptr;
+  contexts_.clear();
   internal_context_ = nullptr;
 }
 
-CefRefPtr<CefRequestContext> App::RequestContext() {
+CefRefPtr<CefRequestContext> App::RequestContext(const ProfileId& profile) {
   CEF_REQUIRE_UI_THREAD();
-  if (!context_) {
-    CefRequestContextSettings settings;
-    CefString(&settings.cache_path) =
-        ProfileWebDataDirectory(profiles_.default_profile().id).wstring();
-    context_ = CefRequestContext::CreateContext(settings, nullptr);
+  // Only ids of existing profiles become folder names (they are validated
+  // when profiles are read); anything else gets the default profile.
+  const ProfileId id =
+      profiles_.Find(profile) ? profile : profiles_.default_profile().id;
+  auto it = contexts_.find(id);
+  if (it != contexts_.end()) {
+    return it->second;
   }
-  return context_;
+  CefRequestContextSettings settings;
+  CefString(&settings.cache_path) = ProfileWebDataDirectory(id).wstring();
+  CefRefPtr<CefRequestContext> context =
+      CefRequestContext::CreateContext(settings, nullptr);
+  contexts_[id] = context;
+  return context;
+}
+
+ProfileId App::DefaultProfile() {
+  return profiles_.default_profile().id;
+}
+
+TabStrip::GroupLook App::ProfileLook(const ProfileId& profile) {
+  if (const ProfileInfo* info = profiles_.Find(profile)) {
+    return {info->name, info->color};
+  }
+  return {profile, "grey"};
 }
 
 CefRefPtr<CefRequestContext> App::InternalContext() {
@@ -139,9 +182,7 @@ void App::OpenHelp(const std::string& anchor) {
   auto window = std::make_unique<InternalPageWindow>([this] {
     CefPostTask(TID_UI, new FunctionTask([this] {
                   help_window_.reset();
-                  if (quitting_) {
-                    CefQuitMessageLoop();
-                  }
+                  QuitWhenDone();
                 }));
   });
   const std::string url =
@@ -159,7 +200,7 @@ void App::OpenHelp(const std::string& anchor) {
 
 void App::OpenWebLink(const std::string& url) {
   if (windows_.empty()) {
-    OpenWindow(url);
+    OpenWindow(url, ProfileId());
     return;
   }
   // The window used last: the front one of Brouk's normal windows.
@@ -173,12 +214,14 @@ void App::OpenWebLink(const std::string& url) {
       }
     }
   }
-  OpenWindow(url);
+  OpenWindow(url, ProfileId());
 }
 
 void App::CloseAllWindows() {
-  if (help_window_) {
-    PostMessageW(help_window_->hwnd(), WM_CLOSE, 0, 0);
+  for (const auto* page : {&help_window_, &profiles_window_}) {
+    if (*page) {
+      PostMessageW((*page)->hwnd(), WM_CLOSE, 0, 0);
+    }
   }
   for (const std::unique_ptr<BrowserWindow>& window : windows_) {
     PostMessageW(window->hwnd(), WM_CLOSE, 0, 0);
@@ -190,7 +233,7 @@ TabClientDelegate::SearchEngine App::SearchEngine() {
   return {SearchEngineName(global), SearchTemplate(global)};
 }
 
-void App::OpenWindow(const std::string& url) {
+void App::OpenWindow(const std::string& url, const ProfileId& profile) {
   CEF_REQUIRE_UI_THREAD();
   auto window =
       std::make_unique<BrowserWindow>(*this, BrowserWindow::Kind::kNormal);
@@ -202,7 +245,7 @@ void App::OpenWindow(const std::string& url) {
     }
     return;
   }
-  window->OpenTab(url, true);
+  window->OpenTab(url, true, profile);
   window->Show();
   windows_.push_back(std::move(window));
 }
@@ -233,17 +276,185 @@ void App::OnWindowDestroyed(BrowserWindow* window) {
                     [window](const std::unique_ptr<BrowserWindow>& w) {
                       return w.get() == window;
                     });
-                // Brouk quits with its last window, as Chrome on Windows; an
-                // open help window closes first.
+                // Brouk quits with its last window, as Chrome on Windows;
+                // open help and profile manager windows close first.
                 if (windows_.empty() && !quitting_) {
                   quitting_ = true;
-                  if (help_window_) {
-                    PostMessageW(help_window_->hwnd(), WM_CLOSE, 0, 0);
-                  } else {
-                    CefQuitMessageLoop();
+                  for (const auto* page : {&help_window_, &profiles_window_}) {
+                    if (*page) {
+                      PostMessageW((*page)->hwnd(), WM_CLOSE, 0, 0);
+                    }
                   }
+                  QuitWhenDone();
                 }
               }));
+}
+
+void App::QuitWhenDone() {
+  if (quitting_ && !help_window_ && !profiles_window_) {
+    CefQuitMessageLoop();
+  }
+}
+
+const std::vector<ProfileInfo>& App::ProfileList() {
+  return profiles_.profiles();
+}
+
+void App::OpenProfileManager() {
+  CEF_REQUIRE_UI_THREAD();
+  if (quitting_) {
+    return;
+  }
+  if (profiles_window_) {
+    profiles_window_->Activate();
+    return;
+  }
+  auto window = std::make_unique<InternalPageWindow>([this] {
+    CefPostTask(TID_UI, new FunctionTask([this] {
+                  profiles_window_.reset();
+                  // Closed at startup without choosing a profile: nothing
+                  // else is open, so Brouk quits (Chrome's profile picker).
+                  if (windows_.empty() && !quitting_) {
+                    quitting_ = true;
+                    if (help_window_) {
+                      PostMessageW(help_window_->hwnd(), WM_CLOSE, 0, 0);
+                    }
+                  }
+                  QuitWhenDone();
+                }));
+  });
+  if (window->Create("brouk://profiles/", L"Profiles", 640, 600,
+                     std::make_unique<ProfileManagerHandler>(this),
+                     InternalContext())) {
+    profiles_window_ = std::move(window);
+  }
+}
+
+void App::ProfilesChanged() {
+  for (const std::unique_ptr<BrowserWindow>& window : windows_) {
+    window->ProfilesChanged();
+  }
+}
+
+std::vector<ProfileManagerDelegate::Summary> App::Profiles() {
+  std::vector<Summary> summaries;
+  const ProfileId& default_id = profiles_.default_profile().id;
+  for (const ProfileInfo& profile : profiles_.profiles()) {
+    int tabs = 0;
+    for (const std::unique_ptr<BrowserWindow>& window : windows_) {
+      tabs += window->TabCountInProfile(profile.id);
+    }
+    summaries.push_back({profile, profile.id == default_id, tabs});
+  }
+  return summaries;
+}
+
+bool App::ShowAtStartup() {
+  return profiles_.show_manager_at_startup();
+}
+
+Result<ProfileId> App::CreateProfile(const std::string& name,
+                                     const std::string& color) {
+  Result<ProfileId> created = profiles_.CreateProfile(name, color);
+  ProfilesChanged();
+  return created;
+}
+
+std::optional<Error> App::UpdateProfile(const ProfileId& id,
+                                        const std::string& name,
+                                        const std::string& color) {
+  std::optional<Error> error = profiles_.UpdateProfile(id, name, color);
+  ProfilesChanged();
+  return error;
+}
+
+std::optional<Error> App::SetDefaultProfile(const ProfileId& id) {
+  std::optional<Error> error = profiles_.SetDefaultProfile(id);
+  ProfilesChanged();
+  return error;
+}
+
+std::optional<Error> App::SetShowAtStartup(bool show) {
+  return profiles_.SetShowManagerAtStartup(show);
+}
+
+std::optional<Error> App::OpenProfile(const ProfileId& id) {
+  if (!profiles_.Find(id)) {
+    return Error{"There is no such profile."};
+  }
+  if (quitting_) {
+    return Error{"Brouk is closing."};
+  }
+  OpenWindow(std::string(), id);
+  // Chrome's profile picker closes once a profile is chosen at startup.
+  if (profile_manager_at_startup_ && profiles_window_) {
+    profile_manager_at_startup_ = false;
+    PostMessageW(profiles_window_->hwnd(), WM_CLOSE, 0, 0);
+  }
+  return std::nullopt;
+}
+
+void App::DeleteProfile(const ProfileId& id, DeleteDone done) {
+  const ProfileInfo* info = profiles_.Find(id);
+  if (!info) {
+    done(false, Error{"There is no such profile."});
+    return;
+  }
+  if (profiles_.default_profile().id == id) {
+    done(false, Error{"The default profile cannot be deleted. Make another "
+                      "profile the default first."});
+    return;
+  }
+  int tabs = 0;
+  for (const std::unique_ptr<BrowserWindow>& window : windows_) {
+    tabs += window->TabCountInProfile(id);
+  }
+  std::wstring text =
+      L"Its sign-ins, cookies, history and settings are removed from this "
+      L"PC. This cannot be undone.";
+  if (tabs > 0) {
+    text += L" Its " + std::to_wstring(tabs) + L" open " +
+            (tabs == 1 ? L"tab" : L"tabs") + L" will close.";
+  }
+  const std::wstring title =
+      L"Delete the profile \u201C" + Utf8ToWide(info->name) + L"\u201D?";
+  // Asked from a task: the message box runs its own message loop, which
+  // must not run inside the page's request.
+  HWND owner = profiles_window_ ? profiles_window_->hwnd() : nullptr;
+  CefPostTask(TID_UI, new FunctionTask([this, id, owner, title, text, done] {
+                const int answer = MessageBoxW(
+                    owner, (title + L"\n\n" + text).c_str(), L"Delete profile",
+                    MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2);
+                if (answer != IDYES || quitting_) {
+                  done(false, std::nullopt);
+                  return;
+                }
+                for (const std::unique_ptr<BrowserWindow>& window : windows_) {
+                  window->CloseTabsInProfile(id);
+                }
+                contexts_.erase(id);
+                // The web data goes at the next start, when Chromium no
+                // longer uses it.
+                std::optional<Error> error = profiles_.DeleteProfile(id);
+                ProfilesChanged();
+                done(!error, error);
+              }));
+}
+
+void App::ExportProfile(const ProfileId& /*id*/, ExportDone done) {
+  done(false, Error{"Exporting profiles comes later on Windows."});
+}
+
+void App::ImportProfile(ImportDone done) {
+  done(Error{"Importing profiles comes later on Windows."});
+}
+
+const LinkRoutingConfig* App::LinkRouting() {
+  return nullptr;  // Link routing (010) comes with W3.
+}
+
+std::optional<Error> App::SetLinkRouting(LinkRoutingConfig /*config*/) {
+  return Error{"Link routing comes later on Windows."};
 }
 
 }  // namespace brouk::win
