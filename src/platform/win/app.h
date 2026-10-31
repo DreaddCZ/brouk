@@ -80,6 +80,8 @@ class App final : public BrowserWindowOwner,
   void OnHistoryChanged(const ProfileId& profile) override;
   const std::vector<HistoryMatch>* RecentPages(
       const ProfileId& profile) override;
+  std::string SearchSuggestTemplate() override;
+  bool HistorySuggestionsEnabled() override;
   void OpenHelp(const std::string& anchor) override;
   void CloseAllWindows() override;
   void OpenWindow(const std::string& url, const ProfileId& profile) override;

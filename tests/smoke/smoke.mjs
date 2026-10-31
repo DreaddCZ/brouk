@@ -146,19 +146,25 @@ function rightClick(title, x, y) {
   }
 }
 
-// The top-level windows a process still has, for the log.
-function logWindowsOf(pid) {
+// The visible top-level windows of a process ("<class> [<name>]").
+function windowsOf(pid) {
   const script = [
     'Add-Type -AssemblyName UIAutomationClient',
     `$c = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, ${pid})`,
     '[System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $c) | ForEach-Object { "$($_.Current.ClassName) [$($_.Current.Name)]" }',
   ].join('; ');
   try {
-    const out = execFileSync('powershell', ['-NoProfile', '-Command', script], { timeout: 30000 });
-    log(`(windows left: ${out.toString().trim().split(/\r?\n/).join(', ')})`);
+    const out = execFileSync('powershell', ['-NoProfile', '-Command', script], { timeout: 60000 });
+    return out.toString().trim().split(/\r?\n/);
   } catch (error) {
     log(`(no window list: ${error.message})`);
+    return [];
   }
+}
+
+// The top-level windows a process still has, for the log.
+function logWindowsOf(pid) {
+  log(`(windows left: ${windowsOf(pid).join(', ')})`);
 }
 
 function finish(code) {
@@ -688,6 +694,26 @@ async function main() {
       }
       check(answer.includes('/find-and-zoom.html'), `the history has the visited test pages (${answer.slice(0, 200)})`);
       historyPage.close();
+
+      // Address bar suggestions (003): typing lists the history page under
+      // the field; Down selects it and Return loads it in place of the
+      // history tab.
+      const zoomPages = async () =>
+        (await devtoolsJson(port, '/json/list').catch(() => [])).filter(
+          (t) => t.type === 'page' && t.url.includes('/find-and-zoom.html'),
+        ).length;
+      const before = await zoomPages();
+      sendKeys('History', ['^l', 'find-and-zoom']);
+      await sleep(1500);
+      const windows = windowsOf(brouk.pid);
+      check(windows.some((w) => w.startsWith('BroukSuggestions')), `typing in the address bar shows suggestions (${windows.join(', ')})`);
+      sendKeys('History', ['{DOWN}', '{ENTER}']);
+      let after = before;
+      for (let i = 0; i < 20 && after <= before; i++) {
+        await sleep(500);
+        after = await zoomPages();
+      }
+      check(after > before, `Down and Return load the suggested history page (${before} → ${after} tabs)`);
     }
   }
 

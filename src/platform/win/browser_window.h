@@ -14,12 +14,15 @@
 #include <utility>
 #include <vector>
 
+#include "cef/search_suggest_request.h"
 #include "cef/tab_client.h"
+#include "core/address_suggestions.h"
 #include "core/closed_tabs.h"
 #include "core/profile_registry.h"
 #include "core/session.h"
 #include "core/tab_strip_model.h"
 #include "include/cef_request_context.h"
+#include "platform/win/suggestions_popup.h"
 #include "platform/win/tab.h"
 #include "platform/win/tab_panel.h"
 #include "platform/win/tab_strip.h"
@@ -64,6 +67,10 @@ class BrowserWindowOwner {
       const ProfileId& profile) = 0;
   // History → Clear browsing data (013): the dialog on the history page.
   virtual void OpenClearBrowsingData() = 0;
+  // Address bar suggestions (003): the search engine's suggestion URL
+  // template (empty: none), and whether history pages are suggested.
+  virtual std::string SearchSuggestTemplate() = 0;
+  virtual bool HistorySuggestionsEnabled() = 0;
   virtual const std::vector<ProfileInfo>& ProfileList() = 0;
   // Opens the profile manager (brouk://profiles, 005) in its own window.
   virtual void OpenProfileManager() = 0;
@@ -266,6 +273,24 @@ class BrowserWindow final : public TabHost {
   void FocusAddressBar();
   void NavigateToAddressBarText();
   void ShowAddress();
+  // Sets the address field's text without it counting as typing, with the
+  // selection from `select_from` to the end (-1: the caret at the end).
+  void SetAddressText(const std::wstring& text, int select_from = -1);
+  // Loads `url` from the address bar in the active tab; `typed` counts for
+  // history ranking (addresses, not searches; Chrome).
+  void NavigateActiveTab(const std::string& url, bool typed);
+
+  // Address bar suggestions (003), as on macOS: the field's text changed by
+  // typing; asking the sources again (the profile's history, the search
+  // engine); showing the list with the first row's inline completion; the
+  // keys the field passes on while the list is open (Up, Down, Escape,
+  // Shift+Delete); running a row as Return does.
+  void OnAddressEdited();
+  void UpdateSuggestions();
+  void ShowSuggestions();
+  void CloseSuggestions();
+  bool HandleSuggestionKey(int key, bool shift);
+  void OpenSuggestionRow(int row);
 
   BrowserWindowOwner& owner_;
   const Kind kind_;
@@ -314,6 +339,21 @@ class BrowserWindow final : public TabHost {
   // address bar, a find bar, a dialog over a page, ...), to go back there.
   HWND saved_focus_ = nullptr;
   bool closing_ = false;
+  // Address bar suggestions (003). Answers carry suggest_generation_, so
+  // late answers for older text are dropped.
+  std::unique_ptr<SuggestionsPopup> suggestions_;
+  std::wstring typed_text_;
+  // The last edit added text at the end: inline completion is allowed.
+  bool allow_inline_ = false;
+  bool setting_address_ = false;
+  bool suggesting_ = false;
+  std::uint64_t suggest_generation_ = 0;
+  std::vector<HistoryMatch> history_matches_;
+  std::vector<std::string> search_suggestions_;
+  std::vector<AddressSuggestion> suggestion_rows_;
+  CefRefPtr<SearchSuggestRequest> suggest_request_;
+  // Expires with the window, for answers that come later.
+  std::shared_ptr<int> alive_ = std::make_shared<int>(0);
   bool spinner_running_ = false;
   bool fullscreen_ = false;
   // The window went full screen because a page asked (not F11), and leaves

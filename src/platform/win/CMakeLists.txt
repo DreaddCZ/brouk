@@ -30,6 +30,8 @@ add_library(brouk_app SHARED
   main.cc
   settings_watcher.cc
   settings_watcher.h
+  suggestions_popup.cc
+  suggestions_popup.h
   tab.cc
   tab.h
   tab_panel.cc
