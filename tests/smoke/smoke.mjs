@@ -802,6 +802,10 @@ async function main() {
         await ask({ type: 'tasks.action', action: 'resume', pages: [row.key] });
         const resumed = await pageOf();
         check(resumed?.paused === false, 'Resume runs it again');
+        // Diagnostics: where the keys go after a resume.
+        logFocus('after Resume');
+        sendKeys('Downloads test', ['^l']);
+        logFocus('after Ctrl+L in the resumed tab');
       }
       tasks.close();
       // Closed again, so that keys go to the browser windows that follow.
@@ -831,6 +835,10 @@ async function main() {
     again.close();
   }
 
+  if (kWindows) {
+    logFocus('before Ctrl+W');
+    desktopScreenshot('before-ctrl-w');
+  }
   // Reopen closed tab (013): Ctrl+W, then Ctrl+Shift+T brings the page
   // back in a new tab (a new target).
   if (kWindows && after) {
