@@ -794,6 +794,11 @@ async function main() {
         return key ? { key, ...pages[key] } : undefined;
       };
       const row = await pageOf();
+      // Diagnostics: do shortcuts work with the task manager open, before
+      // any pause?
+      sendKeys('Downloads test', ['^l']);
+      logFocus('after Ctrl+L with the task manager open');
+      sendKeys('Downloads test', ['{ESC}']);
       if (check(row !== undefined, 'the task manager lists the tabs')) {
         await ask({ type: 'tasks.action', action: 'pause', pages: [row.key] });
         const paused = await pageOf();
