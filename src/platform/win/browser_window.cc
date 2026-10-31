@@ -88,6 +88,7 @@ enum MenuCommand : UINT {
   kBookmarkThisTabCommand,
   kBookmarkAllTabsCommand,
   kBookmarkManagerCommand,
+  kAlwaysShowBarCommand,
   kFirstBlockedPopupCommand = 1000,
   kFirstProfileCommand = 2000,
   kFirstClosedCommand = 3000,
@@ -276,6 +277,9 @@ void BrowserWindow::CreateControls() {
       window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kPopupsId)),
       instance, nullptr);
   SetAccessibleName(popups_, L"Pop-ups blocked");
+  if (kind_ == Kind::kNormal) {
+    bookmarks_bar_ = std::make_unique<BookmarksBar>(window_, *this);
+  }
   star_ = CreateWindowExW(
       0, WC_BUTTONW, kStarGlyph, WS_CHILD | BS_OWNERDRAW, 0, 0, 0, 0, window_,
       reinterpret_cast<HMENU>(static_cast<INT_PTR>(kStarId)), instance,
@@ -369,10 +373,17 @@ RECT BrowserWindow::ToolbarBounds() const {
                    static_cast<int>(strip.bottom) + Scale(kToolbarHeight))};
 }
 
+RECT BrowserWindow::BookmarksBarBounds() const {
+  const RECT toolbar = ToolbarBounds();
+  const int height =
+      bookmarks_bar_shown_ ? BookmarksBar::Height(GetDpiForWindow(window_)) : 0;
+  return {toolbar.left, toolbar.bottom, toolbar.right, toolbar.bottom + height};
+}
+
 RECT BrowserWindow::ContentBounds() const {
   RECT client = {};
   GetClientRect(window_, &client);
-  client.top = ToolbarBounds().bottom;
+  client.top = BookmarksBarBounds().bottom;
   return client;
 }
 
@@ -441,6 +452,9 @@ void BrowserWindow::Layout() {
       field_top + (field_height - edit_height) / 2,
       std::max(0, edit_right - static_cast<int>(address_field_.left) - padding),
       edit_height, SWP_NOZORDER | SWP_NOACTIVATE);
+  if (bookmarks_bar_) {
+    bookmarks_bar_->SetBounds(BookmarksBarBounds());
+  }
   const RECT content = ContentBounds();
   for (const auto& [id, tab] : tabs_) {
     tab->SetBounds(content);
@@ -602,6 +616,221 @@ bool BrowserWindow::CanBookmark(const Tab* tab) const {
 
 void BrowserWindow::BookmarksChanged() {
   UpdateIndicators();
+  UpdateBookmarksBar();
+}
+
+bool BrowserWindow::BookmarksBarShown() {
+  if (!bookmarks_bar_ || fullscreen_ || !owner_.Bookmarks()) {
+    return false;
+  }
+  if (owner_.BookmarksBarAlwaysShown()) {
+    return true;
+  }
+  // By default on the new tab page only, as in Chrome (011).
+  const Tab* tab = ActiveTab();
+  return tab && !tab->internal() && IsBlank(tab->url());
+}
+
+void BrowserWindow::UpdateBookmarksBar() {
+  if (!bookmarks_bar_) {
+    return;
+  }
+  const bool shown = BookmarksBarShown();
+  if (shown) {
+    const Tab* tab = ActiveTab();
+    bookmarks_bar_->Update(owner_.Bookmarks()->model(),
+                           tab ? tab->profile() : owner_.DefaultProfile(),
+                           theme_, text_font_, icon_font_);
+  }
+  if (shown != bookmarks_bar_shown_) {
+    bookmarks_bar_shown_ = shown;
+    bookmarks_bar_->SetVisible(shown);
+    Layout();
+  }
+}
+
+void BrowserWindow::ShowBookmarkDialog(BookmarkDialog::Options options,
+                                       const RECT& anchor,
+                                       BookmarkDialog::Done done) {
+  BookmarkStore* store = owner_.Bookmarks();
+  if (!store || bookmark_dialog_) {
+    MessageBeep(MB_OK);
+    return;
+  }
+  bookmark_dialog_ = std::make_unique<BookmarkDialog>(
+      window_, *store, std::move(options), theme_, text_font_,
+      [this, done = std::move(done)](BookmarkDialog::Answer answer,
+                                     const BookmarkDialogValues& values) {
+        done(answer, values);
+        CloseBookmarkDialog();
+      });
+  bookmark_dialog_->ShowBelow(anchor);
+}
+
+RECT BrowserWindow::CursorAnchor() const {
+  POINT cursor = {};
+  GetCursorPos(&cursor);
+  // The dialog's right edge at the anchor's: start at the mouse.
+  const int width = Scale(380);
+  return {cursor.x, cursor.y, cursor.x + width, cursor.y};
+}
+
+void BrowserWindow::OpenAllBookmarks(BookmarkId folder) {
+  BookmarkStore* store = owner_.Bookmarks();
+  const BookmarkItem* item = store ? store->model().Find(folder) : nullptr;
+  if (!item || !item->folder) {
+    return;
+  }
+  const Tab* active = ActiveTab();
+  const ProfileId profile =
+      active ? active->profile() : owner_.DefaultProfile();
+  bool first = true;
+  for (BookmarkId child : std::vector<BookmarkId>(item->children)) {
+    const BookmarkItem* inner = store->model().Find(child);
+    if (inner && !inner->folder && store->model().IsVisibleIn(child, profile)) {
+      OpenBookmark(child, first ? BookmarkOpen::kForegroundTab
+                                : BookmarkOpen::kBackgroundTab);
+      first = false;
+    }
+  }
+}
+
+void BrowserWindow::EditBookmark(BookmarkId id) {
+  BookmarkStore* store = owner_.Bookmarks();
+  const BookmarkItem* item = store ? store->model().Find(id) : nullptr;
+  if (!item || BookmarkModel::IsRoot(id)) {
+    return;
+  }
+  const Tab* active = ActiveTab();
+  BookmarkDialog::Options options;
+  options.kind = item->folder ? BookmarkDialog::Kind::kFolder
+                              : BookmarkDialog::Kind::kBookmark;
+  options.title = item->folder ? L"Edit folder" : L"Edit bookmark";
+  options.values = {.name = item->name,
+                    .url = item->url,
+                    .folder = item->parent,
+                    .profile = store->model().EffectiveProfile(id)};
+  options.active_profile = active ? active->profile() : owner_.DefaultProfile();
+  options.editing = id;
+  options.profiles = owner_.ProfileList();
+  ShowBookmarkDialog(
+      std::move(options), CursorAnchor(),
+      [store, id](BookmarkDialog::Answer answer,
+                  const BookmarkDialogValues& values) {
+        if (answer != BookmarkDialog::Answer::kKeep ||
+            !store->model().Find(id)) {
+          return;
+        }
+        store->Change([&](BookmarkModel& model) {
+          const BookmarkItem* changed = model.Find(id);
+          if (!values.name.empty() && changed->name != values.name) {
+            model.Rename(id, values.name);
+          }
+          if (!changed->folder && changed->url != values.url) {
+            model.SetUrl(id, values.url);  // Invalid addresses are refused.
+          }
+          if (values.folder > 0 && changed->parent != values.folder &&
+              model.Find(values.folder)) {
+            model.Move(id, values.folder, BookmarkModel::kEnd);
+          }
+          if (model.InheritedProfile(id).empty() &&
+              model.Find(id)->profile != values.profile) {
+            model.SetProfile(id, values.profile);
+          }
+        });
+      });
+}
+
+void BrowserWindow::RemoveBookmark(BookmarkId id) {
+  if (BookmarkStore* store = owner_.Bookmarks()) {
+    // Undone from the bookmark manager (Ctrl+Z there), as on macOS.
+    store->Remove({id});
+  }
+}
+
+void BrowserWindow::AddBookmark(BookmarkId folder, std::size_t index) {
+  const Tab* active = ActiveTab();
+  BookmarkDialog::Options options;
+  options.kind = BookmarkDialog::Kind::kBookmark;
+  options.title = L"Add bookmark";
+  // The current page, as Chrome fills it in.
+  const bool page = CanBookmark(active);
+  options.values = {.name = page ? active->title() : std::string(),
+                    .url = page ? active->url() : std::string(),
+                    .folder = folder,
+                    .profile = active ? active->profile() : ProfileId()};
+  options.active_profile = active ? active->profile() : owner_.DefaultProfile();
+  options.profiles = owner_.ProfileList();
+  BookmarkStore* store = owner_.Bookmarks();
+  ShowBookmarkDialog(
+      std::move(options), CursorAnchor(),
+      [store, folder, index](BookmarkDialog::Answer answer,
+                             const BookmarkDialogValues& values) {
+        if (answer != BookmarkDialog::Answer::kKeep) {
+          return;
+        }
+        bool added = false;
+        store->Change([&](BookmarkModel& model) {
+          added = model
+                      .AddBookmark(
+                          values.folder,
+                          values.folder == folder ? index : BookmarkModel::kEnd,
+                          values.name.empty() ? values.url : values.name,
+                          values.url, values.profile, NowSeconds())
+                      .has_value();
+        });
+        if (!added) {
+          MessageBeep(MB_ICONWARNING);  // Not a valid address.
+        }
+      });
+}
+
+void BrowserWindow::AddBookmarkFolder(BookmarkId folder, std::size_t index) {
+  const Tab* active = ActiveTab();
+  BookmarkDialog::Options options;
+  options.kind = BookmarkDialog::Kind::kNewFolder;
+  options.title = L"Add folder";
+  options.values = {.name = "New folder",
+                    .url = "",
+                    .folder = folder,
+                    .profile = ProfileId()};
+  options.active_profile = active ? active->profile() : owner_.DefaultProfile();
+  options.profiles = owner_.ProfileList();
+  BookmarkStore* store = owner_.Bookmarks();
+  ShowBookmarkDialog(
+      std::move(options), CursorAnchor(),
+      [store, folder, index](BookmarkDialog::Answer answer,
+                             const BookmarkDialogValues& values) {
+        if (answer != BookmarkDialog::Answer::kKeep) {
+          return;
+        }
+        store->Change([&](BookmarkModel& model) {
+          model.AddFolder(values.folder,
+                          values.folder == folder ? index : BookmarkModel::kEnd,
+                          values.name.empty() ? "New folder" : values.name,
+                          values.profile, NowSeconds());
+        });
+      });
+}
+
+void BrowserWindow::MoveBookmark(BookmarkId id,
+                                 BookmarkId parent,
+                                 std::size_t index) {
+  if (BookmarkStore* store = owner_.Bookmarks()) {
+    store->Change([&](BookmarkModel& model) { model.Move(id, parent, index); });
+  }
+}
+
+void BrowserWindow::ShowBookmarkManager() {
+  OpenInternalPage("brouk://bookmarks/");
+}
+
+void BrowserWindow::ToggleBookmarksBar() {
+  owner_.SetBookmarksBarAlwaysShown(!owner_.BookmarksBarAlwaysShown());
+}
+
+bool BrowserWindow::BookmarksBarAlwaysShown() {
+  return owner_.BookmarksBarAlwaysShown();
 }
 
 RECT BrowserWindow::StarScreenRect() const {
@@ -933,6 +1162,7 @@ void BrowserWindow::SetFullscreen(bool fullscreen) {
     ShowWindow(popups_, SW_HIDE);
   }
   UpdateIndicators();
+  UpdateBookmarksBar();
   Layout();
   InvalidateRect(window_, nullptr, TRUE);
 }
@@ -1315,6 +1545,10 @@ void BrowserWindow::ShowAppMenu() {
               L"Bookmark all tabs\u2026\tCtrl+Shift+D");
   AppendMenuW(bookmarks, MF_STRING, kBookmarkManagerCommand,
               L"Bookmark manager\tCtrl+Shift+O");
+  AppendMenuW(bookmarks,
+              MF_STRING | (owner_.BookmarksBarAlwaysShown() ? MF_CHECKED : 0),
+              kAlwaysShowBarCommand,
+              L"Always show bookmarks bar\tCtrl+Shift+B");
   std::vector<BookmarkId> bookmark_ids;
   if (owner_.Bookmarks()) {
     AppendMenuW(bookmarks, MF_SEPARATOR, 0, nullptr);
@@ -1430,7 +1664,10 @@ void BrowserWindow::ShowAppMenu() {
       BookmarkAllTabs();
       break;
     case kBookmarkManagerCommand:
-      OpenInternalPage("brouk://bookmarks/");
+      ShowBookmarkManager();
+      break;
+    case kAlwaysShowBarCommand:
+      ToggleBookmarksBar();
       break;
     default:
       break;
@@ -1444,6 +1681,7 @@ void BrowserWindow::RefreshTheme() {
   theme_ = CurrentTheme();
   ApplyThemeToFrame(window_, theme_);
   UpdateFonts();
+  UpdateBookmarksBar();
   RedrawWindow(window_, nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN);
 }
 
@@ -1790,6 +2028,7 @@ void BrowserWindow::ModelChanged() {
   UpdateToolbar();
   UpdateSpinner();
   InvalidateStrip();
+  UpdateBookmarksBar();  // Another tab or profile.
 }
 
 ClosedTab BrowserWindow::ClosedTabFor(const Tab& tab, std::size_t index) const {
@@ -2242,7 +2481,11 @@ bool BrowserWindow::HandleShortcut(int key,
     return true;
   }
   if (control && !alt && shift && key == 'O') {
-    OpenInternalPage("brouk://bookmarks/");
+    ShowBookmarkManager();
+    return true;
+  }
+  if (control && !alt && shift && key == 'B') {
+    ToggleBookmarksBar();
     return true;
   }
   if (control && !alt && !shift && key == 'J') {
@@ -2300,6 +2543,10 @@ void BrowserWindow::OnTabChanged(Tab& tab) {
   owner_.OnSessionChanged();
   if (model_.active_id() == tab.id()) {
     UpdateToolbar();
+    // A new tab got a page, or back: the bar comes or goes (011).
+    if (BookmarksBarShown() != bookmarks_bar_shown_) {
+      UpdateBookmarksBar();
+    }
   }
   UpdateSpinner();
   InvalidateStrip();

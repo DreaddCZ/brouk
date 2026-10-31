@@ -746,6 +746,22 @@ async function main() {
       desktopScreenshot('bookmarks');
       sendKeys('Bookmarks', ['^w']);
     }
+
+    // Ctrl+Shift+B shows the bookmarks bar on every tab, kept as a setting.
+    sendKeys('Downloads test', ['^+b']);
+    let always = false;
+    for (let i = 0; i < 20 && !always; i++) {
+      await sleep(500);
+      try {
+        always = /bar: "?always"?/.test(readFileSync(join(dataDir, 'settings.yaml'), 'utf8'));
+      } catch {
+        // Not written yet.
+      }
+    }
+    check(always, 'Ctrl+Shift+B always shows the bookmarks bar (settings.yaml)');
+    await sleep(500);
+    desktopScreenshot('bookmarks-bar');
+    sendKeys('Downloads test', ['^+b']);
   }
 
   // A crashed renderer shows the crash page (012); Brouk keeps running.

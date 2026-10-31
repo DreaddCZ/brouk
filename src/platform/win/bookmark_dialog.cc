@@ -23,6 +23,7 @@ constexpr int kButtonHeight = 28;
 
 enum ControlId : int {
   kNameId = 1,
+  kUrlId,
   kFolderId,
   kProfileId,
   kSecondaryId,
@@ -80,7 +81,13 @@ void BookmarkDialog::ShowBelow(const RECT& anchor) {
   if (!RegisterWindowClass()) {
     return;
   }
-  const int rows = 3;  // Name, folder, profile.
+  int rows = 2;  // Name and profile.
+  if (options_.kind == Kind::kBookmark) {
+    ++rows;  // URL.
+  }
+  if (options_.kind != Kind::kFolder) {
+    ++rows;  // Folder.
+  }
   const int height = Scale(kMargin) * 2 + Scale(kRowHeight) +  // Title.
                      rows * (Scale(kRowHeight) + Scale(kRowGap)) +
                      Scale(kButtonHeight) + Scale(kRowGap);
@@ -148,12 +155,22 @@ void BookmarkDialog::CreateControls() {
                   kNameId);
   SetAccessibleName(name_, L"Name");
   y += row + gap;
-  label(L"Folder");
-  folder_ =
-      control(WC_COMBOBOXW, L"", WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
-              field_x, y, field_width, Scale(300), kFolderId);
-  SetAccessibleName(folder_, L"Folder");
-  y += row + gap;
+  if (options_.kind == Kind::kBookmark) {
+    label(L"URL");
+    url_ = control(WC_EDITW, Utf8ToWide(options_.values.url).c_str(),
+                   WS_TABSTOP | ES_AUTOHSCROLL, field_x, y, field_width, row,
+                   kUrlId);
+    SetAccessibleName(url_, L"URL");
+    y += row + gap;
+  }
+  if (options_.kind != Kind::kFolder) {
+    label(L"Folder");
+    folder_ =
+        control(WC_COMBOBOXW, L"", WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
+                field_x, y, field_width, Scale(300), kFolderId);
+    SetAccessibleName(folder_, L"Folder");
+    y += row + gap;
+  }
   label(L"Profile");
   profile_ =
       control(WC_COMBOBOXW, L"", WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
@@ -177,7 +194,9 @@ void BookmarkDialog::CreateControls() {
                        WS_TABSTOP | BS_PUSHBUTTON,
                        client.right - margin - 2 * button_width - Scale(8), y,
                        button_width, button_height, kSecondaryId);
-  FillFolders(options_.values.folder);
+  if (folder_) {
+    FillFolders(options_.values.folder);
+  }
   UpdateProfile();
 }
 
@@ -189,8 +208,9 @@ void BookmarkDialog::FillFolders(BookmarkId selected) {
   for (const BookmarkFolderEntry& entry :
        model.Folders(options_.active_profile)) {
     const BookmarkItem* folder = model.Find(entry.id);
-    if (!folder) {
-      continue;
+    if (!folder ||
+        (options_.editing != 0 && model.IsInside(entry.id, options_.editing))) {
+      continue;  // Not into itself.
     }
     // Nesting shown by indentation, as in the macOS folder list.
     const std::wstring text =
@@ -226,7 +246,10 @@ void BookmarkDialog::UpdateProfile() {
 BookmarkDialogValues BookmarkDialog::Values() const {
   BookmarkDialogValues values;
   values.name = WideToUtf8(WindowText(name_));
-  const LRESULT folder = SendMessageW(folder_, CB_GETCURSEL, 0, 0);
+  values.url = url_ ? WideToUtf8(WindowText(url_)) : options_.values.url;
+  values.folder = options_.values.folder;
+  const LRESULT folder =
+      folder_ ? SendMessageW(folder_, CB_GETCURSEL, 0, 0) : CB_ERR;
   if (folder != CB_ERR) {
     values.folder = static_cast<BookmarkId>(
         SendMessageW(folder_, CB_GETITEMDATA, static_cast<WPARAM>(folder), 0));

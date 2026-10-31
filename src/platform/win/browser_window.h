@@ -24,6 +24,7 @@
 #include "include/cef_request_context.h"
 #include "platform/win/bookmark_dialog.h"
 #include "platform/win/bookmark_store.h"
+#include "platform/win/bookmarks_bar.h"
 #include "platform/win/suggestions_popup.h"
 #include "platform/win/tab.h"
 #include "platform/win/tab_panel.h"
@@ -33,15 +34,6 @@
 namespace brouk::win {
 
 class BrowserWindow;
-
-// Where a bookmark opens (011): click, Ctrl-click or middle-click,
-// Ctrl+Shift-click, "Open in new window".
-enum class BookmarkOpen {
-  kCurrentTab,
-  kBackgroundTab,
-  kForegroundTab,
-  kNewWindow,
-};
 
 // The app, as the browser windows see it. UI thread.
 class BrowserWindowOwner {
@@ -94,6 +86,9 @@ class BrowserWindowOwner {
   // whether address bar suggestions include them.
   virtual BookmarkStore* Bookmarks() = 0;
   virtual bool BookmarkSuggestionsEnabled() = 0;
+  // The setting bookmarks.bar: "always" or only on the new tab page.
+  virtual bool BookmarksBarAlwaysShown() = 0;
+  virtual void SetBookmarksBarAlwaysShown(bool always) = 0;
   virtual const std::vector<ProfileInfo>& ProfileList() = 0;
   // Opens the profile manager (brouk://profiles, 005) in its own window.
   virtual void OpenProfileManager() = 0;
@@ -135,7 +130,7 @@ class BrowserWindowOwner {
 // forward, reload, address bar) and the active tab. Popup windows have the
 // system title bar and a read-only address bar (Chrome). The tabs' order
 // and selection follow the core's TabStripModel.
-class BrowserWindow final : public TabHost {
+class BrowserWindow final : public TabHost, public BookmarksBar::Delegate {
  public:
   enum class Kind { kNormal, kPopup };
 
@@ -189,7 +184,7 @@ class BrowserWindow final : public TabHost {
   // its linked profile, or a general one in the active tab's (from the
   // manager page in tab `from`: in place of it when it may).
   void BookmarksChanged();
-  void OpenBookmark(BookmarkId id, BookmarkOpen how);
+  void OpenBookmark(BookmarkId id, BookmarkOpen how) override;
   void OpenBookmarkFromTab(TabId from, BookmarkId id, bool new_tab);
   // Removes a tab whose browser never came (the popup was aborted).
   void RemoveUncreatedTab(TabId id);
@@ -230,6 +225,19 @@ class BrowserWindow final : public TabHost {
   bool OnTabKey(const CefKeyEvent& event) override;
   TabClientDelegate::SearchEngine TabSearchEngine() override;
   int FaviconSize() override;
+  // BookmarksBar::Delegate:
+  void OpenAllBookmarks(BookmarkId folder) override;
+  void EditBookmark(BookmarkId id) override;
+  void RemoveBookmark(BookmarkId id) override;
+  void AddBookmark(BookmarkId folder, std::size_t index) override;
+  void AddBookmarkFolder(BookmarkId folder, std::size_t index) override;
+  void MoveBookmark(BookmarkId id,
+                    BookmarkId parent,
+                    std::size_t index) override;
+  void ShowBookmarkManager() override;
+  void ToggleBookmarksBar() override;
+  bool BookmarksBarAlwaysShown() override;
+
   HistoryService* TabHistory() override;
   void OnTabHistoryChanged(Tab& tab) override;
   DownloadService* TabDownloads() override;
@@ -281,8 +289,20 @@ class BrowserWindow final : public TabHost {
                           BookmarkId folder,
                           const ProfileId& profile,
                           std::vector<BookmarkId>& ids);
+  // Opens a bookmark dialog under `anchor` (screen pixels), unless one is
+  // open; `done` runs when it closes.
+  void ShowBookmarkDialog(BookmarkDialog::Options options,
+                          const RECT& anchor,
+                          BookmarkDialog::Done done);
   // The bubble or folder dialog closed: deleted from a task.
   void CloseBookmarkDialog();
+  // Where a dialog opened from the bar goes: under the mouse.
+  RECT CursorAnchor() const;
+  // The bookmarks bar (011): shown always, or on the new tab page only
+  // (the setting); updated from the bookmarks and the active tab.
+  bool BookmarksBarShown();
+  void UpdateBookmarksBar();
+  RECT BookmarksBarBounds() const;
   RECT StarScreenRect() const;
   // The indicators at the right of the address bar: zoom ("110 %", click
   // resets to 100 %) and "Pop-ups blocked" (click lists them).
@@ -379,6 +399,8 @@ class BrowserWindow final : public TabHost {
   HWND downloads_ = nullptr;
   HWND star_ = nullptr;  // In the address bar (011).
   std::unique_ptr<BookmarkDialog> bookmark_dialog_;
+  std::unique_ptr<BookmarksBar> bookmarks_bar_;
+  bool bookmarks_bar_shown_ = false;
   HWND zoom_ = nullptr;
   HWND popups_ = nullptr;
   // Tab titles and the strip's buttons on hover.

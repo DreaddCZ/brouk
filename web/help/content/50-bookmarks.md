@@ -7,7 +7,7 @@
 - Deleting a bookmark anywhere shows **Undo** for a few seconds; <kbd>⌘Z</kbd> on the bookmark manager undoes it too.
 - Bookmarks show their site's icon once you have visited the site in that profile.
 
-**On Windows:** <kbd>Ctrl+D</kbd> or the star bookmarks the page, <kbd>Ctrl+Shift+D</kbd> bookmarks all tabs, <kbd>Ctrl+Shift+O</kbd> opens the bookmark manager, and "⋮" → Bookmarks lists the bar's bookmarks and Other bookmarks. The bookmarks bar itself comes later.
+**On Windows:** <kbd>Ctrl+D</kbd> or the star bookmarks the page, <kbd>Ctrl+Shift+D</kbd> bookmarks all tabs, <kbd>Ctrl+Shift+O</kbd> opens the bookmark manager, and "⋮" → Bookmarks lists the bar's bookmarks and Other bookmarks. <kbd>Ctrl+Shift+B</kbd> shows the bookmarks bar on every tab; Ctrl-click or middle-click on the bar opens a bookmark in a background tab, Ctrl+Shift-click in a new tab in front.
 
 ### Bookmarks and profiles {#bookmarks-profiles}
 

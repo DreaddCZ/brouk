@@ -17,6 +17,7 @@ namespace brouk::win {
 // What the bookmark dialog edits (011).
 struct BookmarkDialogValues {
   std::string name;
+  std::string url;        // Bookmarks only.
   BookmarkId folder = 0;  // The folder the item is (or goes) in.
   ProfileId profile;      // "" for general.
 };
@@ -26,20 +27,29 @@ struct BookmarkDialogValues {
 // - the star's bubble (Ctrl+D): the bookmark already exists (Chrome saves
 //   it when the bubble opens); Done or closing keeps the changes, Remove
 //   deletes it;
-// - Bookmark all tabs (Ctrl+Shift+D): the new folder's name, parent folder
-//   and profile; Save or Cancel.
+// - Bookmark all tabs (Ctrl+Shift+D) and Add folder: the new folder's name,
+//   parent folder and profile; Save or Cancel;
+// - Add bookmark and Edit from the bookmarks bar: name, URL, folder and
+//   profile, or for a folder its name and profile; Save or Cancel.
 // A folder linked to a profile decides the profile of what goes in it, so
 // the profile list follows the chosen folder. UI thread.
 class BookmarkDialog {
  public:
-  enum class Kind { kBubble, kNewFolder };
+  enum class Kind {
+    kBubble,
+    kNewFolder,
+    kBookmark,  // Adding or editing a bookmark: with its URL.
+    kFolder,    // Editing a folder: name and profile.
+  };
   enum class Answer { kKeep, kRemove, kCancel };
   struct Options {
     Kind kind = Kind::kBubble;
     std::wstring title;
     BookmarkDialogValues values;
-    // The folders offered are those visible in this profile.
+    // The folders offered are those visible in this profile, without the
+    // item being edited (`editing`, 0 when adding) and what is inside it.
     ProfileId active_profile;
+    BookmarkId editing = 0;
     std::vector<ProfileInfo> profiles;
   };
   // `done` runs once, when the dialog closes (with the values for kKeep);
@@ -93,6 +103,7 @@ class BookmarkDialog {
   HWND window_ = nullptr;
   HWND title_ = nullptr;
   HWND name_ = nullptr;
+  HWND url_ = nullptr;
   HWND folder_ = nullptr;
   HWND profile_ = nullptr;
   HWND secondary_ = nullptr;  // Remove or Cancel.

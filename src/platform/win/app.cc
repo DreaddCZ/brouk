@@ -880,6 +880,17 @@ bool App::BookmarkSuggestionsEnabled() {
   return profiles_.global_settings().GetBool("suggestions.bookmarks");
 }
 
+bool App::BookmarksBarAlwaysShown() {
+  return profiles_.global_settings().GetString("bookmarks.bar") == "always";
+}
+
+void App::SetBookmarksBarAlwaysShown(bool always) {
+  // Kept after a restart (011); ApplySettings shows the change.
+  SetGlobalSetting(
+      "bookmarks.bar",
+      SettingValue(std::string(always ? "always" : "new_tab_page")));
+}
+
 void App::BookmarksChanged() {
   for (const std::unique_ptr<BrowserWindow>& window : windows_) {
     window->BookmarksChanged();

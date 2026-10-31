@@ -87,6 +87,8 @@ class App final : public BrowserWindowOwner,
   DownloadService* Downloads() override;
   BookmarkStore* Bookmarks() override;
   bool BookmarkSuggestionsEnabled() override;
+  bool BookmarksBarAlwaysShown() override;
+  void SetBookmarksBarAlwaysShown(bool always) override;
   bool AskWhereToSaveDownloads() override;
   DownloadTarget ReserveDownloadPath(const std::string& suggested,
                                      const ProfileId& profile) override;
