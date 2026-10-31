@@ -2,6 +2,8 @@
 #define BROUK_PLATFORM_WIN_APP_H_
 
 #include <array>
+#include <cstdint>
+#include <deque>
 #include <filesystem>
 #include <map>
 #include <memory>
@@ -11,6 +13,7 @@
 
 #include "cef/profile_manager_handler.h"
 #include "cef/settings_handler.h"
+#include "core/closed_tabs.h"
 #include "core/launch_args.h"
 #include "core/profile_registry.h"
 #include "core/session.h"
@@ -64,6 +67,11 @@ class App final : public BrowserWindowOwner,
   void OpenSettings(const std::string& url) override;
   void OnSessionChanged() override;
   void OnWindowClosing(BrowserWindow& window) override;
+  void OnTabClosedToReopen(ClosedTab tab) override;
+  void OnWindowClosedToReopen(std::int64_t window_id,
+                              std::vector<ClosedTab> tabs) override;
+  const std::deque<ClosedEntry>& RecentlyClosed() override;
+  void ReopenClosed(std::optional<std::int64_t> entry_id) override;
 
   // ProfileManagerDelegate (the brouk://profiles page, 005):
   std::vector<Summary> Profiles() override;
@@ -117,6 +125,8 @@ class App final : public BrowserWindowOwner,
   void RestoreSession(const Session& session);
   // The open normal windows, back to front.
   Session CurrentSession() const;
+  // The front normal window that is not closing, or null.
+  BrowserWindow* FrontWindow() const;
   void SaveSessionFile(const Session& session);
   // Brouk quits: the session to continue with next time is final.
   void SaveSessionAtQuit();
@@ -159,6 +169,8 @@ class App final : public BrowserWindowOwner,
   bool session_ready_ = false;
   bool session_save_scheduled_ = false;
   std::optional<Session> frozen_session_;
+  // Tabs and windows closed in this run (013).
+  ClosedTabList closed_tabs_;
   std::vector<std::unique_ptr<BrowserWindow>> windows_;
 };
 

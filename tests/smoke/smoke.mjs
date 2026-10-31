@@ -647,6 +647,20 @@ async function main() {
     again.close();
   }
 
+  // Reopen closed tab (013): Ctrl+W, then Ctrl+Shift+T brings the page
+  // back in a new tab (a new target).
+  if (kWindows && after) {
+    sendKeys('Crash and hang test', ['^w', '^+t']);
+    let reopened;
+    for (let i = 0; i < 20 && !reopened; i++) {
+      await sleep(500);
+      reopened = await devtoolsJson(port, '/json/list')
+        .then((list) => list.find((t) => t.type === 'page' && t.url.includes('/crash-and-hang.html') && t.id !== after.id))
+        .catch(() => undefined);
+    }
+    check(reopened !== undefined, 'Ctrl+Shift+T reopens the tab closed with Ctrl+W');
+  }
+
   // Quit as the user does (Brouk → Quit; on Windows closing the window),
   // aimed at this copy's pid only.
   const pagesBeforeQuit = await devtoolsJson(port, '/json/list').catch(() => []);
