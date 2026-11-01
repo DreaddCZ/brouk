@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <charconv>
 #include <chrono>
 #include <cstdint>
@@ -67,6 +68,8 @@ constexpr std::uintmax_t kMaxProfileExportBytes = 16 * 1024 * 1024;
 constexpr std::uintmax_t kMaxSettingsExportBytes = 1024 * 1024;
 // Bookmark files from other browsers can be large; more is not one.
 constexpr std::uintmax_t kMaxBookmarkHtmlBytes = 64 * 1024 * 1024;
+// Autofill exports are small; more is not one.
+constexpr std::uintmax_t kMaxAutofillFileBytes = 16 * 1024 * 1024;
 // Password exports of other browsers are small; more is not one.
 constexpr std::uintmax_t kMaxPasswordCsvBytes = 64 * 1024 * 1024;
 
@@ -545,6 +548,11 @@ void App::OnContextInitialized() {
     return !settings || settings->GetBool("passwords.offer_to_save");
   });
   SetUpBitwarden();
+  // Form autofill (009): one database for the app, its key in Credential
+  // Manager, as on macOS.
+  autofill_ = std::make_unique<AutofillManager>(
+      AppDataDirectory() / L"autofill.db",
+      CreateCredentialStore(CredentialPrefix()));
   ApplySettings();
   // Changes made in the files apply while Brouk runs (004).
   settings_watcher_ = std::make_unique<SettingsWatcher>(
@@ -883,6 +891,7 @@ void App::ReleaseBrowserObjects() {
   task_manager_window_.reset();
   windows_.clear();
   system_events_.reset();
+  autofill_.reset();   // Finishes queued work, closes the database.
   passwords_.reset();  // Finishes queued work, closes the databases.
   bookmarks_.reset();  // Writes pending changes.
   download_watchers_.clear();
@@ -2052,6 +2061,27 @@ void App::ApplySettings() {
     history_->SetRetentionDays(is_days && days > 0 ? std::optional<int>(days)
                                                    : std::nullopt);
   }
+  if (autofill_) {
+    // Phone numbers without a country code: the setting, or the region set
+    // in Windows (the Mac's region on macOS).
+    std::string country = global.GetString("autofill.phone_country");
+    if (country.empty()) {
+      std::array<wchar_t, 16> region = {};
+      if (GetUserDefaultGeoName(region.data(),
+                                static_cast<int>(region.size())) > 0) {
+        country = WideToUtf8(region.data());
+      }
+    }
+    std::ranges::transform(country, country.begin(), [](unsigned char c) {
+      return static_cast<char>(std::toupper(c));
+    });
+    autofill_->SetOptions(
+        {.enabled = global.GetBool("autofill.enabled"),
+         .entries = global.GetBool("autofill.entries"),
+         .custom_fields = global.GetBool("autofill.custom_fields"),
+         .offer_to_save = global.GetBool("autofill.offer_to_save"),
+         .country = country});
+  }
   if (passwords_) {
     passwords_->SetOptions(
         {.fill_on_click = global.GetBool("passwords.fill_on_click"),
@@ -2189,15 +2219,55 @@ std::string App::Language() {
 }
 
 AutofillManager* App::Autofill() {
-  return nullptr;  // Form autofill (009) comes later on Windows.
+  return autofill_.get();
 }
 
-void App::SaveAutofillFile(std::string /*json*/, TextSaveDone done) {
-  done(false, Error{"Autofill comes later on Windows."});
+void App::SaveAutofillFile(std::string json, TextSaveDone done) {
+  FileDialogOptions options;
+  options.title = L"Export Autofill Data";
+  options.type_name = L"JSON file";
+  options.extension = L"json";
+  options.file_name = L"Autofill";
+  options.note =
+      L"The file is not encrypted: it contains your saved addresses and "
+      L"company details in plain text.";
+  HWND owner = DialogOwner();
+  auto text = std::make_shared<std::string>(std::move(json));
+  // Asked from a task: the dialog runs its own message loop, which must not
+  // run inside the page's request.
+  CefPostTask(
+      TID_UI, new FunctionTask([options, owner, text, done] {
+        std::optional<std::filesystem::path> path = AskSavePath(owner, options);
+        if (!path) {
+          done(false, std::nullopt);
+          return;
+        }
+        std::optional<Error> error = WriteTextFileAtomically(*path, *text);
+        done(!error, error);
+      }));
 }
 
 void App::OpenAutofillFile(TextOpenDone done) {
-  done(std::nullopt, Error{"Autofill comes later on Windows."});
+  FileDialogOptions options;
+  options.title = L"Import Autofill Data";
+  options.type_name = L"JSON file";
+  options.extension = L"json";
+  options.note = L"A file exported from Brouk's autofill settings.";
+  HWND owner = DialogOwner();
+  CefPostTask(
+      TID_UI, new FunctionTask([options, owner, done] {
+        std::optional<std::filesystem::path> path = AskOpenPath(owner, options);
+        if (!path) {
+          done(std::nullopt, std::nullopt);
+          return;
+        }
+        Result<std::string> text = ReadTextFile(*path, kMaxAutofillFileBytes);
+        if (!text) {
+          done(std::nullopt, text.error());
+          return;
+        }
+        done(std::move(text.value()), std::nullopt);
+      }));
 }
 
 void App::ExportSettings(FileDone done) {

@@ -25,7 +25,7 @@ A saved login can hold a 2FA (TOTP) secret. Add it on the passwords page by past
 
 Showing, copying, editing or exporting passwords asks for **Touch ID** or your Mac's password; the page then stays unlocked for 5 minutes while it is open.
 
-**On Windows:** "⋮" → Passwords opens the page (also from the command palette). Showing, copying, editing or exporting asks for **Windows Hello** (face, fingerprint or PIN), or your Windows password when Windows Hello is not set up. The passwords' keys are in Windows Credential Manager (as "Brouk Keys/…" under Windows Credentials), and copied passwords and 2FA codes are kept out of the clipboard history. Filling, saving, generated passwords, 2FA codes and **Read QR code from this page** work as described above; the key icon is at the right of the address bar, next to the star. For Bitwarden on Windows see [Bitwarden](#passwords-bitwarden).
+**On Windows:** "⋮" → Passwords and autofill → Passwords opens the page (also from the command palette). Showing, copying, editing or exporting asks for **Windows Hello** (face, fingerprint or PIN), or your Windows password when Windows Hello is not set up. The passwords' keys are in Windows Credential Manager (as "Brouk Keys/…" under Windows Credentials), and copied passwords and 2FA codes are kept out of the clipboard history. Filling, saving, generated passwords, 2FA codes and **Read QR code from this page** work as described above; the key icon is at the right of the address bar, next to the star. For Bitwarden on Windows see [Bitwarden](#passwords-bitwarden).
 
 ### Password checkup {#passwords-checkup}
 

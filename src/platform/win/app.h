@@ -14,6 +14,7 @@
 #include <string_view>
 #include <vector>
 
+#include "cef/autofill_manager.h"
 #include "cef/download_service.h"
 #include "cef/history_page_handler.h"
 #include "cef/history_service.h"
@@ -292,6 +293,8 @@ class App final : public BrowserWindowOwner,
   // Built-in passwords (008), for every profile; made when CEF is ready.
   std::unique_ptr<PasswordManager> passwords_;
   std::unique_ptr<ExportPasswordDialog> export_password_dialog_;
+  // Form autofill (009), for the whole app; made when CEF is ready.
+  std::unique_ptr<AutofillManager> autofill_;
   // Locks Bitwarden when the PC sleeps or the session is locked.
   std::unique_ptr<SystemEvents> system_events_;
   std::vector<std::unique_ptr<BrowserWindow>> windows_;
