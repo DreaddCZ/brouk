@@ -495,8 +495,9 @@ void LinkPicker::Choose(int row) {
   if (!window_step_) {
     chosen_ = profiles_[static_cast<std::size_t>(row)].id;
     if (!ShowWindowStep()) {
-      Finish(
-          {.profile = chosen_, .always = always_ && rule_pattern_.has_value()});
+      Finish(LinkPickerResult{.cancelled = false,
+                              .profile = chosen_,
+                              .always = always_ && rule_pattern_.has_value()});
     }
     return;
   }
