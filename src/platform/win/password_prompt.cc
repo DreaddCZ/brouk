@@ -126,8 +126,10 @@ void PasswordPromptBubble::ShowBelow(const RECT& anchor) {
   background_ = CreateSolidBrush(theme_.toolbar);
   field_ = CreateSolidBrush(theme_.field);
   CreateControls();
-  ShowWindow(window_, SW_SHOW);
-  SetFocus(save_);
+  // Shown without taking the keyboard, as Chrome's bubble: the page keeps
+  // it while it loads (its navigation would take it back, which counted as
+  // clicking elsewhere). A click in the prompt activates it.
+  ShowWindow(window_, SW_SHOWNOACTIVATE);
 }
 
 void PasswordPromptBubble::CreateControls() {
@@ -349,8 +351,14 @@ LRESULT PasswordPromptBubble::HandleMessage(UINT message,
       }
       break;
     case WM_ACTIVATE:
-      // Clicking elsewhere is "Not now"; the key icon offers it again.
-      if (LOWORD(wparam) == WA_INACTIVE && !finished_) {
+      // Once the user has used the prompt, clicking elsewhere is "Not now";
+      // the key icon offers it again.
+      if (LOWORD(wparam) != WA_INACTIVE) {
+        activated_ = true;
+        SetFocus(save_);
+        return 0;
+      }
+      if (activated_ && !finished_) {
         Finish(PasswordPromptAnswer::Choice::kNotNow);
       }
       break;

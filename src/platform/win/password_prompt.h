@@ -12,8 +12,8 @@ namespace brouk::win {
 // macOS: "Save password?" or "Update password?" with the site, the user
 // name and password (both editable, the password hidden until the eye is
 // pressed), "Save in" for a new Bitwarden login, and Save, Not now and
-// Never for this site. Enter saves, Escape or clicking elsewhere is Not
-// now (Chrome's bubble). UI thread.
+// Never for this site. Enter saves; Escape, or clicking elsewhere after
+// using it, is Not now (Chrome's bubble). UI thread.
 class PasswordPromptBubble {
  public:
   // `done` runs once, when the prompt closes; the owner deletes the prompt
@@ -29,7 +29,7 @@ class PasswordPromptBubble {
   PasswordPromptBubble& operator=(const PasswordPromptBubble&) = delete;
 
   // Shows the prompt below `anchor` (screen pixels), its right edge at the
-  // anchor's, with Save focused.
+  // anchor's, without taking the keyboard from the page.
   void ShowBelow(const RECT& anchor);
   HWND hwnd() const { return window_; }
 
@@ -68,6 +68,7 @@ class PasswordPromptBubble {
   HBRUSH field_ = nullptr;
   wchar_t password_char_ = 0;  // The edit's own, restored when hidden again.
   bool revealed_ = false;
+  bool activated_ = false;  // The user clicked into it.
   bool finished_ = false;
 };
 
