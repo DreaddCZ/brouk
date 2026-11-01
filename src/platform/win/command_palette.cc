@@ -24,17 +24,17 @@ constexpr std::size_t kMaxResults = 50;
 const wchar_t* GlyphOf(PaletteItem::Kind kind) {
   switch (kind) {
     case PaletteItem::Kind::kTab:
-      return L"";  // Page.
+      return L"\uE737";  // Page.
     case PaletteItem::Kind::kAction:
-      return L"";  // CommandPrompt.
+      return L"\uE756";  // CommandPrompt.
     case PaletteItem::Kind::kBookmark:
-      return L"";  // FavoriteStar.
+      return L"\uE734";  // FavoriteStar.
     case PaletteItem::Kind::kSetting:
-      return L"";  // Setting.
+      return L"\uE713";  // Setting.
     case PaletteItem::Kind::kHelp:
-      return L"";  // Help.
+      return L"\uE897";  // Help.
   }
-  return L"";
+  return L"\uE756";
 }
 
 bool RegisterWindowClass() {
