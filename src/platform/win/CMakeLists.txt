@@ -63,6 +63,12 @@ add_library(brouk_app SHARED
   find_bar.h
   internal_page_window.cc
   internal_page_window.h
+  link_picker.cc
+  link_picker.h
+  link_resolver.cc
+  link_resolver.h
+  link_routing.cc
+  link_routing.h
   main.cc
   password_drop_down.cc
   password_drop_down.h

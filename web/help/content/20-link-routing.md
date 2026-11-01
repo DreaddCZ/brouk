@@ -40,6 +40,8 @@ Number keys choose at once; <kbd>↑</kbd> <kbd>↓</kbd> and <kbd>Return</kbd> 
 
 **Which window:** a profile's group in exactly one window → that window; in several → the picker asks; in none → a new group in the front window. When the chosen window is on another desktop (Space), macOS switches there, or — Settings → Links → "When the chosen window is on another Space" — the window moves to you.
 
+**On Windows:** the picker shows a live picture of each window, as the taskbar does (a minimised window shows a frame instead). Virtual desktops take the place of Spaces: Windows switches to the chosen window's desktop, or the window moves to yours with the setting. Brouk's log (`debug.log` next to `brouk.exe`) has a line for each routed link.
+
 ### Safe links and other wrappers {#link-routing-wrappers}
 
 Links in mail and chat often go through a security service first (Microsoft Safe Links, Proofpoint, Mimecast…). Brouk always routes by the **real** address, never the wrapper's, and the picker says "via Safe Links" and similar.

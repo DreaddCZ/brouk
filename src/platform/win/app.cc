@@ -39,6 +39,7 @@
 #include "core/password_generator.h"
 #include "core/password_profile.h"
 #include "core/password_store.h"
+#include "core/profile_colors.h"
 #include "core/profile_export.h"
 #include "core/profile_id.h"
 #include "core/request_rules.h"
@@ -513,8 +514,10 @@ App::App()
         return std::filesystem::exists(Utf8ToWide(path), error);
       }) {
   profiles_.Load();
-  // Web data of profiles deleted earlier; Chromium is not running yet.
+  // Web data of profiles deleted earlier, and of link checks a crash left
+  // behind (010); Chromium is not running yet.
   profiles_.RemoveWebDataOfDeletedProfiles(WebDataRootDirectory());
+  LinkResolver::RemoveLeftoverData(WebDataRootDirectory());
 }
 
 void App::OnContextInitialized() {
@@ -579,6 +582,9 @@ void App::OnContextInitialized() {
   autofill_ = std::make_unique<AutofillManager>(
       AppDataDirectory() / L"autofill.db",
       CreateCredentialStore(CredentialPrefix()));
+  // Link routing (010): the rules in <data>\link-routing.yaml.
+  routing_ = std::make_unique<LinkRouting>(
+      *this, AppDataDirectory() / L"link-routing.yaml");
   ApplySettings();
   // Changes made in the files apply while Brouk runs (004).
   settings_watcher_ = std::make_unique<SettingsWatcher>(
@@ -621,6 +627,22 @@ void App::OnRelaunch(const LaunchRequest& request) {
 }
 
 void App::OpenLaunchRequest(const LaunchRequest& request, BrowserWindow* into) {
+  // URLs from the command line (or a second start: another app opened a
+  // link) are links from another app (010), unless --profile names where
+  // they go.
+  if (!request.profile && routing_) {
+    bool routed = false;
+    for (const std::string& url : request.urls) {
+      const AddressInputResult input = ClassifyAddressInput(url);
+      if (input.kind != AddressInputResult::Kind::kEmpty) {
+        routing_->OpenExternalUrl(input.url);
+        routed = true;
+      }
+    }
+    if (routed) {
+      return;
+    }
+  }
   ProfileId profile = profiles_.default_profile().id;
   if (request.profile) {
     const ProfileInfo* named = profiles_.FindByName(*request.profile);
@@ -917,6 +939,7 @@ void App::ReleaseBrowserObjects() {
   task_manager_window_.reset();
   windows_.clear();
   devtools_windows_.clear();
+  routing_.reset();
   system_events_.reset();
   adblock_.reset();
   autofill_.reset();   // Finishes queued work, closes the database.
@@ -1527,6 +1550,9 @@ void App::CloseAllWindows() {
   BrowserWindow* front = FrontWindow();
   if (!ConfirmQuitWithDownloads(front ? front->hwnd() : nullptr)) {
     return;
+  }
+  if (routing_) {
+    routing_->CancelPending();  // The picker closes, links stop resolving.
   }
   // Exit: the windows open now are the session to continue with (015).
   if (session_ready_ && !frozen_session_) {
@@ -2150,11 +2176,75 @@ void App::ImportProfile(ImportDone done) {
 }
 
 const LinkRoutingConfig* App::LinkRouting() {
-  return nullptr;  // Link routing (010) comes with W3.
+  return routing_ ? &routing_->config() : nullptr;
 }
 
-std::optional<Error> App::SetLinkRouting(LinkRoutingConfig /*config*/) {
-  return Error{"Link routing comes later on Windows."};
+std::optional<Error> App::SetLinkRouting(LinkRoutingConfig config) {
+  return routing_ ? routing_->SetConfig(std::move(config))
+                  : std::optional<Error>(Error{"Brouk is closing."});
+}
+
+LinkRouting* App::Routing() {
+  return quitting_ ? nullptr : routing_.get();
+}
+
+ProfileId App::RoutingDefaultProfile() {
+  return profiles_.default_profile().id;
+}
+
+const std::vector<ProfileInfo>& App::RoutingProfiles() {
+  return profiles_.profiles();
+}
+
+COLORREF App::RoutingProfileColor(const ProfileId& profile) {
+  const ProfileInfo* info = profiles_.Find(profile);
+  const ProfileColorShades shades =
+      ShadesOfProfileColor(info ? info->color : std::string());
+  const std::uint32_t rgb = CurrentTheme().dark ? shades.dark : shades.light;
+  return RGB((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+}
+
+// The normal windows, front to back by their place on screen, minimised
+// ones last (they can still be chosen), as on macOS.
+std::vector<BrowserWindow*> App::RoutingWindows() {
+  std::vector<BrowserWindow*> shown;
+  std::vector<BrowserWindow*> minimised;
+  for (HWND hwnd = GetTopWindow(nullptr); hwnd;
+       hwnd = GetWindow(hwnd, GW_HWNDNEXT)) {
+    for (const std::unique_ptr<BrowserWindow>& window : windows_) {
+      if (window->hwnd() == hwnd && window->is_normal() && !window->closing()) {
+        (IsIconic(hwnd) ? minimised : shown).push_back(window.get());
+      }
+    }
+  }
+  shown.insert(shown.end(), minimised.begin(), minimised.end());
+  return shown;
+}
+
+bool App::IsRoutingWindow(const BrowserWindow* window) {
+  return window && IsOpenWindow(window) && !window->closing();
+}
+
+BrowserWindow* App::OpenRoutingWindow() {
+  if (quitting_) {
+    return nullptr;
+  }
+  auto window =
+      std::make_unique<BrowserWindow>(*this, BrowserWindow::Kind::kNormal);
+  if (!window->Create()) {
+    return nullptr;
+  }
+  BrowserWindow* created = window.get();
+  windows_.push_back(std::move(window));
+  return created;  // Shown once routing has put the link's tab in it.
+}
+
+bool App::MoveChosenWindowHere() {
+  return profiles_.global_settings().GetString("links.other_space") == "move";
+}
+
+void App::RoutingBrowserCount(int delta) {
+  BrowserCount(delta);
 }
 
 std::array<std::unique_ptr<InternalPageWindow>*, 4> App::PageWindows() {
@@ -2324,6 +2414,9 @@ void App::SettingsFilesChanged() {
   }
   ApplySettings();
   ProfilesChanged();
+  if (routing_) {
+    routing_->Reload();  // link-routing.yaml may have changed too.
+  }
 }
 
 void App::ApplySettings() {
@@ -2625,7 +2718,7 @@ void App::ImportSettings(FileDone done) {
 }
 
 std::vector<std::string> App::LinkRoutingProblems() {
-  return {};
+  return routing_ ? routing_->problems() : std::vector<std::string>{};
 }
 
 bool App::IsDefaultBrowser() {

@@ -90,6 +90,9 @@ class TabHost {
                                      PasswordPromptDone done) = 0;
   virtual void OnTabPasswordIconChanged(Tab& tab) = 0;
   virtual void OpenTabPasswordsPage(Tab& tab) = 0;
+  // Link routing (010): the first page of a new tab opened blank (a
+  // popup), routed like a link; true when routing took it (the tab closes).
+  virtual bool RouteTabFirstNavigation(Tab& tab, const std::string& url) = 0;
   // Ad blocking (007): the app's service (null before it exists); the
   // tab's blocked count or requests changed; a list's name; "Allow this
   // site" on the blocked page (then `url` loads again); a rule for My
@@ -333,6 +336,18 @@ class Tab final : public TabClientDelegate,
   void SetDockPlace(const std::string& position, int size);
   void RequestRulesChanged(const RequestRuleSet& rules);
   bool rules_affected_page() const { return rules_affected_page_; }
+
+  // Link routing (010): this new tab's first page is routed like a link.
+  void RouteFirstNavigation() {
+    if (client_) {
+      client_->RouteFirstNavigation();
+    }
+  }
+  // A new tab nothing was loaded in yet.
+  bool unused() const {
+    return !internal() && !can_go_back_ &&
+           (url_.empty() || url_ == "about:blank");
+  }
 
   // Ad blocking (007): what the blocker saw on the current page (the
   // shield's count and popup), and the element picker.

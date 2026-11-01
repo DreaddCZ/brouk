@@ -70,6 +70,11 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance,
     return exit_code;
   }
 
+  // A second start hands its links to the running Brouk (CEF's process
+  // singleton): let that one come to the front with the link picker
+  // (010), as the app the user clicked the link in started this one.
+  AllowSetForegroundWindow(ASFW_ANY);
+
   brouk::win::App app;
 
   CefSettings settings;

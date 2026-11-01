@@ -34,6 +34,7 @@
 #include "include/cef_task.h"
 #include "include/wrapper/cef_helpers.h"
 #include "platform/win/controls.h"
+#include "platform/win/link_routing.h"
 #include "platform/win/wide_string.h"
 
 namespace brouk::win {
@@ -1691,7 +1692,7 @@ void BrowserWindow::OpenBookmarkFromTab(TabId from,
   }
   const ProfileId linked = store->model().EffectiveProfile(id);
   OpenPageFromTab(from, linked.empty() ? ProfileOfTab(from) : linked, item->url,
-                  new_tab);
+                  new_tab, L"From Bookmarks", /*bookmark=*/true);
 }
 
 DownloadService* BrowserWindow::TabDownloads() {
@@ -2900,14 +2901,23 @@ void BrowserWindow::OpenInternalPage(const std::string& url) {
 void BrowserWindow::OpenPageFromTab(TabId from,
                                     const ProfileId& requested,
                                     const std::string& url,
-                                    bool new_tab) {
+                                    bool new_tab,
+                                    const std::wstring& source_name,
+                                    bool bookmark) {
   Tab* source = FindTab(from);
   const bool exists = std::ranges::any_of(
       owner_.ProfileList(),
       [&requested](const ProfileInfo& p) { return p.id == requested; });
   const ProfileId profile = exists ? requested : ProfileOfTab(from);
   if (!source || source->closing() || source->profile() != profile) {
-    OpenTab(url, !new_tab, profile);
+    // Another profile: its window is chosen as for a link (010), with the
+    // picker's window step when its group is in several windows.
+    if (LinkRouting* routing = owner_.Routing()) {
+      routing->OpenUrlInProfile(url, profile, source_name, this, !new_tab,
+                                bookmark);
+      return;
+    }
+    OpenTab(url, !new_tab, profile, bookmark);
     if (!new_tab) {
       Activate();
     }
@@ -3090,7 +3100,8 @@ Tab* BrowserWindow::ActiveTab() {
 
 void BrowserWindow::OpenTab(const std::string& url,
                             bool foreground,
-                            const ProfileId& requested) {
+                            const ProfileId& requested,
+                            bool bookmark) {
   const ProfileId profile =
       requested.empty() ? owner_.DefaultProfile() : requested;
   if (IsInternalPageUrl(url)) {
@@ -3129,6 +3140,9 @@ void BrowserWindow::OpenTab(const std::string& url,
   Tab* created = tab.get();
   tabs_[id] = std::move(tab);
   model_.AppendTab(id, profile, foreground);
+  if (bookmark) {
+    created->MarkNextVisitBookmark();
+  }
   created->CreateBrowser(url.empty() ? std::string("about:blank") : url,
                          owner_.RequestContext(profile));
   ModelChanged();
@@ -3547,11 +3561,89 @@ void BrowserWindow::NavigateActiveTab(const std::string& url, bool typed) {
     FocusActiveTab();
     return;
   }
+  // An address typed (or chosen from the suggestions) in a new tab is
+  // routed like a link (010); in a tab already in use it stays in its
+  // profile.
+  if (LinkRouting* routing = owner_.Routing();
+      routing && tab->unused() &&
+      routing->RouteUrl(url, LinkSource::kTypedNewTab, *this, tab->id(),
+                        true)) {
+    return;
+  }
   if (typed) {
     tab->MarkNextVisitTyped();
   }
   tab->Navigate(url);
   tab->Focus();
+}
+
+std::vector<ProfileId> BrowserWindow::GroupProfiles() const {
+  std::vector<ProfileId> profiles;
+  for (const TabStripModel::Group& group : model_.groups()) {
+    profiles.push_back(group.profile);
+  }
+  return profiles;
+}
+
+std::vector<TabStripModel::Group> BrowserWindow::TabGroups() const {
+  return model_.groups();
+}
+
+std::wstring BrowserWindow::ActiveTabTitle() const {
+  const std::optional<TabId> active = model_.active_id();
+  const auto it = active ? tabs_.find(*active) : tabs_.end();
+  if (it == tabs_.end() || it->second->unused()) {
+    return L"New Tab";
+  }
+  const Tab& tab = *it->second;
+  return Utf8ToWide(tab.title().empty() ? tab.url() : tab.title());
+}
+
+void BrowserWindow::LoadTypedUrlInTab(TabId id, const std::string& url) {
+  if (Tab* tab = FindTab(id)) {
+    tab->MarkNextVisitTyped();
+    tab->Navigate(url);
+    tab->Focus();
+  }
+}
+
+void BrowserWindow::OpenUrlNextToTab(TabId opener_id,
+                                     const std::string& url,
+                                     const ProfileId& profile,
+                                     bool foreground) {
+  Tab* opener = FindTab(opener_id);
+  if (!opener || opener->closing()) {
+    OpenTab(url, foreground, profile);
+    return;
+  }
+  Tab* tab = InsertTabFromOpener(opener, foreground);
+  tab->CreateBrowser(url, owner_.RequestContext(tab->profile()));
+  if (foreground) {
+    FocusActiveTab();
+  }
+}
+
+void BrowserWindow::CloseTabIfUnused(TabId id) {
+  if (Tab* tab = FindTab(id); tab && tab->unused()) {
+    CloseTab(id);
+  }
+}
+
+bool BrowserWindow::RouteTabFirstNavigation(Tab& tab, const std::string& url) {
+  LinkRouting* routing = owner_.Routing();
+  if (!routing || !routing->RouteUrl(url, LinkSource::kNewTab, *this, tab.id(),
+                                     ActiveTab() == &tab)) {
+    return false;
+  }
+  // Called from inside the navigation: the tab closes afterwards.
+  std::weak_ptr<int> alive = alive_;
+  const TabId id = tab.id();
+  CefPostTask(TID_UI, new FunctionTask([this, alive, id] {
+                if (!alive.expired()) {
+                  CloseTab(id);
+                }
+              }));
+  return true;
 }
 
 bool BrowserWindow::HandleShortcut(int key,
@@ -3796,9 +3888,21 @@ std::optional<PopupHost> BrowserWindow::OnTabPopup(
     Tab* tab = window->FindTab(entry.second.second);
     return !tab || tab->has_browser();
   });
+  // Links that open a new tab (target=_blank) are routed (010); popups a
+  // script opens as a window are not, so sign-in popups keep their opener.
+  // CEF cannot tell a link from window.open() without features, so those
+  // are routed too. A tab opened blank is routed at its first page.
+  const bool blank =
+      request.target_url.empty() || request.target_url == "about:blank";
+  const bool foreground = request.disposition != CEF_WOD_NEW_BACKGROUND_TAB;
+  if (LinkRouting* routing = owner_.Routing();
+      routing && !request.wants_popup_window && !blank &&
+      routing->RouteUrl(request.target_url, LinkSource::kNewTab, *this,
+                        opener.id(), foreground)) {
+    return std::nullopt;
+  }
   // window.open() with size features opens a popup window (Chrome); other
-  // popups become tabs next to their opener. Link routing (010) comes with
-  // W3.
+  // popups become tabs next to their opener.
   BrowserWindow* target = this;
   if (request.wants_popup_window) {
     target = owner_.OpenPopupWindow(request.width > 0 ? request.width : 640,
@@ -3807,8 +3911,10 @@ std::optional<PopupHost> BrowserWindow::OnTabPopup(
       return std::nullopt;
     }
   }
-  const bool foreground = request.disposition != CEF_WOD_NEW_BACKGROUND_TAB;
   Tab* tab = target->InsertTabFromOpener(&opener, foreground);
+  if (blank && !request.wants_popup_window) {
+    tab->RouteFirstNavigation();
+  }
   pending_popups_[{opener.id(), request.popup_id}] = {target, tab->id()};
   return tab->PopupHostForBrowser();
 }
@@ -3828,6 +3934,13 @@ void BrowserWindow::OnTabPopupAborted(Tab& opener, int popup_id) {
 void BrowserWindow::OpenUrlFromTab(Tab& opener,
                                    const std::string& url,
                                    OpenDisposition disposition) {
+  // Ctrl-click, middle-click, "Open link in new tab": routed (010).
+  if (LinkRouting* routing = owner_.Routing();
+      routing &&
+      routing->RouteUrl(url, LinkSource::kNewTab, *this, opener.id(),
+                        disposition != OpenDisposition::kNewBackgroundTab)) {
+    return;
+  }
   if (disposition == OpenDisposition::kNewWindow) {
     owner_.OpenWindow(url, opener.profile());
     return;
