@@ -243,7 +243,9 @@ void LinkRoutingController::LogRouting(const Request& request,
 }
 
 bool LinkRoutingController::OnCurrentDesktop(HWND window) {
-  static const Microsoft::WRL::ComPtr<IVirtualDesktopManager> manager =
+  // Made when needed: a COM object must not outlive COM (a static one would
+  // be released after it has shut down, at exit).
+  const Microsoft::WRL::ComPtr<IVirtualDesktopManager> manager =
       DesktopManager();
   BOOL current = TRUE;
   if (manager &&
@@ -457,7 +459,7 @@ void LinkRoutingController::Open(const Request& request,
 void LinkRoutingController::BringToFront(BrowserWindow& window) {
   HWND hwnd = window.hwnd();
   if (!OnCurrentDesktop(hwnd) && host_.MoveChosenWindowHere()) {
-    static const Microsoft::WRL::ComPtr<IVirtualDesktopManager> manager =
+    const Microsoft::WRL::ComPtr<IVirtualDesktopManager> manager =
         DesktopManager();
     GUID desktop = {};
     HWND here = GetForegroundWindow();
