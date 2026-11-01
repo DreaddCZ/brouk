@@ -183,6 +183,25 @@ function rightClick(title, x, y) {
   }
 }
 
+// Windows: whether a control named `name` is in one of the process's
+// windows (UI Automation), such as the find bar.
+function hasElement(pid, name) {
+  const script = [
+    'Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes',
+    `$pc = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, ${pid})`,
+    `$nc = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, '${name}')`,
+    '$found = $false',
+    'foreach ($top in [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $pc)) { if ($top.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $nc)) { $found = $true } }',
+    'Write-Output $found',
+  ].join('; ');
+  try {
+    return execFileSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8', timeout: 60000 }).trim() === 'True';
+  } catch (error) {
+    log(`(no UI Automation answer: ${error.message})`);
+    return undefined;
+  }
+}
+
 // The visible top-level windows of a process ("<class> [<name>]").
 function windowsOf(pid) {
   const script = [
@@ -492,9 +511,14 @@ async function main() {
     logFocus('after typing in the find bar');
     desktopScreenshot('find-bar');
     logFocus('after the screenshot');
-    // The screenshot took the focus away; Brouk gives it back to the find
-    // bar, where Escape closes it, then Ctrl+0 resets the zoom.
+    // Escape closes the find bar, also when the page has the focus (as in
+    // Chrome; the screenshot can leave the focus there), then Ctrl+0 resets
+    // the zoom.
+    const findOpen = hasElement(brouk.pid, 'Find in page');
     sendKeys('Find and zoom test', ['{ESC}']);
+    await sleep(500);
+    const findClosed = hasElement(brouk.pid, 'Find in page') === false;
+    check(findOpen === true && findClosed, `Escape closes the find bar (open before: ${findOpen})`);
     const reset = await pressUntil(['^0'], before);
     check(reset === before, `Ctrl+0 resets the zoom (${reset})`);
     desktopScreenshot('find-bar-closed');

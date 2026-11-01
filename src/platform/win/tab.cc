@@ -1106,6 +1106,15 @@ void Tab::OnElementPicked(const std::string& /*url*/,
 
 bool Tab::OnUnhandledKeyEvent(const CefKeyEvent& event,
                               CefEventHandle /*os_event*/) {
+  // Escape the page did not use closes the find bar, as in Chrome.
+  if (event.type == KEYEVENT_RAWKEYDOWN &&
+      event.windows_key_code == VK_ESCAPE &&
+      (event.modifiers & (EVENTFLAG_CONTROL_DOWN | EVENTFLAG_ALT_DOWN |
+                          EVENTFLAG_SHIFT_DOWN)) == 0 &&
+      find_bar_) {
+    OnFindClose();
+    return true;
+  }
   return host_.OnTabKey(event);
 }
 

@@ -10,7 +10,7 @@ When a site asks for the camera, microphone, screen sharing, location, notificat
 
 ### Pages and windows {#pages}
 
-- **Find in page:** <kbd>⌘F</kbd>, <kbd>⌘G</kbd> / <kbd>⇧⌘G</kbd> for next and previous.
+- **Find in page:** <kbd>⌘F</kbd>, <kbd>⌘G</kbd> / <kbd>⇧⌘G</kbd> for next and previous. On Windows: <kbd>Ctrl+F</kbd>, <kbd>F3</kbd> / <kbd>Shift+F3</kbd>. <kbd>Esc</kbd> closes the find bar, also from the page.
 - **Zoom:** <kbd>⌘+</kbd>, <kbd>⌘−</kbd>, <kbd>⌘0</kbd>; remembered per site in each profile, shown in the address bar when not 100 %.
 - **Print** (<kbd>⌘P</kbd>), including Save as PDF. PDFs open in the tab.
 - **Full screen:** pages (videos, slides) can go full screen — <kbd>Esc</kbd> leaves; <kbd>⌃⌘F</kbd> makes the window full screen.
