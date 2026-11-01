@@ -77,12 +77,12 @@ jobs:
       - name: Fetch CEF
         run: scripts/fetch_cef windows64
 
-      - name: Configure (Release)
+      - name: Configure (Release, with updates)
         run: |
           source scripts/env.sh
           cmake -S . -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl \
-            -DCMAKE_LINKER=lld-link
+            -DCMAKE_LINKER=lld-link -DBROUK_UPDATES=ON
 
       - name: Build
         run: |

@@ -33,6 +33,9 @@ constexpr std::string_view kPhoneCountryDescription =
     "Two letters, e.g. CZ. Numbers without a country code are compared as "
     "numbers of this country. Empty: the region set in Windows.";
 constexpr std::string_view kSpellcheckDescription = "";
+constexpr std::string_view kUpdateModeDescription =
+    "Updates are installed when Brouk restarts. \u22ee \u2192 Check for "
+    "updates\u2026 checks at any time.";
 constexpr std::string_view kRemoteDebuggingDescription =
     "For Playwright, Puppeteer and chrome://inspect, on this PC only. "
     "Programs on this PC can then control tabs of all profiles, including "
@@ -50,6 +53,9 @@ constexpr std::string_view kPhoneCountryDescription =
     "numbers of this country. Empty: the Mac's region.";
 constexpr std::string_view kSpellcheckDescription =
     "Uses the macOS spelling dictionaries.";
+constexpr std::string_view kUpdateModeDescription =
+    "Updates are installed when Brouk restarts. Brouk \u2192 Check for "
+    "Updates\u2026 checks at any time.";
 constexpr std::string_view kRemoteDebuggingDescription =
     "For Playwright, Puppeteer and chrome://inspect, on this Mac only. "
     "Programs on this Mac can then control tabs of all profiles, including "
@@ -513,8 +519,7 @@ constexpr std::array<SettingDef, 58> kSettings = {{
      .choice_labels = kUpdateModeLabels,
      .section = "Updates",
      .label = "Updates",
-     .description = "Updates are installed when Brouk restarts. Brouk → "
-                    "Check for Updates… checks at any time."},
+     .description = kUpdateModeDescription},
     {.key = "task_manager.refresh_interval",
      .scope = SettingScope::kGlobal,
      .type = SettingDef::Type::kChoice,
