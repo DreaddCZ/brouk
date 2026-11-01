@@ -91,6 +91,9 @@ class App final : public BrowserWindowOwner,
   bool BookmarksBarAlwaysShown() override;
   void SetBookmarksBarAlwaysShown(bool always) override;
   void OpenTaskManager(const std::string& row) override;
+  std::vector<BrowserWindow*> NormalWindows() override;
+  const std::vector<std::pair<std::string, std::string>>& HelpSections()
+      override;
   // For the task manager (020): every tab of every window (in the order
   // the windows were opened) and Brouk's page windows, and acting on one.
   std::vector<TaskManagerPage> TaskPages();
@@ -216,6 +219,9 @@ class App final : public BrowserWindowOwner,
   std::unique_ptr<InternalPageWindow> profiles_window_;
   std::unique_ptr<InternalPageWindow> settings_window_;
   std::unique_ptr<InternalPageWindow> task_manager_window_;
+  // help/sections.json, read when the command palette first needs it.
+  std::optional<std::vector<std::pair<std::string, std::string>>>
+      help_sections_;
   std::unique_ptr<SettingsWatcher> settings_watcher_;
   // appearance.theme for web pages (Chromium's colour scheme).
   cef_color_variant_t color_variant_ = CEF_COLOR_VARIANT_SYSTEM;

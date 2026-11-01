@@ -17,6 +17,8 @@ add_library(brouk_app SHARED
   bookmark_store.h
   bookmarks_bar.cc
   bookmarks_bar.h
+  command_palette.cc
+  command_palette.h
   browser_window.cc
   browser_window.h
   controls.cc

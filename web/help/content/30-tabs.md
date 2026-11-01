@@ -19,7 +19,7 @@
 
 ### Command palette {#command-palette}
 
-<kbd>⌘K</kbd> (View → Command Palette…) finds anything by typing a few letters:
+<kbd>⌘K</kbd> (View → Command Palette…; on Windows <kbd>Ctrl+K</kbd> or "⋮" → Command palette) finds anything by typing a few letters:
 
 - open tabs of all windows,
 - browser actions that can run now, with their shortcuts,

@@ -26,6 +26,7 @@
 #include "platform/win/bookmark_dialog.h"
 #include "platform/win/bookmark_store.h"
 #include "platform/win/bookmarks_bar.h"
+#include "platform/win/command_palette.h"
 #include "platform/win/suggestions_popup.h"
 #include "platform/win/tab.h"
 #include "platform/win/tab_panel.h"
@@ -93,6 +94,11 @@ class BrowserWindowOwner {
   // The task manager window (020), with the row `row` ("tab-12") selected
   // when not empty.
   virtual void OpenTaskManager(const std::string& row) = 0;
+  // For the command palette (003): the normal browser windows, and help's
+  // sections as (anchor, title).
+  virtual std::vector<BrowserWindow*> NormalWindows() = 0;
+  virtual const std::vector<std::pair<std::string, std::string>>&
+  HelpSections() = 0;
   virtual const std::vector<ProfileInfo>& ProfileList() = 0;
   // Opens the profile manager (brouk://profiles, 005) in its own window.
   virtual void OpenProfileManager() = 0;
@@ -192,6 +198,9 @@ class BrowserWindow final : public TabHost, public BookmarksBar::Delegate {
   // Task manager (020): this window's tabs as rows, in strip order, and
   // an action on one of them (false if it is not here).
   void AppendTaskPages(std::vector<TaskManagerPage>& pages);
+  // The command palette (003, Ctrl+K): this window's tabs as entries
+  // (choosing one goes to it).
+  void AppendPaletteTabs(std::vector<PaletteEntry>& entries);
   bool ActOnTab(TabId id, TaskPageAction action);
   void OpenBookmarkFromTab(TabId from, BookmarkId id, bool new_tab);
   // Removes a tab whose browser never came (the popup was aborted).
@@ -285,6 +294,9 @@ class BrowserWindow final : public TabHost, public BookmarksBar::Delegate {
   void DrawDownloadsButton(const DRAWITEMSTRUCT& item);
   // The downloads page (brouk://downloads, Ctrl+J); everything is seen.
   void ShowDownloads();
+  // Ctrl+K: the command palette over this window.
+  void ShowCommandPalette();
+  std::vector<PaletteEntry> PaletteActions();
   // Bookmarks (011): whether a tab's page can be bookmarked (a web or file
   // page); Ctrl+D (the star): bookmarks the page, or edits its bookmark, in
   // a bubble under the star; Ctrl+Shift+D: the active profile's tabs into
@@ -408,6 +420,7 @@ class BrowserWindow final : public TabHost, public BookmarksBar::Delegate {
   HWND star_ = nullptr;  // In the address bar (011).
   std::unique_ptr<BookmarkDialog> bookmark_dialog_;
   std::unique_ptr<BookmarksBar> bookmarks_bar_;
+  CommandPalette palette_;
   bool bookmarks_bar_shown_ = false;
   HWND zoom_ = nullptr;
   HWND popups_ = nullptr;

@@ -4,9 +4,11 @@
 #include <windowsx.h>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -20,6 +22,8 @@
 #include "core/address_input.h"
 #include "core/internal_pages.h"
 #include "core/profile_id.h"
+#include "core/settings_schema.h"
+#include "core/url_display.h"
 #include "core/zoom.h"
 #include "include/cef_parser.h"
 #include "include/cef_task.h"
@@ -85,6 +89,7 @@ enum MenuCommand : UINT {
   kPauseTabCommand,
   kShowInTaskManagerCommand,
   kTaskManagerCommand,
+  kCommandPaletteCommand,
   kReopenClosedTabCommand,
   kHistoryCommand,
   kClearBrowsingDataCommand,
@@ -646,6 +651,195 @@ void BrowserWindow::AppendTaskPages(std::vector<TaskManagerPage>& pages) {
     page.shown = active == id;
     pages.push_back(std::move(page));
   }
+}
+
+void BrowserWindow::AppendPaletteTabs(std::vector<PaletteEntry>& entries) {
+  BrowserWindowOwner& owner = owner_;
+  for (std::size_t i = 0; i < model_.count(); ++i) {
+    const TabId id = model_.id_at(i);
+    const Tab* tab = FindTab(id);
+    if (!tab || tab->closing()) {
+      continue;
+    }
+    const TabStrip::GroupLook look = owner_.ProfileLook(tab->profile());
+    PaletteEntry entry;
+    entry.kind = PaletteItem::Kind::kTab;
+    entry.title = tab->DisplayTitle();
+    entry.detail = look.name + " · " + FormatUrlForDisplay(tab->url());
+    entry.run = [this, &owner, id] {
+      if (owner.IsOpenWindow(this)) {
+        ActOnTab(id, TaskPageAction::kGoTo);
+      }
+    };
+    entries.push_back(std::move(entry));
+  }
+}
+
+void BrowserWindow::ShowCommandPalette() {
+  if (kind_ != Kind::kNormal) {
+    return;
+  }
+  CloseSuggestions();
+  std::vector<PaletteEntry> entries;
+  // The tabs of this window first, then of the others.
+  AppendPaletteTabs(entries);
+  for (BrowserWindow* window : owner_.NormalWindows()) {
+    if (window != this) {
+      window->AppendPaletteTabs(entries);
+    }
+  }
+  for (PaletteEntry& action : PaletteActions()) {
+    entries.push_back(std::move(action));
+  }
+  // Bookmarks visible in the active tab's profile (011): open in the tab.
+  const Tab* active = ActiveTab();
+  const ProfileId profile =
+      active ? active->profile() : owner_.DefaultProfile();
+  if (BookmarkStore* store = owner_.Bookmarks()) {
+    const BookmarkModel& model = store->model();
+    std::vector<BookmarkId> stack = {BookmarkModel::kOtherId,
+                                     BookmarkModel::kBarId};
+    while (!stack.empty()) {
+      const BookmarkId id = stack.back();
+      stack.pop_back();
+      const BookmarkItem* item = model.Find(id);
+      if (!item || !model.IsVisibleIn(id, profile)) {
+        continue;
+      }
+      if (item->folder) {
+        stack.insert(stack.end(), item->children.rbegin(),
+                     item->children.rend());
+        continue;
+      }
+      const std::string address = FormatUrlForDisplay(item->url);
+      entries.push_back(
+          {.kind = PaletteItem::Kind::kBookmark,
+           .title = item->name.empty() ? address : item->name,
+           .detail = address,
+           .shortcut = {},
+           .run = [this, id] { OpenBookmark(id, BookmarkOpen::kCurrentTab); }});
+    }
+  }
+  // Every setting; choosing one opens the settings window there, for the
+  // active tab's profile where the setting is per profile.
+  const std::string profile_name = owner_.ProfileLook(profile).name;
+  for (const SettingDef& def : AllSettingDefs()) {
+    if (def.advanced) {
+      continue;
+    }
+    const bool per_profile = def.scope == SettingScope::kProfile;
+    const std::string scope = per_profile ? profile : std::string("global");
+    const std::string url =
+        "brouk://settings/#" + scope + ":" + std::string(def.key);
+    entries.push_back({.kind = PaletteItem::Kind::kSetting,
+                       .title = std::string(def.label),
+                       .detail = "Settings · " + std::string(def.section) +
+                                 (per_profile ? " (" + profile_name + ")" : ""),
+                       .shortcut = {},
+                       .run = [this, url] { owner_.OpenSettings(url); }});
+  }
+  // Help's sections (016).
+  for (const auto& [anchor, title] : owner_.HelpSections()) {
+    entries.push_back({.kind = PaletteItem::Kind::kHelp,
+                       .title = title,
+                       .detail = "Help",
+                       .shortcut = {},
+                       .run = [this, anchor] { owner_.OpenHelp(anchor); }});
+  }
+  palette_.Show(window_, Scale(56), std::move(entries), theme_, text_font_,
+                icon_font_);
+}
+
+// The browser's actions, as the menus and shortcuts have them; one with a
+// shortcut runs as its keys would.
+std::vector<PaletteEntry> BrowserWindow::PaletteActions() {
+  struct Action {
+    const char* label;
+    const wchar_t* shortcut;
+    int key;
+    bool control;
+    bool shift;
+    bool alt;
+  };
+  static constexpr std::array<Action, 24> kActions = {{
+      {"New tab", L"Ctrl+T", 'T', true, false, false},
+      {"New window", L"Ctrl+N", 'N', true, false, false},
+      {"Reopen closed tab", L"Ctrl+Shift+T", 'T', true, true, false},
+      {"Close tab", L"Ctrl+W", 'W', true, false, false},
+      {"Close window", L"Ctrl+Shift+W", 'W', true, true, false},
+      {"Reload", L"F5", VK_F5, false, false, false},
+      {"Back", L"Alt+Left", VK_LEFT, false, false, true},
+      {"Forward", L"Alt+Right", VK_RIGHT, false, false, true},
+      {"Find in page", L"Ctrl+F", 'F', true, false, false},
+      {"Print", L"Ctrl+P", 'P', true, false, false},
+      {"Zoom in", L"Ctrl++", VK_OEM_PLUS, true, false, false},
+      {"Zoom out", L"Ctrl+-", VK_OEM_MINUS, true, false, false},
+      {"Actual size", L"Ctrl+0", '0', true, false, false},
+      {"Full screen", L"F11", VK_F11, false, false, false},
+      {"Focus the address bar", L"Ctrl+L", 'L', true, false, false},
+      {"History", L"Ctrl+H", 'H', true, false, false},
+      {"Clear browsing data", L"Ctrl+Shift+Del", VK_DELETE, true, true, false},
+      {"Downloads", L"Ctrl+J", 'J', true, false, false},
+      {"Bookmark this tab", L"Ctrl+D", 'D', true, false, false},
+      {"Bookmark all tabs", L"Ctrl+Shift+D", 'D', true, true, false},
+      {"Bookmark manager", L"Ctrl+Shift+O", 'O', true, true, false},
+      {"Always show bookmarks bar", L"Ctrl+Shift+B", 'B', true, true, false},
+      {"Task manager", L"Shift+Esc", VK_ESCAPE, false, true, false},
+      {"Help", L"F1", VK_F1, false, false, false},
+  }};
+  std::vector<PaletteEntry> entries;
+  for (const Action& action : kActions) {
+    entries.push_back({.kind = PaletteItem::Kind::kAction,
+                       .title = action.label,
+                       .detail = "",
+                       .shortcut = action.shortcut,
+                       .run = [this, action] {
+                         HandleShortcut(action.key, action.control, action.alt,
+                                        action.shift);
+                       }});
+  }
+  // Without a shortcut on Windows.
+  auto add = [&entries](const char* label, std::function<void()> run) {
+    entries.push_back({.kind = PaletteItem::Kind::kAction,
+                       .title = label,
+                       .detail = "",
+                       .shortcut = {},
+                       .run = std::move(run)});
+  };
+  add("New tab to the right", [this] {
+    if (const Tab* tab = ActiveTab()) {
+      OpenTabAfter(tab->id(), std::string());
+    }
+  });
+  add("Duplicate tab", [this] {
+    if (const Tab* tab = ActiveTab(); tab && !tab->internal()) {
+      OpenTabAfter(tab->id(), tab->url());
+    }
+  });
+  add("Pin or unpin tab", [this] {
+    if (const Tab* tab = ActiveTab()) {
+      model_.SetPinned(tab->id(), !model_.IsPinned(tab->id()));
+      ModelChanged();
+    }
+  });
+  add("Mute or unmute site", [this] {
+    if (Tab* tab = ActiveTab()) {
+      tab->SetMuted(!tab->muted());
+    }
+  });
+  add("Close other tabs", [this] {
+    if (const Tab* tab = ActiveTab()) {
+      for (TabId id :
+           model_.TabsToClose(tab->id(), TabStripModel::CloseScope::kOthers)) {
+        CloseTab(id);
+      }
+    }
+  });
+  add("Settings", [this] { owner_.OpenSettings(std::string()); });
+  add("Manage profiles", [this] { owner_.OpenProfileManager(); });
+  add("Open-source licences", [this] { OpenInternalPage("brouk://credits/"); });
+  add("Exit", [this] { owner_.CloseAllWindows(); });
+  return entries;
 }
 
 bool BrowserWindow::ActOnTab(TabId id, TaskPageAction action) {
@@ -1629,6 +1823,8 @@ void BrowserWindow::ShowAppMenu() {
   AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(closed), L"History");
   AppendMenuW(menu, MF_STRING, kDownloadsCommand, L"Downloads\tCtrl+J");
   AppendMenuW(menu, MF_STRING, kTaskManagerCommand, L"Task manager\tShift+Esc");
+  AppendMenuW(menu, MF_STRING, kCommandPaletteCommand,
+              L"Command palette\u2026\tCtrl+K");
   // Bookmarks (011), as Chrome's submenu: the actions, then the bar's
   // items and Other bookmarks visible in the active tab's profile.
   HMENU bookmarks = CreatePopupMenu();
@@ -1753,6 +1949,9 @@ void BrowserWindow::ShowAppMenu() {
       break;
     case kTaskManagerCommand:
       owner_.OpenTaskManager(std::string());
+      break;
+    case kCommandPaletteCommand:
+      ShowCommandPalette();
       break;
     case kBookmarkThisTabCommand:
       BookmarkPage();
@@ -2583,6 +2782,11 @@ bool BrowserWindow::HandleShortcut(int key,
   }
   if (control && !alt && shift && key == 'B') {
     ToggleBookmarksBar();
+    return true;
+  }
+  // Ctrl+K: the command palette (003), as Cmd+K on macOS.
+  if (control && !alt && !shift && key == 'K') {
+    ShowCommandPalette();
     return true;
   }
   // Shift+Esc: the task manager, as in Chrome on Windows (020).

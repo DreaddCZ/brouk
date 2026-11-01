@@ -37,6 +37,7 @@
 #include "include/base/cef_logging.h"
 #include "include/cef_app.h"
 #include "include/cef_command_line.h"
+#include "include/cef_parser.h"
 #include "include/cef_task.h"
 #include "include/wrapper/cef_helpers.h"
 #include "platform/win/controls.h"
@@ -931,6 +932,56 @@ void App::OpenTaskManager(const std::string& row) {
                      InternalContext())) {
     task_manager_window_ = std::move(window);
   }
+}
+
+std::vector<BrowserWindow*> App::NormalWindows() {
+  std::vector<BrowserWindow*> windows;
+  for (const std::unique_ptr<BrowserWindow>& window : windows_) {
+    if (window->is_normal() && !window->closing()) {
+      windows.push_back(window.get());
+    }
+  }
+  return windows;
+}
+
+// Help's sections for the command palette (016), from the pages built next
+// to brouk.exe; only entries with a valid anchor and a title.
+const std::vector<std::pair<std::string, std::string>>& App::HelpSections() {
+  if (help_sections_) {
+    return *help_sections_;
+  }
+  help_sections_.emplace();
+  wchar_t module[MAX_PATH] = {};
+  GetModuleFileNameW(nullptr, module, MAX_PATH);
+  const std::filesystem::path file =
+      std::filesystem::path(module).parent_path() / L"web" / L"help" /
+      L"sections.json";
+  Result<std::string> text = ReadTextFile(file, 1024 * 1024);
+  if (!text) {
+    return *help_sections_;
+  }
+  CefRefPtr<CefValue> parsed =
+      CefParseJSON(text.value(), JSON_PARSER_ALLOW_TRAILING_COMMAS);
+  if (!parsed || parsed->GetType() != VTYPE_LIST) {
+    return *help_sections_;
+  }
+  CefRefPtr<CefListValue> list = parsed->GetList();
+  for (std::size_t i = 0; i < list->GetSize(); ++i) {
+    if (list->GetType(i) != VTYPE_DICTIONARY) {
+      continue;
+    }
+    CefRefPtr<CefDictionaryValue> item = list->GetDictionary(i);
+    if (item->GetType("anchor") != VTYPE_STRING ||
+        item->GetType("title") != VTYPE_STRING) {
+      continue;
+    }
+    std::string anchor = item->GetString("anchor").ToString();
+    if (IsHelpAnchor(anchor)) {
+      help_sections_->emplace_back(std::move(anchor),
+                                   item->GetString("title").ToString());
+    }
+  }
+  return *help_sections_;
 }
 
 std::vector<TaskManagerPage> App::TaskPages() {

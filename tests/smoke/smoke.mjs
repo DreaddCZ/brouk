@@ -100,7 +100,7 @@ const frontFunction = (title) =>
 // and then types `thenKeys`, all from the same PowerShell: starting another
 // one may deactivate Brouk, which closes its popups. Returns PowerShell's
 // output.
-function sendKeys(title, keys, { windowsOf: pid, thenKeys = [] } = {}) {
+function sendKeys(title, keys, { windowsOf: pid, thenKeys = [], window = ['BroukSuggestions', 'Suggestions'] } = {}) {
   const typed = (list) =>
     list.map((k) => `[System.Windows.Forms.SendKeys]::SendWait('${k.replaceAll("'", "''")}'); Start-Sleep -Milliseconds 300`).join('; ');
   const sends = typed(keys);
@@ -120,11 +120,12 @@ function sendKeys(title, keys, { windowsOf: pid, thenKeys = [] } = {}) {
           `$c = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, ${pid})`,
           '$w = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $c) | ForEach-Object { "$($_.Current.ClassName) [$($_.Current.Name)]" }',
           'Write-Output "windows: $($w -join \', \')"',
-          // The address bar's suggestion list, an owned tool window that
-          // UI Automation does not list at the top level.
+          // `window` (class and title): an owned tool window such as the
+          // address bar's suggestions, which UI Automation does not list at
+          // the top level.
           "Add-Type -Namespace Smoke -Name Win -MemberDefinition '[DllImport(\"user32.dll\", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string c, string n); [DllImport(\"user32.dll\")] public static extern bool IsWindowVisible(IntPtr h);'",
-          '$s = [Smoke.Win]::FindWindow("BroukSuggestions", "Suggestions")',
-          'Write-Output "suggestions visible: $($s -ne [IntPtr]::Zero -and [Smoke.Win]::IsWindowVisible($s))"',
+          `$s = [Smoke.Win]::FindWindow("${window[0]}", "${window[1]}")`,
+          'Write-Output "window shown: $($s -ne [IntPtr]::Zero -and [Smoke.Win]::IsWindowVisible($s))"',
           ...(thenKeys.length ? [typed(thenKeys), 'Write-Output "then focus: $(Get-Focus)"'] : []),
         ]
       : []),
@@ -813,6 +814,25 @@ async function main() {
       await devtoolsJson(port, `/json/close/${tasksTarget.id}`).catch(() => {});
       await sleep(1000);
     }
+
+    // Command palette (003): Ctrl+K opens it; typing "bookmark manager"
+    // and Enter runs that action (the bookmark manager in a tab).
+    const palette = sendKeys('Downloads test', ['^k', 'bookmark manager'], {
+      windowsOf: brouk.pid,
+      thenKeys: ['{ENTER}'],
+      window: ['BroukCommandPalette', 'Command palette'],
+    });
+    check(/window shown: True/.test(palette), 'Ctrl+K opens the command palette');
+    let paletteRan;
+    for (let i = 0; i < 20 && !paletteRan; i++) {
+      await sleep(500);
+      paletteRan = await devtoolsJson(port, '/json/list')
+        .then((list) => list.find((t) => t.type === 'page' && t.url.startsWith('brouk://bookmarks')))
+        .catch(() => undefined);
+    }
+    if (check(paletteRan !== undefined, 'the command palette runs the chosen action')) {
+      sendKeys('Bookmarks', ['^w']);
+    }
   }
 
   // A crashed renderer shows the crash page (012); Brouk keeps running.
@@ -889,7 +909,7 @@ async function main() {
       // One PowerShell for typing, looking and choosing: another one
       // would deactivate Brouk and close the list.
       const shown = sendKeys('History', ['^l', 'find-and-zoom'], { windowsOf: brouk.pid, thenKeys: ['{DOWN}', '{ENTER}'] });
-      check(/suggestions visible: True/.test(shown), 'typing in the address bar shows suggestions');
+      check(/window shown: True/.test(shown), 'typing in the address bar shows suggestions');
       let after = before;
       for (let i = 0; i < 20 && after <= before; i++) {
         await sleep(500);
