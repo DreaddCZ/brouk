@@ -116,15 +116,15 @@ function sendKeys(title, keys, { windowsOf: pid, thenKeys = [], window = ['Brouk
     'Write-Output "Brouk in front: $active, focus before: $before, after: $after"',
     ...(pid && invoke
       ? [
-          // `invoke`: a button of Brouk's windows (a Win32 button, not one
-          // in a page), by its accessible name, found through UI Automation
-          // and clicked with the mouse, as a user does (no shortcut opens
-          // it).
-          `$pc = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, ${pid})`,
-          `$nc = New-Object System.Windows.Automation.AndCondition((New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, '${invoke}')), (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)), (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty, 'Button')))`,
+          // `invoke`: a toolbar button of Brouk's window `title`, by its
+          // text (an icon glyph's code point), found as a child window and
+          // clicked with the mouse, as a user does (no shortcut opens it;
+          // UI Automation does not name owner-drawn buttons).
+          "Add-Type -Namespace Smoke -Name Click -MemberDefinition '[DllImport(\"user32.dll\")] public static extern bool SetCursorPos(int x, int y); [DllImport(\"user32.dll\")] public static extern void mouse_event(int f, int x, int y, int d, int e); [DllImport(\"user32.dll\", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string c, string n); [DllImport(\"user32.dll\", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindowEx(IntPtr p, IntPtr a, string c, string n); [DllImport(\"user32.dll\")] public static extern bool IsWindowVisible(IntPtr h); [DllImport(\"user32.dll\")] public static extern bool GetWindowRect(IntPtr h, out Rect r); public struct Rect { public int Left, Top, Right, Bottom; }'",
+          `$top = [Smoke.Click]::FindWindow('BroukBrowserWindow', '${title.replaceAll("'", "''")} - Brouk')`,
+          `$b = [Smoke.Click]::FindWindowEx($top, [IntPtr]::Zero, 'Button', [string][char]0x${invoke})`,
           '$invoked = $false',
-          "Add-Type -Namespace Smoke -Name Click -MemberDefinition '[DllImport(\"user32.dll\")] public static extern bool SetCursorPos(int x, int y); [DllImport(\"user32.dll\")] public static extern void mouse_event(int f, int x, int y, int d, int e); [DllImport(\"user32.dll\", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string c, string n); [DllImport(\"user32.dll\")] public static extern bool IsWindowVisible(IntPtr h);'",
-          'foreach ($top in [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $pc)) { if (-not $invoked) { $b = $top.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $nc); if ($b) { $r = $b.Current.BoundingRectangle; [Smoke.Click]::SetCursorPos([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2)) | Out-Null; Start-Sleep -Milliseconds 200; [Smoke.Click]::mouse_event(0x0002, 0, 0, 0, 0); [Smoke.Click]::mouse_event(0x0004, 0, 0, 0, 0); $invoked = "$r" } } }',
+          'if ($b -ne [IntPtr]::Zero) { $r = New-Object Smoke.Click+Rect; [Smoke.Click]::GetWindowRect($b, [ref]$r) | Out-Null; [Smoke.Click]::SetCursorPos([int](($r.Left + $r.Right) / 2), [int](($r.Top + $r.Bottom) / 2)) | Out-Null; Start-Sleep -Milliseconds 200; [Smoke.Click]::mouse_event(0x0002, 0, 0, 0, 0); [Smoke.Click]::mouse_event(0x0004, 0, 0, 0, 0); $invoked = "$($r.Left),$($r.Top),$($r.Right),$($r.Bottom)" }',
           'Write-Output "invoked: $invoked"',
           // What the window does just after the click, for the log.
           `$seen = @(); for ($i = 0; $i -lt 10; $i++) { Start-Sleep -Milliseconds 150; $h = [Smoke.Click]::FindWindow("${window[0]}", "${window[1]}"); $seen += "$($h -ne [IntPtr]::Zero)/$([Smoke.Click]::IsWindowVisible($h))" }`,
@@ -704,7 +704,7 @@ async function main() {
     // Escape closes it.
     const list = sendKeys('Downloads test', [], {
       windowsOf: brouk.pid,
-      invoke: 'Downloads',
+      invoke: 'E896', // The downloads button's arrow.
       thenKeys: ['{ESC}'],
       window: ['BroukDownloads', 'Downloads'],
     });
