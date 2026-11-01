@@ -164,9 +164,8 @@ void OpenDefaultAppsSettings() {
   // with arguments from anywhere else).
   const std::wstring page =
       L"ms-settings:defaultapps?registeredAppUser=" + AppName();
-  const HINSTANCE opened =
-      ShellExecuteW(  // nosemgrep: cpp-process-spawn
-          nullptr, L"open", page.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+  const HINSTANCE opened = ShellExecuteW(  // nosemgrep: cpp-process-spawn
+      nullptr, L"open", page.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
   if (reinterpret_cast<INT_PTR>(opened) <= 32) {
     ShellExecuteW(  // nosemgrep: cpp-process-spawn
         nullptr, L"open", L"ms-settings:defaultapps", nullptr, nullptr,
