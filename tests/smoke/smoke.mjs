@@ -495,7 +495,7 @@ async function autofillFromEntry({ executable, port, pagesBase, pid }) {
       '[DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y); ' +
       "[DllImport(\"user32.dll\")] public static extern void mouse_event(int f, int x, int y, int d, int e); } }'",
     '$list = [IntPtr]::Zero',
-    "for ($i = 0; $i -lt 20 -and ($list -eq [IntPtr]::Zero -or -not [Smoke.List]::IsWindowVisible($list))); $i++) { Start-Sleep -Milliseconds 500; $list = [Smoke.List]::FindWindow('BroukPasswordList', 'Passwords') }",
+    "for ($i = 0; $i -lt 20 -and ($list -eq [IntPtr]::Zero -or -not [Smoke.List]::IsWindowVisible($list)); $i++) { Start-Sleep -Milliseconds 500; $list = [Smoke.List]::FindWindow('BroukPasswordList', 'Passwords') }",
     'Write-Output "list shown: $($list -ne [IntPtr]::Zero -and [Smoke.List]::IsWindowVisible($list))"',
     '$r = New-Object Smoke.Rect',
     'if ([Smoke.List]::GetWindowRect($list, [ref]$r)) { [Smoke.List]::SetCursorPos($r.Left + 60, $r.Top + 20) | Out-Null; Start-Sleep -Milliseconds 300; [Smoke.List]::mouse_event(0x0002, 0, 0, 0, 0); [Smoke.List]::mouse_event(0x0004, 0, 0, 0, 0); Write-Output "row clicked" }',
