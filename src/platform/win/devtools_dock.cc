@@ -73,19 +73,6 @@ bool RegisterWindowClasses() {
   return registered;
 }
 
-std::wstring PositionName(const std::string& id) {
-  if (id == "bottom") {
-    return L"Dock to bottom";
-  }
-  if (id == "left") {
-    return L"Dock to left";
-  }
-  if (id == "right") {
-    return L"Dock to right";
-  }
-  return L"Open in a separate window";
-}
-
 // Puts a browser's window over the whole of its parent.
 void FillParent(const CefRefPtr<CefBrowser>& browser, HWND parent) {
   if (!browser) {
@@ -354,7 +341,7 @@ void DevToolsDock::EnterInspectElementMode() {
   ShowTool("devtools");
 }
 
-void DevToolsDock::SetRequestRules(const RequestRuleSet& rules) {
+void DevToolsDock::ApplyRequestRules(const RequestRuleSet& rules) {
   if (!channel_ || !own_tools_) {
     return;
   }

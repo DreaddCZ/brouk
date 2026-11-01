@@ -89,7 +89,7 @@ class DevToolsDock final : public DevToolsFrontendDelegate,
   void ShowPanel(const std::string& panel);
   void EnterInspectElementMode();
   // The profile's request rules, applied to the tab while the dock is open.
-  void SetRequestRules(const RequestRuleSet& rules);
+  void ApplyRequestRules(const RequestRuleSet& rules);
   // Closes DevTools; the delegate hears DockClosed when done.
   void Close();
   // Whether both browsers are gone.

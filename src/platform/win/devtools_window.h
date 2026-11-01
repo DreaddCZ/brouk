@@ -29,7 +29,7 @@ class DevToolsWindow final : public DevToolsDock::Delegate {
     std::function<void(DevToolsWindow& window)> closed;
   };
 
-  DevToolsWindow(HWND near,
+  DevToolsWindow(HWND beside,
                  CefRefPtr<CefBrowser> inspected,
                  const std::wstring& title,
                  std::optional<POINT> inspect,

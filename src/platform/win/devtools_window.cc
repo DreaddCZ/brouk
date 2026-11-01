@@ -4,7 +4,7 @@
 
 namespace brouk::win {
 
-DevToolsWindow::DevToolsWindow(HWND near,
+DevToolsWindow::DevToolsWindow(HWND beside,
                                CefRefPtr<CefBrowser> inspected,
                                const std::wstring& title,
                                std::optional<POINT> inspect,
@@ -12,7 +12,7 @@ DevToolsWindow::DevToolsWindow(HWND near,
                                DevToolsPreferences* preferences,
                                Hooks hooks)
     : hooks_(std::move(hooks)), inspected_id_(inspected->GetIdentifier()) {
-  frame_ = std::make_unique<DevToolsFrame>(near, [this] { Close(); });
+  frame_ = std::make_unique<DevToolsFrame>(beside, [this] { Close(); });
   frame_->SetTitle(L"Developer Tools – " + title);
   dock_ = std::make_unique<DevToolsDock>(frame_->hwnd(), inspected, inspect,
                                          context, preferences,

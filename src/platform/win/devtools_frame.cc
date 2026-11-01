@@ -26,14 +26,14 @@ bool RegisterWindowClass() {
 
 }  // namespace
 
-DevToolsFrame::DevToolsFrame(HWND near, std::function<void()> close_requested)
+DevToolsFrame::DevToolsFrame(HWND beside, std::function<void()> close_requested)
     : close_requested_(std::move(close_requested)) {
   if (!RegisterWindowClass()) {
     return;
   }
-  const int dpi = static_cast<int>(GetDpiForWindow(near));
+  const int dpi = static_cast<int>(GetDpiForWindow(beside));
   RECT around = {};
-  GetWindowRect(near, &around);
+  GetWindowRect(beside, &around);
   // Down and right of the browser window, as macOS cascades it.
   window_ = CreateWindowExW(0, kWindowClass, L"Developer Tools",
                             WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN,

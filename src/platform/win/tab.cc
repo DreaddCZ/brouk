@@ -1237,7 +1237,7 @@ void Tab::OpenDock(std::optional<POINT> inspect) {
       host_.TabDevToolsPreferences(), /*own_tools=*/true, *this);
   dock_->SetPosition(dock_position_);
   dock_->SetSecretHeaderNames(host_.TabSecretHeaderNames());
-  dock_->SetRequestRules(host_.TabRequestRules(profile_).set);
+  dock_->ApplyRequestRules(host_.TabRequestRules(profile_).set);
   PlaceDock();
 }
 
@@ -1285,7 +1285,7 @@ void Tab::PlaceDock() {
 
 void Tab::RequestRulesChanged(const RequestRuleSet& rules) {
   if (dock_) {
-    dock_->SetRequestRules(rules);
+    dock_->ApplyRequestRules(rules);
   }
 }
 

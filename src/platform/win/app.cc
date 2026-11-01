@@ -2277,7 +2277,7 @@ void App::InspectPage(CefRefPtr<CefBrowser> page,
       return;
     }
   }
-  HWND near = GetAncestor(page->GetHost()->GetWindowHandle(), GA_ROOT);
+  HWND beside = GetAncestor(page->GetHost()->GetWindowHandle(), GA_ROOT);
   DevToolsWindow::Hooks hooks{
       .key =
           [this](const CefKeyEvent& event) {
@@ -2301,9 +2301,9 @@ void App::InspectPage(CefRefPtr<CefBrowser> page,
             CefPostTask(TID_UI, new FunctionTask([gone] {}));
           },
   };
-  devtools_windows_.push_back(
-      std::make_unique<DevToolsWindow>(near, page, title, at, InternalContext(),
-                                       DevToolsPrefs(), std::move(hooks)));
+  devtools_windows_.push_back(std::make_unique<DevToolsWindow>(
+      beside, page, title, at, InternalContext(), DevToolsPrefs(),
+      std::move(hooks)));
 }
 
 int App::RemoteDebuggingPort() const {

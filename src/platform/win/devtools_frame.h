@@ -15,7 +15,7 @@ namespace brouk::win {
 // frame. UI thread.
 class DevToolsFrame {
  public:
-  DevToolsFrame(HWND near, std::function<void()> close_requested);
+  DevToolsFrame(HWND beside, std::function<void()> close_requested);
   ~DevToolsFrame();
   DevToolsFrame(const DevToolsFrame&) = delete;
   DevToolsFrame& operator=(const DevToolsFrame&) = delete;
