@@ -24,5 +24,7 @@ FetchContent_Declare(zxing
   DOWNLOAD_EXTRACT_TIMESTAMP TRUE
   SYSTEM)
 FetchContent_MakeAvailable(zxing)
-# Its own warnings off, as for the other libraries.
-target_compile_options(ZXing PRIVATE ${BROUK_NO_WARNINGS_FLAG})
+# Its own warnings off, as for the other libraries; it throws, so with
+# exceptions (the app's flags turn them off), as yaml-cpp's sources.
+target_compile_options(ZXing PRIVATE ${BROUK_NO_WARNINGS_FLAG}
+  ${BROUK_EXCEPTIONS_FLAG})
