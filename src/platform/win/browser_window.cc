@@ -197,6 +197,7 @@ bool BrowserWindow::Create(int content_width, int content_height) {
   if (!RegisterWindowClass()) {
     return false;
   }
+  strip_.SetTabLookup([this](TabId id) -> const Tab* { return FindTab(id); });
   const int dpi = static_cast<int>(GetDpiForSystem());
   int width = MulDiv(1200, dpi, 96);
   int height = MulDiv(800, dpi, 96);
@@ -3259,6 +3260,7 @@ LRESULT BrowserWindow::OnNcHitTest(LPARAM lparam) {
         return HTCLOSE;
       case TabStrip::Part::kTab:
       case TabStrip::Part::kTabClose:
+      case TabStrip::Part::kTabAudio:
       case TabStrip::Part::kNewTab:
       case TabStrip::Part::kGroupLabel:
         return HTCLIENT;
@@ -3406,6 +3408,7 @@ void BrowserWindow::OnMouse(UINT message, POINT point) {
         drag_start_ = point;
         SetCapture(window_);
       } else if (hit.part == TabStrip::Part::kTabClose ||
+                 hit.part == TabStrip::Part::kTabAudio ||
                  hit.part == TabStrip::Part::kNewTab ||
                  hit.part == TabStrip::Part::kGroupLabel) {
         pressed_ = hit;
@@ -3427,6 +3430,11 @@ void BrowserWindow::OnMouse(UINT message, POINT point) {
         MoveTabToProfile(*dropped, *target);
       } else if (pressed == hit && hit.part == TabStrip::Part::kTabClose) {
         CloseTab(hit.tab);
+      } else if (pressed == hit && hit.part == TabStrip::Part::kTabAudio) {
+        // The speaker mutes or unmutes the tab (Chrome, 003).
+        if (Tab* tab = FindTab(hit.tab)) {
+          tab->SetMuted(!tab->muted());
+        }
       } else if (pressed == hit && hit.part == TabStrip::Part::kNewTab) {
         OpenTab(std::string(), true, hit.profile);
       } else if (pressed == hit && hit.part == TabStrip::Part::kGroupLabel) {
@@ -3437,7 +3445,8 @@ void BrowserWindow::OnMouse(UINT message, POINT point) {
     }
     case WM_RBUTTONUP:
       if (hit.part == TabStrip::Part::kTab ||
-          hit.part == TabStrip::Part::kTabClose) {
+          hit.part == TabStrip::Part::kTabClose ||
+          hit.part == TabStrip::Part::kTabAudio) {
         POINT screen = point;
         ClientToScreen(window_, &screen);
         ShowTabMenu(hit.tab, screen);
@@ -3446,7 +3455,8 @@ void BrowserWindow::OnMouse(UINT message, POINT point) {
     case WM_MBUTTONUP:
       // Middle-click closes a tab (Chrome).
       if (hit.part == TabStrip::Part::kTab ||
-          hit.part == TabStrip::Part::kTabClose) {
+          hit.part == TabStrip::Part::kTabClose ||
+          hit.part == TabStrip::Part::kTabAudio) {
         CloseTab(hit.tab);
       }
       break;
@@ -3572,6 +3582,9 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
           }
         } else if (hover_.part == TabStrip::Part::kTabClose) {
           tooltip_text_ = L"Close tab";
+        } else if (hover_.part == TabStrip::Part::kTabAudio) {
+          const Tab* tab = FindTab(hover_.tab);
+          tooltip_text_ = tab && tab->muted() ? L"Unmute tab" : L"Mute tab";
         } else {
           tooltip_text_ = strip_.ToolTip(hover_);
         }
