@@ -389,7 +389,7 @@ function crashReports() {
 // Windows, passwords (008): signing in on the test page offers to save the
 // login (the prompt under the key icon); Save stores it, and the page fills
 // it when it loads again.
-async function savePasswordFromLogin({ executable, port, pagesBase }, passwordsPage, listPasswords) {
+async function savePasswordFromLogin({ executable, port, pagesBase, pid }, passwordsPage, listPasswords) {
   const loginUrl = `${pagesBase}/008/login.html`;
   spawn(executable, [loginUrl], { env: { ...process.env, BROUK_DEV_DATA_DIR: dataDir }, stdio: 'ignore' });
   let login;
@@ -403,6 +403,13 @@ async function savePasswordFromLogin({ executable, port, pagesBase }, passwordsP
   const page = await Cdp.connect(login.webSocketDebuggerUrl);
   const evaluate = async (expression) =>
     (await page.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })).result.value;
+  // The page is listed as soon as it starts loading: the page script
+  // tracks the form's fields once it has loaded.
+  for (let i = 0; i < 20; i++) {
+    if ((await evaluate('document.readyState').catch(() => '')) === 'complete') break;
+    await sleep(250);
+  }
+  await sleep(1000);
   // Typed as the user types (the page script reads what was typed).
   await evaluate("document.querySelector('#email').focus()");
   await page.send('Input.insertText', { text: 'smoke@example.com' });
@@ -429,6 +436,11 @@ async function savePasswordFromLogin({ executable, port, pagesBase }, passwordsP
     log(`(no prompt answer: ${error.message})`);
   }
   log(`(${output.trim().replaceAll(/\r?\n/g, '; ')})`);
+  if (!/prompt shown: True/.test(output)) {
+    // Whether the login was taken (the key icon offers to save it) but the
+    // prompt was not shown.
+    log(`(key icon offers to save: ${hasElement(pid, 'Save password')})`);
+  }
   check(/prompt shown: True/.test(output), 'signing in on the login page offers to save the password');
   check(/save clicked/.test(output), 'the save prompt has a Save button');
   let saved = '';
@@ -1094,7 +1106,7 @@ async function main() {
         .map((line) => line.replace(/^\s*Target:\s*(LegacyGeneric:target=)?/, '').trim())
         .filter((name) => name.startsWith(prefix));
       check(keys.length > 0, `the profiles' password keys are in Credential Manager (${keys.join(', ') || 'none'})`);
-      await savePasswordFromLogin({ executable, port, pagesBase }, passwordsPage, listPasswords);
+      await savePasswordFromLogin({ executable, port, pagesBase, pid: brouk.pid }, passwordsPage, listPasswords);
       passwordsPage.close();
       for (const key of keys) {
         execFileSync('cmdkey', [`/delete:${key}`], { stdio: 'ignore' });
