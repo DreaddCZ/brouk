@@ -153,18 +153,21 @@ jobs:
           source scripts/env.sh
           cef="$(sed -n 's/^CEF_VERSION="\(.*\)"$/\1/p' scripts/fetch_cef)"
           name="cef_binary_${cef}_windows64_release_symbols"
-          symbols="$RUNNER_TEMP/cef-symbols"
+          temp="$(cygpath -u "$RUNNER_TEMP")"
+          symbols="$temp/cef-symbols"
           mkdir -p "$symbols"
-          if curl -sSfL -o "$RUNNER_TEMP/symbols.tar.bz2" \
+          if curl -sSfL -o "$temp/symbols.tar.bz2" \
               "https://cef-builds.spotifycdn.com/${name//+/%2B}.tar.bz2"; then
             expected="$(curl -sSfL https://cef-builds.spotifycdn.com/index.json |
               node -e 'let t = ""; process.stdin.on("data", (c) => (t += c)).on("end", () => {
                 const v = JSON.parse(t).windows64.versions.find((x) => x.cef_version === process.argv[1]);
                 console.log(v?.files.find((f) => f.type === "release_symbols")?.sha1 ?? ""); });' "$cef")"
-            actual="$(sha1sum < "$RUNNER_TEMP/symbols.tar.bz2" | cut -d' ' -f1)"
+            actual="$(sha1sum < "$temp/symbols.tar.bz2" | cut -d' ' -f1)"
             if [[ -n "$expected" && "$expected" == "$actual" ]]; then
-              tar -xjf "$RUNNER_TEMP/symbols.tar.bz2" -C "$symbols" \
-                --strip-components 1 "$name/libcef.dll.pdb"
+              # A path with a drive letter is a remote host to GNU tar.
+              tar --force-local -xjf "$temp/symbols.tar.bz2" -C "$symbols" \
+                --strip-components 1 "$name/libcef.dll.pdb" ||
+                echo "CEF's symbols could not be unpacked: stacks without them."
             else
               echo "CEF's symbols did not match CEF's index: stacks without them."
             fi
