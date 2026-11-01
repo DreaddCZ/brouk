@@ -7,14 +7,16 @@
 # static library. Its headers are third-party code (SYSTEM): not subject to
 # our warnings.
 include(FetchContent)
-set(ZXING_READERS ON)
-set(ZXING_WRITERS OFF)
-set(ZXING_C_API OFF)
-set(ZXING_EXAMPLES OFF)
-set(ZXING_DEPENDENCIES LOCAL)
-set(BUILD_SHARED_LIBS OFF)
+# As cache entries: its CMake files (policies of CMake 3.16) would replace
+# plain variables with their own cached defaults.
+set(ZXING_READERS ON CACHE BOOL "" FORCE)
+set(ZXING_WRITERS OFF CACHE STRING "" FORCE)
+set(ZXING_C_API OFF CACHE BOOL "" FORCE)
+set(ZXING_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(ZXING_DEPENDENCIES LOCAL CACHE STRING "" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 foreach(format 1D AZTEC DATAMATRIX MAXICODE PDF417)
-  set(ZXING_ENABLE_${format} OFF)
+  set(ZXING_ENABLE_${format} OFF CACHE BOOL "" FORCE)
 endforeach()
 FetchContent_Declare(zxing
   URL https://github.com/zxing-cpp/zxing-cpp/archive/refs/tags/v3.1.1.tar.gz
