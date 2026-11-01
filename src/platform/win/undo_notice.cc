@@ -98,8 +98,9 @@ void UndoNotice::Show(HWND owner,
                          .dwFlags = 0};
   if (GetMonitorInfoW(MonitorFromRect(&anchor, MONITOR_DEFAULTTONEAREST),
                       &monitor)) {
-    x = std::clamp(x, monitor.rcWork.left,
-                   std::max(monitor.rcWork.left, monitor.rcWork.right - width));
+    const int left = static_cast<int>(monitor.rcWork.left);
+    const int right = static_cast<int>(monitor.rcWork.right);
+    x = std::clamp(x, left, std::max(left, right - width));
   }
   // Borders are outside the client area.
   RECT frame = {0, 0, width, height};
