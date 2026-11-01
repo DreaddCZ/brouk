@@ -128,7 +128,7 @@ jobs:
           reg add "HKCU\Software\Microsoft\Windows\Windows Error Reporting" \
             //v DontShowUI //t REG_DWORD //d 1 //f
           # Brouk's crashes leave a minidump (CEF's Crashpad, stored only on
-          # this machine), read by the next step; the renderer the test
+          # this machine), kept with the logs; the renderer the test
           # crashes on purpose leaves one too. Not part of the uploaded app.
           printf '[Config]\nProductName=Brouk\nAppName=BroukSmoke\n' \
             > build/debug/Brouk/crash_reporter.cfg
@@ -136,49 +136,14 @@ jobs:
           version="$(sed -n 's/^set(APP_VERSION "\(.*\)")$/\1/p' CMakeLists.txt)"
           node tests/smoke/smoke.mjs build/debug/Brouk "$version" unknown x86_64 build/smoke
 
-      # The stack of each crash, with Brouk's symbols from the build and
-      # CEF's (fetched only when there is a dump; checked against CEF's
-      # index, as they are only read here).
-      - name: Read crash dumps
+      # Crash dumps (CEF's Crashpad) go with the smoke test's logs, to be read
+      # with the build's symbols when a crash needs it.
+      - name: Collect crash dumps
         if: ${{ !cancelled() }}
         run: |
           reports="$LOCALAPPDATA/BroukSmoke/User Data/Crashpad/reports"
           mkdir -p build/smoke/dumps
           cp "$reports"/*.dmp build/smoke/dumps/ 2>/dev/null || true
-          shopt -s nullglob
-          dumps=(build/smoke/dumps/*.dmp)
-          if [[ ${#dumps[@]} -eq 0 ]]; then echo "No crash dumps."; exit 0; fi
-          cdb="$(cygpath -u "${PROGRAMFILES} (x86)")/Windows Kits/10/Debuggers/x64/cdb.exe"
-          if [[ ! -x "$cdb" ]]; then echo "No cdb.exe: dumps are uploaded unread."; exit 0; fi
-          source scripts/env.sh
-          cef="$(sed -n 's/^CEF_VERSION="\(.*\)"$/\1/p' scripts/fetch_cef)"
-          name="cef_binary_${cef}_windows64_release_symbols"
-          temp="$(cygpath -u "$RUNNER_TEMP")"
-          symbols="$temp/cef-symbols"
-          mkdir -p "$symbols"
-          if curl -sSfL -o "$temp/symbols.tar.bz2" \
-              "https://cef-builds.spotifycdn.com/${name//+/%2B}.tar.bz2"; then
-            expected="$(curl -sSfL https://cef-builds.spotifycdn.com/index.json |
-              node -e 'let t = ""; process.stdin.on("data", (c) => (t += c)).on("end", () => {
-                const v = JSON.parse(t).windows64.versions.find((x) => x.cef_version === process.argv[1]);
-                console.log(v?.files.find((f) => f.type === "release_symbols")?.sha1 ?? ""); });' "$cef")"
-            actual="$(sha1sum < "$temp/symbols.tar.bz2" | cut -d' ' -f1)"
-            if [[ -n "$expected" && "$expected" == "$actual" ]]; then
-              # A path with a drive letter is a remote host to GNU tar.
-              tar --force-local -xjf "$temp/symbols.tar.bz2" -C "$symbols" \
-                --strip-components 1 "$name/libcef.dll.pdb" ||
-                echo "CEF's symbols could not be unpacked: stacks without them."
-            else
-              echo "CEF's symbols did not match CEF's index: stacks without them."
-            fi
-          fi
-          for dump in "${dumps[@]}"; do
-            echo "== $(basename "$dump")"
-            "$cdb" -z "$(cygpath -w "$dump")" \
-              -y "$(cygpath -w build/debug/Brouk);$(cygpath -w "$symbols")" \
-              -c ".exr -1; .ecxr; kn 60; q" > "$dump.txt" 2>&1 || true
-            sed -n '/^ExceptionAddress\|^ *ExceptionCode\|^ *[0-9a-f][0-9a-f] /p' "$dump.txt" | head -70
-          done
 
       - name: Upload the smoke test's screenshots and logs
         if: ${{ !cancelled() }}
