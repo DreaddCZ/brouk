@@ -10,6 +10,7 @@
 #include <system_error>
 #include <vector>
 
+#include "core/utf8_path.h"
 #include "core/yaml_io.h"
 
 namespace brouk {
@@ -59,7 +60,7 @@ std::optional<Error> SaveSettingsFile(const std::filesystem::path& path,
   std::error_code error;
   std::filesystem::create_directories(path.parent_path(), error);
   if (error) {
-    return Error{"cannot create " + path.parent_path().string() + ": " +
+    return Error{"cannot create " + PathToUtf8(path.parent_path()) + ": " +
                  error.message()};
   }
   // Write a temporary file next to it, then rename: readers (and a crash)
@@ -72,7 +73,7 @@ std::optional<Error> SaveSettingsFile(const std::filesystem::path& path,
     file.close();
     if (!file) {
       std::filesystem::remove(temp, error);
-      return Error{"cannot write " + temp.string()};
+      return Error{"cannot write " + PathToUtf8(temp)};
     }
   }
   std::filesystem::permissions(
@@ -83,7 +84,7 @@ std::optional<Error> SaveSettingsFile(const std::filesystem::path& path,
   if (error) {
     std::error_code ignored;
     std::filesystem::remove(temp, ignored);
-    return Error{"cannot replace " + path.string() + ": " + error.message()};
+    return Error{"cannot replace " + PathToUtf8(path) + ": " + error.message()};
   }
   return std::nullopt;
 }

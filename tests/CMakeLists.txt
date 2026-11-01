@@ -86,6 +86,7 @@ add_executable(brouk_core_tests
   core/totp_test.cc
   core/url_display_test.cc
   core/url_pattern_test.cc
+  core/utf8_path_test.cc
   core/visit_forwarding_test.cc
   core/web_origin_test.cc
   core/window_frame_test.cc

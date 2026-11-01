@@ -148,6 +148,8 @@ set(BROUK_CORE_SOURCES
   url_display.h
   url_pattern.cc
   url_pattern.h
+  utf8_path.cc
+  utf8_path.h
   visit_forwarding.cc
   visit_forwarding.h
   web_origin.cc

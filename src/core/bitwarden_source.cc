@@ -3,6 +3,7 @@
 #include <utility>
 
 #include "core/crypto.h"
+#include "core/utf8_path.h"
 
 namespace brouk {
 
@@ -273,10 +274,10 @@ std::string BitwardenSetupSteps(const BitwardenSource::Status& status,
     // Node.js, which runs bw, does not use the certificates the system
     // trusts.
 #if defined(_WIN32)
-    login =
-        "$env:NODE_EXTRA_CA_CERTS=\"" + certificates.string() + "\"; bw login";
+    login = "$env:NODE_EXTRA_CA_CERTS=\"" + PathToUtf8(certificates) +
+            "\"; bw login";
 #else
-    login = "NODE_EXTRA_CA_CERTS=\"" + certificates.string() + "\" bw login";
+    login = "NODE_EXTRA_CA_CERTS=\"" + PathToUtf8(certificates) + "\" bw login";
 #endif
   }
   if (status.state == BitwardenSource::State::kNoCli) {
