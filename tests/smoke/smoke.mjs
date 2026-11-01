@@ -1311,6 +1311,22 @@ async function main() {
     await routeLinkWithPicker({ executable, port, pagesBase });
   }
 
+  // Default browser (010): Windows starts Brouk for a link as
+  // `brouk.exe --single-argument <url>` (Chrome's form); the link reaches
+  // the running Brouk and opens.
+  if (kWindows) {
+    const url = `http://localhost:${new URL(pagesBase).port}/default-browser.html`;
+    spawn(executable, ['--single-argument', url], { env: { ...process.env, BROUK_DEV_DATA_DIR: dataDir }, stdio: 'ignore' });
+    let opened;
+    for (let i = 0; i < 30 && !opened; i++) {
+      await sleep(500);
+      opened = await devtoolsJson(port, '/json/list')
+        .then((list) => list.find((t) => t.type === 'page' && t.url === url))
+        .catch(() => undefined);
+    }
+    check(opened !== undefined, 'a link given as --single-argument opens in the running Brouk');
+  }
+
   // Quit as the user does (Brouk → Quit; on Windows closing the window),
   // aimed at this copy's pid only.
   const pagesBeforeQuit = await devtoolsJson(port, '/json/list').catch(() => []);

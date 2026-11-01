@@ -55,6 +55,8 @@ Links in mail and chat often go through a security service first (Microsoft Safe
 
 Links from other apps reach Brouk only when it is the default browser: **Settings → Links → Make Brouk the default browser** (macOS asks you to confirm).
 
+**On Windows:** the button registers Brouk as a browser for your Windows account and opens Windows Settings → Default apps → Brouk. Choose Brouk there for HTTP and HTTPS (Windows lets no app do this by itself). If you move the Brouk folder, it updates its registration at the next start.
+
 ### Why did a link open there? {#link-routing-why}
 
 Every routed link is noted in the macOS log. Open **Console**, search for `Link routing` and process `brouk`. Each line says where the link came from, which address it was routed by and which rule decided. It never contains passwords or tokens (query values are left out).
