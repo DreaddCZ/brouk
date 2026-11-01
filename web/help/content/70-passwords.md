@@ -25,7 +25,7 @@ A saved login can hold a 2FA (TOTP) secret. Add it on the passwords page by past
 
 Showing, copying, editing or exporting passwords asks for **Touch ID** or your Mac's password; the page then stays unlocked for 5 minutes while it is open.
 
-**On Windows:** "⋮" → Passwords opens the page (also from the command palette). Showing, copying, editing or exporting asks for **Windows Hello** (face, fingerprint or PIN), or your Windows password when Windows Hello is not set up. The passwords' keys are in Windows Credential Manager (as "Brouk Keys/…" under Windows Credentials), and copied passwords and 2FA codes are kept out of the clipboard history. Filling, saving, generated passwords, 2FA codes and **Read QR code from this page** work as described above; the key icon is at the right of the address bar, next to the star. Bitwarden comes later on Windows.
+**On Windows:** "⋮" → Passwords opens the page (also from the command palette). Showing, copying, editing or exporting asks for **Windows Hello** (face, fingerprint or PIN), or your Windows password when Windows Hello is not set up. The passwords' keys are in Windows Credential Manager (as "Brouk Keys/…" under Windows Credentials), and copied passwords and 2FA codes are kept out of the clipboard history. Filling, saving, generated passwords, 2FA codes and **Read QR code from this page** work as described above; the key icon is at the right of the address bar, next to the star. For Bitwarden on Windows see [Bitwarden](#passwords-bitwarden).
 
 ### Password checkup {#passwords-checkup}
 
@@ -51,6 +51,8 @@ Settings → [Passwords](#settings-passwords) → **Passwords** → **Bitwarden*
 - Edit, delete and check Bitwarden logins in Bitwarden itself; the passwords page lists only the built-in manager's logins.
 
 Your master password and the vault's logins are never written to disk; the logins are kept in memory only while the vault is unlocked.
+
+**On Windows:** install the standalone `bw.exe`, e.g. `winget install Bitwarden.CLI` in PowerShell (npm's `bw.cmd` is not used). Brouk finds it in your `PATH` and in winget's and Scoop's folders. Sign in once in PowerShell with `bw login`; for a server with its own certificates Brouk shows the command, which starts with `$env:NODE_EXTRA_CA_CERTS=…`. **Unlock Bitwarden with Windows Hello** takes the place of Touch ID (face, fingerprint or PIN; without Windows Hello the master password is asked), and the vault also locks when the PC sleeps or you lock it (<kbd>Win+L</kbd>).
 
 ### Import and export {#passwords-import-export}
 

@@ -86,6 +86,11 @@ class TabHost {
                                      PasswordPromptDone done) = 0;
   virtual void OnTabPasswordIconChanged(Tab& tab) = 0;
   virtual void OpenTabPasswordsPage(Tab& tab) = 0;
+  // Bitwarden's master password dialog (008), modal to the window.
+  virtual void AskTabBitwardenPassword(Tab& tab,
+                                       const BitwardenPasswordRequest& request,
+                                       BitwardenPasswordSubmit submit,
+                                       std::function<void()> cancelled) = 0;
 
  protected:
   virtual ~TabHost() = default;

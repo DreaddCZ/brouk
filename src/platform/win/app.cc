@@ -46,11 +46,13 @@
 #include "include/cef_parser.h"
 #include "include/cef_task.h"
 #include "include/wrapper/cef_helpers.h"
+#include "platform/win/bitwarden_certificates.h"
 #include "platform/win/controls.h"
 #include "platform/win/credential_store.h"
 #include "platform/win/data_paths.h"
 #include "platform/win/downloaded_files.h"
 #include "platform/win/file_dialogs.h"
+#include "platform/win/system_events.h"
 #include "platform/win/theme.h"
 #include "platform/win/user_verification.h"
 #include "platform/win/wide_string.h"
@@ -400,8 +402,8 @@ class AppPasswordsPage final : public PasswordsPageDelegate {
   std::vector<PasswordsPageProfile> Profiles() override {
     std::vector<PasswordsPageProfile> profiles;
     for (const ProfileInfo& info : app_.ProfileList()) {
-      // Bitwarden comes later on Windows (W3): built-in passwords only.
-      profiles.push_back({info.id, info.name, info.color, false});
+      profiles.push_back(
+          {info.id, info.name, info.color, app_.ProfileUsesBitwarden(info.id)});
     }
     return profiles;
   }
@@ -542,6 +544,7 @@ void App::OnContextInitialized() {
     std::optional<Settings> settings = profiles_.ProfileSettings(profile);
     return !settings || settings->GetBool("passwords.offer_to_save");
   });
+  SetUpBitwarden();
   ApplySettings();
   // Changes made in the files apply while Brouk runs (004).
   settings_watcher_ = std::make_unique<SettingsWatcher>(
@@ -879,6 +882,7 @@ void App::ReleaseBrowserObjects() {
   settings_window_.reset();
   task_manager_window_.reset();
   windows_.clear();
+  system_events_.reset();
   passwords_.reset();  // Finishes queued work, closes the databases.
   bookmarks_.reset();  // Writes pending changes.
   download_watchers_.clear();
@@ -970,6 +974,44 @@ std::unique_ptr<CefMessageRouterBrowserSide::Handler> App::InternalPageHandler(
 
 PasswordManager* App::Passwords() {
   return passwords_.get();
+}
+
+bool App::ProfileUsesBitwarden(const ProfileId& profile) {
+  std::optional<Settings> settings = profiles_.ProfileSettings(profile);
+  return settings && settings->GetString("passwords.source") == "bitwarden";
+}
+
+// Bitwarden profiles (008): which profiles use it, where bw.exe may be, the
+// certificates of a company's server, and locking when the PC sleeps or the
+// session is locked.
+void App::SetUpBitwarden() {
+  // Besides PATH: where winget and Scoop put the programs they install (in
+  // PATH too, unless it was changed). npm's bw.cmd is refused (008).
+  std::wstring search_path;
+  if (const wchar_t* path = _wgetenv(L"PATH")) {
+    search_path = path;
+  }
+  for (const auto& [variable, folder] :
+       {std::pair{L"LOCALAPPDATA", L"\\Microsoft\\WinGet\\Links"},
+        std::pair{L"USERPROFILE", L"\\scoop\\shims"}}) {
+    if (const wchar_t* base = _wgetenv(variable)) {
+      search_path += L";" + std::wstring(base) + folder;
+    }
+  }
+  const std::filesystem::path data_dir = AppDataDirectory();
+  passwords_->SetBitwarden(
+      [this](const ProfileId& profile) {
+        return ProfileUsesBitwarden(profile);
+      },
+      [data_dir](const std::string& server) {
+        return PrepareServerCertificates(server, data_dir);
+      },
+      WideToUtf8(search_path));
+  system_events_ = std::make_unique<SystemEvents>([this] {
+    if (passwords_) {
+      passwords_->LockBitwarden();
+    }
+  });
 }
 
 HistoryService* App::History() {
@@ -2011,7 +2053,6 @@ void App::ApplySettings() {
                                                    : std::nullopt);
   }
   if (passwords_) {
-    // Bitwarden's options matter once it comes to Windows (W3).
     passwords_->SetOptions(
         {.fill_on_click = global.GetBool("passwords.fill_on_click"),
          .copy_totp = global.GetBool("passwords.copy_totp"),

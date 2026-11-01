@@ -32,6 +32,7 @@
 #include "platform/win/export_password_dialog.h"
 #include "platform/win/internal_page_window.h"
 #include "platform/win/settings_watcher.h"
+#include "platform/win/system_events.h"
 
 namespace brouk::win {
 
@@ -57,6 +58,8 @@ class App final : public BrowserWindowOwner,
   void ReleaseBrowserObjects();
   // content.json_viewer (006), for new renderer processes.
   bool JsonViewerEnabled() const;
+  // A profile whose passwords come from Bitwarden (008).
+  bool ProfileUsesBitwarden(const ProfileId& profile);
   // For the history page (013): the view it opens with, Clean up's keep
   // list of a profile, and clearing cookies, site data and the cache.
   std::string HistoryView() const;
@@ -215,6 +218,7 @@ class App final : public BrowserWindowOwner,
   void ApplySettings();
   // The window the settings and profile pages' dialogs belong to.
   HWND DialogOwner() const;
+  void SetUpBitwarden();
   // Profile export (005) with `passwords` (the encrypted section, or none):
   // asks where to save and writes the file.
   void WriteProfileExport(const ProfileId& id,
@@ -288,6 +292,8 @@ class App final : public BrowserWindowOwner,
   // Built-in passwords (008), for every profile; made when CEF is ready.
   std::unique_ptr<PasswordManager> passwords_;
   std::unique_ptr<ExportPasswordDialog> export_password_dialog_;
+  // Locks Bitwarden when the PC sleeps or the session is locked.
+  std::unique_ptr<SystemEvents> system_events_;
   std::vector<std::unique_ptr<BrowserWindow>> windows_;
 };
 

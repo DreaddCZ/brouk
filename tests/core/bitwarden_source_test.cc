@@ -276,8 +276,14 @@ TEST(BitwardenSourceTest, NothingWorksWhileLocked) {
 TEST(BitwardenSourceTest, SetupSteps) {
   BitwardenSource::Status status;
   status.state = BitwardenSource::State::kNoCli;
+#if defined(_WIN32)
+  EXPECT_NE(
+      BitwardenSetupSteps(status, "").find("winget install Bitwarden.CLI"),
+      std::string::npos);
+#else
   EXPECT_NE(BitwardenSetupSteps(status, "").find("brew install bitwarden-cli"),
             std::string::npos);
+#endif
 
   status.state = BitwardenSource::State::kLoggedOut;
   std::string steps = BitwardenSetupSteps(status, "");
@@ -287,9 +293,16 @@ TEST(BitwardenSourceTest, SetupSteps) {
   status.server_url = "https://vault.example.com";
   steps = BitwardenSetupSteps(status, "/data/certificates.pem");
   EXPECT_NE(steps.find("https://vault.example.com"), std::string::npos);
+#if defined(_WIN32)
+  EXPECT_NE(
+      steps.find(
+          "$env:NODE_EXTRA_CA_CERTS=\"/data/certificates.pem\"; bw login"),
+      std::string::npos);
+#else
   EXPECT_NE(
       steps.find("NODE_EXTRA_CA_CERTS=\"/data/certificates.pem\" bw login"),
       std::string::npos);
+#endif
   EXPECT_EQ(steps.find("bw config server"), std::string::npos);
 }
 

@@ -106,7 +106,7 @@ void VerifyWithPassword(HWND owner,
 // without the API).
 bool StartHello(HWND owner,
                 const std::wstring& reason,
-                std::function<void(bool)> done) {
+                std::function<void(HelloResult)> done) {
   ComPtr<IUserConsentVerifierInterop> interop;
   if (FAILED(ABI::Windows::Foundation::GetActivationFactory(
           Microsoft::WRL::Wrappers::HStringReference(
@@ -132,30 +132,30 @@ bool StartHello(HWND owner,
   auto handler = Microsoft::WRL::Callback<Microsoft::WRL::Implements<
       Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>,
       VerificationHandler, Microsoft::WRL::FtmBase>>(
-      [owner, reason, done](VerificationOperation* finished,
-                            AsyncStatus status) -> HRESULT {
+      [done](VerificationOperation* finished, AsyncStatus status) -> HRESULT {
         ui::UserConsentVerificationResult result =
             ui::UserConsentVerificationResult_Canceled;
         if (status != AsyncStatus::Completed ||
             FAILED(finished->GetResults(&result))) {
           result = ui::UserConsentVerificationResult_Canceled;
         }
+        HelloResult answer = HelloResult::kFailed;  // Busy, too many tries.
         switch (result) {
           case ui::UserConsentVerificationResult_Verified:
-            CefPostTask(TID_UI, new FunctionTask([done] { done(true); }));
+            answer = HelloResult::kPassed;
             break;
-          // No Windows Hello on this PC or for this user.
+          case ui::UserConsentVerificationResult_Canceled:
+            answer = HelloResult::kCancelled;
+            break;
           case ui::UserConsentVerificationResult_DeviceNotPresent:
           case ui::UserConsentVerificationResult_NotConfiguredForUser:
           case ui::UserConsentVerificationResult_DisabledByPolicy:
-            CefPostTask(TID_UI, new FunctionTask([owner, reason, done] {
-                          VerifyWithPassword(owner, reason, done);
-                        }));
+            answer = HelloResult::kNotSetUp;
             break;
-          default:  // Cancelled, busy, too many attempts.
-            CefPostTask(TID_UI, new FunctionTask([done] { done(false); }));
+          default:
             break;
         }
+        CefPostTask(TID_UI, new FunctionTask([done, answer] { done(answer); }));
         return S_OK;
       });
   return handler && SUCCEEDED(operation->put_Completed(handler.Get()));
@@ -163,13 +163,29 @@ bool StartHello(HWND owner,
 
 }  // namespace
 
+void VerifyWithHello(HWND owner,
+                     const std::wstring& reason,
+                     std::function<void(HelloResult)> done) {
+  CEF_REQUIRE_UI_THREAD();
+  if (!StartHello(owner, reason, done)) {
+    // Answered later, as from Windows Hello.
+    CefPostTask(TID_UI,
+                new FunctionTask([done] { done(HelloResult::kNotSetUp); }));
+  }
+}
+
 void VerifyUser(HWND owner,
                 const std::wstring& reason,
                 std::function<void(bool)> done) {
   CEF_REQUIRE_UI_THREAD();
-  if (!StartHello(owner, reason, done)) {
-    VerifyWithPassword(owner, reason, std::move(done));
-  }
+  VerifyWithHello(owner, reason, [owner, reason, done](HelloResult result) {
+    if (result == HelloResult::kNotSetUp) {
+      // No Windows Hello on this PC or for this user: the password.
+      VerifyWithPassword(owner, reason, done);
+      return;
+    }
+    done(result == HelloResult::kPassed);
+  });
 }
 
 }  // namespace brouk::win
