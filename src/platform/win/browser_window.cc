@@ -127,6 +127,7 @@ constexpr wchar_t kStarGlyph[] = L"\uE734";        // FavoriteStar.
 constexpr wchar_t kStarFilledGlyph[] = L"\uE735";  // FavoriteStarFill.
 constexpr wchar_t kKeyGlyph[] = L"\uE8D7";         // Permissions (a key).
 constexpr wchar_t kShieldGlyph[] = L"\uEA18";      // Shield.
+constexpr wchar_t kDevToolsGlyph[] = L"\uEC7A";    // DeveloperTools.
 constexpr wchar_t kLockGlyph[] = L"\uE72E";
 constexpr wchar_t kUnlockingGlyph[] = L"\uE895";  // Sync.
 
