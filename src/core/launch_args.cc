@@ -1,5 +1,6 @@
 #include "core/launch_args.h"
 
+#include <algorithm>
 #include <optional>
 #include <string>
 #include <utility>
@@ -17,7 +18,14 @@ LaunchRequest ParseLaunchRequest(std::vector<std::string> arguments,
   if (profile_switch && !profile_switch->empty()) {
     request.profile = std::move(profile_switch);
   }
-  request.urls = std::move(arguments);
+  for (std::string& url : arguments) {
+    // Windows' --single-argument (024) can hand over the rest of the
+    // command line with its terminating NUL: nothing after one is the URL.
+    url.resize(std::min(url.size(), url.find('\0')));
+    if (!url.empty()) {
+      request.urls.push_back(std::move(url));
+    }
+  }
   return request;
 }
 

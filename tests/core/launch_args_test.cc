@@ -35,5 +35,12 @@ TEST(LaunchArgsTest, BareProfileSwitchWithoutArguments) {
   EXPECT_TRUE(request.urls.empty());
 }
 
+TEST(LaunchArgsTest, UrlEndsAtNul) {
+  LaunchRequest request = ParseLaunchRequest(
+      {std::string("http://localhost/a.html\0", 24), std::string(1, '\0')},
+      std::nullopt);
+  EXPECT_EQ(request.urls, (Strings{"http://localhost/a.html"}));
+}
+
 }  // namespace
 }  // namespace brouk
