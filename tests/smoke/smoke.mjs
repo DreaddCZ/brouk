@@ -553,6 +553,69 @@ async function adblockMyFilter({ port, pagesBase }) {
   // reach UI Automation yet (screen reader support, after W3).
 }
 
+// Windows, link routing (010): see the call in main().
+async function routeLinkWithPicker({ executable, port, pagesBase }) {
+  const targets = await devtoolsJson(port, '/json/list').catch(() => []);
+  const settings = targets.find((t) => t.type === 'page' && t.url.startsWith('brouk://settings'));
+  if (!check(settings !== undefined, 'the settings window is open for link routing')) return;
+  const settingsPage = await Cdp.connect(settings.webSocketDebuggerUrl);
+  const query = async (request) =>
+    (
+      await settingsPage.send('Runtime.evaluate', {
+        expression:
+          `new Promise((ok) => window.cefQuery({ request: ${JSON.stringify(JSON.stringify(request))}, ` +
+          "onSuccess: (r) => ok('ok ' + r), onFailure: (c, m) => ok('failed ' + m) }))",
+        awaitPromise: true,
+        returnByValue: true,
+      })
+    ).result.value ?? '';
+  const state = await query({ type: 'links.state' });
+  let profiles = [];
+  try {
+    profiles = JSON.parse(state.slice(3)).profiles.map((p) => p.id);
+  } catch {
+    // Checked below.
+  }
+  const saved =
+    profiles.length >= 2
+      ? await query({ type: 'links.save', rules: [{ pattern: '127.0.0.1', profiles: profiles.slice(0, 2) }], wrappers: [] })
+      : 'no profiles';
+  settingsPage.close();
+  if (!check(saved.startsWith('ok'), `a routing rule with two profiles is saved (${saved.slice(0, 120)})`)) return;
+  const url = `${pagesBase}/routing.html`;
+  spawn(executable, [url], { env: { ...process.env, BROUK_DEV_DATA_DIR: dataDir }, stdio: 'ignore' });
+  // The picker is a window of its own, in front: 1 chooses the first
+  // profile (the window step follows when its group is in several windows:
+  // 1 again).
+  const script = [
+    "Add-Type -Namespace Smoke -Name Picker -MemberDefinition '" +
+      '[DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string c, string n); ' +
+      '[DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h); ' +
+      "[DllImport(\"user32.dll\")] public static extern bool SetForegroundWindow(IntPtr h);'",
+    'Add-Type -AssemblyName System.Windows.Forms',
+    '$picker = [IntPtr]::Zero',
+    "for ($i = 0; $i -lt 30 -and ($picker -eq [IntPtr]::Zero -or -not [Smoke.Picker]::IsWindowVisible($picker)); $i++) { Start-Sleep -Milliseconds 500; $picker = [Smoke.Picker]::FindWindow('BroukLinkPicker', 'Open link') }",
+    'Write-Output "picker shown: $($picker -ne [IntPtr]::Zero -and [Smoke.Picker]::IsWindowVisible($picker))"',
+    "if ($picker -ne [IntPtr]::Zero) { [Smoke.Picker]::SetForegroundWindow($picker) | Out-Null; Start-Sleep -Milliseconds 300; [System.Windows.Forms.SendKeys]::SendWait('1'); Start-Sleep -Milliseconds 700; if ([Smoke.Picker]::IsWindowVisible($picker)) { [System.Windows.Forms.SendKeys]::SendWait('1') } }",
+  ].join('; ');
+  let output = '';
+  try {
+    output = execFileSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8', timeout: 60000 });
+  } catch (error) {
+    log(`(no picker answer: ${error.message})`);
+  }
+  log(`(${output.trim().replaceAll(/\r?\n/g, '; ')})`);
+  check(/picker shown: True/.test(output), 'a link matching a rule with two profiles shows the link picker');
+  let opened;
+  for (let i = 0; i < 20 && !opened; i++) {
+    await sleep(500);
+    opened = await devtoolsJson(port, '/json/list')
+      .then((list) => list.find((t) => t.type === 'page' && t.url === url))
+      .catch(() => undefined);
+  }
+  check(opened !== undefined, 'choosing a profile in the picker opens the link');
+}
+
 async function main() {
   const executable = kWindows ? join(appPath, 'brouk.exe') : join(appPath, 'Contents/MacOS/brouk');
   const started = Date.now();
@@ -1239,6 +1302,13 @@ async function main() {
       open = await devtoolsTargets();
     }
     check(open === 0, 'F12 again closes them');
+  }
+
+  // Link routing (010): a rule naming two profiles makes a link from
+  // another app (a second start) show the picker; 1 chooses the first
+  // profile, and the link opens.
+  if (kWindows) {
+    await routeLinkWithPicker({ executable, port, pagesBase });
   }
 
   // Quit as the user does (Brouk → Quit; on Windows closing the window),

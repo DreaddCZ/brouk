@@ -34,6 +34,7 @@
 #include "platform/win/devtools_window.h"
 #include "platform/win/export_password_dialog.h"
 #include "platform/win/internal_page_window.h"
+#include "platform/win/link_routing.h"
 #include "platform/win/settings_watcher.h"
 #include "platform/win/system_events.h"
 
@@ -44,7 +45,8 @@ namespace brouk::win {
 // CefInitialize; every other method runs on the UI thread.
 class App final : public BrowserWindowOwner,
                   public ProfileManagerDelegate,
-                  public SettingsPageDelegate {
+                  public SettingsPageDelegate,
+                  public LinkRoutingHost {
  public:
   App();
   App(const App&) = delete;
@@ -61,6 +63,17 @@ class App final : public BrowserWindowOwner,
   void ReleaseBrowserObjects();
   // content.json_viewer (006), for new renderer processes.
   bool JsonViewerEnabled() const;
+  // Link routing (010), for the windows (BrowserWindowOwner).
+  LinkRoutingController* Routing() override;
+  // LinkRoutingHost:
+  ProfileId RoutingDefaultProfile() override;
+  const std::vector<ProfileInfo>& RoutingProfiles() override;
+  COLORREF RoutingProfileColor(const ProfileId& profile) override;
+  std::vector<BrowserWindow*> RoutingWindows() override;
+  bool IsRoutingWindow(const BrowserWindow* window) override;
+  BrowserWindow* OpenRoutingWindow() override;
+  bool MoveChosenWindowHere() override;
+  void RoutingBrowserCount(int delta) override;
   // Developer tools (006), for the windows (BrowserWindowOwner).
   DevToolsPreferences* DevToolsPrefs() override;
   std::string DockPosition() override;
@@ -322,6 +335,9 @@ class App final : public BrowserWindowOwner,
   // Brouk's pages.
   std::unique_ptr<DevToolsPreferences> devtools_preferences_;
   std::vector<std::unique_ptr<DevToolsWindow>> devtools_windows_;
+  // Link routing (010): the rules file, the picker and the resolver; made
+  // when CEF is ready.
+  std::unique_ptr<LinkRoutingController> routing_;
   // Bookmarks (011), for the whole app; made when CEF is ready.
   std::unique_ptr<BookmarkStore> bookmarks_;
   // Downloads (014): every download of the app, recorded in the history;

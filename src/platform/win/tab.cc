@@ -1144,8 +1144,8 @@ void Tab::OpenUrl(const std::string& url, OpenDisposition disposition) {
   host_.OpenUrlFromTab(*this, url, disposition);
 }
 
-bool Tab::RouteFirstNavigation(const std::string& /*url*/) {
-  return false;  // Link routing (010) comes with W3.
+bool Tab::RouteFirstNavigation(const std::string& url) {
+  return host_.RouteTabFirstNavigation(*this, url);
 }
 
 void Tab::CopyImageToClipboard(const std::vector<std::uint8_t>& /*png*/) {}

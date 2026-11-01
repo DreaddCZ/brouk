@@ -49,6 +49,8 @@ namespace brouk::win {
 class BrowserWindow;
 
 // The app, as the browser windows see it. UI thread.
+class LinkRoutingController;
+
 class BrowserWindowOwner {
  public:
   // The request context of `profile`'s web data (005).
@@ -105,6 +107,8 @@ class BrowserWindowOwner {
   // secret header names; a profile's request rules; browsers opened (+1)
   // or closed (-1), as Brouk quits after all have closed; DevTools in a
   // window of its own for one of Brouk's pages.
+  // Link routing (010); null before CEF is ready.
+  virtual LinkRoutingController* Routing() = 0;
   virtual DevToolsPreferences* DevToolsPrefs() = 0;
   virtual std::string DockPosition() = 0;
   virtual int DockSize() = 0;
@@ -210,7 +214,8 @@ class BrowserWindow final : public TabHost,
   // is empty.
   void OpenTab(const std::string& url,
                bool foreground,
-               const ProfileId& profile = ProfileId());
+               const ProfileId& profile = ProfileId(),
+               bool bookmark = false);
   // A tab for a popup or link from `opener` (in this or another window), in
   // its profile, after the opener if it is here. The caller creates its
   // browser.
@@ -225,7 +230,22 @@ class BrowserWindow final : public TabHost,
   void OpenPageFromTab(TabId from,
                        const ProfileId& profile,
                        const std::string& url,
-                       bool new_tab);
+                       bool new_tab,
+                       const std::wstring& source_name = L"From History",
+                       bool bookmark = false);
+  // Link routing (010): the profiles with a group here, the groups, the
+  // active tab's title (the picker); an address typed into tab `tab`
+  // loading there; a link opened next to tab `opener` (at the end of
+  // `profile`'s group if it is gone); a new tab that stayed unused closing.
+  std::vector<ProfileId> GroupProfiles() const;
+  std::vector<TabStripModel::Group> TabGroups() const;
+  std::wstring ActiveTabTitle() const;
+  void LoadTypedUrlInTab(TabId tab, const std::string& url);
+  void OpenUrlNextToTab(TabId opener,
+                        const std::string& url,
+                        const ProfileId& profile,
+                        bool foreground);
+  void CloseTabIfUnused(TabId tab);
   // A tab's profile (the default profile if it is gone), and any web
   // browser of `profile` here (for the DevTools protocol).
   ProfileId ProfileOfTab(TabId id);
@@ -356,6 +376,7 @@ class BrowserWindow final : public TabHost,
   void ApplyDevToolsSettings();
   void RequestRulesChanged(const ProfileId& profile,
                            const RequestRuleSet& rules);
+  bool RouteTabFirstNavigation(Tab& tab, const std::string& url) override;
   AdblockService* TabAdblock() override;
   void OnTabAdblockChanged(Tab& tab) override;
   std::string TabAdblockListName(const std::string& list_id) override;
