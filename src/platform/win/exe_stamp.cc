@@ -20,6 +20,10 @@ namespace {
 
 using Bytes = std::vector<std::uint8_t>;
 
+// RT_VERSION as a wide resource type (RT_VERSION itself follows UNICODE,
+// which Brouk does not define).
+const LPCWSTR kVersionType = MAKEINTRESOURCEW(16);
+
 void Append(Bytes& out, const void* data, std::size_t size) {
   const auto* bytes = static_cast<const std::uint8_t*>(data);
   out.insert(out.end(), bytes, bytes + size);
@@ -153,7 +157,7 @@ int wmain(int argc, wchar_t** argv) {
   if (HMODULE module = LoadLibraryExW(
           exe.c_str(), nullptr,
           LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE)) {
-    EnumResourceLanguagesW(module, RT_VERSION, MAKEINTRESOURCEW(1),
+    EnumResourceLanguagesW(module, kVersionType, MAKEINTRESOURCEW(1),
                            &CollectLanguage,
                            reinterpret_cast<LONG_PTR>(&languages));
     FreeLibrary(module);
@@ -165,11 +169,11 @@ int wmain(int argc, wchar_t** argv) {
     return 1;
   }
   for (WORD language : languages) {
-    UpdateResourceW(update, RT_VERSION, MAKEINTRESOURCEW(1), language, nullptr,
-                    0);
+    UpdateResourceW(update, kVersionType, MAKEINTRESOURCEW(1), language,
+                    nullptr, 0);
   }
   Bytes info = VersionInfo(name, version, internal_name, parts);
-  if (!UpdateResourceW(update, RT_VERSION, MAKEINTRESOURCEW(1),
+  if (!UpdateResourceW(update, kVersionType, MAKEINTRESOURCEW(1),
                        MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US),
                        info.data(), static_cast<DWORD>(info.size())) ||
       !EndUpdateResourceW(update, FALSE)) {
