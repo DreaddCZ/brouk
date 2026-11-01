@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Tests Brouk's Windows installer (024, W4) for the signed-in user: installs
+# it quietly, checks that the installed Brouk starts (--version) and is
+# registered as a browser, then uninstalls it and checks that nothing is
+# left. For CI runners: it replaces an installed Brouk of this user.
+#
+#   scripts/test_windows_installer <dir with the installer>
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+cmake_var() { sed -n "s/^set($1 \"\(.*\)\")$/\1/p" "$ROOT/CMakeLists.txt"; }
+APP_NAME="$(cmake_var APP_NAME)"
+APP_EXE="$(cmake_var APP_EXECUTABLE_NAME)"
+VERSION="$(cmake_var APP_VERSION)"
+SETUP="$1/$APP_NAME-$VERSION-setup.exe"
+APP="$(cygpath -u "$LOCALAPPDATA")/Programs/$APP_NAME"
+BROWSER_KEY="HKCU\\Software\\Clients\\StartMenuInternet\\$APP_NAME"
+
+fail() { echo "Installer test failed: $*" >&2; exit 1; }
+
+"$SETUP" //VERYSILENT //SUPPRESSMSGBOXES //NORESTART ||
+  fail "the installer ended with $?"
+[[ -f "$APP/$APP_EXE.exe" ]] || fail "no $APP/$APP_EXE.exe"
+version="$("$APP/$APP_EXE.exe" --version)"
+echo "Installed: $version"
+[[ "$version" == "$APP_NAME $VERSION "* ]] || fail "it reports \"$version\""
+reg query "$BROWSER_KEY\\Capabilities" > /dev/null 2>&1 ||
+  fail "it is not registered as a browser"
+
+# The uninstaller runs a copy of itself and returns at once.
+"$APP/unins000.exe" //VERYSILENT //SUPPRESSMSGBOXES //NORESTART
+for _ in $(seq 60); do
+  [[ -e "$APP/$APP_EXE.exe" ]] || break
+  sleep 1
+done
+[[ ! -e "$APP/$APP_EXE.exe" ]] || fail "the uninstaller left $APP_EXE.exe"
+if reg query "$BROWSER_KEY" > /dev/null 2>&1; then
+  fail "the uninstaller left the browser registration"
+fi
+echo "Installed, started and uninstalled $(basename "$SETUP")."

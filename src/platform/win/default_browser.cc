@@ -126,6 +126,16 @@ std::optional<Error> RegisterAsBrowser() {
   return std::nullopt;
 }
 
+void UnregisterAsBrowser() {
+  const std::wstring classes = L"Software\\Classes\\";
+  RegDeleteTreeW(HKEY_CURRENT_USER, (classes + kUrlProgId).c_str());
+  RegDeleteTreeW(HKEY_CURRENT_USER, (classes + kHtmlProgId).c_str());
+  RegDeleteTreeW(HKEY_CURRENT_USER, BrowserKey().c_str());
+  RegDeleteKeyValueW(HKEY_CURRENT_USER, L"Software\\RegisteredApplications",
+                     AppName().c_str());
+  SHChangeNotify(SHCNE_ASSOCCHANGED, SHCNF_IDLIST, nullptr, nullptr);
+}
+
 void RefreshBrowserRegistration() {
   const std::optional<std::wstring> command =
       GetString(std::wstring(L"Software\\Classes\\") + kUrlProgId +

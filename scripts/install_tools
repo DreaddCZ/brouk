@@ -39,6 +39,8 @@ GITLEAKS_VERSION=8.30.1
 OSV_SCANNER_VERSION=2.7.0
 CARGO_DENY_VERSION=0.20.2
 ZIZMOR_VERSION=1.30.1
+# Builds the Windows installer (024, W4). Windows only.
+INNO_SETUP_VERSION=6.7.3
 
 PYPI=https://files.pythonhosted.org/packages
 
@@ -88,6 +90,7 @@ artifact() {
     zizmor-mac-x64) echo "https://github.com/zizmorcore/zizmor/releases/download/v$ZIZMOR_VERSION/zizmor-x86_64-apple-darwin.tar.gz 10e6b18b11ea07e515a16f0f0518c7b07527bc9977c1fd5698181ce7f3554202" ;;
     zizmor-mac-arm64) echo "https://github.com/zizmorcore/zizmor/releases/download/v$ZIZMOR_VERSION/zizmor-aarch64-apple-darwin.tar.gz e28d22b087f9ebb8d99da6e740d348c930f559961c7c3f12badda54f882195a2" ;;
     zizmor-linux-x64) echo "https://github.com/zizmorcore/zizmor/releases/download/v$ZIZMOR_VERSION/zizmor-x86_64-unknown-linux-gnu.tar.gz e65324f4430c2717591937edcec90ccbefaf14c174f8ec9415e03ca875b46e1a" ;;
+    innosetup-win-x64) echo "https://github.com/jrsoftware/issrc/releases/download/is-${INNO_SETUP_VERSION//./_}/innosetup-$INNO_SETUP_VERSION.exe 9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732" ;;
     rust-win-x64) echo "https://static.rust-lang.org/dist/rust-$RUST_VERSION-x86_64-pc-windows-msvc.tar.xz 14ff744da07522dde540ab01bc02f2265aa9b4d58bfe8cf42c4c45e479acef1d" ;;
     *) echo "No artifact for $1 on $PLATFORM" >&2; return 1 ;;
   esac
@@ -221,6 +224,19 @@ if [[ "$PLATFORM" == mac-* ]]; then
   fi
 fi
 for t in cargo rustc; do link "$RUST_DIR/bin/$t$EXE" "$t"; done
+
+# Inno Setup's own installer, run quietly into .tools as a portable copy
+# (no Start menu entries, nothing in the registry).
+if [[ "$PLATFORM" == win-x64 ]]; then
+  INNO_DIR="$TOOLS/innosetup-$INNO_SETUP_VERSION"
+  if [[ ! -f "$INNO_DIR/ISCC.exe" ]]; then
+    rm -rf "$INNO_DIR"
+    "$(fetch innosetup)" //VERYSILENT //SUPPRESSMSGBOXES //NORESTART //SP- \
+      //CURRENTUSER //PORTABLE=1 //DIR="$(cygpath -w "$INNO_DIR")"
+  fi
+  [[ -f "$INNO_DIR/ISCC.exe" ]] || { echo "Inno Setup did not install" >&2; exit 1; }
+  link "$INNO_DIR/ISCC.exe" iscc
+fi
 
 # Scanners: each archive (or bare download) holds one executable. Not on
 # Windows: scripts/sast runs on Linux and macOS.
