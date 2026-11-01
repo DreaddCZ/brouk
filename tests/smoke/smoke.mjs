@@ -898,8 +898,9 @@ async function main() {
     }
 
     // A new tab puts the keyboard in the address bar, also once its page
-    // has loaded (as on macOS and in Chrome).
-    const newTab = sendKeys('Downloads test', ['^t'], {
+    // has loaded (as on macOS and in Chrome). In a new window (Ctrl+N), so
+    // closing it leaves the other windows' active tabs as they were.
+    const newTab = sendKeys('Downloads test', ['^n'], {
       windowsOf: brouk.pid,
       thenKeys: ['{END}'],
       afterKeys: ['^w'],
