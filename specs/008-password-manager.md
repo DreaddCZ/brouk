@@ -233,3 +233,5 @@ None.
 - 2026-10-27 (user's decision): the Bitwarden source is tested by the user and the spec is done. As for 005, 013 and 014, criteria of the built-in source not yet ticked are left for the beta testers.
 - 2026-10-28 (Windows groundwork, see 002): on Windows the Bitwarden CLI is looked for as `bw.exe` in the `;`-separated PATH (no Homebrew folders). The `bw.cmd` that npm installs is refused, so Windows users need the standalone `bw.exe`; to be described in help when the Windows app exists.
 - 2026-10-28 (user's decision, see 001, for Windows later): secrets are kept in Windows Credential Manager, which company policies govern, and Windows Hello takes the place of Touch ID for unlocking.
+- 2026-11-01 (user's decision, Windows): "Read QR code from this page" uses zxing-cpp (Apache-2.0) on Windows, which has no QR code reader for desktop apps; macOS keeps Vision.
+- 2026-11-01 (implementation, Windows): the keys are in Windows Credential Manager and the passwords page unlocks with Windows Hello or the Windows password; details in 024's notes.

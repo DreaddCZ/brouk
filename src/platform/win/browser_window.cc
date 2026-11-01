@@ -99,6 +99,7 @@ enum MenuCommand : UINT {
   kBookmarkAllTabsCommand,
   kBookmarkManagerCommand,
   kAlwaysShowBarCommand,
+  kPasswordsCommand,
   kFirstBlockedPopupCommand = 1000,
   kFirstProfileCommand = 2000,
   kFirstClosedCommand = 3000,
@@ -929,6 +930,7 @@ std::vector<PaletteEntry> BrowserWindow::PaletteActions() {
       }
     }
   });
+  add("Passwords", [this] { OpenInternalPage("brouk://passwords/"); });
   add("Settings", [this] { owner_.OpenSettings(std::string()); });
   add("Manage profiles", [this] { owner_.OpenProfileManager(); });
   add("Open-source licences", [this] { OpenInternalPage("brouk://credits/"); });
@@ -2120,6 +2122,9 @@ void BrowserWindow::ShowAppMenu() {
   }
   AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(bookmarks),
               L"Bookmarks");
+  // Passwords (008): the passwords page as a tab, as Chrome's Password
+  // Manager.
+  AppendMenuW(menu, MF_STRING, kPasswordsCommand, L"Passwords");
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
   AppendMenuW(menu, MF_STRING, kZoomInCommand, L"Zoom in\tCtrl++");
   AppendMenuW(menu, MF_STRING, kZoomOutCommand, L"Zoom out\tCtrl+-");
@@ -2230,6 +2235,9 @@ void BrowserWindow::ShowAppMenu() {
       break;
     case kBookmarkManagerCommand:
       ShowBookmarkManager();
+      break;
+    case kPasswordsCommand:
+      OpenInternalPage("brouk://passwords/");
       break;
     case kAlwaysShowBarCommand:
       ToggleBookmarksBar();

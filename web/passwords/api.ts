@@ -1,7 +1,8 @@
 /**
  * The passwords page's messages to the browser (008). Every answer is
  * checked before the page uses it. Secrets come only after the user
- * unlocked the page with Touch ID or the Mac's password.
+ * unlocked the page with Touch ID or the Mac's password (Windows Hello or the
+ * Windows password on Windows).
  */
 import { BridgeError, isRecord, send, type Transport } from '../shared/bridge.js';
 
@@ -212,7 +213,7 @@ export class PasswordsApi {
     return list(await this.#send('passwords.list')).map(parseEntry);
   }
 
-  /** Asks for Touch ID or the Mac's password; resolves with success. */
+  /** Asks for Touch ID or the Mac's password (Windows Hello); resolves with success. */
   async unlock(): Promise<boolean> {
     return (await this.#send('passwords.unlock')) === true;
   }
