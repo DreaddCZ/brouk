@@ -12,6 +12,8 @@ The **shield** next to the address shows how many requests were blocked on the p
 
 A page blocked as a whole (e.g. a known malware site) shows which list blocked it, with **Allow this site** and **Go back**.
 
+**On Windows:** the shield is a toolbar button left of the downloads button, with the page's blocked count. In its popup, click a third-party domain (or select it and press <kbd>Enter</kbd>) for its rules. "Show blocked requests" opens a window with the list. A blocked page and **Block element…** work as on macOS.
+
 ### Filter lists {#adblock-lists}
 
 Settings → [Ad blocking](#settings-ad-blocking):

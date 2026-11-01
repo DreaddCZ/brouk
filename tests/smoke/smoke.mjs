@@ -517,6 +517,42 @@ async function autofillFromEntry({ executable, port, pagesBase, pid }) {
   page.close();
 }
 
+// Windows, ad blocking (007): see the call in main().
+async function adblockMyFilter({ port, pagesBase }) {
+  const targets = await devtoolsJson(port, '/json/list').catch(() => []);
+  const settings = targets.find((t) => t.type === 'page' && t.url.startsWith('brouk://settings'));
+  const front = targets.find((t) => t.type === 'page' && t.url === `${pagesBase}/009/checkout.html`);
+  if (!check(settings !== undefined && front !== undefined, 'the settings window and a test page are open for ad blocking')) return;
+  const settingsPage = await Cdp.connect(settings.webSocketDebuggerUrl);
+  // The rule names the host (local hosts are blocked only then); `^*`
+  // matches the port, which `||127.0.0.1/` would not.
+  const { result } = await settingsPage.send('Runtime.evaluate', {
+    expression:
+      "new Promise((ok) => window.cefQuery({ request: JSON.stringify({ type: 'adblock.saveMyFilters', text: '||127.0.0.1^*/brouk-smoke-ad.png' }), " +
+      "onSuccess: (r) => ok('ok ' + r), onFailure: (c, m) => ok('failed ' + m) }))",
+    awaitPromise: true,
+    returnByValue: true,
+  });
+  settingsPage.close();
+  if (!check(String(result.value).startsWith('ok'), `My filters takes a rule (${result.value})`)) return;
+  const page = await Cdp.connect(front.webSocketDebuggerUrl);
+  // Blocked requests fail; others get the server's 404.
+  let answer = '';
+  for (let i = 0; i < 30 && answer !== 'blocked'; i++) {
+    await sleep(500);
+    const { result: fetched } = await page.send('Runtime.evaluate', {
+      expression: `fetch('/brouk-smoke-ad.png?n=${i}').then(() => 'loaded', () => 'blocked')`,
+      awaitPromise: true,
+      returnByValue: true,
+    });
+    answer = fetched.value ?? '';
+  }
+  page.close();
+  check(answer === 'blocked', `the rule blocks the page's request (${answer})`);
+  // The shield's count is tested by hand: the toolbar buttons' names do not
+  // reach UI Automation yet (screen reader support, after W3).
+}
+
 async function main() {
   const executable = kWindows ? join(appPath, 'brouk.exe') : join(appPath, 'Contents/MacOS/brouk');
   const started = Date.now();
@@ -1175,6 +1211,14 @@ async function main() {
   // drop-down of a form field; choosing it fills the form.
   if (kWindows) {
     await autofillFromEntry({ executable, port, pagesBase, pid: brouk.pid });
+  }
+
+  // Ad blocking (007): a rule in My filters blocks a request of the page
+  // in front, and the shield counts it. Local hosts are never blocked
+  // unless the rule names them (internal work tools stay usable), so the
+  // rule names 127.0.0.1.
+  if (kWindows) {
+    await adblockMyFilter({ port, pagesBase });
   }
 
   // Quit as the user does (Brouk → Quit; on Windows closing the window),

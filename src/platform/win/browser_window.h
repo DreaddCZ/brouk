@@ -25,6 +25,8 @@
 #include "core/session.h"
 #include "core/tab_strip_model.h"
 #include "include/cef_request_context.h"
+#include "platform/win/adblock_popup.h"
+#include "platform/win/adblock_requests_window.h"
 #include "platform/win/autofill_prompt.h"
 #include "platform/win/bitwarden_dialog.h"
 #include "platform/win/bookmark_dialog.h"
@@ -95,6 +97,14 @@ class BrowserWindowOwner {
   // ready.
   virtual PasswordManager* Passwords() = 0;
   virtual AutofillManager* Autofill() = 0;
+  // Ad blocking (007): the app's service (null before CEF is ready), a site
+  // on or off a profile's allowlist, a rule added to My filters.
+  virtual AdblockService* Adblock() = 0;
+  virtual void SetAdblockSite(const std::string& host,
+                              bool allowed,
+                              const ProfileId& profile) = 0;
+  virtual void AddAdblockRule(const std::string& rule,
+                              std::function<void()> done) = 0;
   virtual bool AskWhereToSaveDownloads() = 0;
   virtual DownloadTarget ReserveDownloadPath(const std::string& suggested,
                                              const ProfileId& profile) = 0;
@@ -157,7 +167,8 @@ class BrowserWindowOwner {
 // and selection follow the core's TabStripModel.
 class BrowserWindow final : public TabHost,
                             public BookmarksBar::Delegate,
-                            public DownloadsPopup::Delegate {
+                            public DownloadsPopup::Delegate,
+                            public AdblockPopup::Delegate {
  public:
   enum class Kind { kNormal, kPopup };
 
@@ -306,6 +317,19 @@ class BrowserWindow final : public TabHost,
                              PasswordPromptDone done) override;
   void OnTabPasswordIconChanged(Tab& tab) override;
   void OpenTabPasswordsPage(Tab& tab) override;
+  AdblockService* TabAdblock() override;
+  void OnTabAdblockChanged(Tab& tab) override;
+  std::string TabAdblockListName(const std::string& list_id) override;
+  void AllowAdblockSiteFromTab(Tab& tab, const std::string& url) override;
+  void AddTabAdblockRule(Tab& tab, const std::string& rule) override;
+  // AdblockPopup::Delegate (the shield's popup, for the active tab):
+  void PopupSetAdblockSiteEnabled(bool enabled) override;
+  void PopupAddAdblockRule(const std::string& rule) override;
+  void PopupShowBlockedRequests() override;
+  void PopupReportBrokenSite() override;
+  void PopupStartElementPicker() override;
+  void PopupOpenAdblockSettings() override;
+  void PopupOpenAdblockHelp() override;
   AutofillManager* TabAutofill() override;
   void ShowTabAutofillPrompt(Tab& tab,
                              const AutofillPrompt& prompt,
@@ -387,6 +411,13 @@ class BrowserWindow final : public TabHost,
                           BookmarkDialog::Done done);
   // The bubble or folder dialog closed: deleted from a task.
   void CloseBookmarkDialog();
+  // Ad blocking (007): the shield shows the active page's blocked count,
+  // dimmed when blocking is off for the site; hidden where there is
+  // nothing to block. A click opens its popup.
+  void UpdateShield();
+  void DrawShieldButton(const DRAWITEMSTRUCT& item);
+  void ShowAdblockPopup();
+  bool AdblockSiteEnabled(const Tab* tab) const;
   // Passwords (008): the key icon's place, for the list and the prompt;
   // closing the drop-down (it answers -1) and the prompt.
   RECT KeyScreenRect() const;
@@ -505,6 +536,11 @@ class BrowserWindow final : public TabHost,
   std::unique_ptr<BitwardenPasswordDialog> bitwarden_dialog_;
   // Autofill (009): the offer to save a submitted form, under the star.
   std::unique_ptr<AutofillPromptBubble> autofill_prompt_;
+  // Ad blocking (007): the shield button, its popup, and the blocked
+  // requests window.
+  HWND shield_ = nullptr;
+  AdblockPopup adblock_popup_{*this};
+  std::unique_ptr<AdblockRequestsWindow> adblock_requests_;
   std::unique_ptr<BookmarksBar> bookmarks_bar_;
   CommandPalette palette_;
   DownloadsPopup downloads_popup_{*this};

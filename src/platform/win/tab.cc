@@ -3,6 +3,7 @@
 #include <shellapi.h>
 #include <shlwapi.h>
 
+#include <cwctype>
 #include <memory>
 #include <utility>
 
@@ -10,6 +11,7 @@
 #include "cef/color_scheme.h"
 #include "cef/devtools_call.h"
 #include "cef/function_task.h"
+#include "core/adblock_policy.h"
 #include "core/external_protocol.h"
 #include "core/permissions.h"
 #include "include/cef_task.h"
@@ -30,6 +32,7 @@ constexpr wchar_t kContainerClass[] = L"BroukTabContainer";
 
 // Glyphs of the "Segoe MDL2 Assets" icon font.
 constexpr wchar_t kWarningGlyph[] = L"\uE7BA";
+constexpr wchar_t kShieldGlyph[] = L"\uEA18";  // Shield.
 
 // The permission prompt's icon for each permission (Segoe MDL2 Assets).
 const wchar_t* PermissionGlyph(PermissionKind kind) {
@@ -93,6 +96,7 @@ Tab::Tab(TabHost& host, TabId id, HWND parent, ProfileId profile)
   client_->SetDownloads(host_.TabDownloads(), profile_);
   client_->SetPasswords(host_.TabPasswords(), profile_);
   client_->SetAutofill(host_.TabAutofill());
+  client_->SetAdblock(host_.TabAdblock(), profile_);
   if (RegisterContainerClass(&Tab::ContainerProc)) {
     container_ = CreateWindowExW(0, kContainerClass, L"",
                                  WS_CHILD | WS_CLIPCHILDREN, 0, 0, 0, 0, parent,
@@ -114,9 +118,10 @@ Tab::~Tab() {
     internal_client_->DetachDelegate();
   }
   // The panels' windows go before the container they are in.
-  for (auto* panel : {&js_dialog_, &unresponsive_, &external_protocol_,
-                      &screen_picker_, &sad_tab_, &permission_prompt_,
-                      &move_question_, &restore_pages_, &paused_bar_}) {
+  for (auto* panel :
+       {&js_dialog_, &unresponsive_, &external_protocol_, &screen_picker_,
+        &sad_tab_, &permission_prompt_, &move_question_, &restore_pages_,
+        &paused_bar_, &blocked_page_, &picked_rule_}) {
     panel->reset();
   }
   find_bar_.reset();
@@ -251,7 +256,8 @@ void Tab::OnContainerSize() {
   }
   for (TabPanel* panel :
        {js_dialog_.get(), unresponsive_.get(), external_protocol_.get(),
-        screen_picker_.get(), sad_tab_.get(), permission_prompt_.get()}) {
+        screen_picker_.get(), sad_tab_.get(), permission_prompt_.get(),
+        blocked_page_.get(), picked_rule_.get()}) {
     if (panel) {
       panel->Place();
     }
@@ -335,6 +341,7 @@ void Tab::UpdateFaviconSize() {
 }
 
 void Tab::Navigate(const std::string& url) {
+  blocked_page_.reset();
   if (has_deferred_browser()) {
     url_ = url;
     CreateDeferredBrowser();
@@ -534,6 +541,7 @@ void Tab::OnAddressChanged(const std::string& url) {
 void Tab::OnPageVisited(const std::string& url,
                         const std::string& title,
                         cef_transition_type_t transition) {
+  blocked_page_.reset();  // Another page is shown.
   VisitTransition kind = VisitTransition::kOther;
   const int source = transition & TT_SOURCE_MASK;
   if (next_visit_typed_) {
@@ -734,6 +742,7 @@ void Tab::OnBrowserClosed() {
     client_->SetDownloads(host_.TabDownloads(), profile_);
     client_->SetPasswords(host_.TabPasswords(), profile_);
     client_->SetAutofill(host_.TabAutofill());
+    client_->SetAdblock(host_.TabAdblock(), profile_);
     deferred_context_ = std::move(unload_context_);
     loading_ = false;
     audible_ = false;
@@ -1110,12 +1119,101 @@ void Tab::ReleaseDownloadPath(const std::string& path) {
   host_.TabReleaseDownloadPath(path);
 }
 
-void Tab::OnAdblockRequest(const AdblockRequestInfo& /*info*/) {}
+void Tab::OnAdblockRequest(const AdblockRequestInfo& info) {
+  constexpr std::size_t kMaxRequests = 5000;
+  if (info.main_frame) {
+    // A new page: its count starts over.
+    adblock_requests_.clear();
+    adblock_blocked_ = 0;
+  }
+  if (adblock_requests_.size() < kMaxRequests) {
+    adblock_requests_.push_back(info);
+  }
+  if (info.blocked) {
+    ++adblock_blocked_;
+  }
+  host_.OnTabAdblockChanged(*this);
+}
 
-void Tab::OnPageBlocked(const AdblockRequestInfo& /*info*/) {}
+// The ad blocker blocked the page itself (007): which list did, with
+// "Go back" and "Allow this site", over the tab as on macOS.
+void Tab::OnPageBlocked(const AdblockRequestInfo& info) {
+  TabPanel::Content content;
+  content.placement = TabPanel::Placement::kFill;
+  content.width = 480;
+  content.icon = kShieldGlyph;
+  content.title = Utf8ToWide(std::string(kAppName) + " blocked this page");
+  content.message = Utf8ToWide(info.host) + L" is blocked by the list \u201C" +
+                    Utf8ToWide(host_.TabAdblockListName(info.list_id)) +
+                    L"\u201D.";
+  content.detail = L"Rule: " + Utf8ToWide(info.rule);
+  content.buttons = {L"Go back", L"Allow this site"};
+  std::weak_ptr<int> alive = alive_;
+  const std::string url = info.url;
+  const bool refocus = FocusInTab();
+  blocked_page_ = MakePanel(std::move(content),
+                            [this, alive, url](const TabPanel::Answer& answer) {
+                              if (alive.expired()) {
+                                return;
+                              }
+                              blocked_page_.reset();
+                              if (answer.button == 1) {
+                                // Off for the site in the tab's profile, then
+                                // the page loads.
+                                host_.AllowAdblockSiteFromTab(*this, url);
+                              } else if (can_go_back_ && browser_) {
+                                browser_->GoBack();
+                              }
+                            });
+  if (refocus && IsWindowVisible(container_)) {
+    blocked_page_->Focus();
+  }
+}
 
-void Tab::OnElementPicked(const std::string& /*url*/,
-                          const std::string& /*selector*/) {}
+void Tab::StartElementPicker() {
+  if (client_ && browser_) {
+    client_->StartElementPicker(browser_);
+  }
+}
+
+// The picked element's rule, shown for a last check (and editing) before
+// it goes to My filters (007), as on macOS.
+void Tab::OnElementPicked(const std::string& url, const std::string& selector) {
+  const std::string host = HostOfUrl(url);
+  if (host.empty()) {
+    return;
+  }
+  TabPanel::Content content;
+  content.title = L"Block this element?";
+  content.message =
+      L"This rule goes to My filters (Settings \u2192 Ad blocking). You can "
+      L"change it first.";
+  content.input = Utf8ToWide(host + "##" + selector);
+  content.input_name = L"Rule";
+  content.buttons = {L"Block", L"Cancel"};
+  content.escape_answer = 1;
+  std::weak_ptr<int> alive = alive_;
+  picked_rule_ = MakePanel(std::move(content),
+                           [this, alive](const TabPanel::Answer& answer) {
+                             if (alive.expired()) {
+                               return;
+                             }
+                             picked_rule_.reset();
+                             std::wstring rule = answer.input;
+                             while (!rule.empty() && iswspace(rule.back())) {
+                               rule.pop_back();
+                             }
+                             while (!rule.empty() && iswspace(rule.front())) {
+                               rule.erase(rule.begin());
+                             }
+                             if (answer.button != 0 || rule.empty() ||
+                                 rule.find(L'\n') != std::wstring::npos) {
+                               return;
+                             }
+                             host_.AddTabAdblockRule(*this, WideToUtf8(rule));
+                           });
+  picked_rule_->Focus();
+}
 
 bool Tab::OnUnhandledKeyEvent(const CefKeyEvent& event,
                               CefEventHandle /*os_event*/) {

@@ -86,6 +86,15 @@ class TabHost {
                                      PasswordPromptDone done) = 0;
   virtual void OnTabPasswordIconChanged(Tab& tab) = 0;
   virtual void OpenTabPasswordsPage(Tab& tab) = 0;
+  // Ad blocking (007): the app's service (null before it exists); the
+  // tab's blocked count or requests changed; a list's name; "Allow this
+  // site" on the blocked page (then `url` loads again); a rule for My
+  // filters from the element picker (the tab reloads after).
+  virtual AdblockService* TabAdblock() = 0;
+  virtual void OnTabAdblockChanged(Tab& tab) = 0;
+  virtual std::string TabAdblockListName(const std::string& list_id) = 0;
+  virtual void AllowAdblockSiteFromTab(Tab& tab, const std::string& url) = 0;
+  virtual void AddTabAdblockRule(Tab& tab, const std::string& rule) = 0;
   // Form autofill (009): the app's manager (null before it exists), the
   // offer to save a submitted form, and Settings → Autofill.
   virtual AutofillManager* TabAutofill() = 0;
@@ -285,6 +294,14 @@ class Tab final : public TabClientDelegate,
                        const std::string& selector) override;
   bool KeepsFocusOnNavigation() override;
 
+  // Ad blocking (007): what the blocker saw on the current page (the
+  // shield's count and popup), and the element picker.
+  const std::vector<AdblockRequestInfo>& adblock_requests() const {
+    return adblock_requests_;
+  }
+  int adblock_blocked_count() const { return adblock_blocked_; }
+  void StartElementPicker();
+
   // Passwords (008): the key icon's look, and a click on it.
   PasswordIcon password_icon() const { return password_icon_; }
   void PasswordKeyIconClicked();
@@ -387,6 +404,13 @@ class Tab final : public TabClientDelegate,
   std::unique_ptr<TabPanel> permission_prompt_;
   std::unique_ptr<FindBar> find_bar_;
   PasswordIcon password_icon_ = PasswordIcon::kHidden;
+  // Ad blocking (007): the current page's requests (at most 5000) and how
+  // many were blocked; the page shown in place of a blocked one; the
+  // element picker's rule, for a last check.
+  std::vector<AdblockRequestInfo> adblock_requests_;
+  int adblock_blocked_ = 0;
+  std::unique_ptr<TabPanel> blocked_page_;
+  std::unique_ptr<TabPanel> picked_rule_;
   std::vector<std::string> blocked_popups_;
   // A search typed in the find bar is running: the page, which takes the
   // focus when it shows a match, gives it back to the bar.

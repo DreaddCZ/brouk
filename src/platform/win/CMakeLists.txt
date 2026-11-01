@@ -11,6 +11,10 @@ set(APP_DIR "${CMAKE_BINARY_DIR}/${APP_NAME}")
 include(BroukZxing)
 
 add_library(brouk_app SHARED
+  adblock_popup.cc
+  adblock_popup.h
+  adblock_requests_window.cc
+  adblock_requests_window.h
   app.cc
   app.h
   autofill_prompt.cc
@@ -111,6 +115,10 @@ set(_copy_commands
   COMMAND $<TARGET_FILE:brouk_exe_stamp>
           "${APP_DIR}/${APP_EXECUTABLE_NAME}.exe" "${APP_NAME}"
           "${APP_VERSION}" "${APP_EXECUTABLE_NAME}")
+# The bundled copy of Brave's ad blocking resources (007).
+list(APPEND _copy_commands
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          "${BROUK_ADBLOCK_RESOURCES}" "${APP_DIR}/adblock-resources.json")
 foreach(_file IN LISTS CEF_BINARY_FILES)
   list(APPEND _copy_commands
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
