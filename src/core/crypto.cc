@@ -317,6 +317,16 @@ std::optional<std::string> Base32Decode(std::string_view text) {
   return bytes;
 }
 
+bool VerifyEd25519(std::string_view public_key,
+                   std::string_view signature,
+                   std::string_view message) {
+  EnsureSodium();
+  return public_key.size() == crypto_sign_PUBLICKEYBYTES &&
+         signature.size() == crypto_sign_BYTES &&
+         crypto_sign_verify_detached(Bytes(signature), Bytes(message),
+                                     message.size(), Bytes(public_key)) == 0;
+}
+
 void Wipe(std::string& secret) {
   sodium_memzero(secret.data(), secret.size());
   secret.clear();

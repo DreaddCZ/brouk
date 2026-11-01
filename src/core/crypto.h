@@ -73,6 +73,13 @@ std::string Hmac(HmacAlgorithm algorithm,
                  std::string_view key,
                  std::string_view message);
 
+// Whether `signature` (64 bytes) is `public_key`'s (32 bytes) Ed25519
+// signature of `message`. Updates on Windows (024) are signed so, with
+// Sparkle's sign_update and the key of the macOS updates (019).
+bool VerifyEd25519(std::string_view public_key,
+                   std::string_view signature,
+                   std::string_view message);
+
 // Encodings. Base32 (RFC 4648) accepts lower case, spaces and missing
 // padding, as authenticator apps do; nullopt for other characters.
 std::string HexEncode(std::string_view bytes);  // Upper case.
