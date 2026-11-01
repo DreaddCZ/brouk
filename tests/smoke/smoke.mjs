@@ -389,7 +389,7 @@ function crashReports() {
 // Windows, passwords (008): signing in on the test page offers to save the
 // login (the prompt under the key icon); Save stores it, and the page fills
 // it when it loads again.
-async function savePasswordFromLogin({ executable, port, pagesBase, pid }, passwordsPage, listPasswords) {
+async function savePasswordFromLogin({ executable, port, pagesBase }, passwordsPage, listPasswords) {
   const loginUrl = `${pagesBase}/008/login.html`;
   spawn(executable, [loginUrl], { env: { ...process.env, BROUK_DEV_DATA_DIR: dataDir }, stdio: 'ignore' });
   let login;
@@ -410,12 +410,22 @@ async function savePasswordFromLogin({ executable, port, pagesBase, pid }, passw
     await sleep(250);
   }
   await sleep(1000);
+  // The page gets focus and input events as in a window in front (the
+  // smoke test's windows take turns in front).
+  await page.send('Emulation.setFocusEmulationEnabled', { enabled: true });
   // Typed as the user types (the page script reads what was typed).
   await evaluate("document.querySelector('#email').focus()");
   await page.send('Input.insertText', { text: 'smoke@example.com' });
   await evaluate("document.querySelector('#pw').focus()");
   await page.send('Input.insertText', { text: 'S3cret-smoke!' });
   await evaluate("document.querySelector('button').click()");
+  // The prompt comes once the next page loads; it is served from this
+  // process, which the PowerShell call below blocks: loaded first.
+  for (let i = 0; i < 20; i++) {
+    await sleep(500);
+    const targets = await devtoolsJson(port, '/json/list').catch(() => []);
+    if (targets.some((t) => t.id === login.id && t.url.includes('/008/done.html'))) break;
+  }
   // The prompt is an owned window; Save is clicked as a button message.
   const script = [
     "Add-Type -Namespace Smoke -Name Prompt -MemberDefinition '" +
@@ -436,11 +446,6 @@ async function savePasswordFromLogin({ executable, port, pagesBase, pid }, passw
     log(`(no prompt answer: ${error.message})`);
   }
   log(`(${output.trim().replaceAll(/\r?\n/g, '; ')})`);
-  if (!/prompt shown: True/.test(output)) {
-    // Whether the login was taken (the key icon offers to save it) but the
-    // prompt was not shown.
-    log(`(key icon offers to save: ${hasElement(pid, 'Save password')})`);
-  }
   check(/prompt shown: True/.test(output), 'signing in on the login page offers to save the password');
   check(/save clicked/.test(output), 'the save prompt has a Save button');
   let saved = '';
@@ -1106,7 +1111,7 @@ async function main() {
         .map((line) => line.replace(/^\s*Target:\s*(LegacyGeneric:target=)?/, '').trim())
         .filter((name) => name.startsWith(prefix));
       check(keys.length > 0, `the profiles' password keys are in Credential Manager (${keys.join(', ') || 'none'})`);
-      await savePasswordFromLogin({ executable, port, pagesBase, pid: brouk.pid }, passwordsPage, listPasswords);
+      await savePasswordFromLogin({ executable, port, pagesBase }, passwordsPage, listPasswords);
       passwordsPage.close();
       for (const key of keys) {
         execFileSync('cmdkey', [`/delete:${key}`], { stdio: 'ignore' });
