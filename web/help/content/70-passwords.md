@@ -25,6 +25,8 @@ A saved login can hold a 2FA (TOTP) secret. Add it on the passwords page by past
 
 Showing, copying, editing or exporting passwords asks for **Touch ID** or your Mac's password; the page then stays unlocked for 5 minutes while it is open.
 
+**On Windows:** "⋮" → Passwords opens the page (also from the command palette). Showing, copying, editing or exporting asks for **Windows Hello** (face, fingerprint or PIN), or your Windows password when Windows Hello is not set up. The passwords' keys are in Windows Credential Manager (as "Brouk Keys/…" under Windows Credentials), and a copied password is kept out of the clipboard history. Filling and saving on sites, Bitwarden, and passwords in profile files come later on Windows.
+
 ### Password checkup {#passwords-checkup}
 
 The checkup on the passwords page finds **weak**, **reused** (also across profiles) and **breached** passwords. The breach check uses Have I Been Pwned: only the first 5 characters of the password's SHA-1 hash are sent, never the password. Turn it off in Settings → Passwords.

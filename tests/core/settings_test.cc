@@ -6,6 +6,7 @@
 
 #include <gtest/gtest.h>
 
+#include "core/settings_schema.h"
 #include "core/yaml_io.h"
 
 namespace brouk {
@@ -282,6 +283,33 @@ TEST(SettingsTest, WritesAndReadsBack) {
   Settings back = Load(SettingScope::kProfile, yaml, problems);
   EXPECT_TRUE(problems.empty()) << yaml;
   EXPECT_EQ(back, settings);
+}
+
+// The settings page names the system Brouk runs on (024).
+TEST(SettingsTest, WordingNamesTheSystem) {
+  const SettingDef* theme =
+      FindSettingDef(SettingScope::kGlobal, "appearance.theme");
+  ASSERT_NE(theme, nullptr);
+  ASSERT_FALSE(theme->choice_labels.empty());
+  const SettingDef* unlock =
+      FindSettingDef(SettingScope::kGlobal, "passwords.bitwarden_touch_id");
+  ASSERT_NE(unlock, nullptr);
+#if defined(_WIN32)
+  EXPECT_EQ(theme->choice_labels[0], "Same as Windows");
+  EXPECT_EQ(unlock->label, "Unlock Bitwarden with Windows Hello");
+#else
+  EXPECT_EQ(theme->choice_labels[0], "Same as macOS");
+  EXPECT_EQ(unlock->label, "Unlock Bitwarden with Touch ID");
+#endif
+  for (const SettingDef& def : AllSettingDefs()) {
+#if defined(_WIN32)
+    EXPECT_EQ(def.description.find("Mac"), std::string_view::npos) << def.key;
+    EXPECT_EQ(def.label.find("Touch ID"), std::string_view::npos) << def.key;
+#else
+    EXPECT_EQ(def.description.find("Windows"), std::string_view::npos)
+        << def.key;
+#endif
+  }
 }
 
 }  // namespace

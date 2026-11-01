@@ -16,7 +16,30 @@ std::wstring WindowText(HWND window) {
   return text;
 }
 
-void SetClipboardText(HWND owner, const std::wstring& text) {
+namespace {
+
+// A clipboard format holding the DWORD 0, which tells Windows not to keep
+// or share what is on the clipboard. Clipboard open.
+void SetClipboardFlag(const wchar_t* format_name) {
+  const UINT format = RegisterClipboardFormatW(format_name);
+  HGLOBAL memory = format ? GlobalAlloc(GMEM_MOVEABLE, sizeof(DWORD)) : nullptr;
+  if (!memory) {
+    return;
+  }
+  if (void* data = GlobalLock(memory)) {
+    const DWORD zero = 0;
+    std::memcpy(data, &zero, sizeof(zero));
+    GlobalUnlock(memory);
+    if (SetClipboardData(format, memory)) {
+      return;  // The clipboard owns it now.
+    }
+  }
+  GlobalFree(memory);
+}
+
+}  // namespace
+
+void SetClipboardText(HWND owner, const std::wstring& text, bool secret) {
   if (!OpenClipboard(owner)) {
     return;
   }
@@ -33,6 +56,13 @@ void SetClipboardText(HWND owner, const std::wstring& text) {
     } else {
       GlobalFree(memory);
     }
+  }
+  if (secret) {
+    // Kept out of Windows' clipboard history and cloud clipboard, as Chrome
+    // does with copied passwords: the formats Windows documents for that.
+    SetClipboardFlag(L"ExcludeClipboardContentFromMonitorProcessing");
+    SetClipboardFlag(L"CanIncludeInClipboardHistory");
+    SetClipboardFlag(L"CanUploadToCloudClipboard");
   }
   CloseClipboard();
 }

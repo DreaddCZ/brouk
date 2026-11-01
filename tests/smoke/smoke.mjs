@@ -992,6 +992,53 @@ async function main() {
     }
   }
 
+  // Passwords (008): brouk://passwords opens (here from a second start,
+  // which hands its URL to the running Brouk); listing the passwords opens
+  // each profile's database, whose key goes to Credential Manager.
+  if (kWindows) {
+    spawn(executable, ['brouk://passwords'], {
+      env: { ...process.env, BROUK_DEV_DATA_DIR: dataDir },
+      stdio: 'ignore',
+    });
+    let passwordsTarget;
+    for (let i = 0; i < 30 && !passwordsTarget; i++) {
+      await sleep(500);
+      passwordsTarget = await devtoolsJson(port, '/json/list')
+        .then((list) => list.find((t) => t.type === 'page' && t.url.startsWith('brouk://passwords')))
+        .catch(() => undefined);
+    }
+    if (check(passwordsTarget !== undefined, 'brouk://passwords opens in a tab')) {
+      const passwordsPage = await Cdp.connect(passwordsTarget.webSocketDebuggerUrl);
+      const listPasswords = async () => {
+        const { result } = await passwordsPage.send('Runtime.evaluate', {
+          expression:
+            "new Promise((ok) => window.cefQuery({ request: JSON.stringify({ type: 'passwords.list' }), " +
+            "onSuccess: (r) => ok('ok ' + r), onFailure: (c, m) => ok('failed ' + m) }))",
+          awaitPromise: true,
+          returnByValue: true,
+        });
+        return result.value ?? '';
+      };
+      let answer = '';
+      for (let i = 0; i < 20 && !answer.startsWith('ok'); i++) {
+        await sleep(500);
+        answer = await listPasswords();
+      }
+      check(answer === 'ok []', `the passwords page lists the (empty) passwords (${answer.slice(0, 200)})`);
+      // cmdkey lists generic credentials as "Target: LegacyGeneric:target=<name>".
+      const prefix = `Brouk Keys (${dataDir})/passwords-key-`;
+      const keys = execFileSync('cmdkey', ['/list'], { encoding: 'utf8' })
+        .split(/\r?\n/)
+        .map((line) => line.replace(/^\s*Target:\s*(LegacyGeneric:target=)?/, '').trim())
+        .filter((name) => name.startsWith(prefix));
+      check(keys.length > 0, `the profiles' password keys are in Credential Manager (${keys.join(', ') || 'none'})`);
+      passwordsPage.close();
+      for (const key of keys) {
+        execFileSync('cmdkey', [`/delete:${key}`], { stdio: 'ignore' });
+      }
+    }
+  }
+
   // Quit as the user does (Brouk → Quit; on Windows closing the window),
   // aimed at this copy's pid only.
   const pagesBeforeQuit = await devtoolsJson(port, '/json/list').catch(() => []);

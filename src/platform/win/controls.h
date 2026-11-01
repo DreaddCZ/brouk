@@ -11,8 +11,11 @@ namespace brouk::win {
 
 std::wstring WindowText(HWND window);
 
-// Puts `text` on the clipboard.
-void SetClipboardText(HWND owner, const std::wstring& text);
+// Puts `text` on the clipboard; a `secret` (a password) is kept out of
+// the clipboard history.
+void SetClipboardText(HWND owner,
+                      const std::wstring& text,
+                      bool secret = false);
 
 // Whether `key` (VK_CONTROL, ...) is held down now.
 bool KeyDown(int key);

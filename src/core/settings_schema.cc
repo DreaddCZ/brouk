@@ -19,8 +19,45 @@ constexpr std::array<std::string_view, 9> kProfileColorLabels = {
     "Grey", "Blue",   "Red",  "Yellow", "Green",
     "Pink", "Purple", "Cyan", "Orange"};
 
+// Wording that names the system, so the settings read right on macOS and
+// on Windows (024).
+#if defined(_WIN32)
+constexpr std::string_view kSameAsSystem = "Same as Windows";
+constexpr std::string_view kThemeDescription =
+    "Light or dark windows; by default as set in Windows.";
+constexpr std::string_view kBitwardenLockDescription =
+    "Without use. It also locks when the PC sleeps or the screen locks.";
+constexpr std::string_view kBitwardenUnlockLabel =
+    "Unlock Bitwarden with Windows Hello";
+constexpr std::string_view kPhoneCountryDescription =
+    "Two letters, e.g. CZ. Numbers without a country code are compared as "
+    "numbers of this country. Empty: the region set in Windows.";
+constexpr std::string_view kSpellcheckDescription = "";
+constexpr std::string_view kRemoteDebuggingDescription =
+    "For Playwright, Puppeteer and chrome://inspect, on this PC only. "
+    "Programs on this PC can then control tabs of all profiles, including "
+    "their sign-ins.";
+#else
+constexpr std::string_view kSameAsSystem = "Same as macOS";
+constexpr std::string_view kThemeDescription =
+    "Light or dark windows; by default as set in macOS.";
+constexpr std::string_view kBitwardenLockDescription =
+    "Without use. It also locks when the Mac sleeps or the screen locks.";
+constexpr std::string_view kBitwardenUnlockLabel =
+    "Unlock Bitwarden with Touch ID";
+constexpr std::string_view kPhoneCountryDescription =
+    "Two letters, e.g. CZ. Numbers without a country code are compared as "
+    "numbers of this country. Empty: the Mac's region.";
+constexpr std::string_view kSpellcheckDescription =
+    "Uses the macOS spelling dictionaries.";
+constexpr std::string_view kRemoteDebuggingDescription =
+    "For Playwright, Puppeteer and chrome://inspect, on this Mac only. "
+    "Programs on this Mac can then control tabs of all profiles, including "
+    "their sign-ins.";
+#endif
+
 constexpr std::array<std::string_view, 3> kThemes = {"system", "light", "dark"};
-constexpr std::array<std::string_view, 3> kThemeLabels = {"Same as macOS",
+constexpr std::array<std::string_view, 3> kThemeLabels = {kSameAsSystem,
                                                           "Light", "Dark"};
 
 constexpr std::array<std::string_view, 6> kSearchEngines = {
@@ -97,7 +134,7 @@ constexpr std::array<SettingDef, 58> kSettings = {{
      .choice_labels = kThemeLabels,
      .section = "Appearance",
      .label = "Theme",
-     .description = "Light or dark windows; by default as set in macOS."},
+     .description = kThemeDescription},
     {.key = "startup.restore",
      .scope = SettingScope::kGlobal,
      .type = SettingDef::Type::kChoice,
@@ -302,14 +339,13 @@ constexpr std::array<SettingDef, 58> kSettings = {{
      .max_value = 1440,
      .section = "Passwords",
      .label = "Lock Bitwarden after (minutes)",
-     .description = "Without use. It also locks when the Mac sleeps or the "
-                    "screen locks."},
+     .description = kBitwardenLockDescription},
     {.key = "passwords.bitwarden_touch_id",
      .scope = SettingScope::kGlobal,
      .type = SettingDef::Type::kBool,
      .default_value = "true",
      .section = "Passwords",
-     .label = "Unlock Bitwarden with Touch ID"},
+     .label = kBitwardenUnlockLabel},
     // Form autofill (009), for all profiles.
     {.key = "autofill.enabled",
      .scope = SettingScope::kGlobal,
@@ -342,9 +378,7 @@ constexpr std::array<SettingDef, 58> kSettings = {{
      .max_length = 2,
      .section = "Autofill",
      .label = "Country for phone numbers",
-     .description = "Two letters, e.g. CZ. Numbers without a country code "
-                    "are compared as numbers of this country. Empty: the "
-                    "Mac's region."},
+     .description = kPhoneCountryDescription},
     {.key = "downloads.folder",
      .scope = SettingScope::kGlobal,
      .type = SettingDef::Type::kString,
@@ -367,7 +401,7 @@ constexpr std::array<SettingDef, 58> kSettings = {{
      .default_value = "true",
      .section = "Pages",
      .label = "Check spelling in text fields",
-     .description = "Uses the macOS spelling dictionaries."},
+     .description = kSpellcheckDescription},
     {.key = "content.json_viewer",
      .scope = SettingScope::kGlobal,
      .type = SettingDef::Type::kBool,
@@ -424,9 +458,7 @@ constexpr std::array<SettingDef, 58> kSettings = {{
      .requires_restart = true,
      .section = "Developer tools",
      .label = "Allow remote debugging",
-     .description = "For Playwright, Puppeteer and chrome://inspect, on this "
-                    "Mac only. Programs on this Mac can then control tabs of "
-                    "all profiles, including their sign-ins."},
+     .description = kRemoteDebuggingDescription},
     {.key = "devtools.remote_debugging_port",
      .scope = SettingScope::kGlobal,
      .type = SettingDef::Type::kInteger,

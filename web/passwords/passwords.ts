@@ -2,8 +2,9 @@
  * The passwords page (brouk://passwords, 008): the built-in passwords of
  * every profile with a profile filter and search, editing, the checkup,
  * the "never saved" sites, and CSV import and export. Revealing, copying,
- * editing and exporting passwords need Touch ID or the Mac's password; the
- * page then stays unlocked for 5 minutes.
+ * editing and exporting passwords need Touch ID or the Mac's password (on
+ * Windows: Windows Hello or the Windows password); the page then stays
+ * unlocked for 5 minutes.
  */
 import { cefTransport } from '../shared/bridge.js';
 import { button, byId, element, errorText } from '../shared/dom.js';
@@ -71,10 +72,12 @@ function updateLock(): void {
   lockButton.textContent = unlocked() ? 'Lock' : 'Unlock';
   lockButton.title = unlocked()
     ? 'Passwords can be shown and changed; locks again after 5 minutes.'
-    : 'Show and change passwords after Touch ID or your Mac password.';
+    : navigator.platform.startsWith('Win')
+      ? 'Show and change passwords after Windows Hello or your Windows password.'
+      : 'Show and change passwords after Touch ID or your Mac password.';
 }
 
-/** Unlocks with Touch ID or the Mac's password if needed. */
+/** Unlocks with Touch ID or the Mac's password (Windows Hello) if needed. */
 async function ensureUnlocked(): Promise<boolean> {
   if (unlocked()) return true;
   const ok = await api.unlock();

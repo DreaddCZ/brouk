@@ -25,11 +25,14 @@
 #include "cef/help_link.h"
 #include "cef/help_page_handler.h"
 #include "cef/internal_scheme.h"
+#include "cef/passwords_page_handler.h"
 #include "cef/profile_manager_handler.h"
 #include "cef/static_page_handler.h"
 #include "core/address_input.h"
 #include "core/bookmark_profile.h"
+#include "core/crypto.h"
 #include "core/help.h"
+#include "core/password_generator.h"
 #include "core/profile_export.h"
 #include "core/search_engines.h"
 #include "core/settings_export.h"
@@ -42,10 +45,12 @@
 #include "include/cef_task.h"
 #include "include/wrapper/cef_helpers.h"
 #include "platform/win/controls.h"
+#include "platform/win/credential_store.h"
 #include "platform/win/data_paths.h"
 #include "platform/win/downloaded_files.h"
 #include "platform/win/file_dialogs.h"
 #include "platform/win/theme.h"
+#include "platform/win/user_verification.h"
 #include "platform/win/wide_string.h"
 
 namespace brouk::win {
@@ -58,6 +63,8 @@ constexpr std::uintmax_t kMaxProfileExportBytes = 16 * 1024 * 1024;
 constexpr std::uintmax_t kMaxSettingsExportBytes = 1024 * 1024;
 // Bookmark files from other browsers can be large; more is not one.
 constexpr std::uintmax_t kMaxBookmarkHtmlBytes = 64 * 1024 * 1024;
+// Password exports of other browsers are small; more is not one.
+constexpr std::uintmax_t kMaxPasswordCsvBytes = 64 * 1024 * 1024;
 
 std::int64_t NowSeconds() {
   return std::chrono::duration_cast<std::chrono::seconds>(
@@ -381,6 +388,107 @@ class AppHistoryPage final : public HistoryPageDelegate {
   TabId tab_;
 };
 
+// Answers one passwords page tab (008): Windows Hello, the clipboard and
+// the file dialogs through the window holding the tab.
+class AppPasswordsPage final : public PasswordsPageDelegate {
+ public:
+  AppPasswordsPage(App& app, BrowserWindow& window, TabId tab)
+      : app_(app), window_(&window), tab_(tab) {}
+
+  std::vector<PasswordsPageProfile> Profiles() override {
+    std::vector<PasswordsPageProfile> profiles;
+    for (const ProfileInfo& info : app_.ProfileList()) {
+      // Bitwarden comes later on Windows (W3): built-in passwords only.
+      profiles.push_back({info.id, info.name, info.color, false});
+    }
+    return profiles;
+  }
+  ProfileId CurrentProfile() override {
+    return app_.IsOpenWindow(window_) ? window_->ProfileOfTab(tab_)
+                                      : app_.DefaultProfile();
+  }
+  PasswordManager* Manager() override { return app_.Passwords(); }
+  bool BreachCheckEnabled() override {
+    return app_.Registry().global_settings().GetBool("passwords.breach_check");
+  }
+  void Authenticate(const std::string& reason,
+                    std::function<void(bool)> done) override {
+    if (!app_.IsOpenWindow(window_)) {
+      done(false);
+      return;
+    }
+    // As macOS words it: "Brouk is trying to show and change ...".
+    VerifyUser(
+        window_->hwnd(),
+        Utf8ToWide(std::string(kAppName) + " is trying to " + reason + "."),
+        std::move(done));
+  }
+  void CopyToClipboard(const std::string& text) override {
+    SetClipboardText(Owner(), Utf8ToWide(text), /*secret=*/true);
+  }
+  void SaveCsv(std::string csv, SaveDone done) override {
+    FileDialogOptions options;
+    options.title = L"Export Passwords";
+    options.type_name = L"CSV file";
+    options.extension = L"csv";
+    options.file_name = L"Passwords";
+    options.note =
+        L"The file is not encrypted: anyone who can open it can read your "
+        L"passwords.";
+    HWND owner = Owner();
+    auto text = std::make_shared<std::string>(std::move(csv));
+    // Asked from a task: the dialog runs its own message loop, which must
+    // not run inside the page's request.
+    CefPostTask(TID_UI, new FunctionTask([options, owner, text, done] {
+                  std::optional<std::filesystem::path> path =
+                      AskSavePath(owner, options);
+                  if (!path) {
+                    Wipe(*text);
+                    done(false, std::nullopt);
+                    return;
+                  }
+                  std::optional<Error> error =
+                      WriteTextFileAtomically(*path, *text);
+                  Wipe(*text);
+                  done(!error, error);
+                }));
+  }
+  void OpenCsv(OpenDone done) override {
+    FileDialogOptions options;
+    options.title = L"Import Passwords";
+    options.type_name = L"CSV file";
+    options.extension = L"csv";
+    options.note =
+        L"A CSV file exported from Chrome, Edge, Firefox or Bitwarden.";
+    HWND owner = Owner();
+    CefPostTask(TID_UI, new FunctionTask([options, owner, done] {
+                  std::optional<std::filesystem::path> path =
+                      AskOpenPath(owner, options);
+                  if (!path) {
+                    done(std::nullopt, std::nullopt);
+                    return;
+                  }
+                  Result<std::string> text =
+                      ReadTextFile(*path, kMaxPasswordCsvBytes);
+                  if (!text) {
+                    done(std::nullopt, text.error());
+                    return;
+                  }
+                  done(std::move(text.value()), std::nullopt);
+                }));
+  }
+
+ private:
+  HWND Owner() const {
+    return app_.IsOpenWindow(window_) ? window_->hwnd() : nullptr;
+  }
+
+  App& app_;
+  // Checked with IsOpenWindow before use: the window may close first.
+  BrowserWindow* window_;
+  TabId tab_;
+};
+
 }  // namespace
 
 App::App()
@@ -421,6 +529,17 @@ void App::OnContextInitialized() {
   // Downloads (014), recorded in the history.
   downloads_ = std::make_unique<DownloadService>(history_.get());
   downloads_->SetChangedCallback([this] { DownloadsChanged(); });
+  // Built-in passwords (008): one database per profile, its key in
+  // Credential Manager.
+  passwords_ = std::make_unique<PasswordManager>(
+      [profiles_dir](const ProfileId& profile) {
+        return profiles_dir / profile / "passwords.db";
+      },
+      CreateCredentialStore(CredentialPrefix()));
+  passwords_->SetOfferToSave([this](const ProfileId& profile) {
+    std::optional<Settings> settings = profiles_.ProfileSettings(profile);
+    return !settings || settings->GetBool("passwords.offer_to_save");
+  });
   ApplySettings();
   // Changes made in the files apply while Brouk runs (004).
   settings_watcher_ = std::make_unique<SettingsWatcher>(
@@ -758,6 +877,7 @@ void App::ReleaseBrowserObjects() {
   settings_window_.reset();
   task_manager_window_.reset();
   windows_.clear();
+  passwords_.reset();  // Finishes queued work, closes the databases.
   bookmarks_.reset();  // Writes pending changes.
   download_watchers_.clear();
   downloads_.reset();  // Before the history it records into.
@@ -839,7 +959,15 @@ std::unique_ptr<CefMessageRouterBrowserSide::Handler> App::InternalPageHandler(
     return std::make_unique<HistoryPageHandler>(
         std::make_unique<AppHistoryPage>(*this, window, tab));
   }
+  if (page == "passwords" && passwords_) {
+    return std::make_unique<PasswordsPageHandler>(
+        std::make_unique<AppPasswordsPage>(*this, window, tab));
+  }
   return nullptr;
+}
+
+PasswordManager* App::Passwords() {
+  return passwords_.get();
 }
 
 HistoryService* App::History() {
@@ -1558,6 +1686,10 @@ void App::DeleteProfile(const ProfileId& id, DeleteDone done) {
                 if (history_) {
                   history_->CloseProfile(id);  // Before its folder goes.
                 }
+                if (passwords_) {
+                  // Closes its database, removes its key.
+                  passwords_->DeleteProfile(id);
+                }
                 contexts_.erase(id);
                 // The web data goes at the next start, when Chromium no
                 // longer uses it.
@@ -1651,7 +1783,7 @@ void App::ImportProfile(ImportDone done) {
         if (parsed.value().passwords) {
           problems.emplace_back(
               "The passwords were not imported: Brouk on Windows "
-              "has no password manager yet.");
+              "cannot import them from a profile file yet.");
         }
         ProfilesChanged();
         done(ImportResult{created.value(), problems});
@@ -1722,6 +1854,20 @@ void App::ApplySettings() {
         std::errc();
     history_->SetRetentionDays(is_days && days > 0 ? std::optional<int>(days)
                                                    : std::nullopt);
+  }
+  if (passwords_) {
+    // Bitwarden's options matter once it comes to Windows (W3).
+    passwords_->SetOptions(
+        {.fill_on_click = global.GetBool("passwords.fill_on_click"),
+         .copy_totp = global.GetBool("passwords.copy_totp"),
+         .breach_check = global.GetBool("passwords.breach_check"),
+         .rules = PasswordRulesFromSettings(
+             static_cast<int>(global.GetInt("passwords.generated_length")),
+             global.GetString("passwords.generated_characters")),
+         .bitwarden_cli = global.GetString("passwords.bitwarden_cli"),
+         .bitwarden_lock_minutes =
+             global.GetInt("passwords.bitwarden_lock_minutes"),
+         .bitwarden_touch_id = global.GetBool("passwords.bitwarden_touch_id")});
   }
   // Web pages' prefers-color-scheme, and Chromium's own pages.
   color_variant_ = choice == ThemeChoice::kLight  ? CEF_COLOR_VARIANT_LIGHT

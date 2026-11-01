@@ -17,6 +17,7 @@
 #include "cef/download_service.h"
 #include "cef/history_page_handler.h"
 #include "cef/history_service.h"
+#include "cef/password_manager.h"
 #include "cef/profile_manager_handler.h"
 #include "cef/settings_handler.h"
 #include "cef/task_manager_handler.h"
@@ -54,6 +55,8 @@ class App final : public BrowserWindowOwner,
   void ReleaseBrowserObjects();
   // content.json_viewer (006), for new renderer processes.
   bool JsonViewerEnabled() const;
+  // Built-in passwords (008); null before CEF is ready.
+  PasswordManager* Passwords();
   // For the history page (013): the view it opens with, Clean up's keep
   // list of a profile, and clearing cookies, site data and the cache.
   std::string HistoryView() const;
@@ -264,6 +267,8 @@ class App final : public BrowserWindowOwner,
   DownloadPathReserver download_paths_;
   std::map<int, std::function<void()>> download_watchers_;
   int next_download_watcher_ = 1;
+  // Built-in passwords (008), for every profile; made when CEF is ready.
+  std::unique_ptr<PasswordManager> passwords_;
   std::vector<std::unique_ptr<BrowserWindow>> windows_;
 };
 
