@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { actionsFor, dayLabel, searchDownloads, statusOf } from './logic.js';
+import { actionLabel, actionsFor, dayLabel, searchDownloads, statusOf } from './logic.js';
 import { parseDownload, type Download } from './api.js';
 
 function download(extra: Partial<Download>): Download {
@@ -12,6 +12,12 @@ test('search by file name and URL', () => {
   const all = [download({ id: 1, name: 'Report.pdf' }), download({ id: 2, url: 'https://files.corp/x', name: 'x' })];
   assert.deepEqual(searchDownloads(all, 'report').map((d) => d.id), [1]);
   assert.deepEqual(searchDownloads(all, 'corp').map((d) => d.id), [2]);
+});
+
+test('labels follow the system', () => {
+  assert.equal(actionLabel('reveal', 'MacIntel'), 'Show in Finder');
+  assert.equal(actionLabel('reveal', 'Win32'), 'Show in folder');
+  assert.equal(actionLabel('open', 'Win32'), 'Open');
 });
 
 test('deleted files', () => {

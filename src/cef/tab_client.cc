@@ -15,6 +15,7 @@
 #include "core/crash_error_code.h"
 #include "core/external_protocol.h"
 #include "core/page_events.h"
+#include "core/visit_forwarding.h"
 #include "core/web_origin.h"
 #include "include/cef_image.h"
 #include "include/cef_navigation_entry.h"
@@ -69,6 +70,12 @@ class ImageCallback : public CefDownloadImageCallback {
 
   IMPLEMENT_REFCOUNTING(ImageCallback);
 };
+
+std::int64_t SteadyMillis() {
+  return std::chrono::duration_cast<std::chrono::milliseconds>(
+             std::chrono::steady_clock::now().time_since_epoch())
+      .count();
+}
 
 }  // namespace
 
@@ -456,11 +463,12 @@ void TabClient::OnAddressChange(CefRefPtr<CefBrowser> /*browser*/,
   // (history.pushState, #fragment), which Chrome records as a visit.
   // Documents are recorded when they finish loading (OnLoadEnd).
   if (!loading_) {
-    ReportVisit(frame->GetBrowser());
+    ReportVisit(frame->GetBrowser(), /*document=*/false);
   }
 }
 
-void TabClient::ReportVisit(const CefRefPtr<CefBrowser>& browser) {
+void TabClient::ReportVisit(const CefRefPtr<CefBrowser>& browser,
+                            bool document) {
   CEF_REQUIRE_UI_THREAD();
   if (!delegate_ || !browser) {
     return;
@@ -470,9 +478,25 @@ void TabClient::ReportVisit(const CefRefPtr<CefBrowser>& browser) {
   if (!entry || !entry->IsValid()) {
     return;
   }
+  auto transition = entry->GetTransitionType();
+  if (document) {
+    // The page before forwarded here by itself right after loading (013):
+    // marked as Chromium marks its client redirects, so it is not kept.
+    const auto source = transition & TT_SOURCE_MASK;
+    const VisitArrival arrival = {
+        .link_or_form = (source == TT_LINK || source == TT_FORM_SUBMIT) &&
+                        (transition & TT_FORWARD_BACK_FLAG) == 0,
+        .user_gesture = main_navigation_gesture_,
+        .started_ms = main_navigation_started_ms_,
+        .previous_loaded_ms = page_loaded_ms_};
+    if (ForwardedByItself(arrival)) {
+      transition = static_cast<cef_transition_type_t>(transition |
+                                                      TT_CLIENT_REDIRECT_FLAG);
+    }
+    page_loaded_ms_ = SteadyMillis();
+  }
   delegate_->OnPageVisited(entry->GetURL().ToString(),
-                           entry->GetTitle().ToString(),
-                           entry->GetTransitionType());
+                           entry->GetTitle().ToString(), transition);
 }
 
 void TabClient::OnTitleChange(CefRefPtr<CefBrowser> /*browser*/,
@@ -575,16 +599,6 @@ void TabClient::OnDownloadUpdated(CefRefPtr<CefBrowser> /*browser*/,
     downloads_->OnUpdated(download_item, callback);
   }
 }
-
-namespace {
-
-std::int64_t SteadyMillis() {
-  return std::chrono::duration_cast<std::chrono::milliseconds>(
-             std::chrono::steady_clock::now().time_since_epoch())
-      .count();
-}
-
-}  // namespace
 
 // Several downloads from one page without the user starting them ask for
 // the "Automatic downloads" permission (014, as in Chrome). The first
@@ -927,7 +941,7 @@ void TabClient::OnLoadEnd(CefRefPtr<CefBrowser> browser,
   CEF_REQUIRE_UI_THREAD();
   // Error pages are not recorded (013).
   if (frame->IsMain() && !main_load_failed_) {
-    ReportVisit(browser);
+    ReportVisit(browser, /*document=*/true);
   }
 }
 
@@ -1129,9 +1143,14 @@ bool TabClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
                                CefRefPtr<CefFrame> frame,
                                CefRefPtr<CefRequest> request,
                                bool user_gesture,
-                               bool /*is_redirect*/) {
+                               bool is_redirect) {
   CEF_REQUIRE_UI_THREAD();
   std::string url = request->GetURL().ToString();
+  if (frame->IsMain() && !is_redirect) {
+    // For history (013): whether the page forwarded by itself.
+    main_navigation_gesture_ = user_gesture;
+    main_navigation_started_ms_ = SteadyMillis();
+  }
   if (user_gesture) {
     // A link the user clicked may turn out to be a download (014).
     gesture_url_ = url;

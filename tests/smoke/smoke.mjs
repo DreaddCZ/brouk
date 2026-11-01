@@ -96,10 +96,14 @@ const frontFunction = (title) =>
 
 // Windows: brings Brouk's window to the front and types `keys`
 // (System.Windows.Forms.SendKeys syntax: "^f" is Ctrl+F), one after another.
-function sendKeys(title, keys) {
-  const sends = keys
-    .map((k) => `[System.Windows.Forms.SendKeys]::SendWait('${k.replaceAll("'", "''")}'); Start-Sleep -Milliseconds 300`)
-    .join('; ');
+// With `windowsOf`, also lists that process's visible windows afterwards
+// and then types `thenKeys`, all from the same PowerShell: starting another
+// one may deactivate Brouk, which closes its popups. Returns PowerShell's
+// output.
+function sendKeys(title, keys, { windowsOf: pid, thenKeys = [], window = ['BroukSuggestions', 'Suggestions'], invoke, afterKeys = [] } = {}) {
+  const typed = (list) =>
+    list.map((k) => `[System.Windows.Forms.SendKeys]::SendWait('${k.replaceAll("'", "''")}'); Start-Sleep -Milliseconds 300`).join('; ');
+  const sends = typed(keys);
   const script = [
     'Add-Type -AssemblyName System.Windows.Forms, UIAutomationClient, UIAutomationTypes',
     kFocusFunction,
@@ -110,17 +114,53 @@ function sendKeys(title, keys) {
     sends,
     '$after = Get-Focus',
     'Write-Output "Brouk in front: $active, focus before: $before, after: $after"',
+    ...(pid && invoke
+      ? [
+          // `invoke`: a toolbar button of Brouk's window `title`, by its
+          // text (an icon glyph's code point), found as a child window and
+          // clicked with the mouse, as a user does (no shortcut opens it;
+          // UI Automation does not name owner-drawn buttons).
+          "Add-Type -Namespace Smoke -Name Click -MemberDefinition '[DllImport(\"user32.dll\")] public static extern bool SetCursorPos(int x, int y); [DllImport(\"user32.dll\")] public static extern void mouse_event(int f, int x, int y, int d, int e); [DllImport(\"user32.dll\", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string c, string n); [DllImport(\"user32.dll\", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindowEx(IntPtr p, IntPtr a, string c, string n); [DllImport(\"user32.dll\")] public static extern bool IsWindowVisible(IntPtr h); [DllImport(\"user32.dll\")] public static extern bool GetWindowRect(IntPtr h, out Rect r); public struct Rect { public int Left, Top, Right, Bottom; }'",
+          `$top = [Smoke.Click]::FindWindow('BroukBrowserWindow', '${title.replaceAll("'", "''")} - Brouk')`,
+          `$b = [Smoke.Click]::FindWindowEx($top, [IntPtr]::Zero, 'Button', [string][char]0x${invoke})`,
+          '$invoked = $false',
+          'if ($b -ne [IntPtr]::Zero) { $r = New-Object Smoke.Click+Rect; [Smoke.Click]::GetWindowRect($b, [ref]$r) | Out-Null; [Smoke.Click]::SetCursorPos([int](($r.Left + $r.Right) / 2), [int](($r.Top + $r.Bottom) / 2)) | Out-Null; Start-Sleep -Milliseconds 200; [Smoke.Click]::mouse_event(0x0002, 0, 0, 0, 0); [Smoke.Click]::mouse_event(0x0004, 0, 0, 0, 0); $invoked = "$($r.Left),$($r.Top),$($r.Right),$($r.Bottom)" }',
+          'Write-Output "invoked: $invoked"',
+          // What the window does just after the click, for the log.
+          `$seen = @(); for ($i = 0; $i -lt 10; $i++) { Start-Sleep -Milliseconds 150; $h = [Smoke.Click]::FindWindow("${window[0]}", "${window[1]}"); $seen += "$($h -ne [IntPtr]::Zero)/$([Smoke.Click]::IsWindowVisible($h))" }`,
+          'Write-Output "after the click: $($seen -join \' \')"',
+        ]
+      : []),
+    ...(pid
+      ? [
+          'Start-Sleep -Milliseconds 1500',
+          `$c = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, ${pid})`,
+          '$w = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $c) | ForEach-Object { "$($_.Current.ClassName) [$($_.Current.Name)]" }',
+          'Write-Output "windows: $($w -join \', \')"',
+          // `window` (class and title): an owned tool window such as the
+          // address bar's suggestions, which UI Automation does not list at
+          // the top level.
+          "Add-Type -Namespace Smoke -Name Win -MemberDefinition '[DllImport(\"user32.dll\", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string c, string n); [DllImport(\"user32.dll\")] public static extern bool IsWindowVisible(IntPtr h);'",
+          `$s = [Smoke.Win]::FindWindow("${window[0]}", "${window[1]}")`,
+          'Write-Output "window shown: $($s -ne [IntPtr]::Zero -and [Smoke.Win]::IsWindowVisible($s))"',
+          ...(thenKeys.length ? [typed(thenKeys), 'Write-Output "then focus: $(Get-Focus)"'] : []),
+          // `afterKeys`: sent last, in the same script (e.g. closing what the
+          // check opened, while the same window is still in front).
+          ...(afterKeys.length ? [typed(afterKeys)] : []),
+        ]
+      : []),
   ].join('; ');
   // PowerShell can take long to start on a busy runner: one more try.
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       const output = execFileSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8', timeout: 60000 });
       log(`(keys ${keys.join(' ')}: ${output.trim()})`);
-      return;
+      return output;
     } catch (error) {
       log(`(keys not sent, attempt ${attempt}: ${error.message})`);
     }
   }
+  return '';
 }
 
 // Windows: a right-click at screen pixel (x, y).
@@ -146,19 +186,44 @@ function rightClick(title, x, y) {
   }
 }
 
-// The top-level windows a process still has, for the log.
-function logWindowsOf(pid) {
+// Windows: whether a control named `name` is in one of the process's
+// windows (UI Automation), such as the find bar.
+function hasElement(pid, name) {
+  const script = [
+    'Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes',
+    `$pc = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, ${pid})`,
+    `$nc = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, '${name}')`,
+    '$found = $false',
+    'foreach ($top in [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $pc)) { if ($top.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $nc)) { $found = $true } }',
+    'Write-Output $found',
+  ].join('; ');
+  try {
+    return execFileSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8', timeout: 60000 }).trim() === 'True';
+  } catch (error) {
+    log(`(no UI Automation answer: ${error.message})`);
+    return undefined;
+  }
+}
+
+// The visible top-level windows of a process ("<class> [<name>]").
+function windowsOf(pid) {
   const script = [
     'Add-Type -AssemblyName UIAutomationClient',
     `$c = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, ${pid})`,
     '[System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $c) | ForEach-Object { "$($_.Current.ClassName) [$($_.Current.Name)]" }',
   ].join('; ');
   try {
-    const out = execFileSync('powershell', ['-NoProfile', '-Command', script], { timeout: 30000 });
-    log(`(windows left: ${out.toString().trim().split(/\r?\n/).join(', ')})`);
+    const out = execFileSync('powershell', ['-NoProfile', '-Command', script], { timeout: 60000 });
+    return out.toString().trim().split(/\r?\n/);
   } catch (error) {
     log(`(no window list: ${error.message})`);
+    return [];
   }
+}
+
+// The top-level windows a process still has, for the log.
+function logWindowsOf(pid) {
+  log(`(windows left: ${windowsOf(pid).join(', ')})`);
 }
 
 function finish(code) {
@@ -181,6 +246,21 @@ function finish(code) {
   }
   log(code === 0 ? 'All smoke tests passed.' : `${failures.length} smoke test(s) failed.`);
   process.exit(code);
+}
+
+// Windows: closes the windows of `child` as the user does. Without /F,
+// taskkill asks one of the process's windows to close (WM_CLOSE); Brouk runs
+// until its last window has closed, so ask again while it still has windows
+// (profile windows, the manager).
+async function closeWindowsOf(child) {
+  for (let i = 0; i < 10 && child.exitCode === null; ++i) {
+    try {
+      execFileSync('taskkill', ['/PID', String(child.pid)], { stdio: 'ignore' });
+    } catch {
+      // No window left to ask: Brouk is quitting.
+    }
+    await sleep(500);
+  }
 }
 
 // ---- Chrome DevTools Protocol ----
@@ -314,6 +394,16 @@ async function main() {
   const printed = execFileSync(executable, ['--version'], { encoding: 'utf8' }).trim();
   check(printed === `Brouk ${version} (${commit})`, `--version prints "Brouk ${version} (${commit})" (got "${printed}")`);
 
+  if (kWindows) {
+    // Windows shows this as the app's name (taskbar menu, Task Manager).
+    const description = execFileSync(
+      'powershell',
+      ['-NoProfile', '-Command', `(Get-Item -LiteralPath '${executable.replaceAll("'", "''")}').VersionInfo.FileDescription`],
+      { encoding: 'utf8' },
+    ).trim();
+    check(description === 'Brouk', `brouk.exe is described as "Brouk" (got "${description}")`);
+  }
+
   if (!kWindows) {
     const feed = execFileSync('plutil', ['-extract', 'SUFeedURL', 'raw', '-o', '-', join(appPath, 'Contents/Info.plist')], {
       encoding: 'utf8',
@@ -434,9 +524,14 @@ async function main() {
     logFocus('after typing in the find bar');
     desktopScreenshot('find-bar');
     logFocus('after the screenshot');
-    // The screenshot took the focus away; Brouk gives it back to the find
-    // bar, where Escape closes it, then Ctrl+0 resets the zoom.
+    // Escape closes the find bar, also when the page has the focus (as in
+    // Chrome; the screenshot can leave the focus there), then Ctrl+0 resets
+    // the zoom.
+    const findOpen = hasElement(brouk.pid, 'Find in page');
     sendKeys('Find and zoom test', ['{ESC}']);
+    await sleep(500);
+    const findClosed = hasElement(brouk.pid, 'Find in page') === false;
+    check(findOpen === true && findClosed, `Escape closes the find bar (open before: ${findOpen})`);
     const reset = await pressUntil(['^0'], before);
     check(reset === before, `Ctrl+0 resets the zoom (${reset})`);
     desktopScreenshot('find-bar-closed');
@@ -611,6 +706,208 @@ async function main() {
     }
   }
 
+  // Downloads (014): a download goes to the downloads folder without
+  // asking (here one in the test's data folder), and Ctrl+J shows it on
+  // the downloads page.
+  if (kWindows) {
+    const folder = join(dataDir, 'downloaded');
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(join(dataDir, 'settings.yaml'), `appearance:\n  theme: system\ndownloads:\n  folder: '${folder}'\n`);
+    await sleep(1500); // Live reload.
+    await cdp.send('Page.navigate', { url: `${pagesBase}/downloads.html` });
+    await waitForTitle(cdp, 'Downloads test');
+    const { result } = await cdp.send('Runtime.evaluate', {
+      expression: "JSON.stringify(document.querySelector('a[download]').getBoundingClientRect())",
+      returnByValue: true,
+    });
+    const link = JSON.parse(result.value ?? '{}');
+    const x = (link.left ?? 0) + 5;
+    const y = (link.top ?? 0) + 5;
+    for (const type of ['mousePressed', 'mouseReleased']) {
+      await cdp.send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1 });
+    }
+    const file = join(folder, 'hello.txt');
+    let saved = false;
+    for (let i = 0; i < 20 && !saved; i++) {
+      await sleep(500);
+      try {
+        saved = readFileSync(file, 'utf8') === 'Hello from Brouk';
+      } catch {
+        // Not there yet.
+      }
+    }
+    check(saved, 'a download is saved to the downloads folder without asking');
+    // The downloads button shows the list under it (Chrome's bubble);
+    // Escape closes it.
+    const list = sendKeys('Downloads test', [], {
+      windowsOf: brouk.pid,
+      invoke: 'E896', // The downloads button's arrow.
+      thenKeys: ['{ESC}'],
+      window: ['BroukDownloads', 'Downloads'],
+    });
+    check(/window shown: True/.test(list), 'the downloads button shows the list of downloads');
+    sendKeys('Downloads test', ['^j']);
+    let downloadsTarget;
+    for (let i = 0; i < 20 && !downloadsTarget; i++) {
+      await sleep(500);
+      downloadsTarget = await devtoolsJson(port, '/json/list')
+        .then((list) => list.find((t) => t.type === 'page' && t.url.startsWith('brouk://downloads')))
+        .catch(() => undefined);
+    }
+    if (check(downloadsTarget !== undefined, 'Ctrl+J opens the downloads page')) {
+      const downloadsPage = await Cdp.connect(downloadsTarget.webSocketDebuggerUrl);
+      let listed = false;
+      for (let i = 0; i < 20 && !listed; i++) {
+        await sleep(500);
+        const { result: text } = await downloadsPage.send('Runtime.evaluate', {
+          expression: 'document.body.innerText',
+          returnByValue: true,
+        });
+        listed = (text.value ?? '').includes('hello.txt');
+      }
+      check(listed, 'the downloads page lists the download');
+      downloadsPage.close();
+      desktopScreenshot('downloaded');
+      // Back to the test page's tab for the tests that follow.
+      sendKeys('Downloads', ['^w']);
+    }
+
+    // Bookmarks (011): Ctrl+D bookmarks the page at once (the bubble
+    // opens over it), and Ctrl+Shift+O lists it in the bookmark manager.
+    sendKeys('Downloads test', ['^d', '{ENTER}']);
+    const bookmarksFile = join(dataDir, 'bookmarks.json');
+    let bookmarked = false;
+    for (let i = 0; i < 20 && !bookmarked; i++) {
+      await sleep(500);
+      try {
+        bookmarked = readFileSync(bookmarksFile, 'utf8').includes('/downloads.html');
+      } catch {
+        // Not written yet.
+      }
+    }
+    check(bookmarked, 'Ctrl+D bookmarks the page (bookmarks.json)');
+    sendKeys('Downloads test', ['^+o']);
+    let managerTarget;
+    for (let i = 0; i < 20 && !managerTarget; i++) {
+      await sleep(500);
+      managerTarget = await devtoolsJson(port, '/json/list')
+        .then((list) => list.find((t) => t.type === 'page' && t.url.startsWith('brouk://bookmarks')))
+        .catch(() => undefined);
+    }
+    if (check(managerTarget !== undefined, 'Ctrl+Shift+O opens the bookmark manager')) {
+      const manager = await Cdp.connect(managerTarget.webSocketDebuggerUrl);
+      let listed = false;
+      for (let i = 0; i < 20 && !listed; i++) {
+        await sleep(500);
+        const { result: text } = await manager.send('Runtime.evaluate', {
+          expression: 'document.body.innerText',
+          returnByValue: true,
+        });
+        listed = (text.value ?? '').includes('Downloads test');
+      }
+      check(listed, 'the bookmark manager lists the new bookmark');
+      manager.close();
+      desktopScreenshot('bookmarks');
+      sendKeys('Bookmarks', ['^w']);
+    }
+
+    // Ctrl+Shift+B shows the bookmarks bar on every tab, kept as a setting.
+    sendKeys('Downloads test', ['^+b']);
+    let always = false;
+    for (let i = 0; i < 20 && !always; i++) {
+      await sleep(500);
+      try {
+        always = /bar: "?always"?/.test(readFileSync(join(dataDir, 'settings.yaml'), 'utf8'));
+      } catch {
+        // Not written yet.
+      }
+    }
+    check(always, 'Ctrl+Shift+B always shows the bookmarks bar (settings.yaml)');
+    await sleep(500);
+    desktopScreenshot('bookmarks-bar');
+    sendKeys('Downloads test', ['^+b']);
+
+    // Task manager (020): Shift+Esc opens its window, which lists the
+    // tabs; pausing a tab there shows in its row, and Resume undoes it.
+    sendKeys('Downloads test', ['+{ESC}']);
+    let tasksTarget;
+    for (let i = 0; i < 20 && !tasksTarget; i++) {
+      await sleep(500);
+      tasksTarget = await devtoolsJson(port, '/json/list')
+        .then((list) => list.find((t) => t.type === 'page' && t.url.startsWith('brouk://task-manager')))
+        .catch(() => undefined);
+    }
+    if (check(tasksTarget !== undefined, 'Shift+Esc opens the task manager')) {
+      const tasks = await Cdp.connect(tasksTarget.webSocketDebuggerUrl);
+      const ask = async (request) => {
+        const { result } = await tasks.send('Runtime.evaluate', {
+          expression:
+            'new Promise((ok) => window.cefQuery({ request: ' +
+            JSON.stringify(JSON.stringify(request)) +
+            ", onSuccess: (r) => ok('ok ' + r), onFailure: (c, m) => ok('failed ' + m) }))",
+          awaitPromise: true,
+          returnByValue: true,
+        });
+        return result.value ?? '';
+      };
+      const pageOf = async () => {
+        const answer = await ask({ type: 'tasks.list', jsMemory: false });
+        if (!answer.startsWith('ok ')) return undefined;
+        const pages = JSON.parse(answer.slice(3)).pages ?? {};
+        const key = Object.keys(pages).find((k) => (pages[k].url ?? '').includes('/downloads.html'));
+        return key ? { key, ...pages[key] } : undefined;
+      };
+      const row = await pageOf();
+      if (check(row !== undefined, 'the task manager lists the tabs')) {
+        await ask({ type: 'tasks.action', action: 'pause', pages: [row.key] });
+        const paused = await pageOf();
+        check(paused?.paused === true, 'Pause in the task manager pauses the tab');
+        desktopScreenshot('task-manager');
+        await ask({ type: 'tasks.action', action: 'resume', pages: [row.key] });
+        const resumed = await pageOf();
+        check(resumed?.paused === false, 'Resume runs it again');
+        // A resumed page takes keys again: Ctrl+L reaches the browser.
+        await sleep(1000);
+        const keys = sendKeys('Downloads test', ['^l']);
+        check(/after: Edit/.test(keys), 'shortcuts work in a resumed tab (Ctrl+L)');
+        sendKeys('Downloads test', ['{ESC}']);
+      }
+      tasks.close();
+      // Closed again, so that keys go to the browser windows that follow.
+      await devtoolsJson(port, `/json/close/${tasksTarget.id}`).catch(() => {});
+      await sleep(1000);
+    }
+
+    // Command palette (003): Ctrl+K opens it; typing "bookmark manager"
+    // and Enter runs that action (the bookmark manager in a tab).
+    const palette = sendKeys('Downloads test', ['^k', 'bookmark manager'], {
+      windowsOf: brouk.pid,
+      thenKeys: ['{ENTER}'],
+      window: ['BroukCommandPalette', 'Command palette'],
+    });
+    check(/window shown: True/.test(palette), 'Ctrl+K opens the command palette');
+    let paletteRan;
+    for (let i = 0; i < 20 && !paletteRan; i++) {
+      await sleep(500);
+      paletteRan = await devtoolsJson(port, '/json/list')
+        .then((list) => list.find((t) => t.type === 'page' && t.url.startsWith('brouk://bookmarks')))
+        .catch(() => undefined);
+    }
+    if (check(paletteRan !== undefined, 'the command palette runs the chosen action')) {
+      sendKeys('Bookmarks', ['^w']);
+    }
+
+    // A new tab puts the keyboard in the address bar, also once its page
+    // has loaded (as on macOS and in Chrome). In a new window (Ctrl+N), so
+    // closing it leaves the other windows' active tabs as they were.
+    const newTab = sendKeys('Downloads test', ['^n'], {
+      windowsOf: brouk.pid,
+      thenKeys: ['{END}'],
+      afterKeys: ['^w'],
+    });
+    check(/then focus: Edit/.test(newTab), 'a new tab focuses the address bar');
+  }
+
   // A crashed renderer shows the crash page (012); Brouk keeps running.
   await cdp.send('Page.navigate', { url: `${pagesBase}/crash-and-hang.html` });
   const crashPage = await waitForTitle(cdp, 'Crash and hang test');
@@ -632,23 +929,76 @@ async function main() {
     again.close();
   }
 
+  // Reopen closed tab (013): Ctrl+W, then Ctrl+Shift+T brings the page
+  // back in a new tab (a new target).
+  if (kWindows && after) {
+    sendKeys('Crash and hang test', ['^w', '^+t']);
+    let reopened;
+    for (let i = 0; i < 20 && !reopened; i++) {
+      await sleep(500);
+      reopened = await devtoolsJson(port, '/json/list')
+        .then((list) => list.find((t) => t.type === 'page' && t.url.includes('/crash-and-hang.html') && t.id !== after.id))
+        .catch(() => undefined);
+    }
+    check(reopened !== undefined, 'Ctrl+Shift+T reopens the tab closed with Ctrl+W');
+  }
+
+  // History (013): Ctrl+H opens brouk://history in a tab, and the pages
+  // visited so far are in it.
+  if (kWindows) {
+    sendKeys('Crash and hang test', ['^h']);
+    let historyTarget;
+    for (let i = 0; i < 20 && !historyTarget; i++) {
+      await sleep(500);
+      historyTarget = await devtoolsJson(port, '/json/list')
+        .then((list) => list.find((t) => t.type === 'page' && t.url.startsWith('brouk://history')))
+        .catch(() => undefined);
+    }
+    if (check(historyTarget !== undefined, 'Ctrl+H opens the history page')) {
+      const historyPage = await Cdp.connect(historyTarget.webSocketDebuggerUrl);
+      let answer = '';
+      for (let i = 0; i < 20 && !answer.includes('/find-and-zoom.html'); i++) {
+        await sleep(500);
+        const { result } = await historyPage.send('Runtime.evaluate', {
+          expression:
+            "new Promise((ok) => window.cefQuery({ request: JSON.stringify({ type: 'history.sql', query: 'SELECT url FROM pages' }), " +
+            "onSuccess: (r) => ok('ok ' + r), onFailure: (c, m) => ok('failed ' + m) }))",
+          awaitPromise: true,
+          returnByValue: true,
+        });
+        answer = result.value ?? '';
+      }
+      check(answer.includes('/find-and-zoom.html'), `the history has the visited test pages (${answer.slice(0, 200)})`);
+      historyPage.close();
+
+      // Address bar suggestions (003): typing lists the history page under
+      // the field; Down selects it and Return loads it in place of the
+      // history tab.
+      const zoomPages = async () =>
+        (await devtoolsJson(port, '/json/list').catch(() => [])).filter(
+          (t) => t.type === 'page' && t.url.includes('/find-and-zoom.html'),
+        ).length;
+      const before = await zoomPages();
+      // One PowerShell for typing, looking and choosing: another one
+      // would deactivate Brouk and close the list.
+      const shown = sendKeys('History', ['^l', 'find-and-zoom'], { windowsOf: brouk.pid, thenKeys: ['{DOWN}', '{ENTER}'] });
+      check(/window shown: True/.test(shown), 'typing in the address bar shows suggestions');
+      let after = before;
+      for (let i = 0; i < 20 && after <= before; i++) {
+        await sleep(500);
+        after = await zoomPages();
+      }
+      check(after > before, `Down and Return load the suggested history page (${before} → ${after} tabs)`);
+    }
+  }
+
   // Quit as the user does (Brouk → Quit; on Windows closing the window),
   // aimed at this copy's pid only.
   const pagesBeforeQuit = await devtoolsJson(port, '/json/list').catch(() => []);
   log(`(pages before quitting: ${pagesBeforeQuit.map((t) => `${t.type} ${t.url}`).join(', ')})`);
   const quitStarted = Date.now();
   if (kWindows) {
-    // Without /F, taskkill asks one of the process's windows to close
-    // (WM_CLOSE); Brouk runs until its last window has closed, so ask
-    // again while it still has windows (profile windows, the manager).
-    for (let i = 0; i < 10 && brouk.exitCode === null; ++i) {
-      try {
-        execFileSync('taskkill', ['/PID', String(brouk.pid)], { stdio: 'ignore' });
-      } catch {
-        // No window left to ask: Brouk is quitting.
-      }
-      await sleep(500);
-    }
+    await closeWindowsOf(brouk);
   } else {
     execFileSync('osascript', [
       '-l',
@@ -660,6 +1010,56 @@ async function main() {
   while (brouk.exitCode === null && Date.now() - quitStarted < 10000) await sleep(200);
   if (!check(brouk.exitCode === 0, `Brouk quits cleanly within 10 seconds (exit code ${brouk.exitCode})`) && kWindows) {
     logWindowsOf(brouk.pid);
+  }
+
+  // Session restore (015): quitting saves the session; starting again
+  // brings its windows back, with only their active tabs loaded.
+  if (kWindows && brouk.exitCode === 0) {
+    let session = '';
+    try {
+      session = readFileSync(join(dataDir, 'session.yaml'), 'utf8');
+    } catch (error) {
+      log(`(no session.yaml: ${error.message})`);
+    }
+    const urls = [...session.matchAll(/^\s*-?\s*url: "?([^"\n]+)"?$/gm)].map((m) => m[1]);
+    const windows = (session.match(/^\s*-?\s*tabs:/gm) ?? []).length;
+    log(`(session.yaml: ${windows} window(s), tabs ${urls.join(', ')})`);
+    check(/^clean_exit: true$/m.test(session) && urls.length > 0, 'quitting saves the session with its tabs');
+    // Which window closed last depends on taskkill's order: restore a
+    // known session of two windows instead, active tabs in the middle.
+    const tab = (name, extra = '') => `      - url: "${pagesBase}/${name}"\n        title: "${name}"\n        profile: "default"\n${extra}`;
+    writeFileSync(
+      join(dataDir, 'session.yaml'),
+      'clean_exit: true\nwindows:\n' +
+        `  - active: 1\n    tabs:\n${tab('audio.html')}${tab('dialogs.html')}` +
+        `  - active: 0\n    tabs:\n${tab('print.html')}${tab('popups.html', '        pinned: true\n')}`,
+    );
+    const shown = [`${pagesBase}/dialogs.html`, `${pagesBase}/print.html`];
+    const hidden = [`${pagesBase}/audio.html`, `${pagesBase}/popups.html`];
+    const restartPort = port + 500;
+    brouk = spawn(executable, ['--use-mock-keychain', `--remote-debugging-port=${restartPort}`], {
+      env: { ...process.env, BROUK_DEV_DATA_DIR: dataDir },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    brouk.stdout.on('data', (chunk) => appendFileSync(appLog, chunk));
+    brouk.stderr.on('data', (chunk) => appendFileSync(appLog, chunk));
+    log(`Started Brouk again (pid ${brouk.pid})`);
+    let loaded = [];
+    for (let i = 0; i < 40 && brouk.exitCode === null; i++) {
+      await sleep(500);
+      const list = await devtoolsJson(restartPort, '/json/list').catch(() => []);
+      // Internal pages (the licences) load at once; about:blank is a new tab.
+      loaded = list.filter((t) => t.type === 'page' && !/^(brouk|devtools):/.test(t.url)).map((t) => t.url);
+      if (shown.every((url) => loaded.includes(url))) break;
+    }
+    log(`(pages after the restart: ${loaded.join(', ')})`);
+    check(shown.every((url) => loaded.includes(url)), 'starting again brings both windows back with their active tabs');
+    check(!hidden.some((url) => loaded.includes(url)), 'the background tabs load only when first shown');
+    desktopScreenshot('restored');
+    const quitAgain = Date.now();
+    await closeWindowsOf(brouk);
+    while (brouk.exitCode === null && Date.now() - quitAgain < 10000) await sleep(200);
+    check(brouk.exitCode === 0, `the restored Brouk quits cleanly (exit code ${brouk.exitCode})`);
   }
 
   await sleep(2000); // ReportCrash writes its report a moment later.

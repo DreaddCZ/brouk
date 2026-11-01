@@ -28,7 +28,8 @@ Session TwoWindows() {
                              .x = 10,
                              .y = 20,
                              .width = 1200,
-                             .height = 800});
+                             .height = 800,
+                             .maximized = true});
   session.windows.push_back({.tabs = {{.url = "https://c.com/",
                                        .title = "C",
                                        .profile = "default",
@@ -38,7 +39,8 @@ Session TwoWindows() {
                              .x = 0,
                              .y = 0,
                              .width = 0,
-                             .height = 0});
+                             .height = 0,
+                             .maximized = false});
   return session;
 }
 
@@ -59,6 +61,8 @@ TEST(SessionTest, RoundTripsThroughYaml) {
   EXPECT_EQ(first.collapsed, (std::vector<ProfileId>{"p-work"}));
   EXPECT_EQ(first.y, 20);
   EXPECT_EQ(first.width, 1200);
+  EXPECT_TRUE(first.maximized);
+  EXPECT_FALSE(back.windows[1].maximized);
   EXPECT_EQ(back.windows[1].width, 0);  // No frame saved.
 }
 

@@ -6,6 +6,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "core/tab_strip_model.h"
@@ -27,6 +28,7 @@ class TabStrip {
     kNone,  // Empty title bar: drags the window.
     kTab,
     kTabClose,  // A tab's close button.
+    kTabAudio,  // The speaker of a playing or muted tab: mutes or unmutes.
     kNewTab,    // A profile group's "+".
     kGroupLabel,
     kMinimize,
@@ -35,7 +37,7 @@ class TabStrip {
   };
   struct Hit {
     Part part = Part::kNone;
-    TabId tab = 0;           // For kTab and kTabClose.
+    TabId tab = 0;           // For kTab, kTabClose and kTabAudio.
     ProfileId profile = {};  // For kNewTab and kGroupLabel.
     bool operator==(const Hit&) const = default;
   };
@@ -53,6 +55,10 @@ class TabStrip {
   };
   using LookOf = std::function<GroupLook(const ProfileId& profile)>;
 
+  // How the strip finds a tab's state (audio) for hit tests.
+  void SetTabLookup(std::function<const Tab*(TabId)> tab_of) {
+    tab_of_ = std::move(tab_of);
+  }
   // Lays the strip out in `bounds` (client coordinates) at `dpi`.
   // `caption_buttons`: false for windows with a system title bar.
   void Layout(const RECT& bounds,
@@ -106,6 +112,10 @@ class TabStrip {
   };
   int Scale(int dips) const;
   void UpdateFonts();
+  bool HasClose(const TabGeometry& tab) const;
+  // The speaker left of the close button, when the tab plays or is muted
+  // (as Chrome); empty otherwise.
+  RECT AudioRect(const TabGeometry& tab, const Tab* state) const;
   void PaintTab(HDC dc,
                 const TabGeometry& geometry,
                 const PaintState& state) const;
@@ -127,6 +137,7 @@ class TabStrip {
   RECT maximize_ = {};
   RECT close_ = {};
   bool caption_buttons_ = true;
+  std::function<const Tab*(TabId)> tab_of_;
   HFONT title_font_ = nullptr;
   HFONT label_font_ = nullptr;
   HFONT glyph_font_ = nullptr;

@@ -42,7 +42,10 @@ constexpr wchar_t kMaximizeGlyph[] = L"\uE922";
 constexpr wchar_t kRestoreGlyph[] = L"\uE923";
 constexpr wchar_t kCloseGlyph[] = L"\uE8BB";
 constexpr wchar_t kAddGlyph[] = L"\uE710";
-constexpr wchar_t kPageGlyph[] = L"\uE774";  // Globe: a page without icon.
+constexpr wchar_t kPageGlyph[] = L"\uE774";    // Globe: a page without icon.
+constexpr wchar_t kPausedGlyph[] = L"\uE769";  // Pause.
+constexpr wchar_t kAudioGlyph[] = L"\uE767";   // Volume.
+constexpr wchar_t kMutedGlyph[] = L"\uE74F";   // Mute.
 
 COLORREF FromRgb(std::uint32_t rgb) {
   return RGB((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
@@ -278,6 +281,23 @@ std::wstring TabStrip::ToolTip(const Hit& hit) const {
   return {};
 }
 
+bool TabStrip::HasClose(const TabGeometry& tab) const {
+  // Very narrow tabs show only their icon and no close button.
+  return tab.rect.right - tab.rect.left >=
+         Scale(kTabPadding + kIconSize + kCloseButtonSize);
+}
+
+RECT TabStrip::AudioRect(const TabGeometry& tab, const Tab* state) const {
+  if (!state || !(state->audible() || state->muted()) || !HasClose(tab) ||
+      tab.rect.right - tab.rect.left <
+          Scale(kTabPadding + kIconSize + 2 * kCloseButtonSize + 24)) {
+    return {};
+  }
+  const int width = tab.close.right - tab.close.left;
+  return {tab.close.left - width - Scale(2), tab.close.top,
+          tab.close.left - Scale(2), tab.close.bottom};
+}
+
 TabStrip::Hit TabStrip::HitTest(POINT point) const {
   if (!Contains(bounds_, point)) {
     return {};
@@ -295,11 +315,13 @@ TabStrip::Hit TabStrip::HitTest(POINT point) const {
   }
   for (const TabGeometry& tab : tabs_) {
     if (Contains(tab.rect, point)) {
-      // Very narrow tabs show only their icon and no close button.
-      const bool has_close = tab.rect.right - tab.rect.left >=
-                             Scale(kTabPadding + kIconSize + kCloseButtonSize);
-      if (has_close && Contains(tab.close, point)) {
+      if (HasClose(tab) && Contains(tab.close, point)) {
         return {Part::kTabClose, tab.id};
+      }
+      if (const RECT audio =
+              AudioRect(tab, tab_of_ ? tab_of_(tab.id) : nullptr);
+          Contains(audio, point)) {
+        return {Part::kTabAudio, tab.id};
       }
       return {Part::kTab, tab.id};
     }
@@ -372,7 +394,8 @@ void TabStrip::PaintTab(HDC dc,
   const bool active = state.active == geometry.id;
   const bool hovered =
       state.hover.tab == geometry.id &&
-      (state.hover.part == Part::kTab || state.hover.part == Part::kTabClose);
+      (state.hover.part == Part::kTab || state.hover.part == Part::kTabClose ||
+       state.hover.part == Part::kTabAudio);
   const RECT& rect = geometry.rect;
 
   if (active || hovered) {
@@ -413,31 +436,54 @@ void TabStrip::PaintTab(HDC dc,
     SelectObject(dc, previous_brush);
     SelectObject(dc, previous_pen);
     DeleteObject(pen);
-  } else if (tab && !tab->favicon().empty()) {
+  } else if (tab && !tab->paused() && !tab->favicon().empty()) {
     tab->favicon().Draw(dc, icon_x, icon_y);
   } else {
+    // A paused tab (020) shows a pause sign in place of its icon.
+    const bool paused = tab && tab->paused();
     RECT glyph = {icon_x, icon_y, icon_x + icon, icon_y + icon};
     HGDIOBJ previous = SelectObject(dc, glyph_font_);
     SetTextColor(dc, theme.text_dim);
-    DrawTextW(dc, kPageGlyph, -1, &glyph,
+    DrawTextW(dc, paused ? kPausedGlyph : kPageGlyph, -1, &glyph,
               DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     SelectObject(dc, previous);
   }
 
-  const bool has_close = rect.right - rect.left >=
-                         Scale(kTabPadding + kIconSize + kCloseButtonSize);
-  RECT title = {
-      icon_x + icon + Scale(8), rect.top,
-      has_close ? geometry.close.left - Scale(4) : rect.right - padding,
-      rect.bottom};
+  const bool has_close = HasClose(geometry);
+  const RECT audio = AudioRect(geometry, tab);
+  const bool has_audio = audio.right > audio.left;
+  RECT title = {icon_x + icon + Scale(8), rect.top,
+                has_audio   ? audio.left - Scale(2)
+                : has_close ? geometry.close.left - Scale(4)
+                            : rect.right - padding,
+                rect.bottom};
   if (title.right > title.left) {
     const std::wstring text =
         tab ? Utf8ToWide(tab->DisplayTitle()) : std::wstring(L"New Tab");
     HGDIOBJ previous = SelectObject(dc, title_font_);
-    SetTextColor(dc, active ? theme.text : theme.text_dim);
+    SetTextColor(
+        dc, active && !(tab && tab->paused()) ? theme.text : theme.text_dim);
     DrawTextW(
         dc, text.c_str(), static_cast<int>(text.size()), &title,
         DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS);
+    SelectObject(dc, previous);
+  }
+
+  if (has_audio) {
+    if (state.hover.part == Part::kTabAudio && state.hover.tab == geometry.id) {
+      SetDCBrushColor(dc, active ? theme.hover : theme.separator);
+      SetDCPenColor(dc, active ? theme.hover : theme.separator);
+      HGDIOBJ brush = SelectObject(dc, GetStockObject(DC_BRUSH));
+      HGDIOBJ pen = SelectObject(dc, GetStockObject(DC_PEN));
+      Ellipse(dc, audio.left, audio.top, audio.right, audio.bottom);
+      SelectObject(dc, brush);
+      SelectObject(dc, pen);
+    }
+    RECT glyph = audio;
+    HGDIOBJ previous = SelectObject(dc, small_glyph_font_);
+    SetTextColor(dc, theme.text);
+    DrawTextW(dc, tab->muted() ? kMutedGlyph : kAudioGlyph, -1, &glyph,
+              DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     SelectObject(dc, previous);
   }
 
@@ -525,7 +571,8 @@ void TabStrip::Paint(HDC dc, const PaintState& state) const {
   const auto plain = [&](TabId id) {
     return state.active != id &&
            !(state.hover.tab == id && (state.hover.part == Part::kTab ||
-                                       state.hover.part == Part::kTabClose));
+                                       state.hover.part == Part::kTabClose ||
+                                       state.hover.part == Part::kTabAudio));
   };
   for (std::size_t i = 0; i + 1 < tabs_.size(); ++i) {
     if (plain(tabs_[i].id) && plain(tabs_[i + 1].id)) {

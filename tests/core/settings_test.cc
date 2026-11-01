@@ -57,6 +57,25 @@ TEST(SettingsTest, InvalidValuesKeepDefaultsAndAreReported) {
   EXPECT_EQ(settings, Settings(SettingScope::kGlobal));
 }
 
+TEST(SettingsTest, FolderPathsOfBothSystems) {
+  for (const std::string folder :
+       {"/Users/me/Downloads", "~/Downloads", R"(C:\Users\me\Downloads)",
+        "d:/files", R"(\\server\share\in)", R"(%USERPROFILE%\Downloads)"}) {
+    std::vector<SettingProblem> problems;
+    Settings settings =
+        Load(SettingScope::kGlobal, "downloads:\n  folder: '" + folder + "'\n",
+             problems);
+    EXPECT_TRUE(problems.empty()) << folder;
+    EXPECT_EQ(settings.GetString("downloads.folder"), folder);
+  }
+  for (const std::string folder : {"Downloads", "C:", "C:Downloads", "%x"}) {
+    std::vector<SettingProblem> problems;
+    Load(SettingScope::kGlobal, "downloads:\n  folder: '" + folder + "'\n",
+         problems);
+    EXPECT_EQ(problems.size(), 1u) << folder;
+  }
+}
+
 TEST(SettingsTest, QuotedTrueIsNotABoolean) {
   std::vector<SettingProblem> problems;
   Load(SettingScope::kGlobal, "profiles:\n  show_manager_at_startup: 'true'\n",

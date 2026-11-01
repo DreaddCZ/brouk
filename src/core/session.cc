@@ -118,6 +118,8 @@ std::optional<SessionWindow> WindowFromYaml(const YamlNode& node) {
     window.width = *width;
     window.height = *height;
   }
+  const std::string* maximized = ScalarOf(node, "maximized");
+  window.maximized = maximized && *maximized == "true";
   return window;
 }
 
@@ -136,6 +138,9 @@ YamlNode SessionToYaml(const Session& session) {
       node.GetOrAdd("y") = Plain(std::to_string(window.y));
       node.GetOrAdd("width") = Plain(std::to_string(window.width));
       node.GetOrAdd("height") = Plain(std::to_string(window.height));
+    }
+    if (window.maximized) {
+      node.GetOrAdd("maximized") = Plain("true");
     }
     if (!window.collapsed.empty()) {
       YamlNode& collapsed = node.GetOrAdd("collapsed");

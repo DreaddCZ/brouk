@@ -2,7 +2,7 @@
 
 Shows **which page uses the CPU, memory or network**, and lets you deal with it. macOS Activity Monitor lists Brouk's helper processes only as "Brouk Helper (Renderer)"; the task manager tells you which tab each one is.
 
-**Open it:** Window → Task Manager (<kbd>⇧⌘⎋</kbd>, `shortcuts.task_manager`), the command palette, or right-click a tab → **Show in Task Manager**, which selects that tab's row. There is one task manager window; it remembers its size and position. While it is closed, Brouk measures nothing.
+**Open it:** Window → Task Manager (<kbd>⇧⌘⎋</kbd>, `shortcuts.task_manager`; on Windows <kbd>Shift+Esc</kbd> or "⋮" → Task manager), the command palette, or right-click a tab → **Show in Task Manager**, which selects that tab's row. There is one task manager window; it remembers its size and position. While it is closed, Brouk measures nothing.
 
 **What it lists:** every tab of every window and profile, Brouk's own pages (settings, help…), the workers pages run, and Brouk's browser, GPU and helper processes. Rows that run in **one process** are grouped: a line separates processes, and the rows after a group's first one are indented. Ending such a process affects all of its rows. Tabs that have not loaded yet, or were unloaded, show as **not loaded**, without values.
 
