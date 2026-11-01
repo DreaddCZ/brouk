@@ -44,6 +44,34 @@ screenshots in `smoke/`.
 
 A published version is never replaced. A fix needs a new version number.
 
+## Windows
+
+```sh
+scripts/release 0.3.0 --beta     # as above: macOS, and pushes the tag v0.3.0
+scripts/release_windows 0.3.0    # then the Windows installer of that tag
+```
+
+Pushing the tag starts `windows-release.yml` on GitHub: a Release build of
+the tagged commit (no caches), with the core tests, the smoke test and the
+installer test (`scripts/test_windows_installer`: installs it quietly,
+starts it, uninstalls it). `scripts/release_windows` waits for that run,
+downloads its installer, checks the checksum, signs it for the updater with
+the same key as the macOS images (Sparkle's `sign_update`), uploads
+`Brouk-<version>-setup.exe` and its `.sha256` to the release, and adds it to
+the Windows feed `windows-x64.json` (beta when the release is a
+pre-release). Running it again continues after an interruption.
+
+The installer is **not code-signed** yet, so SmartScreen warns about an
+unknown publisher (More info → Run anyway). Code signing through SignPath
+Foundation follows once the application is accepted (024).
+
+On Windows, Brouk's own updater (not Sparkle) reads
+`https://dreaddcz.github.io/brouk-releases/windows-x64.json`, checks a minute
+after the start and every 5 hours, downloads the newest release of its
+channel, checks its Ed25519 signature and runs the installer silently when
+Brouk quits (⋮ → Restart to update installs at once). The installer waits
+for Brouk to end and keeps the user's data.
+
 ## One-time setup
 
 Done already on the Intel Mac; repeat on a new Mac.
