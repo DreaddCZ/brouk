@@ -13,6 +13,10 @@ include(BroukZxing)
 add_library(brouk_app SHARED
   app.cc
   app.h
+  bitwarden_certificates.cc
+  bitwarden_certificates.h
+  bitwarden_dialog.cc
+  bitwarden_dialog.h
   bookmark_dialog.cc
   bookmark_dialog.h
   bookmark_store.cc
@@ -58,6 +62,8 @@ add_library(brouk_app SHARED
   settings_watcher.h
   suggestions_popup.cc
   suggestions_popup.h
+  system_events.cc
+  system_events.h
   tab.cc
   tab.h
   tab_panel.cc
@@ -79,7 +85,7 @@ set_source_files_properties(qr_reader.cc PROPERTIES
   COMPILE_OPTIONS "${BROUK_EXCEPTIONS_FLAG}")
 target_link_libraries(brouk_app PRIVATE
   brouk_cef brouk_renderer brouk_core libcef_lib ZXing ${CEF_STANDARD_LIBS}
-  advapi32 credui dwmapi msimg32 ole32 oleacc runtimeobject shell32 shlwapi user32 uuid uxtheme windowscodecs)
+  advapi32 credui crypt32 dwmapi msimg32 ole32 oleacc runtimeobject shell32 shlwapi user32 uuid uxtheme windowscodecs winhttp wtsapi32)
 # Chromium's delay-loaded system DLLs: some must not load in sandboxed
 # processes, which run this DLL too.
 target_link_options(brouk_app PRIVATE ${CEF_SHARED_LINKER_FLAGS})

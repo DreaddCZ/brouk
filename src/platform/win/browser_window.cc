@@ -1758,6 +1758,28 @@ void BrowserWindow::OpenTabPasswordsPage(Tab& /*tab*/) {
   OpenInternalPage("brouk://passwords/");
 }
 
+void BrowserWindow::AskTabBitwardenPassword(
+    Tab& /*tab*/,
+    const BitwardenPasswordRequest& request,
+    BitwardenPasswordSubmit submit,
+    std::function<void()> cancelled) {
+  if (bitwarden_dialog_ || closing_) {
+    cancelled();  // One at a time; the other tab asks again later.
+    return;
+  }
+  bitwarden_dialog_ = std::make_unique<BitwardenPasswordDialog>(
+      window_, request, std::move(submit), std::move(cancelled), [this] {
+        // Deleted from a task: this runs inside the dialog.
+        std::shared_ptr<BitwardenPasswordDialog> closed(
+            bitwarden_dialog_.release());
+        CefPostTask(TID_UI, new FunctionTask([closed] {}));
+        if (!closing_) {
+          FocusActiveTab();
+        }
+      });
+  bitwarden_dialog_->Show();
+}
+
 void BrowserWindow::OnTabFullscreenChanged(Tab& tab, bool fullscreen) {
   if (fullscreen) {
     if (model_.active_id() != tab.id()) {
@@ -3928,6 +3950,9 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
             closed_snapshot_.push_back(ClosedTabFor(*tab, i));
           }
         }
+      }
+      if (bitwarden_dialog_) {
+        bitwarden_dialog_->Cancel();  // Before the tab asking for it goes.
       }
       closing_ = true;
       std::vector<TabId> ids;

@@ -18,6 +18,19 @@ void VerifyUser(HWND owner,
                 const std::wstring& reason,
                 std::function<void(bool)> done);
 
+// Windows Hello only, without the Windows password: Bitwarden's unlock
+// (008), whose fallback is the master password. `done` runs later, on the
+// UI thread. UI thread.
+enum class HelloResult {
+  kPassed,
+  kCancelled,
+  kNotSetUp,  // No Windows Hello on this PC or for this user.
+  kFailed,    // Busy, or too many attempts.
+};
+void VerifyWithHello(HWND owner,
+                     const std::wstring& reason,
+                     std::function<void(HelloResult)> done);
+
 }  // namespace brouk::win
 
 #endif  // BROUK_PLATFORM_WIN_USER_VERIFICATION_H_

@@ -25,6 +25,7 @@
 #include "core/session.h"
 #include "core/tab_strip_model.h"
 #include "include/cef_request_context.h"
+#include "platform/win/bitwarden_dialog.h"
 #include "platform/win/bookmark_dialog.h"
 #include "platform/win/bookmark_store.h"
 #include "platform/win/bookmarks_bar.h"
@@ -302,6 +303,10 @@ class BrowserWindow final : public TabHost,
                              PasswordPromptDone done) override;
   void OnTabPasswordIconChanged(Tab& tab) override;
   void OpenTabPasswordsPage(Tab& tab) override;
+  void AskTabBitwardenPassword(Tab& tab,
+                               const BitwardenPasswordRequest& request,
+                               BitwardenPasswordSubmit submit,
+                               std::function<void()> cancelled) override;
 
  private:
   static LRESULT CALLBACK WindowProc(HWND window,
@@ -489,6 +494,7 @@ class BrowserWindow final : public TabHost,
   std::unique_ptr<PasswordDropDown> password_list_;
   std::optional<TabId> password_list_tab_;
   std::unique_ptr<PasswordPromptBubble> password_prompt_;
+  std::unique_ptr<BitwardenPasswordDialog> bitwarden_dialog_;
   std::unique_ptr<BookmarksBar> bookmarks_bar_;
   CommandPalette palette_;
   DownloadsPopup downloads_popup_{*this};

@@ -19,6 +19,7 @@
 #include "platform/win/desktop_sources.h"
 #include "platform/win/qr_reader.h"
 #include "platform/win/theme.h"
+#include "platform/win/user_verification.h"
 #include "platform/win/wide_string.h"
 
 namespace brouk::win {
@@ -1212,14 +1213,24 @@ void Tab::ShowPasswordMessage(const std::string& title,
               }));
 }
 
-void Tab::AskBitwardenPassword(const BitwardenPasswordRequest& /*request*/,
-                               BitwardenPasswordSubmit /*submit*/,
+void Tab::AskBitwardenPassword(const BitwardenPasswordRequest& request,
+                               BitwardenPasswordSubmit submit,
                                std::function<void()> cancelled) {
-  cancelled();
+  host_.AskTabBitwardenPassword(*this, request, std::move(submit),
+                                std::move(cancelled));
 }
 
-void Tab::ConfirmWithTouchId(const std::string& /*reason*/, TouchIdDone done) {
-  done(TouchIdResult::kUnavailable);  // Windows Hello comes with W3.
+void Tab::ConfirmWithTouchId(const std::string& reason, TouchIdDone done) {
+  // Windows Hello in place of Touch ID, without the Windows password: the
+  // fallback is Bitwarden's master password (008).
+  VerifyWithHello(
+      GetAncestor(container_, GA_ROOT),
+      Utf8ToWide(std::string(kAppName) + " is trying to " + reason + "."),
+      [done](HelloResult result) {
+        done(result == HelloResult::kPassed      ? TouchIdResult::kPassed
+             : result == HelloResult::kCancelled ? TouchIdResult::kCancelled
+                                                 : TouchIdResult::kUnavailable);
+      });
 }
 
 void Tab::ShowAutofillPrompt(const AutofillPrompt& /*prompt*/,

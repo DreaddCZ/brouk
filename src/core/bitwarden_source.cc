@@ -260,15 +260,31 @@ std::optional<Error> BitwardenSource::Update(const PasswordEntry& entry,
 
 std::string BitwardenSetupSteps(const BitwardenSource::Status& status,
                                 const std::filesystem::path& certificates) {
+  // The system's terminal and commands (024: PowerShell on Windows).
+#if defined(_WIN32)
+  constexpr std::string_view kTerminal = "PowerShell";
+  constexpr std::string_view kInstall = "winget install Bitwarden.CLI";
+#else
+  constexpr std::string_view kTerminal = "Terminal";
+  constexpr std::string_view kInstall = "brew install bitwarden-cli";
+#endif
   std::string login = "bw login";
   if (!certificates.empty()) {
-    // Node.js, which runs bw, does not use the certificates macOS trusts.
+    // Node.js, which runs bw, does not use the certificates the system
+    // trusts.
+#if defined(_WIN32)
+    login =
+        "$env:NODE_EXTRA_CA_CERTS=\"" + certificates.string() + "\"; bw login";
+#else
     login = "NODE_EXTRA_CA_CERTS=\"" + certificates.string() + "\" bw login";
+#endif
   }
   if (status.state == BitwardenSource::State::kNoCli) {
     return "This profile's passwords come from Bitwarden, through the "
            "Bitwarden CLI (bw), which is not installed.\n\n"
-           "1. Install it in Terminal: brew install bitwarden-cli\n"
+           "1. Install it in " +
+           std::string(kTerminal) + ": " + std::string(kInstall) +
+           "\n"
            "2. For a self-hosted or EU server, set it: bw config server "
            "https://your-server\n"
            "3. Sign in once: bw login\n"
@@ -280,14 +296,15 @@ std::string BitwardenSetupSteps(const BitwardenSource::Status& status,
       "This profile's passwords come from Bitwarden, but the Bitwarden CLI "
       "(bw) is not signed in.\n\n";
   if (status.server_url.empty()) {
-    steps +=
-        "1. For a self-hosted or EU server, set it in Terminal: bw config "
-        "server https://your-server\n"
-        "2. Sign in once: " +
-        login + "\n";
+    steps += "1. For a self-hosted or EU server, set it in " +
+             std::string(kTerminal) +
+             ": bw config "
+             "server https://your-server\n"
+             "2. Sign in once: " +
+             login + "\n";
   } else {
-    steps += "1. Sign in once in Terminal (server " + status.server_url +
-             "):\n   " + login + "\n";
+    steps += "1. Sign in once in " + std::string(kTerminal) + " (server " +
+             status.server_url + "):\n   " + login + "\n";
   }
   steps += "Then come back and click the key icon again.";
   if (!status.problem.empty()) {
