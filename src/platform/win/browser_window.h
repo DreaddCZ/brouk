@@ -25,6 +25,7 @@
 #include "core/session.h"
 #include "core/tab_strip_model.h"
 #include "include/cef_request_context.h"
+#include "platform/win/autofill_prompt.h"
 #include "platform/win/bitwarden_dialog.h"
 #include "platform/win/bookmark_dialog.h"
 #include "platform/win/bookmark_store.h"
@@ -90,8 +91,10 @@ class BrowserWindowOwner {
   // setting downloads.ask_where_to_save, and unique paths in a profile's
   // download folder.
   virtual DownloadService* Downloads() = 0;
-  // Built-in passwords (008); null before CEF is ready.
+  // Built-in passwords (008) and form autofill (009); null before CEF is
+  // ready.
   virtual PasswordManager* Passwords() = 0;
+  virtual AutofillManager* Autofill() = 0;
   virtual bool AskWhereToSaveDownloads() = 0;
   virtual DownloadTarget ReserveDownloadPath(const std::string& suggested,
                                              const ProfileId& profile) = 0;
@@ -303,6 +306,11 @@ class BrowserWindow final : public TabHost,
                              PasswordPromptDone done) override;
   void OnTabPasswordIconChanged(Tab& tab) override;
   void OpenTabPasswordsPage(Tab& tab) override;
+  AutofillManager* TabAutofill() override;
+  void ShowTabAutofillPrompt(Tab& tab,
+                             const AutofillPrompt& prompt,
+                             AutofillPromptDone done) override;
+  void OpenTabAutofillSettings(Tab& tab) override;
   void AskTabBitwardenPassword(Tab& tab,
                                const BitwardenPasswordRequest& request,
                                BitwardenPasswordSubmit submit,
@@ -495,6 +503,8 @@ class BrowserWindow final : public TabHost,
   std::optional<TabId> password_list_tab_;
   std::unique_ptr<PasswordPromptBubble> password_prompt_;
   std::unique_ptr<BitwardenPasswordDialog> bitwarden_dialog_;
+  // Autofill (009): the offer to save a submitted form, under the star.
+  std::unique_ptr<AutofillPromptBubble> autofill_prompt_;
   std::unique_ptr<BookmarksBar> bookmarks_bar_;
   CommandPalette palette_;
   DownloadsPopup downloads_popup_{*this};

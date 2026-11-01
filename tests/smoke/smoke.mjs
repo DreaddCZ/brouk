@@ -451,6 +451,72 @@ async function savePasswordFromLogin({ executable, port, pagesBase }) {
   page.close();
 }
 
+// Windows, autofill (009): see the call in main().
+async function autofillFromEntry({ executable, port, pagesBase, pid }) {
+  const targets = await devtoolsJson(port, '/json/list').catch(() => []);
+  const settings = targets.find((t) => t.type === 'page' && t.url.startsWith('brouk://settings'));
+  if (!check(settings !== undefined, 'the settings window is open for autofill')) return;
+  const settingsPage = await Cdp.connect(settings.webSocketDebuggerUrl);
+  const { result } = await settingsPage.send('Runtime.evaluate', {
+    expression:
+      "new Promise((ok) => window.cefQuery({ request: JSON.stringify({ type: 'autofill.saveEntry', id: 0, label: 'Smoke', " +
+      "values: { first_name: 'Jana', last_name: 'Smoke', email: 'jana@example.com', city: 'Brno' } }), " +
+      "onSuccess: (r) => ok('ok ' + r), onFailure: (c, m) => ok('failed ' + m) }))",
+    awaitPromise: true,
+    returnByValue: true,
+  });
+  settingsPage.close();
+  if (!check(String(result.value).startsWith('ok'), `Settings → Autofill saves an entry (${result.value})`)) return;
+  const url = `${pagesBase}/009/checkout.html`;
+  spawn(executable, [url], { env: { ...process.env, BROUK_DEV_DATA_DIR: dataDir }, stdio: 'ignore' });
+  let target;
+  for (let i = 0; i < 30 && !target; i++) {
+    await sleep(500);
+    target = await devtoolsJson(port, '/json/list')
+      .then((list) => list.find((t) => t.type === 'page' && t.url === url))
+      .catch(() => undefined);
+  }
+  if (!check(target !== undefined, 'a second start opens the checkout test page')) return;
+  const page = await Cdp.connect(target.webSocketDebuggerUrl);
+  const evaluate = async (expression) =>
+    (await page.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })).result.value;
+  await sleep(1000);  // The page script reports the form first.
+  await evaluate("document.querySelector('[name=jmeno]').focus()");
+  // The list is an owned window that never takes the keyboard: its first
+  // row (the entry) is clicked with the mouse.
+  const script = [
+    // One C# source: a type of an earlier Add-Type cannot be referenced.
+    "Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; namespace Smoke { " +
+      'public struct Rect { public int Left, Top, Right, Bottom; } ' +
+      'public static class List { ' +
+      '[DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string c, string n); ' +
+      '[DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h); ' +
+      '[DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out Rect r); ' +
+      '[DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y); ' +
+      "[DllImport(\"user32.dll\")] public static extern void mouse_event(int f, int x, int y, int d, int e); } }'",
+    '$list = [IntPtr]::Zero',
+    "for ($i = 0; $i -lt 20 -and ($list -eq [IntPtr]::Zero -or -not [Smoke.List]::IsWindowVisible($list))); $i++) { Start-Sleep -Milliseconds 500; $list = [Smoke.List]::FindWindow('BroukPasswordList', 'Passwords') }",
+    'Write-Output "list shown: $($list -ne [IntPtr]::Zero -and [Smoke.List]::IsWindowVisible($list))"',
+    '$r = New-Object Smoke.Rect',
+    'if ([Smoke.List]::GetWindowRect($list, [ref]$r)) { [Smoke.List]::SetCursorPos($r.Left + 60, $r.Top + 20) | Out-Null; Start-Sleep -Milliseconds 300; [Smoke.List]::mouse_event(0x0002, 0, 0, 0, 0); [Smoke.List]::mouse_event(0x0004, 0, 0, 0, 0); Write-Output "row clicked" }',
+  ].join('; ');
+  let output = '';
+  try {
+    output = execFileSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8', timeout: 60000 });
+  } catch (error) {
+    log(`(no list answer: ${error.message})`);
+  }
+  log(`(${output.trim().replaceAll(/\r?\n/g, '; ')})`);
+  check(/list shown: True/.test(output), 'focusing a form field shows the autofill drop-down');
+  let filled = '';
+  for (let i = 0; i < 20 && filled !== 'Smoke|Brno'; i++) {
+    await sleep(500);
+    filled = (await evaluate("[...['prijmeni', 'mesto']].map((n) => document.querySelector(`[name=${n}]`).value).join('|')").catch(() => '')) ?? '';
+  }
+  check(filled === 'Smoke|Brno', `choosing the entry fills the form (${filled})`);
+  page.close();
+}
+
 async function main() {
   const executable = kWindows ? join(appPath, 'brouk.exe') : join(appPath, 'Contents/MacOS/brouk');
   const started = Date.now();
@@ -1103,6 +1169,12 @@ async function main() {
         execFileSync('cmdkey', [`/delete:${key}`], { stdio: 'ignore' });
       }
     }
+  }
+
+  // Autofill (009): an entry saved in Settings → Autofill is offered in the
+  // drop-down of a form field; choosing it fills the form.
+  if (kWindows) {
+    await autofillFromEntry({ executable, port, pagesBase, pid: brouk.pid });
   }
 
   // Quit as the user does (Brouk → Quit; on Windows closing the window),

@@ -18,3 +18,5 @@ Autofill fills contact, address and company details into forms. It is **shared b
 IČO, DIČ, VAT ID and IBAN are checked; an invalid value is marked, never corrected silently.
 
 **Settings → [Autofill](#settings-autofill)** lists the entries and custom fields with search, edits them, **finds duplicates** and merges them field by field, and exports or imports them as JSON (**not encrypted**). Phone numbers without a country code are read as numbers of the country set there (by default your Mac's region).
+
+**On Windows:** autofill works as above. The save prompt opens under the address bar's star, and the drop-down under a field is the same as for passwords. "⋮" → Passwords and autofill → **Addresses and more** opens Settings → Autofill. Without a country in the settings, phone numbers are read as numbers of the region set in Windows. Like the passwords' keys, the key of the autofill data is in Windows Credential Manager.

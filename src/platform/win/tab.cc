@@ -92,6 +92,7 @@ Tab::Tab(TabHost& host, TabId id, HWND parent, ProfileId profile)
   // Downloads (014) go to the app's list; passwords (008) are the profile's.
   client_->SetDownloads(host_.TabDownloads(), profile_);
   client_->SetPasswords(host_.TabPasswords(), profile_);
+  client_->SetAutofill(host_.TabAutofill());
   if (RegisterContainerClass(&Tab::ContainerProc)) {
     container_ = CreateWindowExW(0, kContainerClass, L"",
                                  WS_CHILD | WS_CLIPCHILDREN, 0, 0, 0, 0, parent,
@@ -732,6 +733,7 @@ void Tab::OnBrowserClosed() {
     client_ = new TabClient(this);
     client_->SetDownloads(host_.TabDownloads(), profile_);
     client_->SetPasswords(host_.TabPasswords(), profile_);
+    client_->SetAutofill(host_.TabAutofill());
     deferred_context_ = std::move(unload_context_);
     loading_ = false;
     audible_ = false;
@@ -1233,11 +1235,13 @@ void Tab::ConfirmWithTouchId(const std::string& reason, TouchIdDone done) {
       });
 }
 
-void Tab::ShowAutofillPrompt(const AutofillPrompt& /*prompt*/,
+void Tab::ShowAutofillPrompt(const AutofillPrompt& prompt,
                              AutofillPromptDone done) {
-  done(AutofillPromptAnswer{});  // "Not now".
+  host_.ShowTabAutofillPrompt(*this, prompt, std::move(done));
 }
 
-void Tab::OpenAutofillSettings() {}
+void Tab::OpenAutofillSettings() {
+  host_.OpenTabAutofillSettings(*this);
+}
 
 }  // namespace brouk::win

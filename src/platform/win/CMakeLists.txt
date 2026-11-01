@@ -13,6 +13,8 @@ include(BroukZxing)
 add_library(brouk_app SHARED
   app.cc
   app.h
+  autofill_prompt.cc
+  autofill_prompt.h
   bitwarden_certificates.cc
   bitwarden_certificates.h
   bitwarden_dialog.cc

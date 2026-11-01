@@ -86,6 +86,13 @@ class TabHost {
                                      PasswordPromptDone done) = 0;
   virtual void OnTabPasswordIconChanged(Tab& tab) = 0;
   virtual void OpenTabPasswordsPage(Tab& tab) = 0;
+  // Form autofill (009): the app's manager (null before it exists), the
+  // offer to save a submitted form, and Settings → Autofill.
+  virtual AutofillManager* TabAutofill() = 0;
+  virtual void ShowTabAutofillPrompt(Tab& tab,
+                                     const AutofillPrompt& prompt,
+                                     AutofillPromptDone done) = 0;
+  virtual void OpenTabAutofillSettings(Tab& tab) = 0;
   // Bitwarden's master password dialog (008), modal to the window.
   virtual void AskTabBitwardenPassword(Tab& tab,
                                        const BitwardenPasswordRequest& request,
