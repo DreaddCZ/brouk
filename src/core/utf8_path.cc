@@ -58,14 +58,14 @@ bool IsValidUtf8(std::string_view text) {
 
 std::string PathToUtf8(const std::filesystem::path& path) {
   const std::u8string text = path.u8string();
-  return std::string(text.begin(), text.end());
+  return {text.begin(), text.end()};
 }
 
 std::filesystem::path PathFromUtf8(std::string_view text) {
   if (!IsValidUtf8(text)) {
     return {};
   }
-  return std::filesystem::path(std::u8string(text.begin(), text.end()));
+  return {std::u8string(text.begin(), text.end())};
 }
 
 }  // namespace brouk
