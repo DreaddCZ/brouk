@@ -27,6 +27,10 @@ add_library(brouk_app SHARED
   data_paths.h
   desktop_sources.cc
   desktop_sources.h
+  downloaded_files.cc
+  downloaded_files.h
+  downloads_popup.cc
+  downloads_popup.h
   file_dialogs.cc
   file_dialogs.h
   favicon.cc

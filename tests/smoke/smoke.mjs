@@ -100,7 +100,7 @@ const frontFunction = (title) =>
 // and then types `thenKeys`, all from the same PowerShell: starting another
 // one may deactivate Brouk, which closes its popups. Returns PowerShell's
 // output.
-function sendKeys(title, keys, { windowsOf: pid, thenKeys = [], window = ['BroukSuggestions', 'Suggestions'] } = {}) {
+function sendKeys(title, keys, { windowsOf: pid, thenKeys = [], window = ['BroukSuggestions', 'Suggestions'], invoke } = {}) {
   const typed = (list) =>
     list.map((k) => `[System.Windows.Forms.SendKeys]::SendWait('${k.replaceAll("'", "''")}'); Start-Sleep -Milliseconds 300`).join('; ');
   const sends = typed(keys);
@@ -114,6 +114,17 @@ function sendKeys(title, keys, { windowsOf: pid, thenKeys = [], window = ['Brouk
     sends,
     '$after = Get-Focus',
     'Write-Output "Brouk in front: $active, focus before: $before, after: $after"',
+    ...(pid && invoke
+      ? [
+          // `invoke`: a button of Brouk's windows, by its accessible name,
+          // pressed through UI Automation (no shortcut opens it).
+          `$pc = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, ${pid})`,
+          `$nc = New-Object System.Windows.Automation.AndCondition((New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, '${invoke}')), (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)))`,
+          '$invoked = $false',
+          'foreach ($top in [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $pc)) { if (-not $invoked) { $b = $top.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $nc); if ($b) { $b.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke(); $invoked = $true } } }',
+          'Write-Output "invoked: $invoked"',
+        ]
+      : []),
     ...(pid
       ? [
           'Start-Sleep -Milliseconds 1500',
@@ -683,6 +694,15 @@ async function main() {
       }
     }
     check(saved, 'a download is saved to the downloads folder without asking');
+    // The downloads button shows the list under it (Chrome's bubble);
+    // Escape closes it.
+    const list = sendKeys('Downloads test', [], {
+      windowsOf: brouk.pid,
+      invoke: 'Downloads',
+      thenKeys: ['{ESC}'],
+      window: ['BroukDownloads', 'Downloads'],
+    });
+    check(/window shown: True/.test(list), 'the downloads button shows the list of downloads');
     sendKeys('Downloads test', ['^j']);
     let downloadsTarget;
     for (let i = 0; i < 20 && !downloadsTarget; i++) {

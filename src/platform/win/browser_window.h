@@ -1,7 +1,9 @@
 #ifndef BROUK_PLATFORM_WIN_BROWSER_WINDOW_H_
 #define BROUK_PLATFORM_WIN_BROWSER_WINDOW_H_
 
+#include <shobjidl.h>
 #include <windows.h>
+#include <wrl/client.h>
 
 #include <cstdint>
 #include <deque>
@@ -27,6 +29,7 @@
 #include "platform/win/bookmark_store.h"
 #include "platform/win/bookmarks_bar.h"
 #include "platform/win/command_palette.h"
+#include "platform/win/downloads_popup.h"
 #include "platform/win/suggestions_popup.h"
 #include "platform/win/tab.h"
 #include "platform/win/tab_panel.h"
@@ -140,7 +143,9 @@ class BrowserWindowOwner {
 // forward, reload, address bar) and the active tab. Popup windows have the
 // system title bar and a read-only address bar (Chrome). The tabs' order
 // and selection follow the core's TabStripModel.
-class BrowserWindow final : public TabHost, public BookmarksBar::Delegate {
+class BrowserWindow final : public TabHost,
+                            public BookmarksBar::Delegate,
+                            public DownloadsPopup::Delegate {
  public:
   enum class Kind { kNormal, kPopup };
 
@@ -253,6 +258,12 @@ class BrowserWindow final : public TabHost, public BookmarksBar::Delegate {
                     std::size_t index) override;
   void ShowBookmarkManager() override;
   void ToggleBookmarksBar() override;
+
+  // DownloadsPopup::Delegate:
+  DownloadService* PopupDownloads() override;
+  COLORREF PopupProfileColor(const ProfileId& profile) override;
+  void PopupRetryDownload(const DownloadEntry& entry) override;
+  void PopupShowAllDownloads() override;
   bool BookmarksBarAlwaysShown() override;
 
   HistoryService* TabHistory() override;
@@ -294,6 +305,14 @@ class BrowserWindow final : public TabHost, public BookmarksBar::Delegate {
   void DrawDownloadsButton(const DRAWITEMSTRUCT& item);
   // The downloads page (brouk://downloads, Ctrl+J); everything is seen.
   void ShowDownloads();
+  // The toolbar button: the list under it (Chrome's downloads bubble).
+  void ShowDownloadsPopup();
+  // The last 24 hours of downloads of all profiles, for the list.
+  void ListRecentDownloads(
+      std::function<void(std::vector<DownloadEntry>)> done);
+  // The running downloads' progress on the window's taskbar button, as
+  // Chrome shows it.
+  void UpdateTaskbarProgress();
   // Ctrl+K: the command palette over this window.
   void ShowCommandPalette();
   std::vector<PaletteEntry> PaletteActions();
@@ -421,6 +440,9 @@ class BrowserWindow final : public TabHost, public BookmarksBar::Delegate {
   std::unique_ptr<BookmarkDialog> bookmark_dialog_;
   std::unique_ptr<BookmarksBar> bookmarks_bar_;
   CommandPalette palette_;
+  DownloadsPopup downloads_popup_{*this};
+  Microsoft::WRL::ComPtr<ITaskbarList3> taskbar_;
+  bool taskbar_progress_ = false;
   bool bookmarks_bar_shown_ = false;
   HWND zoom_ = nullptr;
   HWND popups_ = nullptr;

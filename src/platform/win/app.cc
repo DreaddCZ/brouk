@@ -42,6 +42,7 @@
 #include "include/wrapper/cef_helpers.h"
 #include "platform/win/controls.h"
 #include "platform/win/data_paths.h"
+#include "platform/win/downloaded_files.h"
 #include "platform/win/file_dialogs.h"
 #include "platform/win/theme.h"
 #include "platform/win/wide_string.h"
@@ -61,28 +62,6 @@ std::int64_t NowSeconds() {
   return std::chrono::duration_cast<std::chrono::seconds>(
              std::chrono::system_clock::now().time_since_epoch())
       .count();
-}
-
-// Puts `text` on the clipboard (the history page's "Copy as CSV").
-void SetClipboardText(HWND owner, const std::wstring& text) {
-  if (!OpenClipboard(owner)) {
-    return;
-  }
-  EmptyClipboard();
-  const SIZE_T bytes = (text.size() + 1) * sizeof(wchar_t);
-  if (HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, bytes)) {
-    if (void* data = GlobalLock(memory)) {
-      std::memcpy(data, text.c_str(), bytes);
-      GlobalUnlock(memory);
-      // The clipboard owns the memory once it has taken it.
-      if (!SetClipboardData(CF_UNICODETEXT, memory)) {
-        GlobalFree(memory);
-      }
-    } else {
-      GlobalFree(memory);
-    }
-  }
-  CloseClipboard();
 }
 
 // The size of a folder and everything in it, in bytes.
@@ -134,54 +113,6 @@ std::optional<std::string> UsableFolder(const std::string& configured) {
     return std::nullopt;
   }
   return WideToUtf8(expanded);
-}
-
-// File actions on a finished download, for the downloads page (014). The
-// paths are the downloads' own, as the service recorded them.
-bool DownloadedFileExists(const std::string& path) {
-  std::error_code error;
-  return !path.empty() &&
-         std::filesystem::is_regular_file(Utf8ToWide(path), error);
-}
-
-void OpenDownloadedFile(const std::string& path) {
-  if (DownloadedFileExists(path)) {
-    // The file's own app, as a double-click in Explorer opens it (Chrome's
-    // "Open"); the path is a download the service recorded, never a
-    // command line, and Windows checks files from the internet itself.
-    ShellExecuteW(  // nosemgrep: cpp-process-spawn
-        nullptr, L"open", Utf8ToWide(path).c_str(), nullptr, nullptr,
-        SW_SHOWNORMAL);
-  }
-}
-
-void RevealDownloadedFile(const std::string& path) {
-  if (path.empty()) {
-    return;
-  }
-  // File Explorer with the file selected ("Show in folder").
-  std::wstring wide = Utf8ToWide(path);
-  std::ranges::replace(wide, L'/', L'\\');
-  if (PIDLIST_ABSOLUTE item = ILCreateFromPathW(wide.c_str())) {
-    SHOpenFolderAndSelectItems(item, 0, nullptr, 0);
-    ILFree(item);
-  }
-}
-
-// Moves the file to the Recycle Bin (Chrome's "Delete" on Windows).
-bool RecycleDownloadedFile(const std::string& path) {
-  if (!DownloadedFileExists(path)) {
-    return false;
-  }
-  std::wstring from = Utf8ToWide(path);
-  std::ranges::replace(from, L'/', L'\\');
-  from.push_back(L'\0');  // A list of paths, ended by an empty one.
-  SHFILEOPSTRUCTW operation = {};
-  operation.wFunc = FO_DELETE;
-  operation.pFrom = from.c_str();
-  operation.fFlags =
-      FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_NOERRORUI | FOF_SILENT;
-  return SHFileOperationW(&operation) == 0 && !operation.fAnyOperationsAborted;
 }
 
 // Answers one downloads tab's page (014): the app's downloads, and file

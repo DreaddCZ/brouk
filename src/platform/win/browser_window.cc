@@ -21,6 +21,7 @@
 #include "cef/site_info.h"
 #include "core/address_input.h"
 #include "core/internal_pages.h"
+#include "core/profile_colors.h"
 #include "core/profile_id.h"
 #include "core/settings_schema.h"
 #include "core/url_display.h"
@@ -594,6 +595,97 @@ void BrowserWindow::DownloadsChanged() {
     Layout();
   }
   InvalidateRect(downloads_, nullptr, FALSE);
+  UpdateTaskbarProgress();
+  if (downloads_popup_.visible()) {
+    std::weak_ptr<int> alive = alive_;
+    ListRecentDownloads([this, alive](std::vector<DownloadEntry> entries) {
+      if (!alive.expired()) {
+        downloads_popup_.Update(std::move(entries));
+      }
+    });
+  }
+}
+
+void BrowserWindow::UpdateTaskbarProgress() {
+  DownloadService* service = owner_.Downloads();
+  const bool running =
+      kind_ == Kind::kNormal && service && service->RunningCount() > 0;
+  if (!running && !taskbar_progress_) {
+    return;
+  }
+  if (!taskbar_ &&
+      FAILED(CoCreateInstance(CLSID_TaskbarList, nullptr, CLSCTX_INPROC_SERVER,
+                              IID_PPV_ARGS(&taskbar_)))) {
+    return;
+  }
+  taskbar_progress_ = running;
+  if (!running) {
+    taskbar_->SetProgressState(window_, TBPF_NOPROGRESS);
+    return;
+  }
+  const double progress = service->Progress();
+  if (progress < 0) {
+    taskbar_->SetProgressState(window_, TBPF_INDETERMINATE);
+    return;
+  }
+  constexpr ULONGLONG kSteps = 1000;
+  taskbar_->SetProgressState(window_, TBPF_NORMAL);
+  taskbar_->SetProgressValue(
+      window_,
+      static_cast<ULONGLONG>(std::clamp(progress, 0.0, 1.0) *
+                             static_cast<double>(kSteps)),
+      kSteps);
+}
+
+void BrowserWindow::ListRecentDownloads(
+    std::function<void(std::vector<DownloadEntry>)> done) {
+  DownloadService* service = owner_.Downloads();
+  if (!service) {
+    return;
+  }
+  std::vector<ProfileId> profiles;
+  for (const ProfileInfo& info : owner_.ProfileList()) {
+    profiles.push_back(info.id);
+  }
+  service->List(profiles, 200, std::move(done));
+}
+
+void BrowserWindow::ShowDownloadsPopup() {
+  if (downloads_popup_.JustClosed()) {
+    return;  // The click on the button closed it.
+  }
+  std::weak_ptr<int> alive = alive_;
+  ListRecentDownloads([this, alive](std::vector<DownloadEntry> entries) {
+    if (alive.expired() || !HasVisibleStyle(downloads_)) {
+      return;
+    }
+    RECT anchor = {};
+    GetWindowRect(downloads_, &anchor);
+    downloads_popup_.Show(window_, anchor, std::move(entries), theme_,
+                          text_font_, icon_font_);
+    if (DownloadService* service = owner_.Downloads()) {
+      service->MarkAllSeen();
+    }
+  });
+}
+
+DownloadService* BrowserWindow::PopupDownloads() {
+  return owner_.Downloads();
+}
+
+COLORREF BrowserWindow::PopupProfileColor(const ProfileId& profile) {
+  const ProfileColorShades shades =
+      ShadesOfProfileColor(owner_.ProfileLook(profile).color);
+  const std::uint32_t rgb = theme_.dark ? shades.dark : shades.light;
+  return RGB((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+}
+
+void BrowserWindow::PopupRetryDownload(const DownloadEntry& entry) {
+  RetryDownload(entry);
+}
+
+void BrowserWindow::PopupShowAllDownloads() {
+  ShowDownloads();
 }
 
 void BrowserWindow::ShowDownloads() {
@@ -3462,7 +3554,7 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
             ShowAppMenu();
             return 0;
           case kDownloadsId:
-            ShowDownloads();
+            ShowDownloadsPopup();
             return 0;
           case kStarId:
             BookmarkPage();

@@ -4,6 +4,8 @@
 #include <initguid.h>
 #include <oleacc.h>
 
+#include <cstring>
+
 namespace brouk::win {
 
 std::wstring WindowText(HWND window) {
@@ -12,6 +14,27 @@ std::wstring WindowText(HWND window) {
   GetWindowTextW(window, text.data(), length + 1);
   text.resize(static_cast<size_t>(length));
   return text;
+}
+
+void SetClipboardText(HWND owner, const std::wstring& text) {
+  if (!OpenClipboard(owner)) {
+    return;
+  }
+  EmptyClipboard();
+  const SIZE_T bytes = (text.size() + 1) * sizeof(wchar_t);
+  if (HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, bytes)) {
+    if (void* data = GlobalLock(memory)) {
+      std::memcpy(data, text.c_str(), bytes);
+      GlobalUnlock(memory);
+      // The clipboard owns the memory once it has taken it.
+      if (!SetClipboardData(CF_UNICODETEXT, memory)) {
+        GlobalFree(memory);
+      }
+    } else {
+      GlobalFree(memory);
+    }
+  }
+  CloseClipboard();
 }
 
 bool KeyDown(int key) {
