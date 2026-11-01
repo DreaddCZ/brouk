@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
@@ -17,8 +18,11 @@
 #include <vector>
 
 #include "brouk/app_info.h"
+#include "cef/adblock_service.h"
 #include "cef/function_task.h"
 #include "cef/site_info.h"
+#include "core/adblock_lists.h"
+#include "core/adblock_policy.h"
 #include "core/address_input.h"
 #include "core/internal_pages.h"
 #include "core/profile_colors.h"
@@ -62,6 +66,7 @@ enum ControlId : int {
   kDownloadsId,
   kStarId,
   kKeyId,
+  kShieldId,
 };
 
 // Items of the "⋮" menu.
@@ -272,6 +277,12 @@ void BrowserWindow::CreateControls() {
       window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kDownloadsId)),
       instance, nullptr);
   SetAccessibleName(downloads_, L"Downloads");
+  // Ad blocking (007): the page's blocked count and the popup.
+  shield_ = CreateWindowExW(
+      0, WC_BUTTONW, kShieldGlyph, WS_CHILD | BS_OWNERDRAW, 0, 0, 0, 0, window_,
+      reinterpret_cast<HMENU>(static_cast<INT_PTR>(kShieldId)), instance,
+      nullptr);
+  SetAccessibleName(shield_, L"Ad blocking");
   DWORD style = WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL;
   if (kind_ == Kind::kPopup) {
     style |= ES_READONLY;  // Popups show where they are (Chrome).
@@ -443,6 +454,15 @@ void BrowserWindow::Layout() {
       right -= button;
       SetWindowPos(downloads_, nullptr, right,
                    toolbar.top + (toolbar_height - button) / 2, button, button,
+                   SWP_NOZORDER | SWP_NOACTIVATE);
+      right -= margin;
+    }
+    if (HasVisibleStyle(shield_)) {
+      // Wider: the glyph and the blocked count.
+      const int width = button + Scale(22);
+      right -= width;
+      SetWindowPos(shield_, nullptr, right,
+                   toolbar.top + (toolbar_height - button) / 2, width, button,
                    SWP_NOZORDER | SWP_NOACTIVATE);
       right -= margin;
     }
@@ -1761,6 +1781,216 @@ void BrowserWindow::OpenTabPasswordsPage(Tab& /*tab*/) {
   OpenInternalPage("brouk://passwords/");
 }
 
+AdblockService* BrowserWindow::TabAdblock() {
+  return owner_.Adblock();
+}
+
+void BrowserWindow::OnTabAdblockChanged(Tab& tab) {
+  if (ActiveTab() == &tab) {
+    UpdateShield();
+  }
+}
+
+std::string BrowserWindow::TabAdblockListName(const std::string& list_id) {
+  AdblockService* service = owner_.Adblock();
+  return service ? service->ListName(list_id) : list_id;
+}
+
+void BrowserWindow::AllowAdblockSiteFromTab(Tab& tab, const std::string& url) {
+  const std::string host = HostOfUrl(url);
+  if (host.empty()) {
+    return;
+  }
+  owner_.SetAdblockSite(host, true, tab.profile());
+  tab.Navigate(url);
+}
+
+void BrowserWindow::AddTabAdblockRule(Tab& tab, const std::string& rule) {
+  std::weak_ptr<int> alive = alive_;
+  const TabId id = tab.id();
+  owner_.AddAdblockRule(rule, [this, alive, id] {
+    if (Tab* reloaded = alive.expired() ? nullptr : FindTab(id)) {
+      reloaded->Reload();
+    }
+  });
+}
+
+bool BrowserWindow::AdblockSiteEnabled(const Tab* tab) const {
+  AdblockService* service = owner_.Adblock();
+  if (!service || !tab) {
+    return false;
+  }
+  std::shared_ptr<const ProfileAdblockPolicy> policy =
+      service->PolicyFor(tab->profile());
+  return policy && policy->enabled &&
+         !MatchesAnyPattern(policy->allowlist, tab->url());
+}
+
+void BrowserWindow::UpdateShield() {
+  if (!shield_) {
+    return;
+  }
+  const Tab* tab = ActiveTab();
+  const bool shown = !fullscreen_ && owner_.Adblock() && CanBookmark(tab);
+  if (shown) {
+    const bool on = AdblockSiteEnabled(tab);
+    const int count = tab->adblock_blocked_count();
+    const std::wstring name =
+        on ? std::to_wstring(count) + L" blocked on this page"
+           : L"Ad blocking is off for this site";
+    SetAccessibleName(shield_, name.c_str());
+    InvalidateRect(shield_, nullptr, FALSE);
+  }
+  if (shown != HasVisibleStyle(shield_)) {
+    ShowWindow(shield_, shown ? SW_SHOWNA : SW_HIDE);
+    Layout();
+  }
+}
+
+// The shield in the accent colour with the blocked count, as on macOS;
+// dimmed and without a count when blocking is off for the site.
+void BrowserWindow::DrawShieldButton(const DRAWITEMSTRUCT& item) {
+  const bool pressed = (item.itemState & ODS_SELECTED) != 0;
+  SetDCBrushColor(item.hDC, pressed ? theme_.hover : theme_.toolbar);
+  FillRect(item.hDC, &item.rcItem,
+           static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
+  const Tab* tab = ActiveTab();
+  const bool on = AdblockSiteEnabled(tab);
+  const int count = tab ? tab->adblock_blocked_count() : 0;
+  SetBkMode(item.hDC, TRANSPARENT);
+  SetTextColor(item.hDC, on ? GetSysColor(COLOR_HIGHLIGHT) : theme_.separator);
+  HGDIOBJ previous = SelectObject(item.hDC, icon_font_);
+  RECT glyph = item.rcItem;
+  if (on && count > 0) {
+    glyph.right = glyph.left + (item.rcItem.bottom - item.rcItem.top);
+  }
+  DrawTextW(item.hDC, kShieldGlyph, -1, &glyph,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+  if (on && count > 0) {
+    SelectObject(item.hDC, text_font_);
+    SetTextColor(item.hDC, theme_.text);
+    RECT number = {glyph.right - Scale(4), item.rcItem.top, item.rcItem.right,
+                   item.rcItem.bottom};
+    const std::wstring text = count > 999 ? L"999+" : std::to_wstring(count);
+    DrawTextW(item.hDC, text.c_str(), -1, &number,
+              DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+  }
+  SelectObject(item.hDC, previous);
+}
+
+void BrowserWindow::ShowAdblockPopup() {
+  Tab* tab = ActiveTab();
+  AdblockService* service = owner_.Adblock();
+  if (adblock_popup_.JustClosed() || !CanBookmark(tab) || !service) {
+    return;
+  }
+  AdblockPopup::State state;
+  state.host = HostOfUrl(tab->url());
+  state.requests = tab->adblock_requests();
+  std::shared_ptr<const ProfileAdblockPolicy> policy =
+      service->PolicyFor(tab->profile());
+  state.profile_enabled = policy && policy->enabled;
+  state.site_enabled = AdblockSiteEnabled(tab);
+  RECT anchor = {};
+  GetWindowRect(shield_, &anchor);
+  adblock_popup_.Show(window_, anchor, state, theme_, text_font_);
+}
+
+void BrowserWindow::PopupSetAdblockSiteEnabled(bool enabled) {
+  Tab* tab = ActiveTab();
+  const std::string host = tab ? HostOfUrl(tab->url()) : std::string();
+  if (host.empty()) {
+    return;
+  }
+  owner_.SetAdblockSite(host, !enabled, tab->profile());
+  tab->Reload();
+  UpdateShield();
+}
+
+void BrowserWindow::PopupAddAdblockRule(const std::string& rule) {
+  if (Tab* tab = ActiveTab()) {
+    AddTabAdblockRule(*tab, rule);
+  }
+}
+
+void BrowserWindow::PopupShowBlockedRequests() {
+  const Tab* tab = ActiveTab();
+  if (!tab) {
+    return;
+  }
+  adblock_requests_.reset();  // One at a time, for the latest page.
+  std::weak_ptr<int> alive = alive_;
+  adblock_requests_ = std::make_unique<AdblockRequestsWindow>(
+      window_, HostOfUrl(tab->url()), tab->adblock_requests(),
+      [this](const std::string& id) { return TabAdblockListName(id); },
+      [this, alive] {
+        if (alive.expired()) {
+          return;
+        }
+        // Deleted from a task: this runs inside the window.
+        std::shared_ptr<AdblockRequestsWindow> closed(
+            adblock_requests_.release());
+        CefPostTask(TID_UI, new FunctionTask([closed] {}));
+      });
+}
+
+// The issue page of the first list that blocked something here (uBlock's
+// form when none did), with the page's address filled in, as on macOS.
+void BrowserWindow::PopupReportBrokenSite() {
+  const Tab* tab = ActiveTab();
+  if (!tab) {
+    return;
+  }
+  std::string issues;
+  for (const AdblockRequestInfo& info : tab->adblock_requests()) {
+    const FilterListDef* list = FindBuiltinFilterList(info.list_id);
+    if (info.blocked && list && !list->issues_url.empty()) {
+      issues = list->issues_url;
+      break;
+    }
+  }
+  if (issues.empty()) {
+    if (const FilterListDef* list = FindBuiltinFilterList("ublock-filters")) {
+      issues = list->issues_url;
+    }
+  }
+  std::string encoded;
+  for (const unsigned char c : tab->url()) {
+    if (std::isalnum(c) != 0 || c == '-' || c == '.' || c == '_' || c == '~') {
+      encoded += static_cast<char>(c);
+    } else {
+      constexpr std::string_view kHex = "0123456789ABCDEF";
+      encoded += '%';
+      encoded += kHex[c >> 4];
+      encoded += kHex[c & 0x0F];
+    }
+  }
+  if (const std::size_t at = issues.find("{url}"); at != std::string::npos) {
+    issues.replace(at, 5, encoded);
+  }
+  if (!issues.empty()) {
+    OpenTabAfter(tab->id(), issues);
+  }
+}
+
+void BrowserWindow::PopupStartElementPicker() {
+  if (Tab* tab = ActiveTab()) {
+    tab->StartElementPicker();
+  }
+}
+
+void BrowserWindow::PopupOpenAdblockSettings() {
+  // The settings page's fragment is "<scope>:<key>", as on macOS.
+  const Tab* tab = ActiveTab();
+  owner_.OpenSettings("brouk://settings/#" +
+                      (tab ? tab->profile() : owner_.DefaultProfile()) +
+                      ":adblock.enabled");
+}
+
+void BrowserWindow::PopupOpenAdblockHelp() {
+  owner_.OpenHelp("adblock-shield");
+}
+
 AutofillManager* BrowserWindow::TabAutofill() {
   return owner_.Autofill();
 }
@@ -2157,6 +2387,7 @@ void BrowserWindow::DrawIndicator(const DRAWITEMSTRUCT& item) {
 }
 
 void BrowserWindow::UpdateIndicators() {
+  UpdateShield();
   Tab* tab = ActiveTab();
   const double level = tab ? tab->ZoomLevel() : 0.0;
   const bool shown = !fullscreen_ && IsZoomIndicatorShown(level);
@@ -3850,6 +4081,7 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
     case WM_MOVE:
       CloseSuggestions();
       ClosePasswordList();
+      adblock_popup_.Close();
       owner_.OnSessionChanged();
       return 0;
     case WM_ACTIVATE:
@@ -3919,6 +4151,8 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
         DrawIndicator(*item);
       } else if (item->hwndItem == downloads_) {
         DrawDownloadsButton(*item);
+      } else if (item->hwndItem == shield_) {
+        DrawShieldButton(*item);
       } else {
         DrawToolbarButton(*reinterpret_cast<const DRAWITEMSTRUCT*>(lparam));
       }
@@ -3964,6 +4198,9 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
             return 0;
           case kKeyId:
             tab->PasswordKeyIconClicked();
+            return 0;
+          case kShieldId:
+            ShowAdblockPopup();
             return 0;
           default:
             break;

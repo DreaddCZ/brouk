@@ -18,6 +18,7 @@
 #include <utility>
 
 #include "brouk/app_info.h"
+#include "cef/adblock_service.h"
 #include "cef/bookmarks_page_handler.h"
 #include "cef/browser_app.h"
 #include "cef/browsing_data.h"
@@ -29,6 +30,8 @@
 #include "cef/passwords_page_handler.h"
 #include "cef/profile_manager_handler.h"
 #include "cef/static_page_handler.h"
+#include "core/adblock_lists.h"
+#include "core/adblock_policy.h"
 #include "core/address_input.h"
 #include "core/bookmark_profile.h"
 #include "core/crypto.h"
@@ -68,6 +71,8 @@ constexpr std::uintmax_t kMaxProfileExportBytes = 16 * 1024 * 1024;
 constexpr std::uintmax_t kMaxSettingsExportBytes = 1024 * 1024;
 // Bookmark files from other browsers can be large; more is not one.
 constexpr std::uintmax_t kMaxBookmarkHtmlBytes = 64 * 1024 * 1024;
+// Brave's resources are a few MB; more is not them.
+constexpr std::uintmax_t kMaxAdblockResourcesBytes = 64 * 1024 * 1024;
 // Autofill exports are small; more is not one.
 constexpr std::uintmax_t kMaxAutofillFileBytes = 16 * 1024 * 1024;
 // Password exports of other browsers are small; more is not one.
@@ -536,6 +541,24 @@ void App::OnContextInitialized() {
   // Downloads (014), recorded in the history.
   downloads_ = std::make_unique<DownloadService>(history_.get());
   downloads_->SetChangedCallback([this] { DownloadsChanged(); });
+  // Ad blocking (007): the lists in <data>\adblock, the bundled copy of
+  // Brave's resources in the app folder, as on macOS in the app bundle.
+  std::string resources;
+  {
+    std::array<wchar_t, MAX_PATH> module = {};
+    GetModuleFileNameW(nullptr, module.data(),
+                       static_cast<DWORD>(module.size()));
+    Result<std::string> bundled =
+        ReadTextFile(std::filesystem::path(module.data()).parent_path() /
+                         L"adblock-resources.json",
+                     kMaxAdblockResourcesBytes);
+    if (bundled) {
+      resources = std::move(bundled.value());
+    }
+  }
+  adblock_ = std::make_unique<AdblockService>(AppDataDirectory() / L"adblock",
+                                              std::move(resources));
+  ConfigureAdblock();
   // Built-in passwords (008): one database per profile, its key in
   // Credential Manager.
   passwords_ = std::make_unique<PasswordManager>(
@@ -891,6 +914,7 @@ void App::ReleaseBrowserObjects() {
   task_manager_window_.reset();
   windows_.clear();
   system_events_.reset();
+  adblock_.reset();
   autofill_.reset();   // Finishes queued work, closes the database.
   passwords_.reset();  // Finishes queued work, closes the databases.
   bookmarks_.reset();  // Writes pending changes.
@@ -1624,6 +1648,127 @@ void App::ProfilesChanged() {
   for (const std::unique_ptr<BrowserWindow>& window : windows_) {
     window->ProfilesChanged();
   }
+  ConfigureAdblock();
+}
+
+// Each profile's blocking switch, categories and allowlist, for the
+// requests checked on the IO thread (007).
+void App::UpdateAdblockPolicies() {
+  std::map<ProfileId, ProfileAdblockPolicy> policies;
+  for (const ProfileInfo& profile : profiles_.profiles()) {
+    std::optional<Settings> settings = profiles_.ProfileSettings(profile.id);
+    if (!settings) {
+      continue;
+    }
+    policies[profile.id] = {
+        .enabled = settings->GetBool("adblock.enabled"),
+        .categories =
+            ParseFilterCategories(settings->GetString("adblock.categories")),
+        .allowlist =
+            ParseUrlPatternList(settings->GetString("adblock.allowlist"))
+                .value_or(std::vector<UrlPattern>{})};
+  }
+  // Hosts of routing rules join with link routing (010).
+  adblock_->SetPolicies(std::move(policies), {});
+}
+
+// The lists in use (global settings, the system language) and the category
+// sets of the profiles that block (007), as on macOS.
+void App::ConfigureAdblock() {
+  if (!adblock_) {
+    return;
+  }
+  const Settings& global = profiles_.global_settings();
+  auto ids = [](const std::string& text) {
+    std::vector<std::string> result;
+    std::string current;
+    for (char c : text + ",") {
+      if (c == ',' || c == ' ') {
+        if (!current.empty()) {
+          result.push_back(current);
+        }
+        current.clear();
+      } else {
+        current += c;
+      }
+    }
+    return result;
+  };
+  FilterListChoice choice{
+      .turned_on = ids(global.GetString("adblock.lists_on")),
+      .turned_off = ids(global.GetString("adblock.lists_off")),
+      .custom =
+          ParseCustomFilterLists(global.GetString("adblock.custom_lists"))};
+  std::vector<FilterListDef> lists = ActiveFilterLists(choice, Language());
+  std::vector<std::set<FilterCategory>> sets;
+  std::string signature;
+  for (const FilterListDef& list : lists) {
+    signature += list.id + "\n";
+  }
+  for (const ProfileInfo& profile : profiles_.profiles()) {
+    std::optional<Settings> settings = profiles_.ProfileSettings(profile.id);
+    if (!settings || !settings->GetBool("adblock.enabled")) {
+      continue;
+    }
+    std::set<FilterCategory> categories =
+        ParseFilterCategories(settings->GetString("adblock.categories"));
+    signature += "|" + FormatFilterCategories(categories);
+    sets.push_back(std::move(categories));
+  }
+  UpdateAdblockPolicies();
+  if (signature == adblock_configuration_) {
+    return;
+  }
+  adblock_configuration_ = signature;
+  adblock_->Configure(std::move(lists), std::move(sets));
+}
+
+void App::SetAdblockSite(const std::string& host,
+                         bool allowed,
+                         const ProfileId& profile) {
+  std::optional<Settings> settings = profiles_.ProfileSettings(profile);
+  if (!settings || host.empty()) {
+    return;
+  }
+  std::vector<UrlPattern> patterns =
+      ParseUrlPatternList(settings->GetString("adblock.allowlist"))
+          .value_or(std::vector<UrlPattern>{});
+  const std::string url = "https://" + host + "/";
+  if (allowed) {
+    if (MatchesAnyPattern(patterns, url)) {
+      return;
+    }
+    if (std::optional<UrlPattern> pattern = UrlPattern::Parse(host)) {
+      patterns.push_back(*pattern);
+    }
+  } else {
+    std::erase_if(patterns, [&](const UrlPattern& pattern) {
+      return pattern.Matches(url);
+    });
+  }
+  std::string list;
+  for (const UrlPattern& pattern : patterns) {
+    list += (list.empty() ? "" : ", ") + pattern.ToString();
+  }
+  SetProfileSetting(profile, "adblock.allowlist", SettingValue(list));
+}
+
+void App::AddAdblockRule(const std::string& rule, std::function<void()> done) {
+  if (!adblock_) {
+    return;
+  }
+  AdblockService* service = adblock_.get();
+  service->ReadMyFilters([service, rule, done](std::string text) {
+    if (!text.empty() && !text.ends_with('\n')) {
+      text += '\n';
+    }
+    text += rule + "\n";
+    service->SaveMyFilters(std::move(text), [done](bool /*saved*/) {
+      if (done) {
+        done();
+      }
+    });
+  });
 }
 
 std::vector<ProfileManagerDelegate::Summary> App::Profiles() {
@@ -2061,6 +2206,7 @@ void App::ApplySettings() {
     history_->SetRetentionDays(is_days && days > 0 ? std::optional<int>(days)
                                                    : std::nullopt);
   }
+  ConfigureAdblock();
   if (autofill_) {
     // Phone numbers without a country code: the setting, or the region set
     // in Windows (the Mac's region on macOS).
@@ -2206,7 +2352,7 @@ void App::OpenClearBrowsingData() {
 }
 
 AdblockService* App::Adblock() {
-  return nullptr;  // Ad blocking (007) comes later on Windows.
+  return adblock_.get();
 }
 
 std::string App::Language() {

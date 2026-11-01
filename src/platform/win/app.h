@@ -14,6 +14,7 @@
 #include <string_view>
 #include <vector>
 
+#include "cef/adblock_service.h"
 #include "cef/autofill_manager.h"
 #include "cef/download_service.h"
 #include "cef/history_page_handler.h"
@@ -59,6 +60,13 @@ class App final : public BrowserWindowOwner,
   void ReleaseBrowserObjects();
   // content.json_viewer (006), for new renderer processes.
   bool JsonViewerEnabled() const;
+  // Ad blocking (007): a site on or off a profile's allowlist (the shield,
+  // the blocked page), and a rule added to My filters (`done` after).
+  void SetAdblockSite(const std::string& host,
+                      bool allowed,
+                      const ProfileId& profile) override;
+  void AddAdblockRule(const std::string& rule,
+                      std::function<void()> done) override;
   // A profile whose passwords come from Bitwarden (008).
   bool ProfileUsesBitwarden(const ProfileId& profile);
   // For the history page (013): the view it opens with, Clean up's keep
@@ -220,6 +228,10 @@ class App final : public BrowserWindowOwner,
   // The window the settings and profile pages' dialogs belong to.
   HWND DialogOwner() const;
   void SetUpBitwarden();
+  // Ad blocking (007): the lists and category sets in use, and each
+  // profile's policy, from the settings.
+  void ConfigureAdblock();
+  void UpdateAdblockPolicies();
   // Profile export (005) with `passwords` (the encrypted section, or none):
   // asks where to save and writes the file.
   void WriteProfileExport(const ProfileId& id,
@@ -293,6 +305,10 @@ class App final : public BrowserWindowOwner,
   // Built-in passwords (008), for every profile; made when CEF is ready.
   std::unique_ptr<PasswordManager> passwords_;
   std::unique_ptr<ExportPasswordDialog> export_password_dialog_;
+  // Ad blocking (007), for every profile; made when CEF is ready. The lists
+  // and categories it was last configured with.
+  std::unique_ptr<AdblockService> adblock_;
+  std::string adblock_configuration_;
   // Form autofill (009), for the whole app; made when CEF is ready.
   std::unique_ptr<AutofillManager> autofill_;
   // Locks Bitwarden when the PC sleeps or the session is locked.
