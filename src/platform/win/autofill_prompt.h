@@ -14,8 +14,8 @@ namespace brouk::win {
 // bar's star as on macOS: "Add to <label>?", "Update <label>?" with the
 // differences, or "Save as new entry?" with a label field. Values failing
 // validation are marked. Edit…, Not now, Save as new (on an update) and
-// Add / Update / Save; Enter accepts, Escape or clicking elsewhere is Not
-// now. UI thread.
+// Add / Update / Save; Enter accepts; Escape, or clicking elsewhere after
+// using it, is Not now. UI thread.
 class AutofillPromptBubble {
  public:
   // `done` runs once, when the prompt closes; the owner deletes the prompt
@@ -62,6 +62,7 @@ class AutofillPromptBubble {
   HBRUSH background_ = nullptr;
   HBRUSH field_ = nullptr;
   bool finished_ = false;
+  bool activated_ = false;  // The user clicked into it.
 };
 
 }  // namespace brouk::win

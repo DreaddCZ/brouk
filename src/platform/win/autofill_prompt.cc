@@ -105,8 +105,9 @@ void AutofillPromptBubble::ShowBelow(const RECT& anchor) {
   background_ = CreateSolidBrush(theme_.toolbar);
   field_ = CreateSolidBrush(theme_.field);
   CreateControls(/*measure_only=*/false);
-  ShowWindow(window_, SW_SHOW);
-  SetFocus(label_ && IsWindowVisible(label_) ? label_ : accept_);
+  // Shown without taking the keyboard, as the save prompt: the next page
+  // loads meanwhile. A click in the prompt activates it.
+  ShowWindow(window_, SW_SHOWNOACTIVATE);
 }
 
 // Lays the prompt out top to bottom; returns its height. With
@@ -330,8 +331,14 @@ LRESULT AutofillPromptBubble::HandleMessage(UINT message,
       }
       break;
     case WM_ACTIVATE:
-      // Clicking elsewhere is "Not now", as the macOS popover.
-      if (LOWORD(wparam) == WA_INACTIVE && !finished_) {
+      // Once the user has used the prompt, clicking elsewhere is "Not now",
+      // as the macOS popover.
+      if (LOWORD(wparam) != WA_INACTIVE) {
+        activated_ = true;
+        SetFocus(label_ ? label_ : accept_);
+        return 0;
+      }
+      if (activated_ && !finished_) {
         Finish(Choice::kNotNow);
       }
       break;
