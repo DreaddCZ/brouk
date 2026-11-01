@@ -31,6 +31,7 @@
 #include "core/yaml_value.h"
 #include "include/cef_request_context.h"
 #include "platform/win/browser_window.h"
+#include "platform/win/devtools_window.h"
 #include "platform/win/export_password_dialog.h"
 #include "platform/win/internal_page_window.h"
 #include "platform/win/settings_watcher.h"
@@ -60,6 +61,24 @@ class App final : public BrowserWindowOwner,
   void ReleaseBrowserObjects();
   // content.json_viewer (006), for new renderer processes.
   bool JsonViewerEnabled() const;
+  // Developer tools (006), for the windows (BrowserWindowOwner).
+  DevToolsPreferences* DevToolsPrefs() override;
+  std::string DockPosition() override;
+  int DockSize() override;
+  void SetDockPosition(const std::string& position) override;
+  void SetDockSize(int size) override;
+  bool DevToolsToggleOnLeft() override;
+  std::string SecretHeaderNames() override;
+  ToolsHost::Rules RequestRules(const ProfileId& profile) override;
+  std::optional<Error> SetRequestRules(const ProfileId& profile,
+                                       RequestRuleSet rules) override;
+  void BrowserCount(int delta) override;
+  void InspectPage(CefRefPtr<CefBrowser> page,
+                   const std::wstring& title,
+                   std::optional<POINT> at) override;
+  // devtools.remote_debugging (006), read once before CEF starts: the port,
+  // or 0 for none.
+  int RemoteDebuggingPort() const;
   // Ad blocking (007): a site on or off a profile's allowlist (the shield,
   // the blocked page), and a rule added to My filters (`done` after).
   void SetAdblockSite(const std::string& host,
@@ -228,6 +247,9 @@ class App final : public BrowserWindowOwner,
   // The window the settings and profile pages' dialogs belong to.
   HWND DialogOwner() const;
   void SetUpBitwarden();
+  // "Inspect" in one of Brouk's page windows: InspectPage.
+  std::function<void(CefRefPtr<CefBrowser>, const std::wstring&, POINT)>
+  PageInspector();
   // Ad blocking (007): the lists and category sets in use, and each
   // profile's policy, from the settings.
   void ConfigureAdblock();
@@ -292,8 +314,14 @@ class App final : public BrowserWindowOwner,
   std::unique_ptr<HistoryService> history_;
   std::unique_ptr<FaviconCache> favicons_;
   std::map<ProfileId, std::vector<HistoryMatch>> recent_pages_;
-  // Hidden helper browsers still open (clearing data); Brouk quits after.
+  // Hidden helper browsers still open (clearing data), and developer tools'
+  // browsers; Brouk quits after they have closed.
   int helper_browsers_ = 0;
+  int devtools_browsers_ = 0;
+  // Developer tools (006): DevTools' own settings, and its windows for
+  // Brouk's pages.
+  std::unique_ptr<DevToolsPreferences> devtools_preferences_;
+  std::vector<std::unique_ptr<DevToolsWindow>> devtools_windows_;
   // Bookmarks (011), for the whole app; made when CEF is ready.
   std::unique_ptr<BookmarkStore> bookmarks_;
   // Downloads (014): every download of the app, recorded in the history;

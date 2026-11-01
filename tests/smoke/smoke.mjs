@@ -1221,6 +1221,26 @@ async function main() {
     await adblockMyFilter({ port, pagesBase });
   }
 
+  // Developer tools (006): F12 opens the dock under the page in front (its
+  // DevTools page is a target of its own), F12 again closes it.
+  if (kWindows) {
+    const devtoolsTargets = async () =>
+      (await devtoolsJson(port, '/json/list').catch(() => [])).filter((t) => t.url.startsWith('devtools://')).length;
+    sendKeys('Objedn\u00e1vka (test)', ['{F12}']);
+    let open = 0;
+    for (let i = 0; i < 20 && open === 0; i++) {
+      await sleep(500);
+      open = await devtoolsTargets();
+    }
+    check(open > 0, 'F12 opens the developer tools');
+    sendKeys('Objedn\u00e1vka (test)', ['{F12}']);
+    for (let i = 0; i < 20 && open > 0; i++) {
+      await sleep(500);
+      open = await devtoolsTargets();
+    }
+    check(open === 0, 'F12 again closes them');
+  }
+
   // Quit as the user does (Brouk → Quit; on Windows closing the window),
   // aimed at this copy's pid only.
   const pagesBeforeQuit = await devtoolsJson(port, '/json/list').catch(() => []);

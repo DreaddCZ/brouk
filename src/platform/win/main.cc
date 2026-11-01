@@ -82,6 +82,11 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance,
 #if defined(NDEBUG)
   settings.log_severity = LOGSEVERITY_WARNING;
 #endif
+  // Remote debugging (006): from the setting, unless the command line asks
+  // for a port itself (--remote-debugging-port), as on macOS.
+  if (const int port = app.RemoteDebuggingPort(); port > 0) {
+    settings.remote_debugging_port = port;
+  }
 
   brouk::BrowserApp::Callbacks callbacks;
   callbacks.on_context_initialized = [&app] { app.OnContextInitialized(); };

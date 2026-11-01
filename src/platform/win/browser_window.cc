@@ -67,6 +67,7 @@ enum ControlId : int {
   kStarId,
   kKeyId,
   kShieldId,
+  kDevToolsId,
 };
 
 // Items of the "⋮" menu.
@@ -107,6 +108,7 @@ enum MenuCommand : UINT {
   kAlwaysShowBarCommand,
   kPasswordsCommand,
   kAutofillSettingsCommand,
+  kDevToolsCommand,
   kFirstBlockedPopupCommand = 1000,
   kFirstProfileCommand = 2000,
   kFirstClosedCommand = 3000,
@@ -284,6 +286,16 @@ void BrowserWindow::CreateControls() {
       reinterpret_cast<HMENU>(static_cast<INT_PTR>(kShieldId)), instance,
       nullptr);
   SetAccessibleName(shield_, L"Ad blocking");
+  // Developer tools (006): on or off for the tab.
+  if (kind_ == Kind::kNormal) {
+    devtools_ = CreateWindowExW(
+        0, WC_BUTTONW, kDevToolsGlyph, WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 0,
+        0, 0, 0, window_,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(kDevToolsId)), instance,
+        nullptr);
+    SetAccessibleName(devtools_, L"Developer tools for this tab, off");
+    devtools_on_left_ = owner_.DevToolsToggleOnLeft();
+  }
   DWORD style = WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL;
   if (kind_ == Kind::kPopup) {
     style |= ES_READONLY;  // Popups show where they are (Chrome).
@@ -444,6 +456,12 @@ void BrowserWindow::Layout() {
       x += button + margin;
     }
   }
+  if (devtools_ && devtools_on_left_) {
+    SetWindowPos(devtools_, nullptr, x,
+                 toolbar.top + (toolbar_height - button) / 2, button, button,
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+    x += button + margin;
+  }
   int right = static_cast<int>(toolbar.right) - margin;
   if (kind_ == Kind::kNormal) {
     right -= button;
@@ -454,6 +472,13 @@ void BrowserWindow::Layout() {
     if (HasVisibleStyle(downloads_)) {
       right -= button;
       SetWindowPos(downloads_, nullptr, right,
+                   toolbar.top + (toolbar_height - button) / 2, button, button,
+                   SWP_NOZORDER | SWP_NOACTIVATE);
+      right -= margin;
+    }
+    if (devtools_ && !devtools_on_left_) {
+      right -= button;
+      SetWindowPos(devtools_, nullptr, right,
                    toolbar.top + (toolbar_height - button) / 2, button, button,
                    SWP_NOZORDER | SWP_NOACTIVATE);
       right -= margin;
@@ -886,7 +911,7 @@ std::vector<PaletteEntry> BrowserWindow::PaletteActions() {
     bool shift;
     bool alt;
   };
-  static constexpr std::array<Action, 24> kActions = {{
+  static constexpr std::array<Action, 27> kActions = {{
       {"New tab", L"Ctrl+T", 'T', true, false, false},
       {"New window", L"Ctrl+N", 'N', true, false, false},
       {"Reopen closed tab", L"Ctrl+Shift+T", 'T', true, true, false},
@@ -910,6 +935,9 @@ std::vector<PaletteEntry> BrowserWindow::PaletteActions() {
       {"Bookmark manager", L"Ctrl+Shift+O", 'O', true, true, false},
       {"Always show bookmarks bar", L"Ctrl+Shift+B", 'B', true, true, false},
       {"Task manager", L"Shift+Esc", VK_ESCAPE, false, true, false},
+      {"Developer tools", L"Ctrl+Shift+I", 'I', true, true, false},
+      {"JavaScript console", L"Ctrl+Shift+J", 'J', true, true, false},
+      {"Inspect an element", L"Ctrl+Shift+C", 'C', true, true, false},
       {"Help", L"F1", VK_F1, false, false, false},
   }};
   std::vector<PaletteEntry> entries;
@@ -1003,7 +1031,12 @@ bool BrowserWindow::ActOnTab(TabId id, TaskPageAction action) {
       tab->Reload();
       break;
     case TaskPageAction::kDevTools:
-      break;  // Developer tools (006) come to Windows in W3.
+      if (model_.ActivateTab(id)) {
+        ModelChanged();
+      }
+      Activate();
+      tab->SetDevToolsOn(true);
+      break;
   }
   return true;
 }
@@ -1782,6 +1815,120 @@ void BrowserWindow::OpenTabPasswordsPage(Tab& /*tab*/) {
   OpenInternalPage("brouk://passwords/");
 }
 
+CefRefPtr<CefRequestContext> BrowserWindow::TabDevToolsContext() {
+  // The DevTools frontend runs with the internal pages, as on macOS.
+  return owner_.InternalContext();
+}
+
+DevToolsPreferences* BrowserWindow::TabDevToolsPreferences() {
+  return owner_.DevToolsPrefs();
+}
+
+std::string BrowserWindow::TabDockPosition() {
+  return owner_.DockPosition();
+}
+
+int BrowserWindow::TabDockSize() {
+  return owner_.DockSize();
+}
+
+// The dock's place is shared by all tabs and remembered (006): stored as
+// settings, which apply it to every window.
+void BrowserWindow::SetTabDockPosition(const std::string& position) {
+  owner_.SetDockPosition(position);
+}
+
+void BrowserWindow::SetTabDockSize(int size) {
+  owner_.SetDockSize(size);
+}
+
+std::string BrowserWindow::TabSecretHeaderNames() {
+  return owner_.SecretHeaderNames();
+}
+
+ToolsHost::Rules BrowserWindow::TabRequestRules(const ProfileId& profile) {
+  return owner_.RequestRules(profile);
+}
+
+std::optional<Error> BrowserWindow::SetTabRequestRules(const ProfileId& profile,
+                                                       RequestRuleSet rules) {
+  return owner_.SetRequestRules(profile, std::move(rules));
+}
+
+void BrowserWindow::OnTabDevToolsChanged(Tab& tab) {
+  if (ActiveTab() == &tab) {
+    UpdateDevToolsToggle();
+  }
+}
+
+void BrowserWindow::TabBrowserCount(int delta) {
+  owner_.BrowserCount(delta);
+}
+
+void BrowserWindow::InspectPage(CefRefPtr<CefBrowser> page,
+                                const std::wstring& title,
+                                std::optional<POINT> at) {
+  owner_.InspectPage(std::move(page), title, at);
+}
+
+void BrowserWindow::ApplyDevToolsSettings() {
+  const std::string position = owner_.DockPosition();
+  const int size = owner_.DockSize();
+  for (const auto& [id, tab] : tabs_) {
+    tab->SetDockPlace(position, size);
+  }
+  if (devtools_ && devtools_on_left_ != owner_.DevToolsToggleOnLeft()) {
+    devtools_on_left_ = !devtools_on_left_;
+    Layout();
+  }
+}
+
+void BrowserWindow::RequestRulesChanged(const ProfileId& profile,
+                                        const RequestRuleSet& rules) {
+  for (const auto& [id, tab] : tabs_) {
+    if (tab->profile() == profile) {
+      tab->RequestRulesChanged(rules);
+    }
+  }
+}
+
+void BrowserWindow::UpdateDevToolsToggle() {
+  if (!devtools_) {
+    return;
+  }
+  const Tab* tab = ActiveTab();
+  const bool on = tab && tab->devtools_on();
+  // A request rule changed this page: never invisible (006).
+  const bool ruled = on && tab->rules_affected_page();
+  SetAccessibleName(devtools_,
+                    ruled ? L"Developer tools for this tab, on, request rules "
+                            L"changed this page"
+                    : on  ? L"Developer tools for this tab, on"
+                          : L"Developer tools for this tab, off");
+  InvalidateRect(devtools_, nullptr, FALSE);
+}
+
+void BrowserWindow::DrawDevToolsToggle(const DRAWITEMSTRUCT& item) {
+  const Tab* tab = ActiveTab();
+  const bool on = tab && tab->devtools_on();
+  const bool ruled = on && tab->rules_affected_page();
+  const bool pressed = (item.itemState & ODS_SELECTED) != 0;
+  SetDCBrushColor(item.hDC, pressed || on ? theme_.hover : theme_.toolbar);
+  FillRect(item.hDC, &item.rcItem,
+           static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
+  HGDIOBJ previous = SelectObject(item.hDC, icon_font_);
+  SetBkMode(item.hDC, TRANSPARENT);
+  // On: in the accent colour, so the state is visible at once (as macOS).
+  SetTextColor(item.hDC, ruled ? (theme_.dark ? RGB(0xFF, 0xB9, 0x4D)
+                                              : RGB(0xB3, 0x5C, 0x00))
+                         : on  ? GetSysColor(COLOR_HIGHLIGHT)
+                               : theme_.text);
+  RECT area = item.rcItem;
+  DrawTextW(item.hDC, kDevToolsGlyph, -1, &area,
+            DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+  SelectObject(item.hDC, previous);
+}
+
 AdblockService* BrowserWindow::TabAdblock() {
   return owner_.Adblock();
 }
@@ -2389,6 +2536,7 @@ void BrowserWindow::DrawIndicator(const DRAWITEMSTRUCT& item) {
 
 void BrowserWindow::UpdateIndicators() {
   UpdateShield();
+  UpdateDevToolsToggle();
   Tab* tab = ActiveTab();
   const double level = tab ? tab->ZoomLevel() : 0.0;
   const bool shown = !fullscreen_ && IsZoomIndicatorShown(level);
@@ -2519,6 +2667,8 @@ void BrowserWindow::ShowAppMenu() {
   AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(closed), L"History");
   AppendMenuW(menu, MF_STRING, kDownloadsCommand, L"Downloads\tCtrl+J");
   AppendMenuW(menu, MF_STRING, kTaskManagerCommand, L"Task manager\tShift+Esc");
+  AppendMenuW(menu, MF_STRING, kDevToolsCommand,
+              L"Developer tools\tCtrl+Shift+I");
   AppendMenuW(menu, MF_STRING, kCommandPaletteCommand,
               L"Command palette\u2026\tCtrl+K");
   // Bookmarks (011), as Chrome's submenu: the actions, then the bar's
@@ -2669,6 +2819,11 @@ void BrowserWindow::ShowAppMenu() {
       break;
     case kPasswordsCommand:
       OpenInternalPage("brouk://passwords/");
+      break;
+    case kDevToolsCommand:
+      if (Tab* tab = ActiveTab()) {
+        tab->SetDevToolsOn(!tab->devtools_on());
+      }
       break;
     case kAutofillSettingsCommand:
       owner_.OpenSettings("brouk://settings/#global:autofill");
@@ -3501,6 +3656,23 @@ bool BrowserWindow::HandleShortcut(int key,
     ShowCommandPalette();
     return true;
   }
+  // Developer tools (006), as in Chrome on Windows: F12 and Ctrl+Shift+I
+  // switch them on and off, Ctrl+Shift+J shows the console, Ctrl+Shift+C
+  // picks an element.
+  if (tab && !alt &&
+      ((!control && !shift && key == VK_F12) ||
+       (control && shift && key == 'I'))) {
+    tab->SetDevToolsOn(!tab->devtools_on());
+    return true;
+  }
+  if (tab && control && shift && !alt && key == 'J') {
+    tab->ShowDevToolsConsole();
+    return true;
+  }
+  if (tab && control && shift && !alt && key == 'C') {
+    tab->StartDevToolsElementPicker();
+    return true;
+  }
   // Shift+Esc: the task manager, as in Chrome on Windows (020).
   if (!control && !alt && shift && key == VK_ESCAPE) {
     owner_.OpenTaskManager(std::string());
@@ -4154,6 +4326,8 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
         DrawDownloadsButton(*item);
       } else if (item->hwndItem == shield_) {
         DrawShieldButton(*item);
+      } else if (item->hwndItem == devtools_) {
+        DrawDevToolsToggle(*item);
       } else {
         DrawToolbarButton(*reinterpret_cast<const DRAWITEMSTRUCT*>(lparam));
       }
@@ -4202,6 +4376,9 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
             return 0;
           case kShieldId:
             ShowAdblockPopup();
+            return 0;
+          case kDevToolsId:
+            tab->SetDevToolsOn(!tab->devtools_on());
             return 0;
           default:
             break;

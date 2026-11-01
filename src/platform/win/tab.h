@@ -10,12 +10,16 @@
 #include <string>
 #include <vector>
 
+#include "cef/devtools_preferences.h"
+#include "cef/devtools_tools_handler.h"
 #include "cef/history_service.h"
 #include "cef/internal_page_client.h"
 #include "cef/tab_client.h"
 #include "core/tab_strip_model.h"
 #include "include/cef_browser.h"
 #include "include/cef_request_context.h"
+#include "platform/win/devtools_dock.h"
+#include "platform/win/devtools_frame.h"
 #include "platform/win/favicon.h"
 #include "platform/win/find_bar.h"
 #include "platform/win/tab_panel.h"
@@ -95,6 +99,28 @@ class TabHost {
   virtual std::string TabAdblockListName(const std::string& list_id) = 0;
   virtual void AllowAdblockSiteFromTab(Tab& tab, const std::string& url) = 0;
   virtual void AddTabAdblockRule(Tab& tab, const std::string& rule) = 0;
+  // Developer tools (006): where DevTools runs (the internal pages'
+  // context) and keeps its settings; the dock's place and size (in DIPs),
+  // shared by all tabs and kept in the settings; the secret header names;
+  // a profile's request rules; the tab's dev tools went on or off (the
+  // toolbar's toggle); browsers opened (+1) or closed (-1), as Brouk quits
+  // after all have closed; DevTools in a window of its own for one of
+  // Brouk's pages (`at`: the element to select).
+  virtual CefRefPtr<CefRequestContext> TabDevToolsContext() = 0;
+  virtual DevToolsPreferences* TabDevToolsPreferences() = 0;
+  virtual std::string TabDockPosition() = 0;
+  virtual int TabDockSize() = 0;
+  virtual void SetTabDockPosition(const std::string& position) = 0;
+  virtual void SetTabDockSize(int size) = 0;
+  virtual std::string TabSecretHeaderNames() = 0;
+  virtual ToolsHost::Rules TabRequestRules(const ProfileId& profile) = 0;
+  virtual std::optional<Error> SetTabRequestRules(const ProfileId& profile,
+                                                  RequestRuleSet rules) = 0;
+  virtual void OnTabDevToolsChanged(Tab& tab) = 0;
+  virtual void TabBrowserCount(int delta) = 0;
+  virtual void InspectPage(CefRefPtr<CefBrowser> page,
+                           const std::wstring& title,
+                           std::optional<POINT> at) = 0;
   // Form autofill (009): the app's manager (null before it exists), the
   // offer to save a submitted form, and Settings → Autofill.
   virtual AutofillManager* TabAutofill() = 0;
@@ -114,7 +140,8 @@ class TabHost {
 
 class Tab final : public TabClientDelegate,
                   public InternalPageDelegate,
-                  public FindBar::Delegate {
+                  public FindBar::Delegate,
+                  public DevToolsDock::Delegate {
  public:
   // Creates the tab's (hidden) container window in `parent`, for a tab of
   // `profile` (005).
@@ -294,6 +321,19 @@ class Tab final : public TabClientDelegate,
                        const std::string& selector) override;
   bool KeepsFocusOnNavigation() override;
 
+  // Developer tools (006): on or off (the toggle, F12), "Inspect" at a
+  // page point, the console, the element picker; the dock's place (from
+  // the settings); the profile's request rules changed; whether a rule
+  // changed one of the page's requests (the toggle shows it).
+  bool devtools_on() const { return devtools_on_; }
+  void SetDevToolsOn(bool on);
+  void InspectElementAt(POINT point);
+  void ShowDevToolsConsole();
+  void StartDevToolsElementPicker();
+  void SetDockPlace(const std::string& position, int size);
+  void RequestRulesChanged(const RequestRuleSet& rules);
+  bool rules_affected_page() const { return rules_affected_page_; }
+
   // Ad blocking (007): what the blocker saw on the current page (the
   // shield's count and popup), and the element picker.
   const std::vector<AdblockRequestInfo>& adblock_requests() const {
@@ -324,6 +364,18 @@ class Tab final : public TabClientDelegate,
                             std::function<void()> cancelled) override;
   void ConfirmWithTouchId(const std::string& reason, TouchIdDone done) override;
 
+  // DevToolsDock::Delegate:
+  void DockClosed(DevToolsDock& dock) override;
+  void DockWantsPosition(const std::string& position) override;
+  void DockResized(int size, bool done) override;
+  bool DockKey(const CefKeyEvent& event) override;
+  void DockOpenUrl(const std::string& url) override;
+  ToolsHost::Rules DockRequestRules() override;
+  std::optional<Error> DockSetRequestRules(RequestRuleSet rules) override;
+  void DockRulesAffectedPage() override;
+  void DockInspectTools(CefRefPtr<CefBrowser> tools, int x, int y) override;
+  void DockBrowserCount(int delta) override;
+
   // AutofillTabDelegate:
   void ShowAutofillPrompt(const AutofillPrompt& prompt,
                           AutofillPromptDone done) override;
@@ -337,6 +389,11 @@ class Tab final : public TabClientDelegate,
   };
 
   HWND BrowserWindowHandle() const;
+  // Developer tools (006): opens the dock (or waits for the browser), puts
+  // it next to the page or into its own window, and sizes page and dock.
+  void OpenDock(std::optional<POINT> inspect);
+  void PlaceDock();
+  void LayoutWithDock();
   void OnContainerSize();
   // A browser shortcut typed in a panel or the find bar, as in the page.
   bool ForwardShortcut(int key, bool control, bool alt, bool shift);
@@ -404,6 +461,20 @@ class Tab final : public TabClientDelegate,
   std::unique_ptr<TabPanel> permission_prompt_;
   std::unique_ptr<FindBar> find_bar_;
   PasswordIcon password_icon_ = PasswordIcon::kHidden;
+  // Developer tools (006): the dock while open, its own window while
+  // undocked, and its place. The tab's bounds in its window, split between
+  // page and dock. Dev tools asked for before the browser existed; the
+  // browser closed while the dock was still closing (the tab goes after).
+  std::unique_ptr<DevToolsDock> dock_;
+  std::unique_ptr<DevToolsFrame> dock_frame_;
+  std::string dock_position_ = "bottom";
+  int dock_size_ = 320;
+  RECT bounds_ = {};
+  bool devtools_on_ = false;
+  bool devtools_when_created_ = false;
+  std::optional<POINT> inspect_when_created_;
+  bool rules_affected_page_ = false;
+  bool browser_closed_ = false;
   // Ad blocking (007): the current page's requests (at most 5000) and how
   // many were blocked; the page shown in place of a blocked one; the
   // element picker's rule, for a last check.

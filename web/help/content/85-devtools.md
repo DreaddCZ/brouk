@@ -8,6 +8,8 @@ Developer tools are switched on **per tab** with the hammer button next to the a
 - The dock's tabs: **DevTools** (Chromium's own: Elements, Console, Sources, Network…) and Brouk's tools below. They work only with the tab's own profile.
 - Brouk's own pages (Settings, History…) can be inspected the same way.
 
+**On Windows:** <kbd>F12</kbd> or <kbd>Ctrl+Shift+I</kbd> (also "⋮" → Developer tools, and the toolbar's button) switches the tab's developer tools on and off. <kbd>Ctrl+Shift+J</kbd> opens the console and <kbd>Ctrl+Shift+C</kbd> picks an element, as in Chrome. Drag the dock's edge to resize it. "Inspect" on one of Brouk's own pages (settings, help, the profile manager) opens DevTools in a window of its own.
+
 ### Site data {#devtools-site-data}
 
 Everything the current site stores in this profile: cookies, local and session storage, IndexedDB, cache storage and service workers. View, edit, add and delete cookies and storage entries; delete databases, caches and service workers. **Clear site data** removes all of it for this site only, after you confirm.

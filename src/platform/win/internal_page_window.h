@@ -44,6 +44,12 @@ class InternalPageWindow final : public InternalPageDelegate {
   void LoadUrl(const std::string& url);
   // The theme setting changed (004): the frame follows.
   void RefreshTheme();
+  // "Inspect" in the page (006): DevTools for it, at a page point.
+  void SetInspect(std::function<void(CefRefPtr<CefBrowser> browser,
+                                     const std::wstring& title,
+                                     POINT at)> inspect) {
+    inspect_ = std::move(inspect);
+  }
 
   // InternalPageDelegate:
   void OnBrowserCreated(CefRefPtr<CefBrowser> browser) override;
@@ -63,6 +69,8 @@ class InternalPageWindow final : public InternalPageDelegate {
   HWND BrowserWindowHandle() const;
 
   std::function<void()> on_destroyed_;
+  std::function<void(CefRefPtr<CefBrowser>, const std::wstring&, POINT)>
+      inspect_;
   CefRefPtr<InternalPageClient> client_;
   CefRefPtr<CefBrowser> browser_;
   HWND window_ = nullptr;
