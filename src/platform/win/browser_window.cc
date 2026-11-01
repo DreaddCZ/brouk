@@ -3149,6 +3149,11 @@ Tab* BrowserWindow::InsertTabFromOpener(const Tab* opener, bool foreground) {
   } else {
     model_.AppendTab(id, profile, foreground);
   }
+  // A tab opened from a tab with developer tools on starts with them on
+  // (006); they open once its browser exists.
+  if (opener && opener->devtools_on()) {
+    created->SetDevToolsOn(true);
+  }
   ModelChanged();
   return created;
 }
