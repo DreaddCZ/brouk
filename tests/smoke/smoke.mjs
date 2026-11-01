@@ -387,8 +387,7 @@ function crashReports() {
 // ---- The tests ----
 
 // Windows, passwords (008): signing in on the test page offers to save the
-// login (the prompt under the key icon); Save stores it, and the page fills
-// it when it loads again.
+// login (the prompt under the key icon, with its Save button).
 async function savePasswordFromLogin({ executable, port, pagesBase }) {
   const loginUrl = `${pagesBase}/008/login.html`;
   spawn(executable, [loginUrl], { env: { ...process.env, BROUK_DEV_DATA_DIR: dataDir }, stdio: 'ignore' });
