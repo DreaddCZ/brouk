@@ -1,0 +1,1 @@
+- 2026-11-01 (user's decision): the intermittent crash of the restored Brouk at quit on Windows (0xC0000005, late in the exit, no Crashpad dump) is a known issue, #45: the smoke test logs that one check as a known issue instead of failing, so CI and release builds are not blocked. It is fixed after W4.
