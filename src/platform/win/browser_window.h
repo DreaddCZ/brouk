@@ -31,6 +31,8 @@
 #include "platform/win/command_palette.h"
 #include "platform/win/downloads_popup.h"
 #include "platform/win/favicon_cache.h"
+#include "platform/win/password_drop_down.h"
+#include "platform/win/password_prompt.h"
 #include "platform/win/suggestions_popup.h"
 #include "platform/win/tab.h"
 #include "platform/win/tab_panel.h"
@@ -87,6 +89,8 @@ class BrowserWindowOwner {
   // setting downloads.ask_where_to_save, and unique paths in a profile's
   // download folder.
   virtual DownloadService* Downloads() = 0;
+  // Built-in passwords (008); null before CEF is ready.
+  virtual PasswordManager* Passwords() = 0;
   virtual bool AskWhereToSaveDownloads() = 0;
   virtual DownloadTarget ReserveDownloadPath(const std::string& suggested,
                                              const ProfileId& profile) = 0;
@@ -286,6 +290,18 @@ class BrowserWindow final : public TabHost,
   DownloadTarget TabReserveDownloadPath(const std::string& suggested,
                                         const ProfileId& profile) override;
   void TabReleaseDownloadPath(const std::string& path) override;
+  PasswordManager* TabPasswords() override;
+  void ShowTabPasswordList(Tab& tab,
+                           const std::vector<PasswordMenuItem>& items,
+                           const std::optional<RECT>& field,
+                           PasswordMenuDone done) override;
+  void HideTabPasswordList(Tab& tab) override;
+  bool TabPasswordListKey(Tab& tab, int key) override;
+  void ShowTabPasswordPrompt(Tab& tab,
+                             const PasswordPrompt& prompt,
+                             PasswordPromptDone done) override;
+  void OnTabPasswordIconChanged(Tab& tab) override;
+  void OpenTabPasswordsPage(Tab& tab) override;
 
  private:
   static LRESULT CALLBACK WindowProc(HWND window,
@@ -358,6 +374,11 @@ class BrowserWindow final : public TabHost,
                           BookmarkDialog::Done done);
   // The bubble or folder dialog closed: deleted from a task.
   void CloseBookmarkDialog();
+  // Passwords (008): the key icon's place, for the list and the prompt;
+  // closing the drop-down (it answers -1) and the prompt.
+  RECT KeyScreenRect() const;
+  void ClosePasswordList();
+  void ClosePasswordPrompt();
   // Where a dialog opened from the bar goes: under the mouse.
   RECT CursorAnchor() const;
   // The bookmarks bar (011): shown always, or on the new tab page only
@@ -461,6 +482,13 @@ class BrowserWindow final : public TabHost,
   HWND downloads_ = nullptr;
   HWND star_ = nullptr;  // In the address bar (011).
   std::unique_ptr<BookmarkDialog> bookmark_dialog_;
+  // Passwords (008): the key icon in the address bar, the drop-down of a
+  // login field or the key icon (one per window, for the tab named), and
+  // the save prompt.
+  HWND key_ = nullptr;
+  std::unique_ptr<PasswordDropDown> password_list_;
+  std::optional<TabId> password_list_tab_;
+  std::unique_ptr<PasswordPromptBubble> password_prompt_;
   std::unique_ptr<BookmarksBar> bookmarks_bar_;
   CommandPalette palette_;
   DownloadsPopup downloads_popup_{*this};

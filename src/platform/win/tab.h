@@ -68,6 +68,24 @@ class TabHost {
   virtual DownloadTarget TabReserveDownloadPath(const std::string& suggested,
                                                 const ProfileId& profile) = 0;
   virtual void TabReleaseDownloadPath(const std::string& path) = 0;
+  // Passwords (008): the app's manager (null before it exists).
+  virtual PasswordManager* TabPasswords() = 0;
+  // The drop-down under a login field (`field`, screen pixels) or, without
+  // one, under the key icon; one list per window. HideTabPasswordList
+  // closes it if it is `tab`'s; TabPasswordListKey gives it a key typed in
+  // the page and says whether the list used it.
+  virtual void ShowTabPasswordList(Tab& tab,
+                                   const std::vector<PasswordMenuItem>& items,
+                                   const std::optional<RECT>& field,
+                                   PasswordMenuDone done) = 0;
+  virtual void HideTabPasswordList(Tab& tab) = 0;
+  virtual bool TabPasswordListKey(Tab& tab, int key) = 0;
+  // The save prompt under the key icon, and the key icon's look.
+  virtual void ShowTabPasswordPrompt(Tab& tab,
+                                     const PasswordPrompt& prompt,
+                                     PasswordPromptDone done) = 0;
+  virtual void OnTabPasswordIconChanged(Tab& tab) = 0;
+  virtual void OpenTabPasswordsPage(Tab& tab) = 0;
 
  protected:
   virtual ~TabHost() = default;
@@ -255,6 +273,10 @@ class Tab final : public TabClientDelegate,
                        const std::string& selector) override;
   bool KeepsFocusOnNavigation() override;
 
+  // Passwords (008): the key icon's look, and a click on it.
+  PasswordIcon password_icon() const { return password_icon_; }
+  void PasswordKeyIconClicked();
+
   // PasswordTabDelegate:
   void ShowPasswordMenu(const PasswordMenu& menu,
                         PasswordMenuDone done) override;
@@ -352,6 +374,7 @@ class Tab final : public TabClientDelegate,
   std::deque<PendingPermission> permission_requests_;
   std::unique_ptr<TabPanel> permission_prompt_;
   std::unique_ptr<FindBar> find_bar_;
+  PasswordIcon password_icon_ = PasswordIcon::kHidden;
   std::vector<std::string> blocked_popups_;
   // A search typed in the find bar is running: the page, which takes the
   // focus when it shows a match, gives it back to the bar.
