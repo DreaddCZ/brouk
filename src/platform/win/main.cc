@@ -8,6 +8,7 @@
 #include <shellapi.h>
 
 #include <cwchar>
+#include <optional>
 #include <string>
 
 #include "brouk/app_info.h"
@@ -17,6 +18,8 @@
 #include "include/cef_sandbox_win.h"
 #include "platform/win/app.h"
 #include "platform/win/data_paths.h"
+#include "platform/win/default_browser.h"
+#include "platform/win/wide_string.h"
 #include "renderer/renderer_app.h"
 
 namespace {
@@ -49,6 +52,26 @@ bool PrintVersionIfAsked() {
   return true;
 }
 
+// The installer's steps (024, W4): "brouk --register-browser" registers
+// this brouk.exe as a browser for the signed-in user, "--unregister-browser"
+// removes that again; both end without starting Brouk. Returns the exit
+// code, or nothing for any other command line.
+std::optional<int> RunInstallerCommandIfAsked() {
+  int argc = 0;
+  LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+  std::optional<int> exit_code;
+  if (argv && argc == 2) {
+    if (std::wcscmp(argv[1], L"--register-browser") == 0) {
+      exit_code = brouk::win::RegisterAsBrowser() ? 1 : 0;
+    } else if (std::wcscmp(argv[1], L"--unregister-browser") == 0) {
+      brouk::win::UnregisterAsBrowser();
+      exit_code = 0;
+    }
+  }
+  LocalFree(argv);
+  return exit_code;
+}
+
 }  // namespace
 
 CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance,
@@ -58,6 +81,9 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance,
                                     cef_version_info_t* /*version_info*/) {
   if (PrintVersionIfAsked()) {
     return 0;
+  }
+  if (const std::optional<int> exit_code = RunInstallerCommandIfAsked()) {
+    return *exit_code;
   }
 
   CefMainArgs main_args(instance);
@@ -106,9 +132,17 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance,
   if (!CefInitialize(main_args, settings, browser_app, sandbox_info)) {
     return CefGetExitCode();
   }
+  // Held while Brouk runs: the installer waits until it is gone before it
+  // replaces Brouk's files (W4). Its name is in the installer too.
+  const std::wstring running_name =
+      brouk::win::Utf8ToWide(brouk::kAppName) + L"Running";
+  HANDLE running = CreateMutexW(nullptr, FALSE, running_name.c_str());
   // Runs until the last window has closed (App::OnWindowDestroyed).
   CefRunMessageLoop();
   app.ReleaseBrowserObjects();
   CefShutdown();
+  if (running) {
+    CloseHandle(running);
+  }
   return 0;
 }

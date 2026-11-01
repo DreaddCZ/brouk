@@ -17,6 +17,9 @@ namespace brouk::win {
 // Writes the registration for this brouk.exe (its current path). UI
 // thread or any.
 std::optional<Error> RegisterAsBrowser();
+// Removes the registration (the uninstaller, W4). Windows then forgets
+// Brouk as a choice for links and HTML files.
+void UnregisterAsBrowser();
 // At start: a registration made earlier follows brouk.exe when its folder
 // moved (a portable copy). Nothing when Brouk was never registered.
 void RefreshBrowserRegistration();

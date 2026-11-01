@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Builds Brouk's Windows installer (024, W4) from a built app folder, with
+# Inno Setup (scripts/install_tools). Runs in Git Bash on Windows (CI).
+#
+#   scripts/package_windows <build dir> [<output dir>]
+#     e.g. scripts/package_windows build/release build/dist
+#
+# Writes <output dir>/<AppName>-<version>-setup.exe and its .sha256 file.
+# The installer is not code-signed yet (SignPath comes later, 024).
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+if [[ $# -lt 1 || $# -gt 2 ]]; then
+  echo "Usage: scripts/package_windows <build dir> [<output dir>]" >&2
+  exit 2
+fi
+BUILD="$1"
+DIST="${2:-$ROOT/build/dist}"
+
+cmake_var() { sed -n "s/^set($1 \"\(.*\)\")$/\1/p" "$ROOT/CMakeLists.txt"; }
+APP_NAME="$(cmake_var APP_NAME)"
+APP_EXE="$(cmake_var APP_EXECUTABLE_NAME)"
+VERSION="$(cmake_var APP_VERSION)"
+
+APP_DIR="$BUILD/$APP_NAME"
+[[ -f "$APP_DIR/$APP_EXE.exe" ]] || {
+  echo "No built app in $APP_DIR (build it first)" >&2
+  exit 1
+}
+command -v iscc >/dev/null || {
+  echo "Inno Setup not found: run scripts/install_tools and source scripts/env.sh" >&2
+  exit 1
+}
+
+mkdir -p "$DIST"
+iscc //Q \
+  "//DAppName=$APP_NAME" "//DAppExe=$APP_EXE" "//DAppVersion=$VERSION" \
+  "//DSourceDir=$(cygpath -w "$APP_DIR")" "//DOutputDir=$(cygpath -w "$DIST")" \
+  "$(cygpath -w "$ROOT/src/platform/win/installer/brouk.iss")"
+
+SETUP="$DIST/$APP_NAME-$VERSION-setup.exe"
+[[ -f "$SETUP" ]] || { echo "Inno Setup wrote no $SETUP" >&2; exit 1; }
+(cd "$DIST" && sha256sum "$(basename "$SETUP")" > "$(basename "$SETUP").sha256")
+echo "$SETUP"

@@ -1,0 +1,127 @@
+# Windows release build (024, W4): for a release tag v<version> (pushed by
+# scripts/release), a Release build of that commit, tested as in
+# windows.yml, and its per-user installer, kept as an artifact. The
+# installer is published (with its update signature, made on the Intel Mac)
+# by scripts/release_windows; nothing here publishes anything.
+#
+# No caches: a release is built only from the tag and pinned, checksummed
+# downloads, never from what another run left behind.
+name: windows-release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: windows-release
+    # Release tags only (also when started by hand).
+    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
+    runs-on: windows-2025
+    timeout-minutes: 150
+    defaults:
+      run:
+        shell: bash
+    env:
+      BROUK_CEF_CACHE: ${{ github.workspace }}/.cef-cache
+      BUILD: build/release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The tag names the version the build says it is.
+      - name: Check the version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="$(sed -n 's/^set(APP_VERSION "\(.*\)")$/\1/p' CMakeLists.txt)"
+          if [[ "$TAG" != "v$version" ]]; then
+            echo "Tag $TAG does not match APP_VERSION $version"; exit 1
+          fi
+
+      - name: Install tools
+        run: scripts/install_tools
+
+      - name: Visual Studio environment
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
+            -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath
+          cmd /c "`"$vs\VC\Auxiliary\Build\vcvars64.bat`" >nul && set" | ForEach-Object {
+            if ($_ -match '^([^=]+)=(.*)$') {
+              Add-Content -Path $env:GITHUB_ENV -Value "$($Matches[1])=$($Matches[2])"
+            }
+          }
+
+      - name: Tool versions
+        run: |
+          source scripts/env.sh
+          clang-cl --version
+          cmake --version | head -1
+          cargo --version
+          node --version
+
+      - name: Internal pages (TypeScript type-check and tests)
+        run: scripts/web test
+
+      - name: Fetch CEF
+        run: scripts/fetch_cef windows64
+
+      - name: Configure (Release)
+        run: |
+          source scripts/env.sh
+          cmake -S . -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl \
+            -DCMAKE_LINKER=lld-link
+
+      - name: Build
+        run: |
+          source scripts/env.sh
+          cmake --build "$BUILD" -- -k 0
+
+      - name: Test
+        run: |
+          source scripts/env.sh
+          ctest --test-dir "$BUILD" --output-on-failure
+
+      - name: Smoke test
+        run: |
+          reg add "HKCU\Software\Microsoft\Windows\Windows Error Reporting" \
+            //v DontShowUI //t REG_DWORD //d 1 //f
+          source scripts/env.sh
+          version="$(sed -n 's/^set(APP_VERSION "\(.*\)")$/\1/p' CMakeLists.txt)"
+          node tests/smoke/smoke.mjs "$BUILD/Brouk" "$version" unknown x86_64 build/smoke
+
+      - name: Upload the smoke test's screenshots and logs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: smoke-windows-release-${{ github.sha }}
+          path: build/smoke/
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Installer
+        run: |
+          source scripts/env.sh
+          scripts/package_windows "$BUILD" build/dist
+          scripts/test_windows_installer build/dist
+
+      # scripts/release_windows downloads it by this name.
+      - name: Upload the installer
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: brouk-windows-setup-${{ github.ref_name }}
+          path: build/dist/
+          retention-days: 90
+          if-no-files-found: error

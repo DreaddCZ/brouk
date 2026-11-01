@@ -1,8 +1,9 @@
 # Windows CI (specs/002, 001, 024): builds the portable code (core, CEF
 # integration, renderer) and the Windows app on Windows x64 with clang-cl,
 # runs the tests and the internal pages' tests, and uploads the app for
-# testing in a Windows virtual machine. Runs on pull requests, on pushes to
-# main and on demand.
+# testing in a Windows virtual machine, with its installer (W4). Runs on
+# pull requests, on pushes to main and on demand. Release builds:
+# windows-release.yml.
 name: windows
 
 on:
@@ -51,6 +52,8 @@ jobs:
         shell: bash
     env:
       BROUK_CEF_CACHE: ${{ github.workspace }}/.cef-cache
+      BUILD_TYPE: Debug
+      BUILD: build/debug
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -102,10 +105,10 @@ jobs:
         run: scripts/fetch_cef windows64
 
       # lld-link: Git Bash's /usr/bin/link would shadow MSVC's link.exe.
-      - name: Configure (Debug)
+      - name: Configure
         run: |
           source scripts/env.sh
-          cmake -S . -B build/debug -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+          cmake -S . -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
             -DCMAKE_C_COMPILER=clang-cl -DCMAKE_CXX_COMPILER=clang-cl \
             -DCMAKE_LINKER=lld-link
 
@@ -113,12 +116,12 @@ jobs:
         run: |
           source scripts/env.sh
           # -k 0: report every compile error in one run.
-          cmake --build build/debug -- -k 0
+          cmake --build "$BUILD" -- -k 0
 
       - name: Test
         run: |
           source scripts/env.sh
-          ctest --test-dir build/debug --output-on-failure
+          ctest --test-dir "$BUILD" --output-on-failure
 
       # Starts the app, loads the test pages, crashes a renderer and quits
       # (tests/smoke/smoke.mjs); screenshots and logs are uploaded below.
@@ -131,10 +134,10 @@ jobs:
           # this machine), kept with the logs; the renderer the test
           # crashes on purpose leaves one too. Not part of the uploaded app.
           printf '[Config]\nProductName=Brouk\nAppName=BroukSmoke\n' \
-            > build/debug/Brouk/crash_reporter.cfg
+            > "$BUILD/Brouk/crash_reporter.cfg"
           source scripts/env.sh
           version="$(sed -n 's/^set(APP_VERSION "\(.*\)")$/\1/p' CMakeLists.txt)"
-          node tests/smoke/smoke.mjs build/debug/Brouk "$version" unknown x86_64 build/smoke
+          node tests/smoke/smoke.mjs "$BUILD/Brouk" "$version" unknown x86_64 build/smoke
 
       # Crash dumps (CEF's Crashpad) go with the smoke test's logs, to be read
       # with the build's symbols when a crash needs it.
@@ -163,8 +166,27 @@ jobs:
         with:
           name: brouk-windows-${{ github.sha }}
           path: |
-            build/debug/Brouk/
-            !build/debug/Brouk/*.pdb
-            !build/debug/Brouk/crash_reporter.cfg
+            ${{ env.BUILD }}/Brouk/
+            !${{ env.BUILD }}/Brouk/*.pdb
+            !${{ env.BUILD }}/Brouk/crash_reporter.cfg
+          retention-days: 14
+          if-no-files-found: error
+
+      # The per-user installer (W4), built in every run so its script stays
+      # tested: installed quietly for the runner's user, started and
+      # uninstalled again. Not signed yet (SignPath, 024).
+      - name: Installer
+        run: |
+          source scripts/env.sh
+          rm -f "$BUILD/Brouk/crash_reporter.cfg"
+          scripts/package_windows "$BUILD" build/dist
+          scripts/test_windows_installer build/dist
+
+      - name: Upload the installer
+        if: ${{ github.event_name != 'push' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: brouk-windows-setup-${{ github.sha }}
+          path: build/dist/
           retention-days: 14
           if-no-files-found: error
