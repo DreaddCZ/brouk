@@ -26,7 +26,8 @@ struct BookmarkDialogValues {
 // address bar's star, as on macOS:
 // - the star's bubble (Ctrl+D): the bookmark already exists (Chrome saves
 //   it when the bubble opens); Done or closing keeps the changes, Remove
-//   deletes it;
+//   deletes it, "New folder…" at the end of the folder list keeps the
+//   changes and asks the owner for a new folder (kNewFolder);
 // - Bookmark all tabs (Ctrl+Shift+D) and Add folder: the new folder's name,
 //   parent folder and profile; Save or Cancel;
 // - Add bookmark and Edit from the bookmarks bar: name, URL, folder and
@@ -41,7 +42,9 @@ class BookmarkDialog {
     kBookmark,  // Adding or editing a bookmark: with its URL.
     kFolder,    // Editing a folder: name and profile.
   };
-  enum class Answer { kKeep, kRemove, kCancel };
+  // kNewFolder: the bubble's "New folder…"; the values are kept, their
+  // folder is where the new folder goes.
+  enum class Answer { kKeep, kRemove, kCancel, kNewFolder };
   struct Options {
     Kind kind = Kind::kBubble;
     std::wstring title;
@@ -113,6 +116,8 @@ class BookmarkDialog {
   HBRUSH field_ = nullptr;
   // The profile chosen while the folder does not decide it.
   ProfileId own_profile_;
+  // The folder chosen before "New folder…" (the new one goes in it).
+  BookmarkId chosen_folder_ = 0;
   bool finished_ = false;
 };
 

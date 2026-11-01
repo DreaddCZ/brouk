@@ -587,6 +587,7 @@ void Tab::OnFaviconChanged(const std::string& icon_url,
   if (HistoryService* history = host_.TabHistory();
       history && !internal() && !url_.empty()) {
     history->SetFavicon(profile_, url_, icon_url, png);
+    host_.OnTabFaviconStored(*this);
   }
   favicon_png_ = png;
   UpdateFaviconSize();

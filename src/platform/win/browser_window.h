@@ -30,11 +30,13 @@
 #include "platform/win/bookmarks_bar.h"
 #include "platform/win/command_palette.h"
 #include "platform/win/downloads_popup.h"
+#include "platform/win/favicon_cache.h"
 #include "platform/win/suggestions_popup.h"
 #include "platform/win/tab.h"
 #include "platform/win/tab_panel.h"
 #include "platform/win/tab_strip.h"
 #include "platform/win/theme.h"
+#include "platform/win/undo_notice.h"
 
 namespace brouk::win {
 
@@ -70,6 +72,8 @@ class BrowserWindowOwner {
   // its most recent pages for the menu (null until read, which starts
   // reading them).
   virtual HistoryService* History() = 0;
+  // Site icons for the bookmarks bar and menus (null before the history).
+  virtual FaviconCache* Favicons() = 0;
   virtual void OnHistoryChanged(const ProfileId& profile) = 0;
   virtual const std::vector<HistoryMatch>* RecentPages(
       const ProfileId& profile) = 0;
@@ -199,6 +203,8 @@ class BrowserWindow final : public TabHost,
   // its linked profile, or a general one in the active tab's (from the
   // manager page in tab `from`: in place of it when it may).
   void BookmarksChanged();
+  // Site icons arrived (FaviconCache): the bookmarks bar redraws.
+  void FaviconsChanged();
   void OpenBookmark(BookmarkId id, BookmarkOpen how) override;
   // Task manager (020): this window's tabs as rows, in strip order, and
   // an action on one of them (false if it is not here).
@@ -258,6 +264,10 @@ class BrowserWindow final : public TabHost,
                     std::size_t index) override;
   void ShowBookmarkManager() override;
   void ToggleBookmarksBar() override;
+  void DropLink(const std::string& url,
+                const std::string& title,
+                BookmarkId parent,
+                std::size_t index) override;
 
   // DownloadsPopup::Delegate:
   DownloadService* PopupDownloads() override;
@@ -268,6 +278,7 @@ class BrowserWindow final : public TabHost,
 
   HistoryService* TabHistory() override;
   void OnTabHistoryChanged(Tab& tab) override;
+  void OnTabFaviconStored(Tab& tab) override;
   DownloadService* TabDownloads() override;
   bool TabAskWhereToSaveDownloads() override;
   DownloadTarget TabReserveDownloadPath(const std::string& suggested,
@@ -305,6 +316,16 @@ class BrowserWindow final : public TabHost,
   void DrawDownloadsButton(const DRAWITEMSTRUCT& item);
   // The downloads page (brouk://downloads, Ctrl+J); everything is seen.
   void ShowDownloads();
+  // After deleting a bookmark or folder (011): `message` with Undo for a
+  // few seconds, under `anchor` (screen pixels).
+  void OfferUndoRemove(const wchar_t* message, const RECT& anchor);
+  // The star's bubble for an existing bookmark (`added`: just saved).
+  void ShowBookmarkBubble(BookmarkId bookmark,
+                          bool added,
+                          const ProfileId& profile);
+  void AskNewFolderFor(BookmarkId bookmark,
+                       const BookmarkDialogValues& values,
+                       const ProfileId& profile);
   // The toolbar button: the list under it (Chrome's downloads bubble).
   void ShowDownloadsPopup();
   // The last 24 hours of downloads of all profiles, for the list.
@@ -441,8 +462,11 @@ class BrowserWindow final : public TabHost,
   std::unique_ptr<BookmarksBar> bookmarks_bar_;
   CommandPalette palette_;
   DownloadsPopup downloads_popup_{*this};
+  UndoNotice undo_notice_;
   Microsoft::WRL::ComPtr<ITaskbarList3> taskbar_;
   bool taskbar_progress_ = false;
+  // The site icons of the "⋮" menu while it shows.
+  std::vector<Favicon> menu_icons_;
   bool bookmarks_bar_shown_ = false;
   HWND zoom_ = nullptr;
   HWND popups_ = nullptr;

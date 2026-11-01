@@ -52,6 +52,8 @@ class TabHost {
   // that the tab's profile's history changed (the Recently visited menu).
   virtual HistoryService* TabHistory() = 0;
   virtual void OnTabHistoryChanged(Tab& tab) = 0;
+  // The tab's page icon went into its profile's history (bookmark icons).
+  virtual void OnTabFaviconStored(Tab& tab) = 0;
   // Downloads (014): the app's list (null before it exists), whether every
   // download asks where to save, and a unique path in `profile`'s download
   // folder (released when the download ends).

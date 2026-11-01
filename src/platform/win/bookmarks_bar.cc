@@ -1,11 +1,18 @@
 #include "platform/win/bookmarks_bar.h"
 
+#include <shlobj.h>
 #include <windowsx.h>
+#include <wrl/implements.h>
 
 #include <algorithm>
 #include <cstdlib>
+#include <cwchar>
+#include <optional>
+#include <string>
+#include <utility>
 
 #include "platform/win/controls.h"
+#include "platform/win/favicon_cache.h"
 #include "platform/win/wide_string.h"
 
 namespace brouk::win {
@@ -63,7 +70,157 @@ std::wstring MenuText(const std::wstring& text) {
   return escaped;
 }
 
+// A link dropped from outside: its address and, when the source gave one,
+// its title.
+struct DroppedLink {
+  std::string url;
+  std::string title;
+};
+
+// Text of `format` in `data` (UTF-16), or nothing.
+std::optional<std::wstring> ReadText(IDataObject* data, CLIPFORMAT format) {
+  FORMATETC wanted = {format, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
+  STGMEDIUM medium = {};
+  if (FAILED(data->GetData(&wanted, &medium))) {
+    return std::nullopt;
+  }
+  std::optional<std::wstring> text;
+  const SIZE_T bytes = GlobalSize(medium.hGlobal);
+  if (const auto* chars =
+          static_cast<const wchar_t*>(GlobalLock(medium.hGlobal))) {
+    const std::size_t length = wcsnlen(chars, bytes / sizeof(wchar_t));
+    text.emplace(chars, length);
+    GlobalUnlock(medium.hGlobal);
+  }
+  ReleaseStgMedium(&medium);
+  return text;
+}
+
+// The title Chromium gives a dragged link: the name of its shortcut file
+// ("Example Domain.url").
+std::string ReadLinkTitle(IDataObject* data) {
+  const auto format =
+      static_cast<CLIPFORMAT>(RegisterClipboardFormatW(CFSTR_FILEDESCRIPTORW));
+  FORMATETC wanted = {format, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL};
+  STGMEDIUM medium = {};
+  if (FAILED(data->GetData(&wanted, &medium))) {
+    return {};
+  }
+  std::string title;
+  if (GlobalSize(medium.hGlobal) >= sizeof(FILEGROUPDESCRIPTORW)) {
+    if (const auto* group = static_cast<const FILEGROUPDESCRIPTORW*>(
+            GlobalLock(medium.hGlobal))) {
+      if (group->cItems >= 1) {
+        const wchar_t* name = group->fgd[0].cFileName;
+        std::wstring file(name, wcsnlen(name, MAX_PATH));
+        if (file.size() > 4 &&
+            _wcsicmp(file.c_str() + file.size() - 4, L".url") == 0) {
+          file.resize(file.size() - 4);
+          title = WideToUtf8(file);
+        }
+      }
+      GlobalUnlock(medium.hGlobal);
+    }
+  }
+  ReleaseStgMedium(&medium);
+  return title;
+}
+
+// Only web and file addresses become bookmarks (as on macOS); the data
+// comes from another program, so it is checked and limited in size.
+std::optional<DroppedLink> ReadDroppedLink(IDataObject* data) {
+  constexpr std::size_t kMaxUrl = 2 * 1024 * 1024;  // Chromium's limit.
+  const auto url_format =
+      static_cast<CLIPFORMAT>(RegisterClipboardFormatW(CFSTR_INETURLW));
+  std::optional<std::wstring> text = ReadText(data, url_format);
+  if (!text) {
+    text = ReadText(data, CF_UNICODETEXT);
+  }
+  if (!text) {
+    return std::nullopt;
+  }
+  std::wstring url = *text;
+  // The first line, without surrounding spaces.
+  url = url.substr(0, url.find_first_of(L"\r\n"));
+  const auto first = url.find_first_not_of(L" \t");
+  const auto last = url.find_last_not_of(L" \t");
+  if (first == std::wstring::npos || url.size() > kMaxUrl) {
+    return std::nullopt;
+  }
+  url = url.substr(first, last - first + 1);
+  auto starts = [&url](const wchar_t* prefix) {
+    const std::size_t length = wcslen(prefix);
+    return url.size() > length && _wcsnicmp(url.c_str(), prefix, length) == 0;
+  };
+  if (!starts(L"http://") && !starts(L"https://") && !starts(L"file://")) {
+    return std::nullopt;
+  }
+  if (url.find_first_of(L" \t") != std::wstring::npos) {
+    return std::nullopt;  // Text, not an address.
+  }
+  return DroppedLink{.url = WideToUtf8(url), .title = ReadLinkTitle(data)};
+}
+
 }  // namespace
+
+// The bar as an OLE drop target for links dragged from pages or other
+// apps (011). Holds the bar until it is detached (the bar's destructor).
+class LinkDropTarget
+    : public Microsoft::WRL::RuntimeClass<
+          Microsoft::WRL::RuntimeClassFlags<Microsoft::WRL::ClassicCom>,
+          IDropTarget> {
+ public:
+  explicit LinkDropTarget(BookmarksBar& bar) : bar_(&bar) {}
+  void Detach() { bar_ = nullptr; }
+
+  STDMETHODIMP DragEnter(IDataObject* data,
+                         DWORD /*keys*/,
+                         POINTL point,
+                         DWORD* effect) override {
+    link_ = data && ReadDroppedLink(data).has_value();
+    return DragOver(0, point, effect);
+  }
+  STDMETHODIMP DragOver(DWORD /*keys*/, POINTL point, DWORD* effect) override {
+    if (!link_ || !bar_) {
+      *effect = DROPEFFECT_NONE;
+      return S_OK;
+    }
+    bar_->OnLinkDragOver({point.x, point.y});
+    // A link is bookmarked, not moved: Chromium offers copy and link.
+    *effect &= DROPEFFECT_COPY | DROPEFFECT_LINK;
+    if (*effect & DROPEFFECT_LINK) {
+      *effect = DROPEFFECT_LINK;
+    }
+    return S_OK;
+  }
+  STDMETHODIMP DragLeave() override {
+    if (bar_) {
+      bar_->OnLinkDragLeave();
+    }
+    return S_OK;
+  }
+  STDMETHODIMP Drop(IDataObject* data,
+                    DWORD /*keys*/,
+                    POINTL point,
+                    DWORD* effect) override {
+    std::optional<DroppedLink> link =
+        data ? ReadDroppedLink(data) : std::nullopt;
+    if (!link || !bar_) {
+      if (bar_) {
+        bar_->OnLinkDragLeave();
+      }
+      *effect = DROPEFFECT_NONE;
+      return S_OK;
+    }
+    bar_->OnLinkDrop({point.x, point.y}, link->url, link->title);
+    *effect = (*effect & DROPEFFECT_LINK) ? DROPEFFECT_LINK : DROPEFFECT_COPY;
+    return S_OK;
+  }
+
+ private:
+  BookmarksBar* bar_;  // Not owned; null once the bar is gone.
+  bool link_ = false;
+};
 
 BookmarksBar::BookmarksBar(HWND parent, Delegate& delegate)
     : delegate_(delegate) {
@@ -77,10 +234,20 @@ BookmarksBar::BookmarksBar(HWND parent, Delegate& delegate)
     SetWindowLongPtrW(window_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
     SetWindowLongPtrW(window_, GWLP_WNDPROC,
                       reinterpret_cast<LONG_PTR>(&BookmarksBar::WindowProc));
+    drop_target_ = Microsoft::WRL::Make<LinkDropTarget>(*this);
+    // Fails without OLE on the thread (Chromium initialises it on the UI
+    // thread); the bar then takes no drops.
+    if (drop_target_ && FAILED(RegisterDragDrop(window_, drop_target_.Get()))) {
+      drop_target_.Reset();
+    }
   }
 }
 
 BookmarksBar::~BookmarksBar() {
+  if (window_ && drop_target_) {
+    RevokeDragDrop(window_);
+    drop_target_->Detach();
+  }
   if (window_) {
     SetWindowLongPtrW(window_, GWLP_USERDATA, 0);
     DestroyWindow(window_);
@@ -99,8 +266,10 @@ void BookmarksBar::Update(const BookmarkModel& model,
                           const ProfileId& profile,
                           const Theme& theme,
                           HFONT text_font,
-                          HFONT icon_font) {
+                          HFONT icon_font,
+                          FaviconCache* favicons) {
   model_ = &model;
+  favicons_ = favicons;
   profile_ = profile;
   theme_ = theme;
   text_font_ = text_font;
@@ -117,10 +286,15 @@ void BookmarksBar::Update(const BookmarkModel& model,
       items_.push_back({.id = child,
                         .folder = item->folder,
                         .name = Utf8ToWide(name),
+                        .url = item->folder ? std::string() : item->url,
                         .bounds = {}});
     }
   }
   Layout();
+  InvalidateRect(window_, nullptr, FALSE);
+}
+
+void BookmarksBar::Redraw() {
   InvalidateRect(window_, nullptr, FALSE);
 }
 
@@ -212,10 +386,21 @@ void BookmarksBar::Paint() {
     RECT glyph = {item.bounds.left + Scale(kItemPadding), item.bounds.top,
                   item.bounds.left + Scale(kItemPadding) + Scale(kGlyphWidth),
                   item.bounds.bottom};
-    SelectObject(dc, icon_font_);
-    SetTextColor(dc, theme_.text_dim);
-    DrawTextW(dc, item.folder ? kFolderGlyph : kPageGlyph, -1, &glyph,
-              DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_NOPREFIX);
+    // The site's icon from the history, else a globe (011).
+    const int icon_size = Scale(16);
+    const Favicon* icon =
+        favicons_ && !item.folder
+            ? favicons_->IconFor(profile_, item.url, icon_size)
+            : nullptr;
+    if (icon) {
+      icon->Draw(dc, glyph.left + (glyph.right - glyph.left - icon_size) / 2,
+                 glyph.top + (glyph.bottom - glyph.top - icon_size) / 2);
+    } else {
+      SelectObject(dc, icon_font_);
+      SetTextColor(dc, theme_.text_dim);
+      DrawTextW(dc, item.folder ? kFolderGlyph : kPageGlyph, -1, &glyph,
+                DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_NOPREFIX);
+    }
     RECT text = {glyph.right + Scale(6), item.bounds.top,
                  item.bounds.right - Scale(kItemPadding), item.bounds.bottom};
     SelectObject(dc, text_font_);
@@ -234,7 +419,7 @@ void BookmarksBar::Paint() {
               DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_NOPREFIX);
   }
   // Where a dragged item would go: a line between items.
-  if (dragging_ && drop_ && drop_->into == 0) {
+  if ((dragging_ || link_drag_) && drop_ && drop_->into == 0) {
     int x = Scale(6);
     for (std::size_t i = 0; i < first_hidden_; ++i) {
       const BookmarkItem* bar = model_->Find(BookmarkModel::kBarId);
@@ -266,6 +451,38 @@ int BookmarksBar::HitTest(POINT point) const {
   return -1;
 }
 
+void BookmarksBar::OnLinkDragOver(POINT screen) {
+  if (!model_) {
+    return;
+  }
+  ScreenToClient(window_, &screen);
+  link_drag_ = true;
+  drop_ = DropAt(screen);
+  InvalidateRect(window_, nullptr, FALSE);
+}
+
+void BookmarksBar::OnLinkDragLeave() {
+  link_drag_ = false;
+  drop_.reset();
+  InvalidateRect(window_, nullptr, FALSE);
+}
+
+void BookmarksBar::OnLinkDrop(POINT screen,
+                              const std::string& url,
+                              const std::string& title) {
+  if (!model_) {
+    return;
+  }
+  ScreenToClient(window_, &screen);
+  const DropTarget target = DropAt(screen);
+  OnLinkDragLeave();
+  if (target.into != 0) {
+    delegate_.DropLink(url, title, target.into, BookmarkModel::kEnd);
+  } else {
+    delegate_.DropLink(url, title, BookmarkModel::kBarId, target.index);
+  }
+}
+
 BookmarksBar::DropTarget BookmarksBar::DropAt(POINT point) const {
   const BookmarkItem* bar = model_->Find(BookmarkModel::kBarId);
   DropTarget target{.index = bar ? bar->children.size() : 0, .into = 0};
@@ -278,7 +495,7 @@ BookmarksBar::DropTarget BookmarksBar::DropAt(POINT point) const {
     const auto it = std::ranges::find(bar->children, item.id);
     const auto index = static_cast<std::size_t>(it - bar->children.begin());
     // The middle of a folder drops into it; elsewhere between items.
-    if (item.folder && pressed_ && items_[*pressed_].id != item.id &&
+    if (item.folder && (!pressed_ || items_[*pressed_].id != item.id) &&
         point.x >= item.bounds.left + width / 4 &&
         point.x < item.bounds.right - width / 4) {
       return {.index = 0, .into = item.id};
@@ -336,6 +553,7 @@ void BookmarksBar::AppendFolder(HMENU menu,
     }
     ids.push_back(child);
     AppendMenuW(menu, MF_STRING, ids.size(), name.c_str());
+    SetMenuIcon(menu, static_cast<UINT>(ids.size()), item->url);
   }
   if (!any) {
     AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, L"(empty)");
@@ -351,11 +569,32 @@ void BookmarksBar::RunMenu(HMENU menu,
       menu, TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD | TPM_NONOTIFY,
       screen.left, screen.bottom, window_, nullptr));
   DestroyMenu(menu);
+  menu_icons_.clear();
   if (command >= 1 && command <= ids.size()) {
     delegate_.OpenBookmark(ids[command - 1], KeyDown(VK_CONTROL)
                                                  ? BookmarkOpen::kBackgroundTab
                                                  : BookmarkOpen::kCurrentTab);
   }
+}
+
+void BookmarksBar::SetMenuIcon(HMENU menu,
+                               UINT command,
+                               const std::string& url) {
+  if (!favicons_) {
+    return;
+  }
+  Favicon icon = favicons_->CopyOf(
+      profile_, url,
+      GetSystemMetricsForDpi(SM_CXSMICON, GetDpiForWindow(window_)));
+  if (icon.empty()) {
+    return;
+  }
+  MENUITEMINFOW info = {};
+  info.cbSize = sizeof(info);
+  info.fMask = MIIM_BITMAP;
+  info.hbmpItem = icon.bitmap();
+  SetMenuItemInfoW(menu, command, FALSE, &info);
+  menu_icons_.push_back(std::move(icon));
 }
 
 void BookmarksBar::ShowFolderMenu(BookmarkId folder, const RECT& anchor) {
@@ -379,6 +618,7 @@ void BookmarksBar::ShowOverflowMenu() {
     }
     ids.push_back(item.id);
     AppendMenuW(menu, MF_STRING, ids.size(), MenuText(item.name).c_str());
+    SetMenuIcon(menu, static_cast<UINT>(ids.size()), item.url);
   }
   RunMenu(menu, overflow_, ids);
 }

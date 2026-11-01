@@ -1,7 +1,9 @@
 #ifndef BROUK_PLATFORM_WIN_BOOKMARKS_BAR_H_
 #define BROUK_PLATFORM_WIN_BOOKMARKS_BAR_H_
 
+#include <oleidl.h>
 #include <windows.h>
+#include <wrl/client.h>
 
 #include <cstddef>
 #include <optional>
@@ -10,9 +12,13 @@
 
 #include "core/bookmark_model.h"
 #include "core/profile_id.h"
+#include "platform/win/favicon.h"
 #include "platform/win/theme.h"
 
 namespace brouk::win {
+
+class FaviconCache;
+class LinkDropTarget;
 
 // Where a bookmark opens (011): click, Ctrl-click or middle-click,
 // Ctrl+Shift-click, "Open in new window".
@@ -26,7 +32,8 @@ enum class BookmarkOpen {
 // The bookmarks bar below the toolbar (011), as on macOS: the "Bookmarks
 // bar" folder's items visible in the active tab's profile, folders as
 // drop-down menus, a "»" menu for what does not fit, dragging to reorder or
-// to move into a folder, and the right-click menu. A child window of the
+// to move into a folder, dropping links from pages (OLE drag and drop), and
+// the right-click menu. A child window of the
 // browser window, drawn by Brouk. UI thread.
 class BookmarksBar {
  public:
@@ -45,6 +52,12 @@ class BookmarksBar {
     virtual void MoveBookmark(BookmarkId id,
                               BookmarkId parent,
                               std::size_t index) = 0;
+    // A link dropped from a page (or another app) at `index` of `parent`:
+    // a new bookmark there (011).
+    virtual void DropLink(const std::string& url,
+                          const std::string& title,
+                          BookmarkId parent,
+                          std::size_t index) = 0;
     virtual void ShowBookmarkManager() = 0;
     // "Always show bookmarks bar" (Ctrl+Shift+B).
     virtual void ToggleBookmarksBar() = 0;
@@ -60,12 +73,16 @@ class BookmarksBar {
   BookmarksBar& operator=(const BookmarksBar&) = delete;
 
   // Shows the bar folder of `model` as seen in `profile`, with the
-  // window's theme and fonts (which outlive the bar).
+  // window's theme and fonts and the app's site icons (which outlive the
+  // bar; `favicons` may be null).
   void Update(const BookmarkModel& model,
               const ProfileId& profile,
               const Theme& theme,
               HFONT text_font,
-              HFONT icon_font);
+              HFONT icon_font,
+              FaviconCache* favicons);
+  // Site icons arrived: redraw.
+  void Redraw();
   void SetBounds(const RECT& bounds);
   void SetVisible(bool visible);
   // The bar's height in pixels at `dpi`.
@@ -73,10 +90,12 @@ class BookmarksBar {
   HWND hwnd() const { return window_; }
 
  private:
+  friend class LinkDropTarget;
   struct Item {
     BookmarkId id = 0;
     bool folder = false;
     std::wstring name;
+    std::string url;  // Bookmarks only, for the site icon.
     RECT bounds = {};
   };
 
@@ -109,7 +128,16 @@ class BookmarksBar {
                     BookmarkId folder,
                     std::vector<BookmarkId>& ids);
   void RunMenu(HMENU menu, const RECT& anchor, std::vector<BookmarkId>& ids);
+  // Puts the site icon of `url` on the menu item with `command`.
+  void SetMenuIcon(HMENU menu, UINT command, const std::string& url);
   void ShowContextMenu(int hit, POINT screen);
+  // Links dragged over the bar from outside (LinkDropTarget); screen
+  // pixels.
+  void OnLinkDragOver(POINT screen);
+  void OnLinkDragLeave();
+  void OnLinkDrop(POINT screen,
+                  const std::string& url,
+                  const std::string& title);
 
   HWND window_ = nullptr;
   Delegate& delegate_;
@@ -118,6 +146,9 @@ class BookmarksBar {
   Theme theme_;
   HFONT text_font_ = nullptr;
   HFONT icon_font_ = nullptr;
+  FaviconCache* favicons_ = nullptr;
+  // The site icons of the menu that shows (menus need them until closed).
+  std::vector<Favicon> menu_icons_;
   std::vector<Item> items_;
   // Items from this index on do not fit and are in the "»" menu.
   std::size_t first_hidden_ = 0;
@@ -129,6 +160,9 @@ class BookmarksBar {
   POINT press_point_ = {};
   bool dragging_ = false;
   std::optional<DropTarget> drop_;
+  // A link from outside is over the bar.
+  bool link_drag_ = false;
+  Microsoft::WRL::ComPtr<LinkDropTarget> drop_target_;
 };
 
 }  // namespace brouk::win

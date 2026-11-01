@@ -35,6 +35,8 @@ add_library(brouk_app SHARED
   file_dialogs.h
   favicon.cc
   favicon.h
+  favicon_cache.cc
+  favicon_cache.h
   find_bar.cc
   find_bar.h
   internal_page_window.cc
@@ -52,6 +54,8 @@ add_library(brouk_app SHARED
   tab_strip.h
   theme.cc
   theme.h
+  undo_notice.cc
+  undo_notice.h
   wide_string.cc
   wide_string.h
 )

@@ -982,6 +982,18 @@ bool BrowserWindow::CanBookmark(const Tab* tab) const {
          url.starts_with("file:");
 }
 
+void BrowserWindow::FaviconsChanged() {
+  if (bookmarks_bar_ && bookmarks_bar_shown_) {
+    bookmarks_bar_->Redraw();
+  }
+}
+
+void BrowserWindow::OnTabFaviconStored(Tab& tab) {
+  if (FaviconCache* favicons = owner_.Favicons()) {
+    favicons->IconChanged(tab.profile(), tab.url());
+  }
+}
+
 void BrowserWindow::BookmarksChanged() {
   UpdateIndicators();
   UpdateBookmarksBar();
@@ -1008,7 +1020,7 @@ void BrowserWindow::UpdateBookmarksBar() {
     const Tab* tab = ActiveTab();
     bookmarks_bar_->Update(owner_.Bookmarks()->model(),
                            tab ? tab->profile() : owner_.DefaultProfile(),
-                           theme_, text_font_, icon_font_);
+                           theme_, text_font_, icon_font_, owner_.Favicons());
   }
   if (shown != bookmarks_bar_shown_) {
     bookmarks_bar_shown_ = shown;
@@ -1110,10 +1122,40 @@ void BrowserWindow::EditBookmark(BookmarkId id) {
 }
 
 void BrowserWindow::RemoveBookmark(BookmarkId id) {
-  if (BookmarkStore* store = owner_.Bookmarks()) {
-    // Undone from the bookmark manager (Ctrl+Z there), as on macOS.
-    store->Remove({id});
+  BookmarkStore* store = owner_.Bookmarks();
+  const BookmarkItem* item = store ? store->model().Find(id) : nullptr;
+  if (!item) {
+    return;
   }
+  const bool folder = item->folder;
+  store->Remove({id});
+  // From the bar's menu: the notice where the menu was.
+  POINT cursor = {};
+  GetCursorPos(&cursor);
+  OfferUndoRemove(folder ? L"Folder deleted" : L"Bookmark deleted",
+                  {cursor.x, cursor.y, cursor.x + 1, cursor.y + 1});
+}
+
+void BrowserWindow::OfferUndoRemove(const wchar_t* message,
+                                    const RECT& anchor) {
+  BookmarkStore* store = owner_.Bookmarks();
+  if (!store || !store->CanUndoRemove()) {
+    return;
+  }
+  std::weak_ptr<int> alive = alive_;
+  undo_notice_.Show(
+      window_, anchor, message, L"Undo",
+      [this, alive] {
+        if (alive.expired()) {
+          return;
+        }
+        // Also undone on the manager page (Ctrl+Z), as on macOS.
+        if (BookmarkStore* current = owner_.Bookmarks();
+            current && current->CanUndoRemove()) {
+          current->UndoRemove();
+        }
+      },
+      theme_, text_font_);
 }
 
 void BrowserWindow::AddBookmark(BookmarkId folder, std::size_t index) {
@@ -1193,6 +1235,27 @@ void BrowserWindow::ShowBookmarkManager() {
   OpenInternalPage("brouk://bookmarks/");
 }
 
+void BrowserWindow::DropLink(const std::string& url,
+                             const std::string& title,
+                             BookmarkId parent,
+                             std::size_t index) {
+  BookmarkStore* store = owner_.Bookmarks();
+  if (!store || !store->model().Find(parent)) {
+    return;
+  }
+  const Tab* active = ActiveTab();
+  // Linked to the active tab's profile like other new bookmarks (011),
+  // unless the folder decides the profile.
+  const ProfileId profile =
+      active ? active->profile() : owner_.DefaultProfile();
+  store->Change([&](BookmarkModel& model) {
+    model.AddBookmark(
+        parent, index, title.empty() ? url : title, url,
+        model.EffectiveProfile(parent).empty() ? profile : ProfileId(),
+        NowSeconds());
+  });
+}
+
 void BrowserWindow::ToggleBookmarksBar() {
   owner_.SetBookmarksBarAlwaysShown(!owner_.BookmarksBarAlwaysShown());
 }
@@ -1243,8 +1306,15 @@ void BrowserWindow::BookmarkPage() {
       }
     });
   }
-  const BookmarkItem* item = store->model().Find(bookmark);
-  if (!item) {
+  ShowBookmarkBubble(bookmark, added, profile);
+}
+
+void BrowserWindow::ShowBookmarkBubble(BookmarkId bookmark,
+                                       bool added,
+                                       const ProfileId& profile) {
+  BookmarkStore* store = owner_.Bookmarks();
+  const BookmarkItem* item = store ? store->model().Find(bookmark) : nullptr;
+  if (!item || bookmark_dialog_) {
     MessageBeep(MB_OK);
     return;
   }
@@ -1259,10 +1329,17 @@ void BrowserWindow::BookmarkPage() {
   options.profiles = owner_.ProfileList();
   bookmark_dialog_ = std::make_unique<BookmarkDialog>(
       window_, *store, std::move(options), theme_, text_font_,
-      [this, store, bookmark](BookmarkDialog::Answer answer,
-                              const BookmarkDialogValues& values) {
+      [this, store, bookmark, profile](BookmarkDialog::Answer answer,
+                                       const BookmarkDialogValues& values) {
+        const bool new_folder = answer == BookmarkDialog::Answer::kNewFolder;
+        if (new_folder) {
+          answer = BookmarkDialog::Answer::kKeep;
+        }
         if (answer == BookmarkDialog::Answer::kRemove) {
           store->Remove({bookmark});
+          RECT star = {};
+          GetWindowRect(star_, &star);
+          OfferUndoRemove(L"Bookmark removed", star);
         } else if (answer == BookmarkDialog::Answer::kKeep &&
                    store->model().Find(bookmark)) {
           // Closing keeps the bookmark (011) with what was changed.
@@ -1285,8 +1362,63 @@ void BrowserWindow::BookmarkPage() {
           }
         }
         CloseBookmarkDialog();
+        if (new_folder) {
+          // After this dialog has closed.
+          std::weak_ptr<int> alive = alive_;
+          CefPostTask(TID_UI, new FunctionTask([this, alive, bookmark, profile,
+                                                values] {
+                        if (!alive.expired()) {
+                          AskNewFolderFor(bookmark, values, profile);
+                        }
+                      }));
+        }
       });
   bookmark_dialog_->ShowBelow(StarScreenRect());
+}
+
+// The bubble's "New folder…": the folder's name, parent and profile; the
+// bookmark goes into it and the bubble comes back, as on macOS.
+void BrowserWindow::AskNewFolderFor(BookmarkId bookmark,
+                                    const BookmarkDialogValues& values,
+                                    const ProfileId& profile) {
+  BookmarkStore* store = owner_.Bookmarks();
+  if (!store || !store->model().Find(bookmark)) {
+    return;
+  }
+  BookmarkDialog::Options options;
+  options.kind = BookmarkDialog::Kind::kNewFolder;
+  options.title = L"New folder";
+  options.values = {.name = "New folder",
+                    .url = "",
+                    .folder = values.folder,
+                    .profile = values.profile};
+  options.active_profile = profile;
+  options.profiles = owner_.ProfileList();
+  ShowBookmarkDialog(
+      std::move(options), StarScreenRect(),
+      [this, store, bookmark, profile](BookmarkDialog::Answer answer,
+                                       const BookmarkDialogValues& folder) {
+        if (answer == BookmarkDialog::Answer::kKeep &&
+            store->model().Find(bookmark)) {
+          store->Change([&](BookmarkModel& model) {
+            Result<BookmarkId> added = model.AddFolder(
+                folder.folder, BookmarkModel::kEnd,
+                folder.name.empty() ? "New folder" : folder.name,
+                folder.profile, NowSeconds());
+            if (added) {
+              model.Move(bookmark, added.value(), BookmarkModel::kEnd);
+              store->set_last_used_folder(added.value());
+            }
+          });
+        }
+        // Back to the bubble, also after Cancel.
+        std::weak_ptr<int> alive = alive_;
+        CefPostTask(TID_UI, new FunctionTask([this, alive, bookmark, profile] {
+                      if (!alive.expired()) {
+                        ShowBookmarkBubble(bookmark, false, profile);
+                      }
+                    }));
+      });
 }
 
 // Ctrl+Shift+D: the tabs of the active tab's profile into a new folder.
@@ -1382,10 +1514,24 @@ void BrowserWindow::AppendBookmarkMenu(HMENU menu,
                   MenuText(item->name).c_str());
       continue;
     }
-    AppendMenuW(menu, MF_STRING,
-                kFirstBookmarkCommand + static_cast<UINT>(ids.size()),
+    const UINT command = kFirstBookmarkCommand + static_cast<UINT>(ids.size());
+    AppendMenuW(menu, MF_STRING, command,
                 MenuText(item->name.empty() ? item->url : item->name).c_str());
     ids.push_back(child);
+    // The site's icon (011), kept until the menu closes.
+    if (FaviconCache* favicons = owner_.Favicons()) {
+      Favicon icon = favicons->CopyOf(
+          profile, item->url,
+          GetSystemMetricsForDpi(SM_CXSMICON, GetDpiForWindow(window_)));
+      if (!icon.empty()) {
+        MENUITEMINFOW info = {};
+        info.cbSize = sizeof(info);
+        info.fMask = MIIM_BITMAP;
+        info.hbmpItem = icon.bitmap();
+        SetMenuItemInfoW(menu, command, FALSE, &info);
+        menu_icons_.push_back(std::move(icon));
+      }
+    }
   }
   if (!any) {
     AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, L"(empty)");
@@ -1964,6 +2110,7 @@ void BrowserWindow::ShowAppMenu() {
       menu, TPM_RIGHTALIGN | TPM_TOPALIGN | TPM_RETURNCMD | TPM_NONOTIFY,
       button.right, button.bottom, window_, nullptr));
   DestroyMenu(menu);  // With its submenus.
+  menu_icons_.clear();
   if (command >= kFirstClosedCommand &&
       command - kFirstClosedCommand < closed_ids.size()) {
     owner_.ReopenClosed(closed_ids[command - kFirstClosedCommand]);

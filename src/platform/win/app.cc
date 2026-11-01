@@ -405,6 +405,12 @@ void App::OnContextInitialized() {
       [profiles_dir](const ProfileId& profile) {
         return profiles_dir / profile / "history.db";
       });
+  favicons_ = std::make_unique<FaviconCache>(history_.get());
+  favicons_->Watch([this] {
+    for (const std::unique_ptr<BrowserWindow>& window : windows_) {
+      window->FaviconsChanged();
+    }
+  });
   // Bookmarks (011), one file for the app, as on macOS.
   bookmarks_ =
       std::make_unique<BookmarkStore>(AppDataDirectory() / L"bookmarks.json");
@@ -727,7 +733,8 @@ void App::ReleaseBrowserObjects() {
   bookmarks_.reset();  // Writes pending changes.
   download_watchers_.clear();
   downloads_.reset();  // Before the history it records into.
-  history_.reset();    // Finishes queued history work, closes the databases.
+  favicons_.reset();
+  history_.reset();  // Finishes queued history work, closes the databases.
   contexts_.clear();
   internal_context_ = nullptr;
 }
@@ -809,6 +816,10 @@ std::unique_ptr<CefMessageRouterBrowserSide::Handler> App::InternalPageHandler(
 
 HistoryService* App::History() {
   return history_.get();
+}
+
+FaviconCache* App::Favicons() {
+  return favicons_.get();
 }
 
 void App::OnHistoryChanged(const ProfileId& profile) {

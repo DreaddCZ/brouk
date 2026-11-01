@@ -80,6 +80,7 @@ class App final : public BrowserWindowOwner,
       BrowserWindow& window,
       TabId tab) override;
   HistoryService* History() override;
+  FaviconCache* Favicons() override;
   void OnHistoryChanged(const ProfileId& profile) override;
   const std::vector<HistoryMatch>* RecentPages(
       const ProfileId& profile) override;
@@ -242,6 +243,7 @@ class App final : public BrowserWindowOwner,
   // History (013): one database per profile, on its own thread; each
   // profile's latest pages for the History menu, read after each visit.
   std::unique_ptr<HistoryService> history_;
+  std::unique_ptr<FaviconCache> favicons_;
   std::map<ProfileId, std::vector<HistoryMatch>> recent_pages_;
   // Hidden helper browsers still open (clearing data); Brouk quits after.
   int helper_browsers_ = 0;

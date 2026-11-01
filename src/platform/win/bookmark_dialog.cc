@@ -226,7 +226,16 @@ void BookmarkDialog::FillFolders(BookmarkId selected) {
       bar = index;
     }
   }
+  if (options_.kind == Kind::kBubble) {
+    // As Chrome's "Choose another folder…" and the macOS bubble. Its data
+    // is 0, which no folder has.
+    const auto index = static_cast<int>(
+        SendMessageW(folder_, CB_ADDSTRING, 0,
+                     reinterpret_cast<LPARAM>(L"New folder\u2026")));
+    SendMessageW(folder_, CB_SETITEMDATA, index, 0);
+  }
   SendMessageW(folder_, CB_SETCURSEL, select >= 0 ? select : bar, 0);
+  chosen_folder_ = Values().folder;
 }
 
 void BookmarkDialog::UpdateProfile() {
@@ -253,6 +262,9 @@ BookmarkDialogValues BookmarkDialog::Values() const {
   if (folder != CB_ERR) {
     values.folder = static_cast<BookmarkId>(
         SendMessageW(folder_, CB_GETITEMDATA, static_cast<WPARAM>(folder), 0));
+    if (values.folder == 0) {
+      values.folder = chosen_folder_;  // "New folder…".
+    }
   }
   const LRESULT profile = SendMessageW(profile_, CB_GETCURSEL, 0, 0);
   if (profile != CB_ERR && profile > 0 &&
@@ -366,6 +378,16 @@ LRESULT BookmarkDialog::HandleMessage(UINT message,
           return 0;
         case kFolderId:
           if (HIWORD(wparam) == CBN_SELCHANGE) {
+            const LRESULT index = SendMessageW(folder_, CB_GETCURSEL, 0, 0);
+            if (index != CB_ERR &&
+                SendMessageW(folder_, CB_GETITEMDATA,
+                             static_cast<WPARAM>(index), 0) == 0) {
+              // Closes the drop-down first; the owner asks for the name.
+              SendMessageW(folder_, CB_SHOWDROPDOWN, FALSE, 0);
+              Finish(Answer::kNewFolder);
+              return 0;
+            }
+            chosen_folder_ = Values().folder;
             UpdateProfile();
           }
           return 0;
