@@ -2912,7 +2912,7 @@ void BrowserWindow::OpenPageFromTab(TabId from,
   if (!source || source->closing() || source->profile() != profile) {
     // Another profile: its window is chosen as for a link (010), with the
     // picker's window step when its group is in several windows.
-    if (LinkRouting* routing = owner_.Routing()) {
+    if (LinkRoutingController* routing = owner_.Routing()) {
       routing->OpenUrlInProfile(url, profile, source_name, this, !new_tab,
                                 bookmark);
       return;
@@ -3564,7 +3564,7 @@ void BrowserWindow::NavigateActiveTab(const std::string& url, bool typed) {
   // An address typed (or chosen from the suggestions) in a new tab is
   // routed like a link (010); in a tab already in use it stays in its
   // profile.
-  if (LinkRouting* routing = owner_.Routing();
+  if (LinkRoutingController* routing = owner_.Routing();
       routing && tab->unused() &&
       routing->RouteUrl(url, LinkSource::kTypedNewTab, *this, tab->id(),
                         true)) {
@@ -3630,7 +3630,7 @@ void BrowserWindow::CloseTabIfUnused(TabId id) {
 }
 
 bool BrowserWindow::RouteTabFirstNavigation(Tab& tab, const std::string& url) {
-  LinkRouting* routing = owner_.Routing();
+  LinkRoutingController* routing = owner_.Routing();
   if (!routing || !routing->RouteUrl(url, LinkSource::kNewTab, *this, tab.id(),
                                      ActiveTab() == &tab)) {
     return false;
@@ -3895,7 +3895,7 @@ std::optional<PopupHost> BrowserWindow::OnTabPopup(
   const bool blank =
       request.target_url.empty() || request.target_url == "about:blank";
   const bool foreground = request.disposition != CEF_WOD_NEW_BACKGROUND_TAB;
-  if (LinkRouting* routing = owner_.Routing();
+  if (LinkRoutingController* routing = owner_.Routing();
       routing && !request.wants_popup_window && !blank &&
       routing->RouteUrl(request.target_url, LinkSource::kNewTab, *this,
                         opener.id(), foreground)) {
@@ -3935,7 +3935,7 @@ void BrowserWindow::OpenUrlFromTab(Tab& opener,
                                    const std::string& url,
                                    OpenDisposition disposition) {
   // Ctrl-click, middle-click, "Open link in new tab": routed (010).
-  if (LinkRouting* routing = owner_.Routing();
+  if (LinkRoutingController* routing = owner_.Routing();
       routing &&
       routing->RouteUrl(url, LinkSource::kNewTab, *this, opener.id(),
                         disposition != OpenDisposition::kNewBackgroundTab)) {

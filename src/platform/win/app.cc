@@ -583,7 +583,7 @@ void App::OnContextInitialized() {
       AppDataDirectory() / L"autofill.db",
       CreateCredentialStore(CredentialPrefix()));
   // Link routing (010): the rules in <data>\link-routing.yaml.
-  routing_ = std::make_unique<LinkRouting>(
+  routing_ = std::make_unique<LinkRoutingController>(
       *this, AppDataDirectory() / L"link-routing.yaml");
   ApplySettings();
   // Changes made in the files apply while Brouk runs (004).
@@ -2184,7 +2184,7 @@ std::optional<Error> App::SetLinkRouting(LinkRoutingConfig config) {
                   : std::optional<Error>(Error{"Brouk is closing."});
 }
 
-LinkRouting* App::Routing() {
+LinkRoutingController* App::Routing() {
   return quitting_ ? nullptr : routing_.get();
 }
 

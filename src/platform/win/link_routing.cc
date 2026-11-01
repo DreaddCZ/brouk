@@ -33,17 +33,17 @@ Microsoft::WRL::ComPtr<IVirtualDesktopManager> DesktopManager() {
 
 }  // namespace
 
-LinkRouting::LinkRouting(LinkRoutingHost& host,
-                         std::filesystem::path config_file)
+LinkRoutingController::LinkRoutingController(LinkRoutingHost& host,
+                                             std::filesystem::path config_file)
     : host_(host),
       path_(std::move(config_file)),
       resolver_([this](int delta) { host_.RoutingBrowserCount(delta); }) {
   Reload();
 }
 
-LinkRouting::~LinkRouting() = default;
+LinkRoutingController::~LinkRoutingController() = default;
 
-void LinkRouting::Reload() {
+void LinkRoutingController::Reload() {
   problems_.clear();
   config_ = LoadLinkRouting(path_, problems_);
   for (const std::string& problem : problems_) {
@@ -51,7 +51,8 @@ void LinkRouting::Reload() {
   }
 }
 
-std::optional<Error> LinkRouting::SetConfig(LinkRoutingConfig config) {
+std::optional<Error> LinkRoutingController::SetConfig(
+    LinkRoutingConfig config) {
   if (std::optional<Error> error = SaveLinkRouting(path_, config)) {
     return error;
   }
@@ -62,7 +63,7 @@ std::optional<Error> LinkRouting::SetConfig(LinkRoutingConfig config) {
 
 // Entry points.
 
-void LinkRouting::OpenExternalUrl(const std::string& url) {
+void LinkRoutingController::OpenExternalUrl(const std::string& url) {
   Request request;
   request.url = url;
   request.source = LinkSource::kOtherApp;
@@ -73,11 +74,11 @@ void LinkRouting::OpenExternalUrl(const std::string& url) {
   Enqueue(std::move(request));
 }
 
-bool LinkRouting::RouteUrl(const std::string& url,
-                           LinkSource source,
-                           BrowserWindow& window,
-                           TabId tab,
-                           bool foreground) {
+bool LinkRoutingController::RouteUrl(const std::string& url,
+                                     LinkSource source,
+                                     BrowserWindow& window,
+                                     TabId tab,
+                                     bool foreground) {
   Request request;
   request.url = url;
   request.source = source;
@@ -101,12 +102,12 @@ bool LinkRouting::RouteUrl(const std::string& url,
   return true;
 }
 
-void LinkRouting::OpenUrlInProfile(const std::string& url,
-                                   const ProfileId& profile,
-                                   const std::wstring& source_name,
-                                   BrowserWindow* window,
-                                   bool foreground,
-                                   bool bookmark) {
+void LinkRoutingController::OpenUrlInProfile(const std::string& url,
+                                             const ProfileId& profile,
+                                             const std::wstring& source_name,
+                                             BrowserWindow* window,
+                                             bool foreground,
+                                             bool bookmark) {
   Request request;
   request.url = url;
   request.real_url = url;
@@ -123,7 +124,7 @@ void LinkRouting::OpenUrlInProfile(const std::string& url,
   EnqueueResolved(std::move(request));
 }
 
-void LinkRouting::CancelPending() {
+void LinkRoutingController::CancelPending() {
   queue_.clear();
   resolver_.CancelAll();
   picker_.Cancel();
@@ -131,7 +132,7 @@ void LinkRouting::CancelPending() {
 
 // Routing.
 
-void LinkRouting::Enqueue(Request request) {
+void LinkRoutingController::Enqueue(Request request) {
   if (picker_.visible()) {
     queue_.push_back(std::move(request));
     return;
@@ -139,7 +140,7 @@ void LinkRouting::Enqueue(Request request) {
   Process(std::move(request));
 }
 
-void LinkRouting::EnqueueResolved(Request request) {
+void LinkRoutingController::EnqueueResolved(Request request) {
   if (picker_.visible()) {
     queue_.push_back(std::move(request));
     return;
@@ -148,7 +149,7 @@ void LinkRouting::EnqueueResolved(Request request) {
 }
 
 // The picker closed: the next waiting link.
-void LinkRouting::ProcessNext() {
+void LinkRoutingController::ProcessNext() {
   while (!queue_.empty() && !picker_.visible()) {
     Request next = std::move(queue_.front());
     queue_.pop_front();
@@ -160,7 +161,7 @@ void LinkRouting::ProcessNext() {
   }
 }
 
-void LinkRouting::Process(Request request) {
+void LinkRoutingController::Process(Request request) {
   const UnwrappedLink link = UnwrapLink(request.url, config_.wrappers);
   request.wrapper = link.wrapper;
   if (link.kind == UnwrappedLink::Kind::kOpaque) {
@@ -187,8 +188,9 @@ void LinkRouting::Process(Request request) {
   Route(std::move(request));
 }
 
-ProfileDecision LinkRouting::DecideProfileFor(const Request& request,
-                                              const std::string& real_url) {
+ProfileDecision LinkRoutingController::DecideProfileFor(
+    const Request& request,
+    const std::string& real_url) {
   std::vector<ProfileId> existing;
   for (const ProfileInfo& info : host_.RoutingProfiles()) {
     existing.push_back(info.id);
@@ -198,7 +200,7 @@ ProfileDecision LinkRouting::DecideProfileFor(const Request& request,
                        existing);
 }
 
-void LinkRouting::Route(Request request) {
+void LinkRoutingController::Route(Request request) {
   ProfileDecision decision;
   if (!request.known_profile.empty()) {
     decision.profiles.push_back(request.known_profile);
@@ -224,8 +226,8 @@ void LinkRouting::Route(Request request) {
 // One line in Brouk's log per routed link, so a link that opens in an
 // unexpected profile can be explained. Never query values: LinkForLog
 // leaves them out.
-void LinkRouting::LogRouting(const Request& request,
-                             const ProfileDecision& decision) {
+void LinkRoutingController::LogRouting(const Request& request,
+                                       const ProfileDecision& decision) {
   std::string profiles;
   for (const ProfileId& profile : decision.profiles) {
     profiles += (profiles.empty() ? "" : ", ") + profile;
@@ -240,7 +242,7 @@ void LinkRouting::LogRouting(const Request& request,
             << ": " << rule << " -> " << profiles;
 }
 
-bool LinkRouting::OnCurrentDesktop(HWND window) {
+bool LinkRoutingController::OnCurrentDesktop(HWND window) {
   static const Microsoft::WRL::ComPtr<IVirtualDesktopManager> manager =
       DesktopManager();
   BOOL current = TRUE;
@@ -251,8 +253,8 @@ bool LinkRouting::OnCurrentDesktop(HWND window) {
   return current != FALSE;
 }
 
-WindowDecision LinkRouting::DecideWindowFor(const ProfileId& profile,
-                                            const Request& request) {
+WindowDecision LinkRoutingController::DecideWindowFor(const ProfileId& profile,
+                                                      const Request& request) {
   std::vector<RoutingWindow> windows;
   for (BrowserWindow* window : host_.RoutingWindows()) {
     RoutingWindow entry;
@@ -268,7 +270,7 @@ WindowDecision LinkRouting::DecideWindowFor(const ProfileId& profile,
   return DecideWindow(profile, host_.RoutingDefaultProfile(), windows);
 }
 
-BrowserWindow* LinkRouting::WindowWithId(std::int64_t id) {
+BrowserWindow* LinkRoutingController::WindowWithId(std::int64_t id) {
   for (BrowserWindow* window : host_.RoutingWindows()) {
     if (window->window_id() == id) {
       return window;
@@ -279,7 +281,8 @@ BrowserWindow* LinkRouting::WindowWithId(std::int64_t id) {
 
 // The picker.
 
-void LinkRouting::ShowPicker(Request request, const ProfileDecision& decision) {
+void LinkRoutingController::ShowPicker(Request request,
+                                       const ProfileDecision& decision) {
   std::vector<LinkPickerProfile> profiles;
   for (const ProfileId& id : decision.profiles) {
     LinkPickerProfile profile;
@@ -317,7 +320,7 @@ void LinkRouting::ShowPicker(Request request, const ProfileDecision& decision) {
 }
 
 // The windows to offer for `profile`; empty when routing decides alone.
-std::vector<LinkPickerWindow> LinkRouting::PickerWindowsFor(
+std::vector<LinkPickerWindow> LinkRoutingController::PickerWindowsFor(
     const ProfileId& profile,
     const Request& request) {
   std::vector<LinkPickerWindow> windows;
@@ -353,9 +356,10 @@ std::vector<LinkPickerWindow> LinkRouting::PickerWindowsFor(
   return windows;
 }
 
-void LinkRouting::PickerDone(const LinkPickerResult& result,
-                             const Request& request,
-                             const std::optional<std::string>& pattern) {
+void LinkRoutingController::PickerDone(
+    const LinkPickerResult& result,
+    const Request& request,
+    const std::optional<std::string>& pattern) {
   if (!result.cancelled) {
     if (result.always && pattern) {
       LinkRoutingConfig config = config_;
@@ -391,7 +395,7 @@ void LinkRouting::PickerDone(const LinkPickerResult& result,
 // Opening.
 
 // The link stays in its source tab's profile, as without routing.
-void LinkRouting::OpenInSource(const Request& request) {
+void LinkRoutingController::OpenInSource(const Request& request) {
   BrowserWindow* window =
       host_.IsRoutingWindow(request.window) ? request.window : nullptr;
   if (!window) {
@@ -408,9 +412,9 @@ void LinkRouting::OpenInSource(const Request& request) {
                            request.source_profile, request.foreground);
 }
 
-void LinkRouting::Open(const Request& request,
-                       const ProfileId& profile,
-                       const WindowDecision& windows) {
+void LinkRoutingController::Open(const Request& request,
+                                 const ProfileId& profile,
+                                 const WindowDecision& windows) {
   BrowserWindow* target = nullptr;
   switch (windows.kind) {
     case WindowDecision::Kind::kWindow:
@@ -450,7 +454,7 @@ void LinkRouting::Open(const Request& request,
 
 // Brings `window` to the front. On another virtual desktop Windows
 // switches there, or (setting) the window moves to the current desktop.
-void LinkRouting::BringToFront(BrowserWindow& window) {
+void LinkRoutingController::BringToFront(BrowserWindow& window) {
   HWND hwnd = window.hwnd();
   if (!OnCurrentDesktop(hwnd) && host_.MoveChosenWindowHere()) {
     static const Microsoft::WRL::ComPtr<IVirtualDesktopManager> manager =

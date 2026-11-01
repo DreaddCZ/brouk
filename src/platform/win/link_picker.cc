@@ -106,10 +106,10 @@ void LinkPicker::Show(const std::wstring& url,
                       HMONITOR monitor,
                       Done done) {
   if (visible()) {
-    Finish({.cancelled = true});
+    Finish(LinkPickerResult{.cancelled = true, .profile = {}});
   }
   if (!RegisterWindowClass()) {
-    done({.cancelled = true});
+    done(LinkPickerResult{.cancelled = true, .profile = {}});
     return;
   }
   if (!window_) {
@@ -118,7 +118,7 @@ void LinkPicker::Show(const std::wstring& url,
                         L"Open link", WS_POPUP | WS_BORDER, 0, 0, 0, 0, nullptr,
                         nullptr, GetModuleHandleW(nullptr), nullptr);
     if (!window_) {
-      done({.cancelled = true});
+      done(LinkPickerResult{.cancelled = true, .profile = {}});
       return;
     }
     SetWindowLongPtrW(window_, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
@@ -139,11 +139,11 @@ void LinkPicker::Show(const std::wstring& url,
   } else if (profiles_.size() == 1) {
     chosen_ = profiles_.front().id;
     if (!ShowWindowStep()) {
-      Finish({.profile = chosen_});
+      Finish(LinkPickerResult{.cancelled = false, .profile = chosen_});
       return;
     }
   } else {
-    Finish({.cancelled = true});
+    Finish(LinkPickerResult{.cancelled = true, .profile = {}});
     return;
   }
   // Centred on the screen the user is looking at, a little above the
@@ -170,7 +170,7 @@ void LinkPicker::Show(const std::wstring& url,
 
 void LinkPicker::Cancel() {
   if (visible()) {
-    Finish({.cancelled = true});
+    Finish(LinkPickerResult{.cancelled = true, .profile = {}});
   }
 }
 
@@ -579,7 +579,7 @@ LRESULT LinkPicker::HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) {
         if (window_step_ && profiles_.size() > 1) {
           Back();
         } else {
-          Finish({.cancelled = true});
+          Finish(LinkPickerResult{.cancelled = true, .profile = {}});
         }
       } else if (key == 'A' && always_rect_.right > always_rect_.left) {
         always_ = !always_;
@@ -604,7 +604,7 @@ LRESULT LinkPicker::HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) {
     case WM_LBUTTONUP: {
       const POINT point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
       if (PtInRect(&cancel_rect_, point)) {
-        Finish({.cancelled = true});
+        Finish(LinkPickerResult{.cancelled = true, .profile = {}});
       } else if (PtInRect(&back_rect_, point)) {
         Back();
       } else if (PtInRect(&always_rect_, point)) {
@@ -620,7 +620,7 @@ LRESULT LinkPicker::HandleMessage(UINT message, WPARAM wparam, LPARAM lparam) {
       Layout();
       return 0;
     case WM_CLOSE:
-      Finish({.cancelled = true});
+      Finish(LinkPickerResult{.cancelled = true, .profile = {}});
       return 0;
     default:
       break;

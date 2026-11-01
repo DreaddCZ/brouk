@@ -64,7 +64,7 @@ class App final : public BrowserWindowOwner,
   // content.json_viewer (006), for new renderer processes.
   bool JsonViewerEnabled() const;
   // Link routing (010), for the windows (BrowserWindowOwner).
-  LinkRouting* Routing() override;
+  LinkRoutingController* Routing() override;
   // LinkRoutingHost:
   ProfileId RoutingDefaultProfile() override;
   const std::vector<ProfileInfo>& RoutingProfiles() override;
@@ -337,7 +337,7 @@ class App final : public BrowserWindowOwner,
   std::vector<std::unique_ptr<DevToolsWindow>> devtools_windows_;
   // Link routing (010): the rules file, the picker and the resolver; made
   // when CEF is ready.
-  std::unique_ptr<LinkRouting> routing_;
+  std::unique_ptr<LinkRoutingController> routing_;
   // Bookmarks (011), for the whole app; made when CEF is ready.
   std::unique_ptr<BookmarkStore> bookmarks_;
   // Downloads (014): every download of the app, recorded in the history;

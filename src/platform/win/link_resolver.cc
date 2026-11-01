@@ -9,6 +9,7 @@
 
 #include "cef/function_task.h"
 #include "include/cef_request_context.h"
+#include "include/cef_request_context_handler.h"
 #include "include/cef_task.h"
 #include "include/wrapper/cef_helpers.h"
 #include "platform/win/data_paths.h"

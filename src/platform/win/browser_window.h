@@ -49,7 +49,7 @@ namespace brouk::win {
 class BrowserWindow;
 
 // The app, as the browser windows see it. UI thread.
-class LinkRouting;
+class LinkRoutingController;
 
 class BrowserWindowOwner {
  public:
@@ -108,7 +108,7 @@ class BrowserWindowOwner {
   // or closed (-1), as Brouk quits after all have closed; DevTools in a
   // window of its own for one of Brouk's pages.
   // Link routing (010); null before CEF is ready.
-  virtual LinkRouting* Routing() = 0;
+  virtual LinkRoutingController* Routing() = 0;
   virtual DevToolsPreferences* DevToolsPrefs() = 0;
   virtual std::string DockPosition() = 0;
   virtual int DockSize() = 0;

@@ -49,12 +49,13 @@ class LinkRoutingHost {
 // the user has to choose, and opens it there. Owns the rules file
 // (link-routing.yaml). Windows take the place of macOS Spaces' virtual
 // desktops (IVirtualDesktopManager). UI thread.
-class LinkRouting {
+class LinkRoutingController {
  public:
-  LinkRouting(LinkRoutingHost& host, std::filesystem::path config_file);
-  ~LinkRouting();
-  LinkRouting(const LinkRouting&) = delete;
-  LinkRouting& operator=(const LinkRouting&) = delete;
+  LinkRoutingController(LinkRoutingHost& host,
+                        std::filesystem::path config_file);
+  ~LinkRoutingController();
+  LinkRoutingController(const LinkRoutingController&) = delete;
+  LinkRoutingController& operator=(const LinkRoutingController&) = delete;
 
   // Reads the rules file again (it changed, or at start).
   void Reload();
