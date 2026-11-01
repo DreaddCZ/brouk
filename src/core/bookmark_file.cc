@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "core/json.h"
+#include "core/utf8_path.h"
 
 namespace brouk {
 
@@ -29,24 +30,24 @@ Result<BookmarkModel> Read(const std::filesystem::path& path) {
   std::error_code error;
   std::uintmax_t size = std::filesystem::file_size(path, error);
   if (error) {
-    return Error{"cannot read " + path.string() + ": " + error.message()};
+    return Error{"cannot read " + PathToUtf8(path) + ": " + error.message()};
   }
   if (size > kMaxFileBytes) {
-    return Error{path.string() + " is too large"};
+    return Error{PathToUtf8(path) + " is too large"};
   }
   std::ifstream file(path, std::ios::binary);
   std::string text((std::istreambuf_iterator<char>(file)),
                    std::istreambuf_iterator<char>());
   if (!file && !file.eof()) {
-    return Error{"cannot read " + path.string()};
+    return Error{"cannot read " + PathToUtf8(path)};
   }
   Result<JsonValue> json = ParseJsonDocument(text);
   if (!json) {
-    return Error{path.string() + ": " + json.error().message};
+    return Error{PathToUtf8(path) + ": " + json.error().message};
   }
   Result<BookmarkModel> model = BookmarkModel::FromJson(json.value());
   if (!model) {
-    return Error{path.string() + ": " + model.error().message};
+    return Error{PathToUtf8(path) + ": " + model.error().message};
   }
   return model;
 }
@@ -65,7 +66,7 @@ LoadedBookmarks LoadBookmarks(const std::filesystem::path& path) {
     Result<BookmarkModel> from_backup = Read(backup);
     if (from_backup) {
       return {.model = std::move(from_backup).value(),
-              .problem = path.string() + " is missing; using the backup"};
+              .problem = PathToUtf8(path) + " is missing; using the backup"};
     }
     return {.model = BookmarkModel(), .problem = from_backup.error().message};
   }
@@ -87,7 +88,7 @@ std::optional<Error> SaveBookmarks(const std::filesystem::path& path,
   std::error_code error;
   std::filesystem::create_directories(path.parent_path(), error);
   if (error) {
-    return Error{"cannot create " + path.parent_path().string() + ": " +
+    return Error{"cannot create " + PathToUtf8(path.parent_path()) + ": " +
                  error.message()};
   }
   std::filesystem::path temp = WithSuffix(path, ".tmp");
@@ -97,7 +98,7 @@ std::optional<Error> SaveBookmarks(const std::filesystem::path& path,
     file.close();
     if (!file) {
       std::filesystem::remove(temp, error);
-      return Error{"cannot write " + temp.string()};
+      return Error{"cannot write " + PathToUtf8(temp)};
     }
   }
   std::filesystem::permissions(
@@ -111,14 +112,15 @@ std::optional<Error> SaveBookmarks(const std::filesystem::path& path,
     if (error) {
       std::error_code ignored;
       std::filesystem::remove(temp, ignored);
-      return Error{"cannot keep " + backup.string() + ": " + error.message()};
+      return Error{"cannot keep " + PathToUtf8(backup) + ": " +
+                   error.message()};
     }
   }
   std::filesystem::rename(temp, path, error);
   if (error) {
     std::error_code ignored;
     std::filesystem::remove(temp, ignored);
-    return Error{"cannot replace " + path.string() + ": " + error.message()};
+    return Error{"cannot replace " + PathToUtf8(path) + ": " + error.message()};
   }
   return std::nullopt;
 }

@@ -1,4 +1,5 @@
 #include "core/history_sql.h"
+#include "core/utf8_path.h"
 
 #include <sqlite3.h>
 
@@ -37,7 +38,7 @@ using Statement = std::unique_ptr<sqlite3_stmt, FinalizeStatement>;
 // is percent-encoded.
 std::string ReadOnlyUri(const std::filesystem::path& path) {
   std::string uri = "file:";
-  for (unsigned char c : path.string()) {
+  for (unsigned char c : PathToUtf8(path)) {
     if (std::isalnum(c) != 0 || c == '/' || c == '.' || c == '-' || c == '_' ||
         c == '~') {
       uri += static_cast<char>(c);

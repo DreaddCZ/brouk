@@ -12,6 +12,7 @@
 #include "cef/function_task.h"
 #include "core/crypto.h"
 #include "core/process_runner.h"
+#include "core/utf8_path.h"
 #include "include/cef_task.h"
 #include "include/wrapper/cef_helpers.h"
 
@@ -43,7 +44,7 @@ bool IsExecutableFile(const std::filesystem::path& path) {
   }
 #if defined(_WIN32)
   // Windows has no execute permission; RunProcess runs .exe files only.
-  std::string extension = path.extension().string();
+  std::string extension = PathToUtf8(path.extension());
   std::ranges::transform(extension, extension.begin(), [](unsigned char c) {
     return static_cast<char>(std::tolower(c));
   });

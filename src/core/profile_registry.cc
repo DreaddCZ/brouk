@@ -12,6 +12,7 @@
 #include "core/settings_file.h"
 #include "core/settings_schema.h"
 #include "core/shortcuts.h"
+#include "core/utf8_path.h"
 
 namespace brouk {
 
@@ -85,7 +86,7 @@ void ProfileRegistry::Load() {
     if (!it->is_directory(error)) {
       continue;
     }
-    std::string id = it->path().filename().string();
+    std::string id = PathToUtf8(it->path().filename());
     if (!IsValidProfileId(id)) {
       problems_.push_back(std::string(kProfilesDir) + "/" + id +
                           ": not a profile folder name (ignored)");
@@ -342,7 +343,7 @@ int ProfileRegistry::RemoveWebDataOfDeletedProfiles(
   std::vector<std::filesystem::path> orphans;
   for (std::filesystem::directory_iterator it(web_root, error), end;
        !error && it != end; it.increment(error)) {
-    std::string name = it->path().filename().string();
+    std::string name = PathToUtf8(it->path().filename());
     if (IsGeneratedProfileId(name) && !Find(name) && it->is_directory(error)) {
       orphans.push_back(it->path());
     }

@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "core/profile_id.h"
+#include "core/utf8_path.h"
 #include "core/yaml_io.h"
 
 namespace brouk {
@@ -200,7 +201,7 @@ Result<Session> LoadSession(const std::filesystem::path& path) {
   std::string text((std::istreambuf_iterator<char>(file)),
                    std::istreambuf_iterator<char>());
   if (!file && !file.eof()) {
-    return Error{"Could not read " + path.string()};
+    return Error{"Could not read " + PathToUtf8(path)};
   }
   Result<YamlNode> root = ParseYaml(text);
   if (!root) {
@@ -222,7 +223,7 @@ std::optional<Error> SaveSession(const std::filesystem::path& path,
     file.close();
     if (!file) {
       std::filesystem::remove(temp, error);
-      return Error{"cannot write " + temp.string()};
+      return Error{"cannot write " + PathToUtf8(temp)};
     }
   }
   std::filesystem::permissions(
@@ -233,7 +234,7 @@ std::optional<Error> SaveSession(const std::filesystem::path& path,
   if (error) {
     std::error_code ignored;
     std::filesystem::remove(temp, ignored);
-    return Error{"cannot replace " + path.string() + ": " + error.message()};
+    return Error{"cannot replace " + PathToUtf8(path) + ": " + error.message()};
   }
   return std::nullopt;
 }

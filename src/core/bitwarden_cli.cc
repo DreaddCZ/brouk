@@ -5,6 +5,7 @@
 
 #include "core/crypto.h"
 #include "core/json.h"
+#include "core/utf8_path.h"
 
 namespace brouk {
 
@@ -92,7 +93,7 @@ std::optional<std::filesystem::path> FindBitwardenCli(
     std::string_view search_path,
     const std::function<bool(const std::filesystem::path&)>& exists) {
   if (!Trim(setting).empty()) {
-    std::filesystem::path path(Trim(setting));
+    std::filesystem::path path = PathFromUtf8(Trim(setting));
     if (exists(path)) {
       return path;
     }
@@ -104,8 +105,9 @@ std::optional<std::filesystem::path> FindBitwardenCli(
     std::size_t end = search_path.find(kPathSeparator);
     std::string_view folder = search_path.substr(0, end);
     // Relative folders would depend on Brouk's working folder.
-    if (!folder.empty() && std::filesystem::path(folder).is_absolute()) {
-      folders.emplace_back(folder);
+    if (std::filesystem::path path = PathFromUtf8(folder);
+        !folder.empty() && path.is_absolute()) {
+      folders.push_back(std::move(path));
     }
     if (end == std::string_view::npos) {
       break;
@@ -140,12 +142,12 @@ Result<std::string> BitwardenCli::Run(
   }
   if (!certificates_.empty()) {
     request.environment.emplace_back("NODE_EXTRA_CA_CERTS",
-                                     certificates_.string());
+                                     PathToUtf8(certificates_));
   }
   // A `bw` installed with npm starts with "#!/usr/bin/env node": node is
   // usually next to it. Brouk itself starts with a minimal PATH.
   request.environment.emplace_back(
-      "PATH", program_.parent_path().string() +
+      "PATH", PathToUtf8(program_.parent_path()) +
                   ":/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin");
   request.input = std::move(input);
   request.timeout =

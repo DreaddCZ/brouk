@@ -1,4 +1,5 @@
 #include "core/sqlite_db.h"
+#include "core/utf8_path.h"
 
 #include <sqlite3.h>
 
@@ -18,13 +19,13 @@ Result<std::unique_ptr<SqliteDatabase>> SqliteDatabase::Open(
     const std::filesystem::path& path) {
   sqlite3* db = nullptr;
   int status = sqlite3_open_v2(
-      path.string().c_str(), &db,
+      PathToUtf8(path).c_str(), &db,
       SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX,
       nullptr);
   if (status != SQLITE_OK) {
     std::string message = db ? sqlite3_errmsg(db) : sqlite3_errstr(status);
     sqlite3_close(db);
-    return Error{"Could not open " + path.string() + ": " + message};
+    return Error{"Could not open " + PathToUtf8(path) + ": " + message};
   }
   // Waits a little instead of failing if another connection holds a lock.
   sqlite3_busy_timeout(db, 2000);
