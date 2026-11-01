@@ -100,6 +100,25 @@ class BrowserWindowOwner {
   // Ad blocking (007): the app's service (null before CEF is ready), a site
   // on or off a profile's allowlist, a rule added to My filters.
   virtual AdblockService* Adblock() = 0;
+  // Developer tools (006): where DevTools keeps its settings; the dock's
+  // place and size (DIPs) and the toggle's side, from the settings; the
+  // secret header names; a profile's request rules; browsers opened (+1)
+  // or closed (-1), as Brouk quits after all have closed; DevTools in a
+  // window of its own for one of Brouk's pages.
+  virtual DevToolsPreferences* DevToolsPrefs() = 0;
+  virtual std::string DockPosition() = 0;
+  virtual int DockSize() = 0;
+  virtual void SetDockPosition(const std::string& position) = 0;
+  virtual void SetDockSize(int size) = 0;
+  virtual bool DevToolsToggleOnLeft() = 0;
+  virtual std::string SecretHeaderNames() = 0;
+  virtual ToolsHost::Rules RequestRules(const ProfileId& profile) = 0;
+  virtual std::optional<Error> SetRequestRules(const ProfileId& profile,
+                                               RequestRuleSet rules) = 0;
+  virtual void BrowserCount(int delta) = 0;
+  virtual void InspectPage(CefRefPtr<CefBrowser> page,
+                           const std::wstring& title,
+                           std::optional<POINT> at) = 0;
   virtual void SetAdblockSite(const std::string& host,
                               bool allowed,
                               const ProfileId& profile) = 0;
@@ -317,6 +336,26 @@ class BrowserWindow final : public TabHost,
                              PasswordPromptDone done) override;
   void OnTabPasswordIconChanged(Tab& tab) override;
   void OpenTabPasswordsPage(Tab& tab) override;
+  CefRefPtr<CefRequestContext> TabDevToolsContext() override;
+  DevToolsPreferences* TabDevToolsPreferences() override;
+  std::string TabDockPosition() override;
+  int TabDockSize() override;
+  void SetTabDockPosition(const std::string& position) override;
+  void SetTabDockSize(int size) override;
+  std::string TabSecretHeaderNames() override;
+  ToolsHost::Rules TabRequestRules(const ProfileId& profile) override;
+  std::optional<Error> SetTabRequestRules(const ProfileId& profile,
+                                          RequestRuleSet rules) override;
+  void OnTabDevToolsChanged(Tab& tab) override;
+  void TabBrowserCount(int delta) override;
+  void InspectPage(CefRefPtr<CefBrowser> page,
+                   const std::wstring& title,
+                   std::optional<POINT> at) override;
+  // Developer tools (006): the settings changed (dock place, the toggle's
+  // side); a profile's request rules changed.
+  void ApplyDevToolsSettings();
+  void RequestRulesChanged(const ProfileId& profile,
+                           const RequestRuleSet& rules);
   AdblockService* TabAdblock() override;
   void OnTabAdblockChanged(Tab& tab) override;
   std::string TabAdblockListName(const std::string& list_id) override;
@@ -415,6 +454,10 @@ class BrowserWindow final : public TabHost,
   // dimmed when blocking is off for the site; hidden where there is
   // nothing to block. A click opens its popup.
   void UpdateShield();
+  // Developer tools (006): the toolbar's toggle, accent when on, orange
+  // when a request rule changed the page.
+  void UpdateDevToolsToggle();
+  void DrawDevToolsToggle(const DRAWITEMSTRUCT& item);
   void DrawShieldButton(const DRAWITEMSTRUCT& item);
   void ShowAdblockPopup();
   bool AdblockSiteEnabled(const Tab* tab) const;
@@ -539,6 +582,8 @@ class BrowserWindow final : public TabHost,
   // Ad blocking (007): the shield button, its popup, and the blocked
   // requests window.
   HWND shield_ = nullptr;
+  HWND devtools_ = nullptr;  // The developer tools toggle (006).
+  bool devtools_on_left_ = false;
   AdblockPopup adblock_popup_{*this};
   std::unique_ptr<AdblockRequestsWindow> adblock_requests_;
   std::unique_ptr<BookmarksBar> bookmarks_bar_;

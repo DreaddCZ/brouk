@@ -40,6 +40,8 @@
 #include "core/password_profile.h"
 #include "core/password_store.h"
 #include "core/profile_export.h"
+#include "core/profile_id.h"
+#include "core/request_rules.h"
 #include "core/search_engines.h"
 #include "core/settings_export.h"
 #include "core/text_file.h"
@@ -54,6 +56,7 @@
 #include "platform/win/controls.h"
 #include "platform/win/credential_store.h"
 #include "platform/win/data_paths.h"
+#include "platform/win/devtools_window.h"
 #include "platform/win/downloaded_files.h"
 #include "platform/win/file_dialogs.h"
 #include "platform/win/system_events.h"
@@ -913,6 +916,7 @@ void App::ReleaseBrowserObjects() {
   settings_window_.reset();
   task_manager_window_.reset();
   windows_.clear();
+  devtools_windows_.clear();
   system_events_.reset();
   adblock_.reset();
   autofill_.reset();   // Finishes queued work, closes the database.
@@ -922,6 +926,7 @@ void App::ReleaseBrowserObjects() {
   downloads_.reset();  // Before the history it records into.
   favicons_.reset();
   history_.reset();  // Finishes queued history work, closes the databases.
+  devtools_preferences_.reset();  // Holds CEF values.
   contexts_.clear();
   internal_context_ = nullptr;
 }
@@ -1101,6 +1106,7 @@ void App::OpenTaskManager(const std::string& row) {
   });
   const std::string url = valid_row ? "brouk://task-manager/#" + row
                                     : std::string("brouk://task-manager/");
+  window->SetInspect(PageInspector());
   if (window->Create(url, L"Task Manager", 920, 640,
                      std::make_unique<TaskManagerHandler>(
                          std::make_unique<AppTaskManager>(*this)),
@@ -1487,6 +1493,7 @@ void App::OpenHelp(const std::string& anchor) {
   const std::string url =
       anchor.empty() ? "brouk://help/" : "brouk://help/#" + anchor;
   ProfileRegistry* registry = &profiles_;
+  window->SetInspect(PageInspector());
   if (window->Create(
           url, L"Brouk Help", 980, 720,
           std::make_unique<HelpPageHandler>([registry]() -> const Settings& {
@@ -1600,7 +1607,7 @@ void App::OnWindowDestroyed(BrowserWindow* window) {
 }
 
 void App::QuitWhenDone() {
-  if (quitting_ && helper_browsers_ == 0 &&
+  if (quitting_ && helper_browsers_ == 0 && devtools_browsers_ == 0 &&
       std::ranges::none_of(PageWindows(),
                            [](const auto* page) { return *page != nullptr; })) {
     SaveSessionAtQuit();
@@ -1637,6 +1644,7 @@ void App::OpenProfileManager() {
                   QuitWhenDone();
                 }));
   });
+  window->SetInspect(PageInspector());
   if (window->Create("brouk://profiles/", L"Profiles", 640, 600,
                      std::make_unique<ProfileManagerHandler>(this),
                      InternalContext())) {
@@ -2171,6 +2179,140 @@ bool App::JsonViewerEnabled() const {
   return profiles_.global_settings().GetBool("content.json_viewer");
 }
 
+// Developer tools (006).
+
+DevToolsPreferences* App::DevToolsPrefs() {
+  if (!devtools_preferences_) {
+    devtools_preferences_ = std::make_unique<DevToolsPreferences>(WideToUtf8(
+        (AppDataDirectory() / L"devtools-preferences.json").wstring()));
+  }
+  return devtools_preferences_.get();
+}
+
+std::string App::DockPosition() {
+  return profiles_.global_settings().GetString("devtools.dock_position");
+}
+
+int App::DockSize() {
+  return static_cast<int>(
+      profiles_.global_settings().GetInt("devtools.dock_size"));
+}
+
+void App::SetDockPosition(const std::string& position) {
+  SetGlobalSetting("devtools.dock_position", SettingValue(position));
+}
+
+void App::SetDockSize(int size) {
+  SetGlobalSetting("devtools.dock_size",
+                   SettingValue(static_cast<std::int64_t>(size)));
+}
+
+bool App::DevToolsToggleOnLeft() {
+  return profiles_.global_settings().GetString("devtools.toggle_position") ==
+         "left";
+}
+
+std::string App::SecretHeaderNames() {
+  return profiles_.global_settings().GetString("devtools.secret_headers");
+}
+
+// Request rules (006), per profile, in profiles\<id>\request-rules.yaml.
+ToolsHost::Rules App::RequestRules(const ProfileId& profile) {
+  ToolsHost::Rules rules;
+  const ProfileInfo* info = profiles_.Find(profile);
+  if (!info || !IsValidProfileId(profile)) {
+    return rules;
+  }
+  rules.profile_name = info->name;
+  rules.set = LoadRequestRules(AppDataDirectory() / L"profiles" /
+                                   Utf8ToWide(profile) / L"request-rules.yaml",
+                               rules.problems);
+  return rules;
+}
+
+std::optional<Error> App::SetRequestRules(const ProfileId& profile,
+                                          RequestRuleSet rules) {
+  if (!profiles_.Find(profile) || !IsValidProfileId(profile)) {
+    return Error{"There is no such profile."};
+  }
+  if (std::optional<Error> error =
+          SaveRequestRules(AppDataDirectory() / L"profiles" /
+                               Utf8ToWide(profile) / L"request-rules.yaml",
+                           rules)) {
+    return error;
+  }
+  for (const std::unique_ptr<BrowserWindow>& window : windows_) {
+    window->RequestRulesChanged(profile, rules);
+  }
+  return std::nullopt;
+}
+
+void App::BrowserCount(int delta) {
+  devtools_browsers_ += delta;
+  if (delta < 0) {
+    QuitWhenDone();
+  }
+}
+
+std::function<void(CefRefPtr<CefBrowser>, const std::wstring&, POINT)>
+App::PageInspector() {
+  return [this](CefRefPtr<CefBrowser> browser, const std::wstring& title,
+                POINT at) { InspectPage(std::move(browser), title, at); };
+}
+
+// DevTools for one of Brouk's pages, in a window of its own (one per page).
+void App::InspectPage(CefRefPtr<CefBrowser> page,
+                      const std::wstring& title,
+                      std::optional<POINT> at) {
+  if (!page || quitting_) {
+    return;
+  }
+  for (const std::unique_ptr<DevToolsWindow>& window : devtools_windows_) {
+    if (window->inspected_id() == page->GetIdentifier()) {
+      if (at) {
+        window->InspectAt(*at);
+      } else {
+        window->Activate();
+      }
+      return;
+    }
+  }
+  HWND beside = GetAncestor(page->GetHost()->GetWindowHandle(), GA_ROOT);
+  DevToolsWindow::Hooks hooks{
+      .key =
+          [this](const CefKeyEvent& event) {
+            BrowserWindow* front = FrontWindow();
+            return front && front->OnTabKey(event);
+          },
+      .open_url = [this](const std::string& url) { OpenWebLink(url); },
+      .browser_count = [this](int delta) { BrowserCount(delta); },
+      .closed =
+          [this](DevToolsWindow& closed) {
+            // Deleted from a task: this runs inside the window.
+            auto it = std::ranges::find_if(devtools_windows_,
+                                           [&closed](const auto& window) {
+                                             return window.get() == &closed;
+                                           });
+            if (it == devtools_windows_.end()) {
+              return;
+            }
+            std::shared_ptr<DevToolsWindow> gone(it->release());
+            devtools_windows_.erase(it);
+            CefPostTask(TID_UI, new FunctionTask([gone] {}));
+          },
+  };
+  devtools_windows_.push_back(std::make_unique<DevToolsWindow>(
+      beside, page, title, at, InternalContext(), DevToolsPrefs(),
+      std::move(hooks)));
+}
+
+int App::RemoteDebuggingPort() const {
+  const Settings& global = profiles_.global_settings();
+  return global.GetBool("devtools.remote_debugging")
+             ? static_cast<int>(global.GetInt("devtools.remote_debugging_port"))
+             : 0;
+}
+
 void App::SettingsFilesChanged() {
   CEF_REQUIRE_UI_THREAD();
   if (quitting_) {
@@ -2255,6 +2397,7 @@ void App::ApplySettings() {
   for (const std::unique_ptr<BrowserWindow>& window : windows_) {
     window->RefreshTheme();
     window->SendRendererConfig(json_viewer);
+    window->ApplyDevToolsSettings();
   }
   for (const auto* page : PageWindows()) {
     if (*page) {
@@ -2285,6 +2428,7 @@ void App::OpenSettings(const std::string& url) {
                   QuitWhenDone();
                 }));
   });
+  window->SetInspect(PageInspector());
   if (window->Create(page, L"Settings", 980, 720,
                      std::make_unique<SettingsHandler>(this),
                      InternalContext())) {

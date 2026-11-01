@@ -3,6 +3,7 @@
 #include <shellapi.h>
 #include <shlwapi.h>
 
+#include <algorithm>
 #include <cwctype>
 #include <memory>
 #include <utility>
@@ -325,15 +326,49 @@ void Tab::ClosePanel(std::unique_ptr<TabPanel>& panel) {
 }
 
 void Tab::SetBounds(const RECT& bounds) {
-  SetWindowPos(container_, nullptr, bounds.left, bounds.top,
-               bounds.right - bounds.left, bounds.bottom - bounds.top,
-               SWP_NOZORDER | SWP_NOACTIVATE);
+  bounds_ = bounds;
+  LayoutWithDock();
+}
+
+// Page and dock side by side (or the page alone), with the dock's size
+// kept between 120 DIPs and the page's.
+void Tab::LayoutWithDock() {
+  RECT page = bounds_;
+  const bool docked = dock_ && dock_position_ != "window";
+  if (docked) {
+    const int dpi = static_cast<int>(GetDpiForWindow(container_));
+    const int min = MulDiv(120, dpi, 96);
+    const bool bottom = dock_position_ == "bottom";
+    const int total =
+        bottom ? bounds_.bottom - bounds_.top : bounds_.right - bounds_.left;
+    const int size = std::clamp(MulDiv(dock_size_, dpi, 96), min,
+                                std::max(min, total - min));
+    RECT dock = bounds_;
+    if (bottom) {
+      dock.top = std::max(bounds_.top, bounds_.bottom - size);
+      page.bottom = dock.top;
+    } else if (dock_position_ == "right") {
+      dock.left = std::max(bounds_.left, bounds_.right - size);
+      page.right = dock.left;
+    } else {
+      dock.right = std::min(bounds_.right, bounds_.left + size);
+      page.left = dock.right;
+    }
+    SetWindowPos(dock_->hwnd(), HWND_TOP, dock.left, dock.top,
+                 dock.right - dock.left, dock.bottom - dock.top,
+                 SWP_NOACTIVATE);
+  }
+  SetWindowPos(container_, nullptr, page.left, page.top, page.right - page.left,
+               page.bottom - page.top, SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
 void Tab::SetVisible(bool visible) {
   // Chromium notices a hidden window and stops rendering the tab (CEF's
   // WasHidden is only for windowless browsers).
   ShowWindow(container_, visible ? SW_SHOWNA : SW_HIDE);
+  if (dock_ && dock_position_ != "window") {
+    ShowWindow(dock_->hwnd(), visible ? SW_SHOWNA : SW_HIDE);
+  }
 }
 
 void Tab::UpdateFaviconSize() {
@@ -479,6 +514,9 @@ void Tab::SetMuted(bool muted) {
 
 void Tab::Close() {
   closing_ = true;
+  if (dock_) {
+    dock_->Close();  // The tab goes once the dock has closed too.
+  }
   if (browser_) {
     browser_->GetHost()->CloseBrowser(false);
   }
@@ -514,10 +552,18 @@ void Tab::OnBrowserCreated(CefRefPtr<CefBrowser> browser) {
     pending_url_.clear();
   }
   host_.OnTabBrowserCreated(*this);
+  if (devtools_when_created_) {
+    devtools_when_created_ = false;
+    OpenDock(inspect_when_created_);
+  }
 }
 
 void Tab::OnTitleChanged(const std::string& title) {
   title_ = title;
+  if (dock_frame_) {
+    dock_frame_->SetTitle(L"Developer Tools \u2013 " +
+                          Utf8ToWide(title_.empty() ? url_ : title_));
+  }
   if (HistoryService* history = host_.TabHistory();
       history && !internal() && !url_.empty()) {
     history->SetTitle(profile_, url_, title_);
@@ -723,6 +769,7 @@ void Tab::Unload() {
     return;
   }
   SetPaused(false);
+  SetDevToolsOn(false);
   unloading_ = true;
   unload_context_ = browser_->GetHost()->GetRequestContext();
   // As Chrome discards a tab: no "leave site?" question.
@@ -762,6 +809,10 @@ void Tab::OnBrowserClosed() {
   }
   browser_ = nullptr;
   closing_ = true;
+  browser_closed_ = true;
+  if (dock_ && !dock_->closed()) {
+    return;  // DockClosed finishes, once the dock's browsers are gone.
+  }
   // May delete this tab later; nothing here touches it afterwards.
   host_.OnTabClosed(*this);
 }
@@ -1103,9 +1154,210 @@ TabClientDelegate::SearchEngine Tab::CurrentSearchEngine() {
   return host_.TabSearchEngine();
 }
 
-void Tab::InspectElement(int /*x*/, int /*y*/) {}
+// "Inspect" in a web page's context menu (006): the dock, at the element.
+void Tab::InspectElement(int x, int y) {
+  InspectElementAt({x, y});
+}
 
-void Tab::OnInspectElement(int /*x*/, int /*y*/) {}  // Dev tools (006): W3.
+// "Inspect" in one of Brouk's pages shown in a tab: DevTools in a window of
+// its own, as on macOS (our own tools need a web page and its profile).
+void Tab::OnInspectElement(int x, int y) {
+  if (browser_) {
+    host_.InspectPage(browser_, Utf8ToWide(title_.empty() ? url_ : title_),
+                      POINT{x, y});
+  }
+}
+
+void Tab::SetDevToolsOn(bool on) {
+  CEF_REQUIRE_UI_THREAD();
+  if (on == devtools_on_ || (on && closing_)) {
+    return;
+  }
+  if (on && internal()) {
+    // Brouk's pages: Chromium's DevTools only, in a window of its own.
+    if (browser_) {
+      host_.InspectPage(browser_, Utf8ToWide(title_.empty() ? url_ : title_),
+                        std::nullopt);
+    }
+    return;
+  }
+  devtools_on_ = on;
+  if (on) {
+    OpenDock(std::nullopt);
+  } else {
+    devtools_when_created_ = false;
+    if (dock_) {
+      dock_->Close();  // DockClosed finishes.
+    }
+  }
+  host_.OnTabDevToolsChanged(*this);
+}
+
+void Tab::InspectElementAt(POINT point) {
+  if (dock_) {
+    dock_->InspectAt(point);
+    return;
+  }
+  if (internal() || closing_) {
+    return;
+  }
+  devtools_on_ = true;
+  OpenDock(point);
+  host_.OnTabDevToolsChanged(*this);
+}
+
+void Tab::ShowDevToolsConsole() {
+  SetDevToolsOn(true);
+  if (dock_) {
+    dock_->ShowPanel("console");
+  }
+}
+
+void Tab::StartDevToolsElementPicker() {
+  SetDevToolsOn(true);
+  if (dock_) {
+    dock_->EnterInspectElementMode();
+  }
+}
+
+void Tab::OpenDock(std::optional<POINT> inspect) {
+  if (dock_) {
+    return;
+  }
+  if (!browser_) {
+    devtools_when_created_ = true;
+    inspect_when_created_ = inspect;
+    return;
+  }
+  dock_position_ = host_.TabDockPosition();
+  dock_size_ = host_.TabDockSize();
+  rules_affected_page_ = false;
+  dock_ = std::make_unique<DevToolsDock>(
+      GetParent(container_), browser_, inspect, host_.TabDevToolsContext(),
+      host_.TabDevToolsPreferences(), /*own_tools=*/true, *this);
+  dock_->SetPosition(dock_position_);
+  dock_->SetSecretHeaderNames(host_.TabSecretHeaderNames());
+  dock_->ApplyRequestRules(host_.TabRequestRules(profile_).set);
+  PlaceDock();
+}
+
+void Tab::SetDockPlace(const std::string& position, int size) {
+  const bool moved = position != dock_position_;
+  dock_position_ = position;
+  dock_size_ = size;
+  if (!dock_) {
+    return;
+  }
+  dock_->SetPosition(position);
+  if (moved) {
+    PlaceDock();
+  } else {
+    LayoutWithDock();
+  }
+}
+
+// Puts the dock next to the page or into its own window.
+void Tab::PlaceDock() {
+  if (!dock_) {
+    return;
+  }
+  if (dock_position_ == "window") {
+    if (!dock_frame_) {
+      std::weak_ptr<int> alive = alive_;
+      dock_frame_ = std::make_unique<DevToolsFrame>(
+          GetAncestor(container_, GA_ROOT), [this, alive] {
+            if (!alive.expired()) {
+              SetDevToolsOn(false);
+            }
+          });
+    }
+    dock_frame_->SetTitle(L"Developer Tools \u2013 " +
+                          Utf8ToWide(title_.empty() ? url_ : title_));
+    dock_frame_->Show(dock_->hwnd());
+  } else {
+    dock_->SetParentWindow(GetParent(container_));
+    dock_frame_.reset();
+    ShowWindow(dock_->hwnd(),
+               IsWindowVisible(container_) ? SW_SHOWNA : SW_HIDE);
+  }
+  LayoutWithDock();
+}
+
+void Tab::RequestRulesChanged(const RequestRuleSet& rules) {
+  if (dock_) {
+    dock_->ApplyRequestRules(rules);
+  }
+}
+
+void Tab::DockClosed(DevToolsDock& dock) {
+  if (&dock != dock_.get()) {
+    return;
+  }
+  // Deleted from a task: this runs inside the dock.
+  std::shared_ptr<DevToolsDock> closed(dock_.release());
+  std::shared_ptr<DevToolsFrame> frame(dock_frame_.release());
+  ShowWindow(closed->hwnd(), SW_HIDE);
+  CefPostTask(TID_UI, new FunctionTask([closed, frame] {}));
+  LayoutWithDock();
+  if (devtools_on_) {
+    devtools_on_ = false;
+    host_.OnTabDevToolsChanged(*this);
+  }
+  if (browser_closed_) {
+    // The tab's browser closed first: the tab goes now (later, posted).
+    std::weak_ptr<int> alive = alive_;
+    CefPostTask(TID_UI, new FunctionTask([this, alive] {
+                  if (!alive.expired()) {
+                    host_.OnTabClosed(*this);
+                  }
+                }));
+  }
+}
+
+void Tab::DockWantsPosition(const std::string& position) {
+  host_.SetTabDockPosition(position);
+}
+
+void Tab::DockResized(int size, bool done) {
+  const int dpi = static_cast<int>(GetDpiForWindow(container_));
+  dock_size_ = MulDiv(size, 96, dpi);
+  LayoutWithDock();
+  if (done) {
+    host_.SetTabDockSize(dock_size_);
+  }
+}
+
+bool Tab::DockKey(const CefKeyEvent& event) {
+  return host_.OnTabKey(event);
+}
+
+void Tab::DockOpenUrl(const std::string& url) {
+  // A link in DevTools opens next to the tab, in its profile.
+  host_.OpenUrlFromTab(*this, url, OpenDisposition::kNewForegroundTab);
+}
+
+ToolsHost::Rules Tab::DockRequestRules() {
+  return host_.TabRequestRules(profile_);
+}
+
+std::optional<Error> Tab::DockSetRequestRules(RequestRuleSet rules) {
+  return host_.SetTabRequestRules(profile_, std::move(rules));
+}
+
+void Tab::DockRulesAffectedPage() {
+  if (!rules_affected_page_) {
+    rules_affected_page_ = true;
+    host_.OnTabDevToolsChanged(*this);
+  }
+}
+
+void Tab::DockInspectTools(CefRefPtr<CefBrowser> tools, int x, int y) {
+  host_.InspectPage(tools, L"Brouk tools", POINT{x, y});
+}
+
+void Tab::DockBrowserCount(int delta) {
+  host_.TabBrowserCount(delta);
+}
 
 bool Tab::AskWhereToSaveDownloads() {
   return host_.TabAskWhereToSaveDownloads();

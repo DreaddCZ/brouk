@@ -40,6 +40,12 @@ add_library(brouk_app SHARED
   data_paths.cc
   data_paths.h
   desktop_sources.cc
+  devtools_dock.cc
+  devtools_dock.h
+  devtools_frame.cc
+  devtools_frame.h
+  devtools_window.cc
+  devtools_window.h
   desktop_sources.h
   downloaded_files.cc
   downloaded_files.h

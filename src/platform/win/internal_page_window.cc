@@ -5,6 +5,7 @@
 
 #include "cef/color_scheme.h"
 #include "include/wrapper/cef_helpers.h"
+#include "platform/win/controls.h"
 #include "platform/win/theme.h"
 #include "platform/win/wide_string.h"
 
@@ -158,8 +159,10 @@ bool InternalPageWindow::OnUnhandledKeyEvent(const CefKeyEvent& event,
   return false;
 }
 
-void InternalPageWindow::OnInspectElement(int /*x*/, int /*y*/) {
-  // Dev tools (006) come with W3.
+void InternalPageWindow::OnInspectElement(int x, int y) {
+  if (inspect_ && browser_) {
+    inspect_(browser_, WindowText(window_), POINT{x, y});
+  }
 }
 
 // static
