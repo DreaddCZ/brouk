@@ -280,6 +280,7 @@ class BrowserWindow final : public TabHost,
   void OnTabHistoryChanged(Tab& tab) override;
   void OnTabFaviconStored(Tab& tab) override;
   bool TabKeepsFocusOnNavigation(const Tab& tab) override;
+  void OnTabBrowserCreated(Tab& tab) override;
   DownloadService* TabDownloads() override;
   bool TabAskWhereToSaveDownloads() override;
   DownloadTarget TabReserveDownloadPath(const std::string& suggested,

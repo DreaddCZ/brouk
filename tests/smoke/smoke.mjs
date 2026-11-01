@@ -100,7 +100,7 @@ const frontFunction = (title) =>
 // and then types `thenKeys`, all from the same PowerShell: starting another
 // one may deactivate Brouk, which closes its popups. Returns PowerShell's
 // output.
-function sendKeys(title, keys, { windowsOf: pid, thenKeys = [], window = ['BroukSuggestions', 'Suggestions'], invoke } = {}) {
+function sendKeys(title, keys, { windowsOf: pid, thenKeys = [], window = ['BroukSuggestions', 'Suggestions'], invoke, afterKeys = [] } = {}) {
   const typed = (list) =>
     list.map((k) => `[System.Windows.Forms.SendKeys]::SendWait('${k.replaceAll("'", "''")}'); Start-Sleep -Milliseconds 300`).join('; ');
   const sends = typed(keys);
@@ -144,6 +144,9 @@ function sendKeys(title, keys, { windowsOf: pid, thenKeys = [], window = ['Brouk
           `$s = [Smoke.Win]::FindWindow("${window[0]}", "${window[1]}")`,
           'Write-Output "window shown: $($s -ne [IntPtr]::Zero -and [Smoke.Win]::IsWindowVisible($s))"',
           ...(thenKeys.length ? [typed(thenKeys), 'Write-Output "then focus: $(Get-Focus)"'] : []),
+          // `afterKeys`: sent last, in the same script (e.g. closing what the
+          // check opened, while the same window is still in front).
+          ...(afterKeys.length ? [typed(afterKeys)] : []),
         ]
       : []),
   ].join('; ');
@@ -896,9 +899,12 @@ async function main() {
 
     // A new tab puts the keyboard in the address bar, also once its page
     // has loaded (as on macOS and in Chrome).
-    const newTab = sendKeys('Downloads test', ['^t'], { windowsOf: brouk.pid, thenKeys: ['{END}'] });
+    const newTab = sendKeys('Downloads test', ['^t'], {
+      windowsOf: brouk.pid,
+      thenKeys: ['{END}'],
+      afterKeys: ['^w'],
+    });
     check(/then focus: Edit/.test(newTab), 'a new tab focuses the address bar');
-    sendKeys('New Tab', ['^w']);
   }
 
   // A crashed renderer shows the crash page (012); Brouk keeps running.

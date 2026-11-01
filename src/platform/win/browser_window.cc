@@ -989,6 +989,28 @@ void BrowserWindow::FaviconsChanged() {
   }
 }
 
+void BrowserWindow::OnTabBrowserCreated(Tab& tab) {
+  // CEF focuses a browser it creates; a new tab's keyboard belongs in the
+  // address bar (Chrome), now and once CEF has finished creating it.
+  auto refocus = [this](const Tab& created) {
+    if (&created == ActiveTab() && kind_ == Kind::kNormal && active_ &&
+        IsBlank(created.url()) && created.FocusInTab()) {
+      FocusAddressBar();
+    }
+  };
+  refocus(tab);
+  std::weak_ptr<int> alive = alive_;
+  const TabId id = tab.id();
+  CefPostTask(TID_UI, new FunctionTask([this, alive, id, refocus] {
+                if (alive.expired()) {
+                  return;
+                }
+                if (const Tab* created = FindTab(id)) {
+                  refocus(*created);
+                }
+              }));
+}
+
 bool BrowserWindow::TabKeepsFocusOnNavigation(const Tab& tab) {
   // A new tab's page loading must not take the keyboard from the address
   // bar (as on macOS and in Chrome).

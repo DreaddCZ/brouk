@@ -502,6 +502,7 @@ void Tab::OnBrowserCreated(CefRefPtr<CefBrowser> browser) {
     browser_->GetMainFrame()->LoadURL(pending_url_);
     pending_url_.clear();
   }
+  host_.OnTabBrowserCreated(*this);
 }
 
 void Tab::OnTitleChanged(const std::string& title) {

@@ -58,6 +58,8 @@ class TabHost {
   // (the user is typing there, as on a new tab), instead of the page
   // taking it.
   virtual bool TabKeepsFocusOnNavigation(const Tab& tab) = 0;
+  // The tab's browser exists now (CEF gives it the keyboard focus).
+  virtual void OnTabBrowserCreated(Tab& tab) = 0;
   // Downloads (014): the app's list (null before it exists), whether every
   // download asks where to save, and a unique path in `profile`'s download
   // folder (released when the download ends).
@@ -178,6 +180,8 @@ class Tab final : public TabClientDelegate,
   bool internal() const { return internal_client_ != nullptr; }
 
   TabId id() const { return id_; }
+  // Whether keyboard focus is in this tab (its page or a panel), or nowhere.
+  bool FocusInTab() const;
   const ProfileId& profile() const { return profile_; }
   HWND container() const { return container_; }
   const std::string& title() const { return title_; }
@@ -291,8 +295,6 @@ class Tab final : public TabClientDelegate,
   std::unique_ptr<TabPanel> MakePanel(TabPanel::Content content,
                                       TabPanel::Done done);
   TabPanel* ModalPanel() const;
-  // Whether keyboard focus is in this tab (its page or a panel), or nowhere.
-  bool FocusInTab() const;
   // After a panel came or went: blocks the page while a dialog is open, and
   // moves focus to the dialog or back to the page if `refocus`.
   void UpdatePanels(bool refocus);
