@@ -526,7 +526,7 @@ async function adblockMyFilter({ port, pagesBase, pid }) {
   const settingsPage = await Cdp.connect(settings.webSocketDebuggerUrl);
   const { result } = await settingsPage.send('Runtime.evaluate', {
     expression:
-      "new Promise((ok) => window.cefQuery({ request: JSON.stringify({ type: 'adblock.saveMyFilters', text: '/brouk-smoke-ad.png' }), " +
+      "new Promise((ok) => window.cefQuery({ request: JSON.stringify({ type: 'adblock.saveMyFilters', text: '||127.0.0.1/brouk-smoke-ad.png' }), " +
       "onSuccess: (r) => ok('ok ' + r), onFailure: (c, m) => ok('failed ' + m) }))",
     awaitPromise: true,
     returnByValue: true,
@@ -1216,7 +1216,9 @@ async function main() {
   }
 
   // Ad blocking (007): a rule in My filters blocks a request of the page
-  // in front, and the shield counts it.
+  // in front, and the shield counts it. Local hosts are never blocked
+  // unless the rule names them (internal work tools stay usable), so the
+  // rule names 127.0.0.1.
   if (kWindows) {
     await adblockMyFilter({ port, pagesBase, pid: brouk.pid });
   }
