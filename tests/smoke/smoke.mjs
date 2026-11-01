@@ -417,7 +417,7 @@ async function savePasswordFromLogin({ executable, port, pagesBase }, passwordsP
       '[DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h); ' +
       "[DllImport(\"user32.dll\")] public static extern IntPtr SendMessage(IntPtr h, int m, IntPtr w, IntPtr l);'",
     '$prompt = [IntPtr]::Zero',
-    "for ($i = 0; $i -lt 30 -and ($prompt -eq [IntPtr]::Zero -or -not [Smoke.Prompt]::IsWindowVisible($prompt))); $i++) { Start-Sleep -Milliseconds 500; $prompt = [Smoke.Prompt]::FindWindow('BroukPasswordPrompt', 'Save password?') }",
+    "for ($i = 0; $i -lt 30 -and ($prompt -eq [IntPtr]::Zero -or -not [Smoke.Prompt]::IsWindowVisible($prompt)); $i++) { Start-Sleep -Milliseconds 500; $prompt = [Smoke.Prompt]::FindWindow('BroukPasswordPrompt', 'Save password?') }",
     'Write-Output "prompt shown: $($prompt -ne [IntPtr]::Zero -and [Smoke.Prompt]::IsWindowVisible($prompt))"',
     "$save = [Smoke.Prompt]::FindWindowEx($prompt, [IntPtr]::Zero, 'Button', 'Save')",
     'if ($save -ne [IntPtr]::Zero) { [Smoke.Prompt]::SendMessage($save, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null; Write-Output "save clicked" }',
