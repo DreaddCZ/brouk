@@ -33,6 +33,9 @@ command -v iscc >/dev/null || {
 }
 
 mkdir -p "$DIST"
+# Absolute: Inno Setup reads relative paths from the .iss file's folder.
+APP_DIR="$(cd "$APP_DIR" && pwd)"
+DIST="$(cd "$DIST" && pwd)"
 iscc //Q \
   "//DAppName=$APP_NAME" "//DAppExe=$APP_EXE" "//DAppVersion=$VERSION" \
   "//DSourceDir=$(cygpath -w "$APP_DIR")" "//DOutputDir=$(cygpath -w "$DIST")" \
