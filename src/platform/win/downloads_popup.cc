@@ -238,10 +238,13 @@ void DownloadsPopup::Resize() {
                          .dwFlags = 0};
   if (GetMonitorInfoW(MonitorFromRect(&anchor_, MONITOR_DEFAULTTONEAREST),
                       &monitor)) {
-    x = std::clamp(x, monitor.rcWork.left,
-                   std::max(monitor.rcWork.left, monitor.rcWork.right - width));
-    if (y + height > monitor.rcWork.bottom) {
-      y = std::max(monitor.rcWork.top, anchor_.top - height);
+    const RECT& work = monitor.rcWork;
+    x = std::clamp(x, static_cast<int>(work.left),
+                   std::max(static_cast<int>(work.left),
+                            static_cast<int>(work.right) - width));
+    if (y + height > work.bottom) {
+      y = std::max(static_cast<int>(work.top),
+                   static_cast<int>(anchor_.top) - height);
     }
   }
   SetWindowPos(window_, HWND_TOP, x, y, width, height, SWP_NOACTIVATE);
@@ -427,10 +430,12 @@ void DownloadsPopup::DragFile(int index) {
   std::ranges::replace(path, L'/', L'\\');
   Microsoft::WRL::ComPtr<IShellItem> item;
   Microsoft::WRL::ComPtr<IDataObject> data;
-  if (FAILED(SHCreateItemFromParsingName(path.c_str(), nullptr,
-                                         IID_PPV_ARGS(&item))) ||
-      FAILED(
-          item->BindToHandler(nullptr, BHID_DataObject, IID_PPV_ARGS(&data)))) {
+  if (FAILED(SHCreateItemFromParsingName(
+          path.c_str(), nullptr, IID_IShellItem,
+          reinterpret_cast<void**>(item.ReleaseAndGetAddressOf()))) ||
+      FAILED(item->BindToHandler(
+          nullptr, BHID_DataObject, IID_IDataObject,
+          reinterpret_cast<void**>(data.ReleaseAndGetAddressOf())))) {
     return;
   }
   // The shell's own drag source: the file is copied (or linked) where it

@@ -614,8 +614,9 @@ void BrowserWindow::UpdateTaskbarProgress() {
     return;
   }
   if (!taskbar_ &&
-      FAILED(CoCreateInstance(CLSID_TaskbarList, nullptr, CLSCTX_INPROC_SERVER,
-                              IID_PPV_ARGS(&taskbar_)))) {
+      FAILED(CoCreateInstance(
+          CLSID_TaskbarList, nullptr, CLSCTX_INPROC_SERVER, IID_ITaskbarList3,
+          reinterpret_cast<void**>(taskbar_.ReleaseAndGetAddressOf())))) {
     return;
   }
   taskbar_progress_ = running;
