@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <string>
+#include <string_view>
 
 namespace brouk {
 namespace {
@@ -107,6 +108,39 @@ TEST(CryptoTest, WipeAndCompare) {
   EXPECT_TRUE(SecretsEqual("abc", "abc"));
   EXPECT_FALSE(SecretsEqual("abc", "abd"));
   EXPECT_FALSE(SecretsEqual("abc", "abcd"));
+}
+
+// RFC 8032, section 7.1, tests 1 and 2.
+std::string FromHex(std::string_view hex) {
+  std::string bytes;
+  for (std::size_t i = 0; i + 1 < hex.size(); i += 2) {
+    bytes.push_back(static_cast<char>(
+        std::stoi(std::string(hex.substr(i, 2)), nullptr, 16)));
+  }
+  return bytes;
+}
+
+TEST(CryptoTest, VerifiesEd25519Signatures) {
+  const std::string key1 = FromHex(
+      "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a");
+  const std::string signature1 = FromHex(
+      "e5564300c360ac729086e2cc806e828a84877f1eb8e5d974d873e065224901555fb882"
+      "1590a33bacc61e39701cf9b46bd25bf5f0595bbe24655141438e7a100b");
+  EXPECT_TRUE(VerifyEd25519(key1, signature1, ""));
+  const std::string key2 = FromHex(
+      "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c");
+  const std::string signature2 = FromHex(
+      "92a009a9f0d4cab8720e820b5f642540a2b27b5416503f8fb3762223ebdb69da085ac1"
+      "e43e15996e458f3613d0f11d8c387b2eaeb4302aeeb00d291612bb0c00");
+  EXPECT_TRUE(VerifyEd25519(key2, signature2, FromHex("72")));
+
+  // Another message, key or signature, or wrong sizes.
+  EXPECT_FALSE(VerifyEd25519(key2, signature2, FromHex("73")));
+  EXPECT_FALSE(VerifyEd25519(key1, signature2, FromHex("72")));
+  EXPECT_FALSE(VerifyEd25519(key1, signature1, "x"));
+  EXPECT_FALSE(VerifyEd25519(key1.substr(1), signature1, ""));
+  EXPECT_FALSE(VerifyEd25519(key1, signature1.substr(1), ""));
+  EXPECT_FALSE(VerifyEd25519("", "", ""));
 }
 
 }  // namespace

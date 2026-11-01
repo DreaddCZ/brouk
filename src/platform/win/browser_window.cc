@@ -81,6 +81,8 @@ enum MenuCommand : UINT {
   kPrintCommand,
   kFindCommand,
   kHelpCommand,
+  kCheckForUpdatesCommand,
+  kUpdateCommand,
   kSettingsCommand,
   kLicencesCommand,
   kExitCommand,
@@ -2602,6 +2604,31 @@ void BrowserWindow::UpdateIndicators() {
 
 void BrowserWindow::ShowAppMenu() {
   HMENU menu = CreatePopupMenu();
+  // A waiting update first, as in Chrome.
+  const UpdateMenuItem update = owner_.UpdateItem();
+  const std::wstring update_version = Utf8ToWide(update.version);
+  const std::wstring app_name = Utf8ToWide(kAppName);
+  switch (update.kind) {
+    case UpdateMenuItem::Kind::kNone:
+      break;
+    case UpdateMenuItem::Kind::kUpdate:
+      AppendMenuW(menu, MF_STRING, kUpdateCommand,
+                  (L"Update " + app_name + L" to " + update_version).c_str());
+      break;
+    case UpdateMenuItem::Kind::kDownloading:
+      AppendMenuW(
+          menu, MF_STRING | MF_GRAYED, 0,
+          (L"Downloading " + app_name + L" " + update_version + L"\u2026")
+              .c_str());
+      break;
+    case UpdateMenuItem::Kind::kRestart:
+      AppendMenuW(menu, MF_STRING, kUpdateCommand,
+                  (L"Restart to update " + app_name).c_str());
+      break;
+  }
+  if (update.kind != UpdateMenuItem::Kind::kNone) {
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+  }
   AppendMenuW(menu, MF_STRING, kNewTabCommand, L"New tab\tCtrl+T");
   AppendMenuW(menu, MF_STRING, kNewWindowCommand, L"New window\tCtrl+N");
   // Profiles (005): a new tab in one, or the profile manager.
@@ -2718,6 +2745,8 @@ void BrowserWindow::ShowAppMenu() {
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
   AppendMenuW(menu, MF_STRING, kSettingsCommand, L"Settings");
   AppendMenuW(menu, MF_STRING, kHelpCommand, L"Brouk Help\tF1");
+  AppendMenuW(menu, MF_STRING, kCheckForUpdatesCommand,
+              L"Check for updates\u2026");
   AppendMenuW(menu, MF_STRING, kLicencesCommand, L"Open-source licences");
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
   AppendMenuW(menu, MF_STRING, kExitCommand, L"Exit");
@@ -2763,6 +2792,16 @@ void BrowserWindow::ShowAppMenu() {
       break;
     case kHelpCommand:
       owner_.OpenHelp(std::string());
+      break;
+    case kCheckForUpdatesCommand:
+      owner_.CheckForUpdates();
+      break;
+    case kUpdateCommand:
+      if (update.kind == UpdateMenuItem::Kind::kRestart) {
+        owner_.RestartToUpdate();
+      } else {
+        owner_.DownloadUpdate();
+      }
       break;
     case kSettingsCommand:
       owner_.OpenSettings(std::string());

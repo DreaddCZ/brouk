@@ -51,6 +51,13 @@ class BrowserWindow;
 // The app, as the browser windows see it. UI thread.
 class LinkRoutingController;
 
+// The "⋮" menu's update item (024, W4), as Chrome's "Relaunch to update".
+struct UpdateMenuItem {
+  enum class Kind { kNone, kUpdate, kDownloading, kRestart };
+  Kind kind = Kind::kNone;
+  std::string version;
+};
+
 class BrowserWindowOwner {
  public:
   // The request context of `profile`'s web data (005).
@@ -157,6 +164,12 @@ class BrowserWindowOwner {
   virtual void OpenHelp(const std::string& anchor) = 0;
   // Closes every window (the menu's Exit).
   virtual void CloseAllWindows() = 0;
+  // Updates (024, W4): the menu's item, "Check for updates…", "Update
+  // Brouk to …" (updates.mode notify) and "Restart to update".
+  virtual UpdateMenuItem UpdateItem() = 0;
+  virtual void CheckForUpdates() = 0;
+  virtual void DownloadUpdate() = 0;
+  virtual void RestartToUpdate() = 0;
   // Whether `window` is still open (popups opened from another window).
   virtual bool IsOpenWindow(const BrowserWindow* window) const = 0;
   // The window is gone; the owner deletes it (later, not from inside its

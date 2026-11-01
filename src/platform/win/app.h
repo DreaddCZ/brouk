@@ -37,6 +37,7 @@
 #include "platform/win/link_routing.h"
 #include "platform/win/settings_watcher.h"
 #include "platform/win/system_events.h"
+#include "platform/win/updater.h"
 
 namespace brouk::win {
 
@@ -61,6 +62,8 @@ class App final : public BrowserWindowOwner,
   void OnRelaunch(const LaunchRequest& request);
   // After the message loop ends, before CefShutdown: drops every CEF object.
   void ReleaseBrowserObjects();
+  // After CefShutdown: starts a downloaded update's installer (W4).
+  void InstallUpdateAtExit();
   // content.json_viewer (006), for new renderer processes.
   bool JsonViewerEnabled() const;
   // Link routing (010), for the windows (BrowserWindowOwner).
@@ -157,6 +160,10 @@ class App final : public BrowserWindowOwner,
   void UnwatchDownloads(int id);
   void OpenHelp(const std::string& anchor) override;
   void CloseAllWindows() override;
+  UpdateMenuItem UpdateItem() override;
+  void CheckForUpdates() override;
+  void DownloadUpdate() override;
+  void RestartToUpdate() override;
   void OpenWindow(const std::string& url, const ProfileId& profile) override;
   BrowserWindow* OpenPopupWindow(int width, int height) override;
   bool IsOpenWindow(const BrowserWindow* window) const override;
@@ -335,6 +342,11 @@ class App final : public BrowserWindowOwner,
   // Brouk's pages.
   std::unique_ptr<DevToolsPreferences> devtools_preferences_;
   std::vector<std::unique_ptr<DevToolsWindow>> devtools_windows_;
+  // Automatic updates (W4): only in builds with a feed (BROUK_UPDATES) and
+  // not in test runs with their own data folder; made when CEF is ready.
+  // Restart to update: the installer starts Brouk again.
+  std::unique_ptr<Updater> updater_;
+  bool restart_to_update_ = false;
   // Link routing (010): the rules file, the picker and the resolver; made
   // when CEF is ready.
   std::unique_ptr<LinkRoutingController> routing_;

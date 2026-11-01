@@ -94,12 +94,26 @@ add_library(brouk_app SHARED
   theme.h
   undo_notice.cc
   undo_notice.h
+  updater.cc
+  updater.h
   user_verification.cc
   user_verification.h
   wide_string.cc
   wide_string.h
 )
 brouk_target_options(brouk_app CEF APP)
+# Automatic updates (W4): only builds with BROUK_UPDATES (release builds,
+# windows-release.yml) get the feed address and key; without them the app
+# never starts the updater.
+option(BROUK_UPDATES "Automatic updates: feed address and key (release builds)" OFF)
+if(BROUK_UPDATES)
+  if(APP_UPDATE_PUBLIC_KEY STREQUAL "")
+    message(FATAL_ERROR "APP_UPDATE_PUBLIC_KEY is not set in CMakeLists.txt.")
+  endif()
+  target_compile_definitions(brouk_app PRIVATE
+    "BROUK_UPDATE_FEED_URL=\"${APP_UPDATE_FEED_BASE}/windows-x64.json\""
+    "BROUK_UPDATE_PUBLIC_KEY=\"${APP_UPDATE_PUBLIC_KEY}\"")
+endif()
 # zxing-cpp may throw (see cmake/BroukZxing.cmake): this file catches.
 set_source_files_properties(qr_reader.cc PROPERTIES
   COMPILE_OPTIONS "${BROUK_EXCEPTIONS_FLAG}")

@@ -70,6 +70,15 @@ namespace brouk::win {
 
 namespace {
 
+// Automatic updates (W4): set only in builds with BROUK_UPDATES.
+#if defined(BROUK_UPDATE_FEED_URL)
+constexpr std::string_view kUpdateFeedUrl = BROUK_UPDATE_FEED_URL;
+constexpr std::string_view kUpdatePublicKey = BROUK_UPDATE_PUBLIC_KEY;
+#else
+constexpr std::string_view kUpdateFeedUrl;
+constexpr std::string_view kUpdatePublicKey;
+#endif
+
 // Profile export files are small (005); bigger files are not ones.
 constexpr std::uintmax_t kMaxProfileExportBytes = 16 * 1024 * 1024;
 // Settings exports too (as on macOS).
@@ -588,6 +597,18 @@ void App::OnContextInitialized() {
   // Link routing (010): the rules in <data>\link-routing.yaml.
   routing_ = std::make_unique<LinkRoutingController>(
       *this, AppDataDirectory() / L"link-routing.yaml");
+  // A test run with its own data folder (smoke tests) must not update the
+  // user's Brouk (019).
+  if (!kUpdateFeedUrl.empty() && _wgetenv(L"BROUK_DEV_DATA_DIR") == nullptr) {
+    if (std::optional<std::string> key = Base64Decode(kUpdatePublicKey)) {
+      updater_ = std::make_unique<Updater>(
+          Updater::Config{.feed_url = std::string(kUpdateFeedUrl),
+                          .public_key = std::move(*key),
+                          .current_version = kAppVersion,
+                          .folder = AppDataDirectory() / L"updates"},
+          nullptr);
+    }
+  }
   ApplySettings();
   // Changes made in the files apply while Brouk runs (004).
   settings_watcher_ = std::make_unique<SettingsWatcher>(
@@ -935,6 +956,9 @@ void App::SaveSessionAtQuit() {
 
 void App::ReleaseBrowserObjects() {
   session_ready_ = false;
+  if (updater_) {
+    updater_->Stop();
+  }
   settings_watcher_.reset();
   help_window_.reset();
   profiles_window_.reset();
@@ -1569,6 +1593,114 @@ void App::CloseAllWindows() {
   }
   for (const std::unique_ptr<BrowserWindow>& window : windows_) {
     PostMessageW(window->hwnd(), WM_CLOSE, 0, 0);
+  }
+}
+
+void App::InstallUpdateAtExit() {
+  if (updater_) {
+    updater_->InstallAtExit(restart_to_update_);
+  }
+}
+
+UpdateMenuItem App::UpdateItem() {
+  if (!updater_) {
+    return {};
+  }
+  switch (updater_->state()) {
+    case Updater::State::kAvailable:
+      return {UpdateMenuItem::Kind::kUpdate, updater_->version()};
+    case Updater::State::kDownloading:
+      return {UpdateMenuItem::Kind::kDownloading, updater_->version()};
+    case Updater::State::kReady:
+      return {UpdateMenuItem::Kind::kRestart, updater_->version()};
+    case Updater::State::kIdle:
+    case Updater::State::kChecking:
+      break;
+  }
+  return {};
+}
+
+// "Check for updates…": the answer in a message box, as Sparkle's small
+// window on macOS (019).
+void App::CheckForUpdates() {
+  CEF_REQUIRE_UI_THREAD();
+  const std::wstring title = Utf8ToWide(kAppName);
+  BrowserWindow* front = FrontWindow();
+  if (!updater_) {
+    MessageBoxW(front ? front->hwnd() : nullptr,
+                L"Updates are off in this build.\n\nOnly releases update "
+                L"themselves; copies you build yourself never do.",
+                title.c_str(), MB_OK | MB_ICONINFORMATION);
+    return;
+  }
+  updater_->CheckNow([this, title](const std::string& error) {
+    BrowserWindow* window = FrontWindow();
+    HWND owner = window ? window->hwnd() : nullptr;
+    const std::wstring version = Utf8ToWide(updater_->version());
+    if (!error.empty()) {
+      MessageBoxW(
+          owner,
+          (title + L" could not check for updates.\n\n" + Utf8ToWide(error))
+              .c_str(),
+          title.c_str(), MB_OK | MB_ICONWARNING);
+      return;
+    }
+    switch (updater_->state()) {
+      case Updater::State::kIdle:
+      case Updater::State::kChecking:
+        MessageBoxW(
+            owner,
+            (title + L" " + Utf8ToWide(kAppVersion) + L" is up to date.")
+                .c_str(),
+            title.c_str(), MB_OK | MB_ICONINFORMATION);
+        break;
+      case Updater::State::kAvailable:
+        if (MessageBoxW(owner,
+                        (title + L" " + version + L" is available (you have " +
+                         Utf8ToWide(kAppVersion) +
+                         L").\n\nDownload it now? It is installed when you "
+                         L"restart " +
+                         title + L".")
+                            .c_str(),
+                        title.c_str(),
+                        MB_YESNO | MB_ICONINFORMATION) == IDYES) {
+          DownloadUpdate();
+        }
+        break;
+      case Updater::State::kDownloading:
+        MessageBoxW(owner,
+                    (title + L" " + version +
+                     L" is being downloaded. It is installed when " + title +
+                     L" quits, or with \u22ee \u2192 Restart to update.")
+                        .c_str(),
+                    title.c_str(), MB_OK | MB_ICONINFORMATION);
+        break;
+      case Updater::State::kReady:
+        if (MessageBoxW(owner,
+                        (title + L" " + version +
+                         L" is ready. Restart now to install it?")
+                            .c_str(),
+                        title.c_str(),
+                        MB_YESNO | MB_ICONINFORMATION) == IDYES) {
+          RestartToUpdate();
+        }
+        break;
+    }
+  });
+}
+
+void App::DownloadUpdate() {
+  if (updater_) {
+    updater_->Download();
+  }
+}
+
+// Brouk quits as with Exit; the installer then starts it again, and the
+// session comes back as after any restart (015).
+void App::RestartToUpdate() {
+  if (updater_ && updater_->state() == Updater::State::kReady) {
+    restart_to_update_ = true;
+    CloseAllWindows();
   }
 }
 
@@ -2445,6 +2577,10 @@ void App::ApplySettings() {
                                                    : std::nullopt);
   }
   ConfigureAdblock();
+  if (updater_) {
+    updater_->SetSettings(global.GetString("updates.channel"),
+                          global.GetString("updates.mode"));
+  }
   if (autofill_) {
     // Phone numbers without a country code: the setting, or the region set
     // in Windows (the Mac's region on macOS).

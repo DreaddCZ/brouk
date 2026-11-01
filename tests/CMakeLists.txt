@@ -84,6 +84,7 @@ add_executable(brouk_core_tests
   core/task_list_test.cc
   core/text_file_test.cc
   core/totp_test.cc
+  core/update_feed_test.cc
   core/url_display_test.cc
   core/url_pattern_test.cc
   core/utf8_path_test.cc

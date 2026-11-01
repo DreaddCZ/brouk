@@ -141,6 +141,8 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance,
   CefRunMessageLoop();
   app.ReleaseBrowserObjects();
   CefShutdown();
+  // A downloaded update installs now; its installer waits for `running`.
+  app.InstallUpdateAtExit();
   if (running) {
     CloseHandle(running);
   }

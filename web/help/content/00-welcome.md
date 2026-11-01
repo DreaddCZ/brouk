@@ -32,4 +32,6 @@ Settings → [Updates](#settings-updates):
 - **Update channel:** *Stable*, or *Beta* to get test versions early. Going back from Beta to Stable never installs an older version; you stay on yours until a newer stable one is out.
 - **Updates:** install automatically (default), ask before downloading, or don't check by itself.
 
+**On Windows:** the same, with **⋮ → Check for updates…**; a downloaded update shows **⋮ → Restart to update Brouk**, and with *ask before downloading* **⋮ → Update Brouk to …** downloads it. The installer runs by itself after Brouk quits. Every update is checked against Brouk's signing key before it runs.
+
 Brouk checks only by downloading the update feed; it sends nothing but its version. Copies you build yourself never update. **Brouk → About Brouk** shows the version and the exact build, e.g. `0.1.0 (a1b2c3d)` — mention it when you report a problem.

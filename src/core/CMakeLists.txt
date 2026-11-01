@@ -144,6 +144,8 @@ set(BROUK_CORE_SOURCES
   text_file.h
   totp.cc
   totp.h
+  update_feed.cc
+  update_feed.h
   url_display.cc
   url_display.h
   url_pattern.cc

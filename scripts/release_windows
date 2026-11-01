@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+# Publishes the Windows installer of a release (024, W4). Runs on the Intel
+# Mac after scripts/release, which pushed the tag v<version>; see
+# docs/releasing.md.
+#
+#   scripts/release_windows <version>
+#
+# Steps: wait for the tag's windows-release run (windows-release.yml builds,
+# tests and packages the installer), download its installer and check its
+# checksum, sign it for the updater with the update signing key in the
+# keychain (Sparkle's sign_update, as the macOS images), add it to the
+# release in the releases repository and to the Windows update feed
+# (windows-x64.json). The release's channel is the macOS one: a pre-release
+# is beta. Running it again after an interruption continues; a published
+# file is never replaced.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$ROOT"
+
+SOURCE_REPO="DreaddCZ/brouk"
+RELEASES_REPO="DreaddCZ/brouk-releases"
+SPARKLE_ACCOUNT="brouk"  # Keychain account of the update signing key.
+FEED="windows-x64.json"
+
+VERSION="${1:-}"
+if [[ $# -ne 1 || ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "Usage: scripts/release_windows <version, e.g. 0.4.0>" >&2
+  exit 2
+fi
+TAG="v$VERSION"
+OUT="$ROOT/build/release/$VERSION/windows"
+
+step() { printf '\n==> %s\n' "$*"; }
+fail() { printf '\nWindows release stopped: %s\n' "$*" >&2; exit 1; }
+
+# shellcheck source=/dev/null
+source "$ROOT/scripts/env.sh"
+"$ROOT/scripts/install_tools" >/dev/null
+"$ROOT/scripts/fetch_sparkle"
+GH="$ROOT/.tools/bin/gh"
+SPARKLE_BIN="$ROOT/third_party/sparkle/bin"
+
+cmake_var() { sed -n "s/^set($1 \"\(.*\)\")$/\1/p" "$ROOT/CMakeLists.txt"; }
+APP_NAME="$(cmake_var APP_NAME)"
+SETUP="$APP_NAME-$VERSION-setup.exe"
+
+step "Checking preconditions"
+"$GH" auth status >/dev/null 2>&1 || fail "gh is not signed in (gh auth login)."
+[[ "$("$GH" api "repos/$RELEASES_REPO" --jq .permissions.push 2>/dev/null)" == true ]] ||
+  fail "gh cannot write to $RELEASES_REPO."
+"$GH" release view "$TAG" -R "$RELEASES_REPO" >/dev/null 2>&1 ||
+  fail "$RELEASES_REPO has no release $TAG yet (run scripts/release first)."
+PRERELEASE="$("$GH" release view "$TAG" -R "$RELEASES_REPO" --json isPrerelease --jq .isPrerelease)"
+CHANNEL=stable
+[[ "$PRERELEASE" == true ]] && CHANNEL=beta
+key="$("$SPARKLE_BIN/generate_keys" --account "$SPARKLE_ACCOUNT" -p 2>/dev/null || true)"
+[[ -n "$key" ]] || fail "no update signing key in the keychain (see docs/releasing.md)."
+[[ "$key" == "$(cmake_var APP_UPDATE_PUBLIC_KEY)" ]] ||
+  fail "the update signing key does not match APP_UPDATE_PUBLIC_KEY in CMakeLists.txt."
+git fetch -q origin "refs/tags/$TAG:refs/tags/$TAG" 2>/dev/null || true
+COMMIT="$(git rev-list -n 1 "$TAG" 2>/dev/null)" || fail "no tag $TAG."
+
+mkdir -p "$OUT"
+if [[ ! -f "$OUT/$SETUP" ]]; then
+  step "Waiting for the windows-release build of $TAG"
+  run=""
+  for _ in $(seq 1 30); do
+    run="$("$GH" run list -R "$SOURCE_REPO" --workflow windows-release.yml \
+      --limit 50 --json databaseId,headSha \
+      --jq "[.[] | select(.headSha == \"$COMMIT\")][0].databaseId // empty")"
+    [[ -n "$run" ]] && break
+    sleep 10
+  done
+  [[ -n "$run" ]] || fail "no windows-release run for $TAG (it starts when the tag is pushed)."
+  echo "https://github.com/$SOURCE_REPO/actions/runs/$run"
+  "$GH" run watch "$run" -R "$SOURCE_REPO" --exit-status >/dev/null ||
+    fail "the windows-release build failed; see the run above."
+  "$GH" run download "$run" -R "$SOURCE_REPO" -n "brouk-windows-setup-$TAG" -D "$OUT"
+fi
+[[ -f "$OUT/$SETUP" && -f "$OUT/$SETUP.sha256" ]] || fail "the build has no $SETUP."
+(cd "$OUT" && shasum -a 256 -c "$SETUP.sha256" >/dev/null) ||
+  fail "$SETUP does not match its checksum."
+
+step "Signing $SETUP for the updater"
+signed="$("$SPARKLE_BIN/sign_update" --account "$SPARKLE_ACCOUNT" "$OUT/$SETUP")"
+SIGNATURE="$(sed -n 's/.*sparkle:edSignature="\([^"]*\)".*/\1/p' <<<"$signed")"
+LENGTH="$(sed -n 's/.*length="\([0-9]*\)".*/\1/p' <<<"$signed")"
+[[ -n "$SIGNATURE" && "$LENGTH" == "$(stat -f %z "$OUT/$SETUP")" ]] ||
+  fail "sign_update gave no signature."
+
+step "Publishing $SETUP ($CHANNEL)"
+have="$("$GH" release view "$TAG" -R "$RELEASES_REPO" --json assets --jq '.assets[].name')"
+for file in "$SETUP" "$SETUP.sha256"; do
+  if ! grep -qx "$file" <<<"$have"; then
+    "$GH" release upload "$TAG" -R "$RELEASES_REPO" "$OUT/$file"
+  fi
+done
+
+# The feed last, so it never points to a file that is not uploaded.
+feeds="$ROOT/build/release/brouk-releases"
+if [[ -d "$feeds/.git" ]]; then
+  git -C "$feeds" pull -q --ff-only
+else
+  "$GH" repo clone "$RELEASES_REPO" "$feeds" -- -q
+fi
+python3 - "$feeds/$FEED" "$VERSION" "$CHANNEL" "$SIGNATURE" "$LENGTH" \
+  "$RELEASES_REPO" "$SETUP" <<'PY'
+import json, os, sys
+feed, version, channel, signature, length, repo, setup = sys.argv[1:]
+data = {"releases": []}
+if os.path.exists(feed):
+    with open(feed) as f:
+        data = json.load(f)
+if any(r.get("version") == version for r in data["releases"]):
+    sys.exit(0)
+base = f"https://github.com/{repo}/releases"
+data["releases"].insert(0, {
+    "version": version,
+    "channel": channel,
+    "url": f"{base}/download/v{version}/{setup}",
+    "size": int(length),
+    "ed_signature": signature,
+    "notes_url": f"{base}/tag/v{version}",
+})
+with open(feed, "w") as f:
+    json.dump(data, f, indent=2)
+    f.write("\n")
+PY
+if [[ -n "$(git -C "$feeds" status --porcelain)" ]]; then
+  git -C "$feeds" add "$FEED"
+  git -C "$feeds" commit -q -m "feat: add $TAG to the windows update feed"
+  git -C "$feeds" push -q origin main
+fi
+
+step "Published $APP_NAME $VERSION for Windows ($CHANNEL)"
+echo "https://github.com/$RELEASES_REPO/releases/tag/$TAG"
