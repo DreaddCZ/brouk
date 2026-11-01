@@ -39,6 +39,8 @@ add_library(brouk_app SHARED
   credential_store.h
   data_paths.cc
   data_paths.h
+  default_browser.cc
+  default_browser.h
   desktop_sources.cc
   devtools_dock.cc
   devtools_dock.h

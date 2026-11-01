@@ -57,6 +57,7 @@
 #include "platform/win/controls.h"
 #include "platform/win/credential_store.h"
 #include "platform/win/data_paths.h"
+#include "platform/win/default_browser.h"
 #include "platform/win/devtools_window.h"
 #include "platform/win/downloaded_files.h"
 #include "platform/win/file_dialogs.h"
@@ -518,6 +519,8 @@ App::App()
   // behind (010); Chromium is not running yet.
   profiles_.RemoveWebDataOfDeletedProfiles(WebDataRootDirectory());
   LinkResolver::RemoveLeftoverData(WebDataRootDirectory());
+  // A default-browser registration follows brouk.exe if its folder moved.
+  RefreshBrowserRegistration();
 }
 
 void App::OnContextInitialized() {
@@ -2722,12 +2725,19 @@ std::vector<std::string> App::LinkRoutingProblems() {
 }
 
 bool App::IsDefaultBrowser() {
-  return false;
+  return win::IsDefaultBrowser();
 }
 
+// As Chrome on Windows: Brouk registers itself as a browser for this user,
+// and Windows' Settings make it the default (no app may do that itself).
 void App::MakeDefaultBrowser(
     std::function<void(std::optional<Error> error)> done) {
-  done(Error{"Making Brouk the default browser comes later on Windows."});
+  if (std::optional<Error> error = RegisterAsBrowser()) {
+    done(error);
+    return;
+  }
+  OpenDefaultAppsSettings();
+  done(std::nullopt);
 }
 
 }  // namespace brouk::win

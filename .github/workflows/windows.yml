@@ -127,9 +127,23 @@ jobs:
           # A crash ends the process instead of waiting in a dialog.
           reg add "HKCU\Software\Microsoft\Windows\Windows Error Reporting" \
             //v DontShowUI //t REG_DWORD //d 1 //f
+          # Brouk's crashes leave a minidump (CEF's Crashpad, stored only on
+          # this machine), kept with the logs; the renderer the test
+          # crashes on purpose leaves one too. Not part of the uploaded app.
+          printf '[Config]\nProductName=Brouk\nAppName=BroukSmoke\n' \
+            > build/debug/Brouk/crash_reporter.cfg
           source scripts/env.sh
           version="$(sed -n 's/^set(APP_VERSION "\(.*\)")$/\1/p' CMakeLists.txt)"
           node tests/smoke/smoke.mjs build/debug/Brouk "$version" unknown x86_64 build/smoke
+
+      # Crash dumps (CEF's Crashpad) go with the smoke test's logs, to be read
+      # with the build's symbols when a crash needs it.
+      - name: Collect crash dumps
+        if: ${{ !cancelled() }}
+        run: |
+          reports="$LOCALAPPDATA/BroukSmoke/User Data/Crashpad/reports"
+          mkdir -p build/smoke/dumps
+          cp "$reports"/*.dmp build/smoke/dumps/ 2>/dev/null || true
 
       - name: Upload the smoke test's screenshots and logs
         if: ${{ !cancelled() }}
@@ -151,5 +165,6 @@ jobs:
           path: |
             build/debug/Brouk/
             !build/debug/Brouk/*.pdb
+            !build/debug/Brouk/crash_reporter.cfg
           retention-days: 14
           if-no-files-found: error
