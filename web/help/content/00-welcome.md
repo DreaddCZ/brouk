@@ -14,6 +14,8 @@ Brouk is a web browser for work. It keeps several **profiles** side by side in o
 2. Open the disk image and drag **Brouk** onto **Applications**.
 3. Open Brouk from Applications. It is signed and notarized by Apple, so it opens without a warning.
 
+**On Windows:** download `Brouk-<version>-setup.exe` from the same page and run it. It installs Brouk for you only (in `%LOCALAPPDATA%\Programs\Brouk`), so it needs no administrator rights, and adds it to the Start menu. The installer is not code-signed yet: Windows SmartScreen warns about an unknown publisher; choose **More info → Run anyway**. Uninstall it in Windows Settings → Apps; your profiles, passwords and settings stay in `%LOCALAPPDATA%\Brouk`.
+
 To make Brouk your default browser, see [Default browser](#link-routing-default-browser).
 
 ### Updates {#updates}
