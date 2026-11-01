@@ -3,8 +3,8 @@
 #include <windows.h>
 
 #include <UserConsentVerifierInterop.h>
-#include <credui.h>
 #include <roapi.h>
+#include <wincred.h>
 #include <windows.foundation.h>
 #include <windows.security.credentials.ui.h>
 #include <wrl/client.h>
