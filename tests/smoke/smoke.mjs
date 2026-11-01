@@ -116,11 +116,12 @@ function sendKeys(title, keys, { windowsOf: pid, thenKeys = [], window = ['Brouk
     'Write-Output "Brouk in front: $active, focus before: $before, after: $after"',
     ...(pid && invoke
       ? [
-          // `invoke`: a button of Brouk's windows, by its accessible name,
-          // found through UI Automation and clicked with the mouse, as a
-          // user does (no shortcut opens it).
+          // `invoke`: a button of Brouk's windows (a Win32 button, not one
+          // in a page), by its accessible name, found through UI Automation
+          // and clicked with the mouse, as a user does (no shortcut opens
+          // it).
           `$pc = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, ${pid})`,
-          `$nc = New-Object System.Windows.Automation.AndCondition((New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, '${invoke}')), (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)))`,
+          `$nc = New-Object System.Windows.Automation.AndCondition((New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::NameProperty, '${invoke}')), (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)), (New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ClassNameProperty, 'Button')))`,
           '$invoked = $false',
           "Add-Type -Namespace Smoke -Name Click -MemberDefinition '[DllImport(\"user32.dll\")] public static extern bool SetCursorPos(int x, int y); [DllImport(\"user32.dll\")] public static extern void mouse_event(int f, int x, int y, int d, int e); [DllImport(\"user32.dll\", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string c, string n); [DllImport(\"user32.dll\")] public static extern bool IsWindowVisible(IntPtr h);'",
           'foreach ($top in [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $pc)) { if (-not $invoked) { $b = $top.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $nc); if ($b) { $r = $b.Current.BoundingRectangle; [Smoke.Click]::SetCursorPos([int]($r.X + $r.Width / 2), [int]($r.Y + $r.Height / 2)) | Out-Null; Start-Sleep -Milliseconds 200; [Smoke.Click]::mouse_event(0x0002, 0, 0, 0, 0); [Smoke.Click]::mouse_event(0x0004, 0, 0, 0, 0); $invoked = "$r" } } }',
