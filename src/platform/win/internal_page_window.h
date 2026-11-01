@@ -35,6 +35,9 @@ class InternalPageWindow final : public InternalPageDelegate {
               CefRefPtr<CefRequestContext> context);
   void Activate();
   HWND hwnd() const { return window_; }
+  // For the task manager (020).
+  CefRefPtr<CefBrowser> browser() const { return browser_; }
+  int renderer_pid() const { return client_ ? client_->renderer_pid() : 0; }
   // Runs a script of ours in the page (e.g. help's showHelpSection).
   void ExecuteJavaScript(const std::string& code);
   // Loads another address of the same page (a settings fragment).

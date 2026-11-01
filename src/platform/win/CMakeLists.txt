@@ -11,6 +11,14 @@ set(APP_DIR "${CMAKE_BINARY_DIR}/${APP_NAME}")
 add_library(brouk_app SHARED
   app.cc
   app.h
+  bookmark_dialog.cc
+  bookmark_dialog.h
+  bookmark_store.cc
+  bookmark_store.h
+  bookmarks_bar.cc
+  bookmarks_bar.h
+  command_palette.cc
+  command_palette.h
   browser_window.cc
   browser_window.h
   controls.cc
@@ -19,10 +27,16 @@ add_library(brouk_app SHARED
   data_paths.h
   desktop_sources.cc
   desktop_sources.h
+  downloaded_files.cc
+  downloaded_files.h
+  downloads_popup.cc
+  downloads_popup.h
   file_dialogs.cc
   file_dialogs.h
   favicon.cc
   favicon.h
+  favicon_cache.cc
+  favicon_cache.h
   find_bar.cc
   find_bar.h
   internal_page_window.cc
@@ -30,6 +44,8 @@ add_library(brouk_app SHARED
   main.cc
   settings_watcher.cc
   settings_watcher.h
+  suggestions_popup.cc
+  suggestions_popup.h
   tab.cc
   tab.h
   tab_panel.cc
@@ -38,6 +54,8 @@ add_library(brouk_app SHARED
   tab_strip.h
   theme.cc
   theme.h
+  undo_notice.cc
+  undo_notice.h
   wide_string.cc
   wide_string.h
 )
@@ -54,11 +72,20 @@ set_target_properties(brouk_app PROPERTIES
   # The import library is not part of the app.
   ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
-# CEF's files next to the DLL, and the bootstrap executable as brouk.exe.
+# Gives brouk.exe Brouk's name and version (a build tool, exe_stamp.cc).
+add_executable(brouk_exe_stamp exe_stamp.cc)
+brouk_target_options(brouk_exe_stamp NO_SANITIZE)
+add_dependencies(brouk_app brouk_exe_stamp)
+
+# CEF's files next to the DLL, and the bootstrap executable as brouk.exe,
+# with Brouk's version information (Windows shows its name).
 set(_copy_commands
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
           "${BROUK_CEF_BINARY_DIR}/bootstrap.exe"
-          "${APP_DIR}/${APP_EXECUTABLE_NAME}.exe")
+          "${APP_DIR}/${APP_EXECUTABLE_NAME}.exe"
+  COMMAND $<TARGET_FILE:brouk_exe_stamp>
+          "${APP_DIR}/${APP_EXECUTABLE_NAME}.exe" "${APP_NAME}"
+          "${APP_VERSION}" "${APP_EXECUTABLE_NAME}")
 foreach(_file IN LISTS CEF_BINARY_FILES)
   list(APPEND _copy_commands
     COMMAND ${CMAKE_COMMAND} -E copy_if_different

@@ -18,6 +18,25 @@ namespace brouk {
 
 namespace {
 
+// A folder setting's path (014): macOS's "/..." or "~/...", or Windows's
+// "C:\..." (or "C:/..."), "\\server\share\..." or one starting with an
+// environment variable ("%USERPROFILE%\Downloads"). Settings files stay on
+// one machine, so either form is accepted on both systems.
+bool IsFullFolderPath(std::string_view text) {
+  if (text.starts_with("/") || text.starts_with("~/") ||
+      text.starts_with("\\\\")) {
+    return true;
+  }
+  const bool drive = text.size() >= 3 &&
+                     ((text[0] >= 'A' && text[0] <= 'Z') ||
+                      (text[0] >= 'a' && text[0] <= 'z')) &&
+                     text[1] == ':' && (text[2] == '\\' || text[2] == '/');
+  const std::size_t end = text.find('%', 1);
+  const bool variable =
+      text.starts_with("%") && end != std::string_view::npos && end > 1;
+  return drive || variable;
+}
+
 std::optional<std::int64_t> ParseInteger(std::string_view text) {
   std::int64_t value = 0;
   auto [end, error] =
@@ -95,10 +114,11 @@ std::optional<std::string> CheckFormat(SettingDef::Format format,
       }
       return std::nullopt;
     case SettingDef::Format::kFolder:
-      if (!text.empty() && !text.starts_with("/") && !text.starts_with("~/")) {
+      if (!text.empty() && !IsFullFolderPath(text)) {
         return std::string(
             "must be empty (your Downloads folder), a full path such as "
-            "/Users/me/Downloads, or a path starting with ~/");
+            "/Users/me/Downloads or C:\\Users\\me\\Downloads, or a path "
+            "starting with ~/ or %USERPROFILE%");
       }
       return std::nullopt;
     case SettingDef::Format::kProfileId:

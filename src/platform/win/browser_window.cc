@@ -4,7 +4,12 @@
 #include <windowsx.h>
 
 #include <algorithm>
+#include <array>
+#include <chrono>
+#include <cstdint>
 #include <cstdlib>
+#include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -16,8 +21,12 @@
 #include "cef/site_info.h"
 #include "core/address_input.h"
 #include "core/internal_pages.h"
+#include "core/profile_colors.h"
 #include "core/profile_id.h"
+#include "core/settings_schema.h"
+#include "core/url_display.h"
 #include "core/zoom.h"
+#include "include/cef_parser.h"
 #include "include/cef_task.h"
 #include "include/wrapper/cef_helpers.h"
 #include "platform/win/controls.h"
@@ -50,6 +59,8 @@ enum ControlId : int {
   kAddressId,
   kZoomId,
   kPopupsId,
+  kDownloadsId,
+  kStarId,
 };
 
 // Items of the "⋮" menu.
@@ -76,8 +87,23 @@ enum MenuCommand : UINT {
   kCloseOtherTabsCommand,
   kCloseTabsLeftCommand,
   kCloseTabsRightCommand,
+  kPauseTabCommand,
+  kShowInTaskManagerCommand,
+  kTaskManagerCommand,
+  kCommandPaletteCommand,
+  kReopenClosedTabCommand,
+  kHistoryCommand,
+  kClearBrowsingDataCommand,
+  kDownloadsCommand,
+  kBookmarkThisTabCommand,
+  kBookmarkAllTabsCommand,
+  kBookmarkManagerCommand,
+  kAlwaysShowBarCommand,
   kFirstBlockedPopupCommand = 1000,
   kFirstProfileCommand = 2000,
+  kFirstClosedCommand = 3000,
+  kFirstRecentPageCommand = 4000,
+  kFirstBookmarkCommand = 5000,
 };
 
 // Glyphs of the "Segoe MDL2 Assets" icon font, on Windows 10 and 11.
@@ -86,6 +112,32 @@ constexpr wchar_t kForwardGlyph[] = L"\uE72A";
 constexpr wchar_t kReloadGlyph[] = L"\uE72C";
 constexpr wchar_t kMoreGlyph[] = L"\uE712";
 constexpr wchar_t kBlockedGlyph[] = L"\uE8A7";  // OpenInNewWindow.
+constexpr wchar_t kDownloadGlyph[] = L"\uE896";
+constexpr wchar_t kStarGlyph[] = L"\uE734";        // FavoriteStar.
+constexpr wchar_t kStarFilledGlyph[] = L"\uE735";  // FavoriteStarFill.
+
+std::int64_t NowSeconds() {
+  return std::chrono::duration_cast<std::chrono::seconds>(
+             std::chrono::system_clock::now().time_since_epoch())
+      .count();
+}
+
+std::int64_t NextWindowId() {
+  static std::int64_t next = 1;
+  return next++;
+}
+
+// Menu text shows "&" as a mnemonic unless doubled.
+std::wstring MenuText(const std::string& text) {
+  std::wstring escaped;
+  for (wchar_t c : Utf8ToWide(text)) {
+    escaped += c;
+    if (c == L'&') {
+      escaped += L'&';
+    }
+  }
+  return escaped;
+}
 
 TabId NextTabId() {
   static TabId next = 0;
@@ -118,7 +170,10 @@ bool IsBlank(const std::string& url) {
 }  // namespace
 
 BrowserWindow::BrowserWindow(BrowserWindowOwner& owner, Kind kind)
-    : owner_(owner), kind_(kind), model_(owner.DefaultProfile()) {}
+    : owner_(owner),
+      kind_(kind),
+      window_id_(NextWindowId()),
+      model_(owner.DefaultProfile()) {}
 
 BrowserWindow::~BrowserWindow() {
   fullscreen_hint_.reset();
@@ -142,6 +197,7 @@ bool BrowserWindow::Create(int content_width, int content_height) {
   if (!RegisterWindowClass()) {
     return false;
   }
+  strip_.SetTabLookup([this](TabId id) -> const Tab* { return FindTab(id); });
   const int dpi = static_cast<int>(GetDpiForSystem());
   int width = MulDiv(1200, dpi, 96);
   int height = MulDiv(800, dpi, 96);
@@ -204,6 +260,12 @@ void BrowserWindow::CreateControls() {
   forward_ = button(kForwardGlyph, kForwardId, L"Forward");
   reload_ = button(kReloadGlyph, kReloadId, L"Reload");
   menu_ = button(kMoreGlyph, kMenuId, L"Customise and control Brouk");
+  // Shown once something was downloaded in this run (Chrome).
+  downloads_ = CreateWindowExW(
+      0, WC_BUTTONW, kDownloadGlyph, WS_CHILD | BS_OWNERDRAW, 0, 0, 0, 0,
+      window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kDownloadsId)),
+      instance, nullptr);
+  SetAccessibleName(downloads_, L"Downloads");
   DWORD style = WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL;
   if (kind_ == Kind::kPopup) {
     style |= ES_READONLY;  // Popups show where they are (Chrome).
@@ -226,6 +288,14 @@ void BrowserWindow::CreateControls() {
       window_, reinterpret_cast<HMENU>(static_cast<INT_PTR>(kPopupsId)),
       instance, nullptr);
   SetAccessibleName(popups_, L"Pop-ups blocked");
+  if (kind_ == Kind::kNormal) {
+    bookmarks_bar_ = std::make_unique<BookmarksBar>(window_, *this);
+  }
+  star_ = CreateWindowExW(
+      0, WC_BUTTONW, kStarGlyph, WS_CHILD | BS_OWNERDRAW, 0, 0, 0, 0, window_,
+      reinterpret_cast<HMENU>(static_cast<INT_PTR>(kStarId)), instance,
+      nullptr);
+  SetAccessibleName(star_, L"Bookmark this tab");
   if (kind_ == Kind::kNormal) {
     // One tool over the tab strip; its text follows the hovered part.
     tooltip_ = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr,
@@ -314,10 +384,17 @@ RECT BrowserWindow::ToolbarBounds() const {
                    static_cast<int>(strip.bottom) + Scale(kToolbarHeight))};
 }
 
+RECT BrowserWindow::BookmarksBarBounds() const {
+  const RECT toolbar = ToolbarBounds();
+  const int height =
+      bookmarks_bar_shown_ ? BookmarksBar::Height(GetDpiForWindow(window_)) : 0;
+  return {toolbar.left, toolbar.bottom, toolbar.right, toolbar.bottom + height};
+}
+
 RECT BrowserWindow::ContentBounds() const {
   RECT client = {};
   GetClientRect(window_, &client);
-  client.top = ToolbarBounds().bottom;
+  client.top = BookmarksBarBounds().bottom;
   return client;
 }
 
@@ -352,6 +429,13 @@ void BrowserWindow::Layout() {
                  toolbar.top + (toolbar_height - button) / 2, button, button,
                  SWP_NOZORDER | SWP_NOACTIVATE);
     right -= margin;
+    if (HasVisibleStyle(downloads_)) {
+      right -= button;
+      SetWindowPos(downloads_, nullptr, right,
+                   toolbar.top + (toolbar_height - button) / 2, button, button,
+                   SWP_NOZORDER | SWP_NOACTIVATE);
+      right -= margin;
+    }
   }
   const int field_height = Scale(kAddressHeight);
   const int field_top = toolbar.top + (toolbar_height - field_height) / 2;
@@ -362,7 +446,8 @@ void BrowserWindow::Layout() {
   // The indicators at the right end of the address bar, right to left.
   int indicator_right = static_cast<int>(address_field_.right) - Scale(4);
   for (const auto& [indicator, width] :
-       {std::pair{zoom_, Scale(56)}, std::pair{popups_, Scale(30)}}) {
+       {std::pair{star_, Scale(30)}, std::pair{zoom_, Scale(56)},
+        std::pair{popups_, Scale(30)}}) {
     if (HasVisibleStyle(indicator)) {
       indicator_right -= width;
       SetWindowPos(indicator, nullptr, indicator_right, field_top + Scale(4),
@@ -378,6 +463,9 @@ void BrowserWindow::Layout() {
       field_top + (field_height - edit_height) / 2,
       std::max(0, edit_right - static_cast<int>(address_field_.left) - padding),
       edit_height, SWP_NOZORDER | SWP_NOACTIVATE);
+  if (bookmarks_bar_) {
+    bookmarks_bar_->SetBounds(BookmarksBarBounds());
+  }
   const RECT content = ContentBounds();
   for (const auto& [id, tab] : tabs_) {
     tab->SetBounds(content);
@@ -462,6 +550,1100 @@ void BrowserWindow::DrawToolbarButton(const DRAWITEMSTRUCT& item) {
   SelectObject(item.hDC, previous);
 }
 
+void BrowserWindow::DrawDownloadsButton(const DRAWITEMSTRUCT& item) {
+  DrawToolbarButton(item);
+  DownloadService* service = owner_.Downloads();
+  if (!service) {
+    return;
+  }
+  const RECT& area = item.rcItem;
+  const int width = area.right - area.left;
+  if (service->RunningCount() > 0) {
+    // A line under the glyph: how far the running downloads are (a short
+    // one when their size is unknown).
+    const double progress = service->Progress();
+    const int left = area.left + width / 4;
+    const int full = width / 2;
+    const int done =
+        progress < 0 ? full / 4
+                     : static_cast<int>(full * std::clamp(progress, 0.0, 1.0));
+    const int top = area.bottom - Scale(6);
+    RECT track = {left, top, left + full, top + Scale(2)};
+    SetDCBrushColor(item.hDC, theme_.separator);
+    FillRect(item.hDC, &track, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
+    RECT bar = {left, top, left + std::max(done, Scale(2)), top + Scale(2)};
+    SetDCBrushColor(item.hDC, GetSysColor(COLOR_HIGHLIGHT));
+    FillRect(item.hDC, &bar, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
+  } else if (service->HasUnseen()) {
+    const int size = Scale(6);
+    const int x = area.right - Scale(9);
+    const int y = area.top + Scale(5);
+    SetDCBrushColor(item.hDC, GetSysColor(COLOR_HIGHLIGHT));
+    SetDCPenColor(item.hDC, GetSysColor(COLOR_HIGHLIGHT));
+    HGDIOBJ old_brush = SelectObject(item.hDC, GetStockObject(DC_BRUSH));
+    HGDIOBJ old_pen = SelectObject(item.hDC, GetStockObject(DC_PEN));
+    Ellipse(item.hDC, x, y, x + size, y + size);
+    SelectObject(item.hDC, old_pen);
+    SelectObject(item.hDC, old_brush);
+  }
+}
+
+void BrowserWindow::DownloadsChanged() {
+  DownloadService* service = owner_.Downloads();
+  const bool show = kind_ == Kind::kNormal && service && service->AnyThisRun();
+  if (show != HasVisibleStyle(downloads_)) {
+    ShowWindow(downloads_, show ? SW_SHOWNA : SW_HIDE);
+    Layout();
+  }
+  InvalidateRect(downloads_, nullptr, FALSE);
+  UpdateTaskbarProgress();
+  if (downloads_popup_.visible()) {
+    std::weak_ptr<int> alive = alive_;
+    ListRecentDownloads([this, alive](std::vector<DownloadEntry> entries) {
+      if (!alive.expired()) {
+        downloads_popup_.Update(std::move(entries));
+      }
+    });
+  }
+}
+
+void BrowserWindow::UpdateTaskbarProgress() {
+  DownloadService* service = owner_.Downloads();
+  const bool running =
+      kind_ == Kind::kNormal && service && service->RunningCount() > 0;
+  if (!running && !taskbar_progress_) {
+    return;
+  }
+  if (!taskbar_ &&
+      FAILED(CoCreateInstance(
+          CLSID_TaskbarList, nullptr, CLSCTX_INPROC_SERVER, IID_ITaskbarList3,
+          reinterpret_cast<void**>(taskbar_.ReleaseAndGetAddressOf())))) {
+    return;
+  }
+  taskbar_progress_ = running;
+  if (!running) {
+    taskbar_->SetProgressState(window_, TBPF_NOPROGRESS);
+    return;
+  }
+  const double progress = service->Progress();
+  if (progress < 0) {
+    taskbar_->SetProgressState(window_, TBPF_INDETERMINATE);
+    return;
+  }
+  constexpr ULONGLONG kSteps = 1000;
+  taskbar_->SetProgressState(window_, TBPF_NORMAL);
+  taskbar_->SetProgressValue(
+      window_,
+      static_cast<ULONGLONG>(std::clamp(progress, 0.0, 1.0) *
+                             static_cast<double>(kSteps)),
+      kSteps);
+}
+
+void BrowserWindow::ListRecentDownloads(
+    std::function<void(std::vector<DownloadEntry>)> done) {
+  DownloadService* service = owner_.Downloads();
+  if (!service) {
+    return;
+  }
+  std::vector<ProfileId> profiles;
+  for (const ProfileInfo& info : owner_.ProfileList()) {
+    profiles.push_back(info.id);
+  }
+  service->List(profiles, 200, std::move(done));
+}
+
+void BrowserWindow::ShowDownloadsPopup() {
+  if (downloads_popup_.JustClosed()) {
+    return;  // The click on the button closed it.
+  }
+  std::weak_ptr<int> alive = alive_;
+  ListRecentDownloads([this, alive](std::vector<DownloadEntry> entries) {
+    if (alive.expired() || !HasVisibleStyle(downloads_)) {
+      return;
+    }
+    RECT anchor = {};
+    GetWindowRect(downloads_, &anchor);
+    downloads_popup_.Show(window_, anchor, std::move(entries), theme_,
+                          text_font_, icon_font_);
+    if (DownloadService* service = owner_.Downloads()) {
+      service->MarkAllSeen();
+    }
+  });
+}
+
+DownloadService* BrowserWindow::PopupDownloads() {
+  return owner_.Downloads();
+}
+
+COLORREF BrowserWindow::PopupProfileColor(const ProfileId& profile) {
+  const ProfileColorShades shades =
+      ShadesOfProfileColor(owner_.ProfileLook(profile).color);
+  const std::uint32_t rgb = theme_.dark ? shades.dark : shades.light;
+  return RGB((rgb >> 16) & 0xFF, (rgb >> 8) & 0xFF, rgb & 0xFF);
+}
+
+void BrowserWindow::PopupRetryDownload(const DownloadEntry& entry) {
+  RetryDownload(entry);
+}
+
+void BrowserWindow::PopupShowAllDownloads() {
+  ShowDownloads();
+}
+
+void BrowserWindow::ShowDownloads() {
+  if (DownloadService* service = owner_.Downloads()) {
+    service->MarkAllSeen();
+  }
+  OpenInternalPage("brouk://downloads/");
+}
+
+void BrowserWindow::RetryDownload(const DownloadEntry& entry) {
+  DownloadService* service = owner_.Downloads();
+  CefRefPtr<CefBrowser> browser = AnyBrowserInProfile(entry.profile);
+  if (browser && service) {
+    service->Retry(entry.profile, entry.record.id, entry.record.url, browser);
+    return;
+  }
+  // No tab of the profile here: the address in a new tab starts it again.
+  OpenTab(entry.record.url, false, entry.profile);
+}
+
+void BrowserWindow::AppendTaskPages(std::vector<TaskManagerPage>& pages) {
+  const std::string window_name = "Window " + std::to_string(window_id_);
+  const std::optional<TabId> active = model_.active_id();
+  for (std::size_t i = 0; i < model_.count(); ++i) {
+    const TabId id = model_.id_at(i);
+    const Tab* tab = FindTab(id);
+    if (!tab || tab->closing()) {
+      continue;
+    }
+    const TabStrip::GroupLook look = owner_.ProfileLook(tab->profile());
+    TaskManagerPage page;
+    page.key = "tab-" + std::to_string(id);
+    page.browser = tab->browser();
+    page.pid = tab->renderer_pid();
+    page.brouk_page = tab->internal();
+    page.title = tab->DisplayTitle();
+    page.url = tab->url();
+    if (!tab->favicon_png().empty()) {
+      page.icon =
+          "data:image/png;base64," +
+          CefBase64Encode(tab->favicon_png().data(), tab->favicon_png().size())
+              .ToString();
+    }
+    page.profile_name = look.name;
+    page.profile_color = look.color;
+    page.window = window_name;
+    page.received_bytes = tab->received_bytes();
+    page.audible = tab->audible();
+    page.muted = tab->muted();
+    page.camera = tab->uses_camera();
+    page.microphone = tab->uses_microphone();
+    page.paused = tab->paused();
+    page.loading = tab->loading();
+    page.crashed = tab->crashed();
+    page.shown = active == id;
+    pages.push_back(std::move(page));
+  }
+}
+
+void BrowserWindow::AppendPaletteTabs(std::vector<PaletteEntry>& entries) {
+  BrowserWindowOwner& owner = owner_;
+  for (std::size_t i = 0; i < model_.count(); ++i) {
+    const TabId id = model_.id_at(i);
+    const Tab* tab = FindTab(id);
+    if (!tab || tab->closing()) {
+      continue;
+    }
+    const TabStrip::GroupLook look = owner_.ProfileLook(tab->profile());
+    PaletteEntry entry;
+    entry.kind = PaletteItem::Kind::kTab;
+    entry.title = tab->DisplayTitle();
+    entry.detail = look.name + " · " + FormatUrlForDisplay(tab->url());
+    entry.run = [this, &owner, id] {
+      if (owner.IsOpenWindow(this)) {
+        ActOnTab(id, TaskPageAction::kGoTo);
+      }
+    };
+    entries.push_back(std::move(entry));
+  }
+}
+
+void BrowserWindow::ShowCommandPalette() {
+  if (kind_ != Kind::kNormal) {
+    return;
+  }
+  CloseSuggestions();
+  std::vector<PaletteEntry> entries;
+  // The tabs of this window first, then of the others.
+  AppendPaletteTabs(entries);
+  for (BrowserWindow* window : owner_.NormalWindows()) {
+    if (window != this) {
+      window->AppendPaletteTabs(entries);
+    }
+  }
+  for (PaletteEntry& action : PaletteActions()) {
+    entries.push_back(std::move(action));
+  }
+  // Bookmarks visible in the active tab's profile (011): open in the tab.
+  const Tab* active = ActiveTab();
+  const ProfileId profile =
+      active ? active->profile() : owner_.DefaultProfile();
+  if (BookmarkStore* store = owner_.Bookmarks()) {
+    const BookmarkModel& model = store->model();
+    std::vector<BookmarkId> stack = {BookmarkModel::kOtherId,
+                                     BookmarkModel::kBarId};
+    while (!stack.empty()) {
+      const BookmarkId id = stack.back();
+      stack.pop_back();
+      const BookmarkItem* item = model.Find(id);
+      if (!item || !model.IsVisibleIn(id, profile)) {
+        continue;
+      }
+      if (item->folder) {
+        stack.insert(stack.end(), item->children.rbegin(),
+                     item->children.rend());
+        continue;
+      }
+      const std::string address = FormatUrlForDisplay(item->url);
+      entries.push_back(
+          {.kind = PaletteItem::Kind::kBookmark,
+           .title = item->name.empty() ? address : item->name,
+           .detail = address,
+           .shortcut = {},
+           .run = [this, id] { OpenBookmark(id, BookmarkOpen::kCurrentTab); }});
+    }
+  }
+  // Every setting; choosing one opens the settings window there, for the
+  // active tab's profile where the setting is per profile.
+  const std::string profile_name = owner_.ProfileLook(profile).name;
+  for (const SettingDef& def : AllSettingDefs()) {
+    if (def.advanced) {
+      continue;
+    }
+    const bool per_profile = def.scope == SettingScope::kProfile;
+    const std::string scope = per_profile ? profile : std::string("global");
+    const std::string url =
+        "brouk://settings/#" + scope + ":" + std::string(def.key);
+    entries.push_back({.kind = PaletteItem::Kind::kSetting,
+                       .title = std::string(def.label),
+                       .detail = "Settings · " + std::string(def.section) +
+                                 (per_profile ? " (" + profile_name + ")" : ""),
+                       .shortcut = {},
+                       .run = [this, url] { owner_.OpenSettings(url); }});
+  }
+  // Help's sections (016).
+  for (const auto& [anchor, title] : owner_.HelpSections()) {
+    entries.push_back({.kind = PaletteItem::Kind::kHelp,
+                       .title = title,
+                       .detail = "Help",
+                       .shortcut = {},
+                       .run = [this, anchor] { owner_.OpenHelp(anchor); }});
+  }
+  palette_.Show(window_, Scale(56), std::move(entries), theme_, text_font_,
+                icon_font_);
+}
+
+// The browser's actions, as the menus and shortcuts have them; one with a
+// shortcut runs as its keys would.
+std::vector<PaletteEntry> BrowserWindow::PaletteActions() {
+  struct Action {
+    const char* label;
+    const wchar_t* shortcut;
+    int key;
+    bool control;
+    bool shift;
+    bool alt;
+  };
+  static constexpr std::array<Action, 24> kActions = {{
+      {"New tab", L"Ctrl+T", 'T', true, false, false},
+      {"New window", L"Ctrl+N", 'N', true, false, false},
+      {"Reopen closed tab", L"Ctrl+Shift+T", 'T', true, true, false},
+      {"Close tab", L"Ctrl+W", 'W', true, false, false},
+      {"Close window", L"Ctrl+Shift+W", 'W', true, true, false},
+      {"Reload", L"F5", VK_F5, false, false, false},
+      {"Back", L"Alt+Left", VK_LEFT, false, false, true},
+      {"Forward", L"Alt+Right", VK_RIGHT, false, false, true},
+      {"Find in page", L"Ctrl+F", 'F', true, false, false},
+      {"Print", L"Ctrl+P", 'P', true, false, false},
+      {"Zoom in", L"Ctrl++", VK_OEM_PLUS, true, false, false},
+      {"Zoom out", L"Ctrl+-", VK_OEM_MINUS, true, false, false},
+      {"Actual size", L"Ctrl+0", '0', true, false, false},
+      {"Full screen", L"F11", VK_F11, false, false, false},
+      {"Focus the address bar", L"Ctrl+L", 'L', true, false, false},
+      {"History", L"Ctrl+H", 'H', true, false, false},
+      {"Clear browsing data", L"Ctrl+Shift+Del", VK_DELETE, true, true, false},
+      {"Downloads", L"Ctrl+J", 'J', true, false, false},
+      {"Bookmark this tab", L"Ctrl+D", 'D', true, false, false},
+      {"Bookmark all tabs", L"Ctrl+Shift+D", 'D', true, true, false},
+      {"Bookmark manager", L"Ctrl+Shift+O", 'O', true, true, false},
+      {"Always show bookmarks bar", L"Ctrl+Shift+B", 'B', true, true, false},
+      {"Task manager", L"Shift+Esc", VK_ESCAPE, false, true, false},
+      {"Help", L"F1", VK_F1, false, false, false},
+  }};
+  std::vector<PaletteEntry> entries;
+  for (const Action& action : kActions) {
+    entries.push_back({.kind = PaletteItem::Kind::kAction,
+                       .title = action.label,
+                       .detail = "",
+                       .shortcut = action.shortcut,
+                       .run = [this, action] {
+                         HandleShortcut(action.key, action.control, action.alt,
+                                        action.shift);
+                       }});
+  }
+  // Without a shortcut on Windows.
+  auto add = [&entries](const char* label, std::function<void()> run) {
+    entries.push_back({.kind = PaletteItem::Kind::kAction,
+                       .title = label,
+                       .detail = "",
+                       .shortcut = {},
+                       .run = std::move(run)});
+  };
+  add("New tab to the right", [this] {
+    if (const Tab* tab = ActiveTab()) {
+      OpenTabAfter(tab->id(), std::string());
+    }
+  });
+  add("Duplicate tab", [this] {
+    if (const Tab* tab = ActiveTab(); tab && !tab->internal()) {
+      OpenTabAfter(tab->id(), tab->url());
+    }
+  });
+  add("Pin or unpin tab", [this] {
+    if (const Tab* tab = ActiveTab()) {
+      model_.SetPinned(tab->id(), !model_.IsPinned(tab->id()));
+      ModelChanged();
+    }
+  });
+  add("Mute or unmute site", [this] {
+    if (Tab* tab = ActiveTab()) {
+      tab->SetMuted(!tab->muted());
+    }
+  });
+  add("Close other tabs", [this] {
+    if (const Tab* tab = ActiveTab()) {
+      for (TabId id :
+           model_.TabsToClose(tab->id(), TabStripModel::CloseScope::kOthers)) {
+        CloseTab(id);
+      }
+    }
+  });
+  add("Settings", [this] { owner_.OpenSettings(std::string()); });
+  add("Manage profiles", [this] { owner_.OpenProfileManager(); });
+  add("Open-source licences", [this] { OpenInternalPage("brouk://credits/"); });
+  add("Exit", [this] { owner_.CloseAllWindows(); });
+  return entries;
+}
+
+bool BrowserWindow::ActOnTab(TabId id, TaskPageAction action) {
+  Tab* tab = FindTab(id);
+  if (!tab) {
+    return false;
+  }
+  switch (action) {
+    case TaskPageAction::kGoTo:
+      if (model_.ActivateTab(id)) {
+        ModelChanged();
+      }
+      Activate();
+      FocusActiveTab();
+      break;
+    case TaskPageAction::kPause:
+      tab->SetPaused(true);
+      break;
+    case TaskPageAction::kResume:
+      tab->SetPaused(false);
+      break;
+    case TaskPageAction::kUnload:
+      // The shown tab stays loaded, as in Chrome.
+      if (model_.active_id() != id) {
+        tab->Unload();
+      }
+      break;
+    case TaskPageAction::kMute:
+    case TaskPageAction::kUnmute:
+      tab->SetMuted(action == TaskPageAction::kMute);
+      break;
+    case TaskPageAction::kReload:
+      tab->Reload();
+      break;
+    case TaskPageAction::kDevTools:
+      break;  // Developer tools (006) come to Windows in W3.
+  }
+  return true;
+}
+
+bool BrowserWindow::CanBookmark(const Tab* tab) const {
+  if (!tab || kind_ != Kind::kNormal || tab->internal() || tab->closing()) {
+    return false;
+  }
+  const std::string& url = tab->url();
+  return url.starts_with("http://") || url.starts_with("https://") ||
+         url.starts_with("file:");
+}
+
+void BrowserWindow::FaviconsChanged() {
+  if (bookmarks_bar_ && bookmarks_bar_shown_) {
+    bookmarks_bar_->Redraw();
+  }
+}
+
+void BrowserWindow::OnTabBrowserCreated(Tab& tab) {
+  // CEF focuses a browser it creates; a new tab's keyboard belongs in the
+  // address bar (Chrome), now and once CEF has finished creating it.
+  auto refocus = [this](const Tab& created) {
+    if (&created == ActiveTab() && kind_ == Kind::kNormal && active_ &&
+        IsBlank(created.url()) && created.FocusInTab()) {
+      FocusAddressBar();
+    }
+  };
+  refocus(tab);
+  std::weak_ptr<int> alive = alive_;
+  const TabId id = tab.id();
+  CefPostTask(TID_UI, new FunctionTask([this, alive, id, refocus] {
+                if (alive.expired()) {
+                  return;
+                }
+                if (const Tab* created = FindTab(id)) {
+                  refocus(*created);
+                }
+              }));
+}
+
+bool BrowserWindow::TabKeepsFocusOnNavigation(const Tab& tab) {
+  // A new tab's page loading must not take the keyboard from the address
+  // bar (as on macOS and in Chrome).
+  return &tab == ActiveTab() && GetFocus() == address_;
+}
+
+void BrowserWindow::OnTabFaviconStored(Tab& tab) {
+  if (FaviconCache* favicons = owner_.Favicons()) {
+    favicons->IconChanged(tab.profile(), tab.url());
+  }
+}
+
+void BrowserWindow::BookmarksChanged() {
+  UpdateIndicators();
+  UpdateBookmarksBar();
+}
+
+bool BrowserWindow::BookmarksBarShown() {
+  if (!bookmarks_bar_ || fullscreen_ || !owner_.Bookmarks()) {
+    return false;
+  }
+  if (owner_.BookmarksBarAlwaysShown()) {
+    return true;
+  }
+  // By default on the new tab page only, as in Chrome (011).
+  const Tab* tab = ActiveTab();
+  return tab && !tab->internal() && IsBlank(tab->url());
+}
+
+void BrowserWindow::UpdateBookmarksBar() {
+  if (!bookmarks_bar_) {
+    return;
+  }
+  const bool shown = BookmarksBarShown();
+  if (shown) {
+    const Tab* tab = ActiveTab();
+    bookmarks_bar_->Update(owner_.Bookmarks()->model(),
+                           tab ? tab->profile() : owner_.DefaultProfile(),
+                           theme_, text_font_, icon_font_, owner_.Favicons());
+  }
+  if (shown != bookmarks_bar_shown_) {
+    bookmarks_bar_shown_ = shown;
+    bookmarks_bar_->SetVisible(shown);
+    Layout();
+  }
+}
+
+void BrowserWindow::ShowBookmarkDialog(BookmarkDialog::Options options,
+                                       const RECT& anchor,
+                                       BookmarkDialog::Done done) {
+  BookmarkStore* store = owner_.Bookmarks();
+  if (!store || bookmark_dialog_) {
+    MessageBeep(MB_OK);
+    return;
+  }
+  bookmark_dialog_ = std::make_unique<BookmarkDialog>(
+      window_, *store, std::move(options), theme_, text_font_,
+      [this, done = std::move(done)](BookmarkDialog::Answer answer,
+                                     const BookmarkDialogValues& values) {
+        done(answer, values);
+        CloseBookmarkDialog();
+      });
+  bookmark_dialog_->ShowBelow(anchor);
+}
+
+RECT BrowserWindow::CursorAnchor() const {
+  POINT cursor = {};
+  GetCursorPos(&cursor);
+  // The dialog's right edge at the anchor's: start at the mouse.
+  const int width = Scale(380);
+  return {cursor.x, cursor.y, cursor.x + width, cursor.y};
+}
+
+void BrowserWindow::OpenAllBookmarks(BookmarkId folder) {
+  BookmarkStore* store = owner_.Bookmarks();
+  const BookmarkItem* item = store ? store->model().Find(folder) : nullptr;
+  if (!item || !item->folder) {
+    return;
+  }
+  const Tab* active = ActiveTab();
+  const ProfileId profile =
+      active ? active->profile() : owner_.DefaultProfile();
+  bool first = true;
+  for (BookmarkId child : std::vector<BookmarkId>(item->children)) {
+    const BookmarkItem* inner = store->model().Find(child);
+    if (inner && !inner->folder && store->model().IsVisibleIn(child, profile)) {
+      OpenBookmark(child, first ? BookmarkOpen::kForegroundTab
+                                : BookmarkOpen::kBackgroundTab);
+      first = false;
+    }
+  }
+}
+
+void BrowserWindow::EditBookmark(BookmarkId id) {
+  BookmarkStore* store = owner_.Bookmarks();
+  const BookmarkItem* item = store ? store->model().Find(id) : nullptr;
+  if (!item || BookmarkModel::IsRoot(id)) {
+    return;
+  }
+  const Tab* active = ActiveTab();
+  BookmarkDialog::Options options;
+  options.kind = item->folder ? BookmarkDialog::Kind::kFolder
+                              : BookmarkDialog::Kind::kBookmark;
+  options.title = item->folder ? L"Edit folder" : L"Edit bookmark";
+  options.values = {.name = item->name,
+                    .url = item->url,
+                    .folder = item->parent,
+                    .profile = store->model().EffectiveProfile(id)};
+  options.active_profile = active ? active->profile() : owner_.DefaultProfile();
+  options.editing = id;
+  options.profiles = owner_.ProfileList();
+  ShowBookmarkDialog(
+      std::move(options), CursorAnchor(),
+      [store, id](BookmarkDialog::Answer answer,
+                  const BookmarkDialogValues& values) {
+        if (answer != BookmarkDialog::Answer::kKeep ||
+            !store->model().Find(id)) {
+          return;
+        }
+        store->Change([&](BookmarkModel& model) {
+          const BookmarkItem* changed = model.Find(id);
+          if (!values.name.empty() && changed->name != values.name) {
+            model.Rename(id, values.name);
+          }
+          if (!changed->folder && changed->url != values.url) {
+            model.SetUrl(id, values.url);  // Invalid addresses are refused.
+          }
+          if (values.folder > 0 && changed->parent != values.folder &&
+              model.Find(values.folder)) {
+            model.Move(id, values.folder, BookmarkModel::kEnd);
+          }
+          if (model.InheritedProfile(id).empty() &&
+              model.Find(id)->profile != values.profile) {
+            model.SetProfile(id, values.profile);
+          }
+        });
+      });
+}
+
+void BrowserWindow::RemoveBookmark(BookmarkId id) {
+  BookmarkStore* store = owner_.Bookmarks();
+  const BookmarkItem* item = store ? store->model().Find(id) : nullptr;
+  if (!item) {
+    return;
+  }
+  const bool folder = item->folder;
+  store->Remove({id});
+  // From the bar's menu: the notice where the menu was.
+  POINT cursor = {};
+  GetCursorPos(&cursor);
+  OfferUndoRemove(folder ? L"Folder deleted" : L"Bookmark deleted",
+                  {cursor.x, cursor.y, cursor.x + 1, cursor.y + 1});
+}
+
+void BrowserWindow::OfferUndoRemove(const wchar_t* message,
+                                    const RECT& anchor) {
+  BookmarkStore* store = owner_.Bookmarks();
+  if (!store || !store->CanUndoRemove()) {
+    return;
+  }
+  std::weak_ptr<int> alive = alive_;
+  undo_notice_.Show(
+      window_, anchor, message, L"Undo",
+      [this, alive] {
+        if (alive.expired()) {
+          return;
+        }
+        // Also undone on the manager page (Ctrl+Z), as on macOS.
+        if (BookmarkStore* current = owner_.Bookmarks();
+            current && current->CanUndoRemove()) {
+          current->UndoRemove();
+        }
+      },
+      theme_, text_font_);
+}
+
+void BrowserWindow::AddBookmark(BookmarkId folder, std::size_t index) {
+  const Tab* active = ActiveTab();
+  BookmarkDialog::Options options;
+  options.kind = BookmarkDialog::Kind::kBookmark;
+  options.title = L"Add bookmark";
+  // The current page, as Chrome fills it in.
+  const bool page = CanBookmark(active);
+  options.values = {.name = page ? active->title() : std::string(),
+                    .url = page ? active->url() : std::string(),
+                    .folder = folder,
+                    .profile = active ? active->profile() : ProfileId()};
+  options.active_profile = active ? active->profile() : owner_.DefaultProfile();
+  options.profiles = owner_.ProfileList();
+  BookmarkStore* store = owner_.Bookmarks();
+  ShowBookmarkDialog(
+      std::move(options), CursorAnchor(),
+      [store, folder, index](BookmarkDialog::Answer answer,
+                             const BookmarkDialogValues& values) {
+        if (answer != BookmarkDialog::Answer::kKeep) {
+          return;
+        }
+        bool added = false;
+        store->Change([&](BookmarkModel& model) {
+          added = model
+                      .AddBookmark(
+                          values.folder,
+                          values.folder == folder ? index : BookmarkModel::kEnd,
+                          values.name.empty() ? values.url : values.name,
+                          values.url, values.profile, NowSeconds())
+                      .ok();
+        });
+        if (!added) {
+          MessageBeep(MB_ICONWARNING);  // Not a valid address.
+        }
+      });
+}
+
+void BrowserWindow::AddBookmarkFolder(BookmarkId folder, std::size_t index) {
+  const Tab* active = ActiveTab();
+  BookmarkDialog::Options options;
+  options.kind = BookmarkDialog::Kind::kNewFolder;
+  options.title = L"Add folder";
+  options.values = {.name = "New folder",
+                    .url = "",
+                    .folder = folder,
+                    .profile = ProfileId()};
+  options.active_profile = active ? active->profile() : owner_.DefaultProfile();
+  options.profiles = owner_.ProfileList();
+  BookmarkStore* store = owner_.Bookmarks();
+  ShowBookmarkDialog(
+      std::move(options), CursorAnchor(),
+      [store, folder, index](BookmarkDialog::Answer answer,
+                             const BookmarkDialogValues& values) {
+        if (answer != BookmarkDialog::Answer::kKeep) {
+          return;
+        }
+        store->Change([&](BookmarkModel& model) {
+          model.AddFolder(values.folder,
+                          values.folder == folder ? index : BookmarkModel::kEnd,
+                          values.name.empty() ? "New folder" : values.name,
+                          values.profile, NowSeconds());
+        });
+      });
+}
+
+void BrowserWindow::MoveBookmark(BookmarkId id,
+                                 BookmarkId parent,
+                                 std::size_t index) {
+  if (BookmarkStore* store = owner_.Bookmarks()) {
+    store->Change([&](BookmarkModel& model) { model.Move(id, parent, index); });
+  }
+}
+
+void BrowserWindow::ShowBookmarkManager() {
+  OpenInternalPage("brouk://bookmarks/");
+}
+
+void BrowserWindow::DropLink(const std::string& url,
+                             const std::string& title,
+                             BookmarkId parent,
+                             std::size_t index) {
+  BookmarkStore* store = owner_.Bookmarks();
+  if (!store || !store->model().Find(parent)) {
+    return;
+  }
+  const Tab* active = ActiveTab();
+  // Linked to the active tab's profile like other new bookmarks (011),
+  // unless the folder decides the profile.
+  const ProfileId profile =
+      active ? active->profile() : owner_.DefaultProfile();
+  store->Change([&](BookmarkModel& model) {
+    model.AddBookmark(
+        parent, index, title.empty() ? url : title, url,
+        model.EffectiveProfile(parent).empty() ? profile : ProfileId(),
+        NowSeconds());
+  });
+}
+
+void BrowserWindow::ToggleBookmarksBar() {
+  owner_.SetBookmarksBarAlwaysShown(!owner_.BookmarksBarAlwaysShown());
+}
+
+bool BrowserWindow::BookmarksBarAlwaysShown() {
+  return owner_.BookmarksBarAlwaysShown();
+}
+
+RECT BrowserWindow::StarScreenRect() const {
+  RECT anchor = {};
+  if (HasVisibleStyle(star_)) {
+    GetWindowRect(star_, &anchor);
+  } else {
+    anchor = address_field_;
+    MapWindowPoints(window_, nullptr, reinterpret_cast<POINT*>(&anchor), 2);
+  }
+  return anchor;
+}
+
+// Ctrl+D and the star: bookmarks the page at once (as Chrome does) and
+// opens the bubble; on a bookmarked page the bubble edits that bookmark.
+void BrowserWindow::BookmarkPage() {
+  Tab* tab = ActiveTab();
+  BookmarkStore* store = owner_.Bookmarks();
+  if (!store || !CanBookmark(tab) || bookmark_dialog_) {
+    MessageBeep(MB_OK);
+    return;
+  }
+  const ProfileId profile = tab->profile();
+  const std::string url = tab->url();
+  const std::vector<BookmarkId> existing =
+      store->model().BookmarksWithUrl(url, profile);
+  BookmarkId bookmark = existing.empty() ? 0 : existing.front();
+  const bool added = bookmark == 0;
+  if (added) {
+    BookmarkId folder = store->last_used_folder();
+    if (!store->model().Find(folder) ||
+        !store->model().IsVisibleIn(folder, profile)) {
+      folder = BookmarkModel::kBarId;
+    }
+    const std::string title = tab->title().empty() ? url : tab->title();
+    store->Change([&](BookmarkModel& model) {
+      // Linked to the tab's profile unless the user picks General (011).
+      Result<BookmarkId> id = model.AddBookmark(
+          folder, BookmarkModel::kEnd, title, url, profile, NowSeconds());
+      if (id) {
+        bookmark = id.value();
+      }
+    });
+  }
+  ShowBookmarkBubble(bookmark, added, profile);
+}
+
+void BrowserWindow::ShowBookmarkBubble(BookmarkId bookmark,
+                                       bool added,
+                                       const ProfileId& profile) {
+  BookmarkStore* store = owner_.Bookmarks();
+  const BookmarkItem* item = store ? store->model().Find(bookmark) : nullptr;
+  if (!item || bookmark_dialog_) {
+    MessageBeep(MB_OK);
+    return;
+  }
+  BookmarkDialog::Options options;
+  options.kind = BookmarkDialog::Kind::kBubble;
+  options.title = added ? L"Bookmark added" : L"Edit bookmark";
+  options.values = {.name = item->name,
+                    .url = item->url,
+                    .folder = item->parent,
+                    .profile = store->model().EffectiveProfile(bookmark)};
+  options.active_profile = profile;
+  options.profiles = owner_.ProfileList();
+  bookmark_dialog_ = std::make_unique<BookmarkDialog>(
+      window_, *store, std::move(options), theme_, text_font_,
+      [this, store, bookmark, profile](BookmarkDialog::Answer answer,
+                                       const BookmarkDialogValues& values) {
+        const bool new_folder = answer == BookmarkDialog::Answer::kNewFolder;
+        if (new_folder) {
+          answer = BookmarkDialog::Answer::kKeep;
+        }
+        if (answer == BookmarkDialog::Answer::kRemove) {
+          store->Remove({bookmark});
+          RECT star = {};
+          GetWindowRect(star_, &star);
+          OfferUndoRemove(L"Bookmark removed", star);
+        } else if (answer == BookmarkDialog::Answer::kKeep &&
+                   store->model().Find(bookmark)) {
+          // Closing keeps the bookmark (011) with what was changed.
+          store->Change([&](BookmarkModel& model) {
+            const BookmarkItem* changed = model.Find(bookmark);
+            if (changed->name != values.name && !values.name.empty()) {
+              model.Rename(bookmark, values.name);
+            }
+            if (values.folder > 0 && changed->parent != values.folder &&
+                model.Find(values.folder)) {
+              model.Move(bookmark, values.folder, BookmarkModel::kEnd);
+            }
+            if (model.InheritedProfile(bookmark).empty() &&
+                model.Find(bookmark)->profile != values.profile) {
+              model.SetProfile(bookmark, values.profile);
+            }
+          });
+          if (values.folder > 0 && store->model().Find(values.folder)) {
+            store->set_last_used_folder(values.folder);
+          }
+        }
+        CloseBookmarkDialog();
+        if (new_folder) {
+          // After this dialog has closed.
+          std::weak_ptr<int> alive = alive_;
+          CefPostTask(TID_UI, new FunctionTask([this, alive, bookmark, profile,
+                                                values] {
+                        if (!alive.expired()) {
+                          AskNewFolderFor(bookmark, values, profile);
+                        }
+                      }));
+        }
+      });
+  bookmark_dialog_->ShowBelow(StarScreenRect());
+}
+
+// The bubble's "New folder…": the folder's name, parent and profile; the
+// bookmark goes into it and the bubble comes back, as on macOS.
+void BrowserWindow::AskNewFolderFor(BookmarkId bookmark,
+                                    const BookmarkDialogValues& values,
+                                    const ProfileId& profile) {
+  BookmarkStore* store = owner_.Bookmarks();
+  if (!store || !store->model().Find(bookmark)) {
+    return;
+  }
+  BookmarkDialog::Options options;
+  options.kind = BookmarkDialog::Kind::kNewFolder;
+  options.title = L"New folder";
+  options.values = {.name = "New folder",
+                    .url = "",
+                    .folder = values.folder,
+                    .profile = values.profile};
+  options.active_profile = profile;
+  options.profiles = owner_.ProfileList();
+  ShowBookmarkDialog(
+      std::move(options), StarScreenRect(),
+      [this, store, bookmark, profile](BookmarkDialog::Answer answer,
+                                       const BookmarkDialogValues& folder) {
+        if (answer == BookmarkDialog::Answer::kKeep &&
+            store->model().Find(bookmark)) {
+          store->Change([&](BookmarkModel& model) {
+            Result<BookmarkId> added = model.AddFolder(
+                folder.folder, BookmarkModel::kEnd,
+                folder.name.empty() ? "New folder" : folder.name,
+                folder.profile, NowSeconds());
+            if (added) {
+              model.Move(bookmark, added.value(), BookmarkModel::kEnd);
+              store->set_last_used_folder(added.value());
+            }
+          });
+        }
+        // Back to the bubble, also after Cancel.
+        std::weak_ptr<int> alive = alive_;
+        CefPostTask(TID_UI, new FunctionTask([this, alive, bookmark, profile] {
+                      if (!alive.expired()) {
+                        ShowBookmarkBubble(bookmark, false, profile);
+                      }
+                    }));
+      });
+}
+
+// Ctrl+Shift+D: the tabs of the active tab's profile into a new folder.
+void BrowserWindow::BookmarkAllTabs() {
+  Tab* active = ActiveTab();
+  BookmarkStore* store = owner_.Bookmarks();
+  if (!active || !store || kind_ != Kind::kNormal || bookmark_dialog_) {
+    MessageBeep(MB_OK);
+    return;
+  }
+  const ProfileId profile = active->profile();
+  std::vector<std::pair<std::string, std::string>> pages;
+  for (std::size_t i = 0; i < model_.count(); ++i) {
+    const Tab* tab = FindTab(model_.id_at(i));
+    if (tab && tab->profile() == profile && CanBookmark(tab)) {
+      pages.emplace_back(tab->title().empty() ? tab->url() : tab->title(),
+                         tab->url());
+    }
+  }
+  if (pages.empty()) {
+    MessageBeep(MB_OK);
+    return;
+  }
+  BookmarkId folder = store->last_used_folder();
+  if (!store->model().Find(folder) ||
+      !store->model().IsVisibleIn(folder, profile)) {
+    folder = BookmarkModel::kBarId;
+  }
+  BookmarkDialog::Options options;
+  options.kind = BookmarkDialog::Kind::kNewFolder;
+  options.title = L"Bookmark all tabs";
+  options.values = {
+      .name = "", .url = "", .folder = folder, .profile = profile};
+  options.active_profile = profile;
+  options.profiles = owner_.ProfileList();
+  bookmark_dialog_ = std::make_unique<BookmarkDialog>(
+      window_, *store, std::move(options), theme_, text_font_,
+      [this, store, pages](BookmarkDialog::Answer answer,
+                           const BookmarkDialogValues& values) {
+        if (answer == BookmarkDialog::Answer::kKeep) {
+          const std::int64_t now = NowSeconds();
+          store->Change([&](BookmarkModel& model) {
+            Result<BookmarkId> created =
+                model.AddFolder(values.folder, BookmarkModel::kEnd,
+                                values.name.empty() ? "Tabs" : values.name,
+                                values.profile, now);
+            if (!created) {
+              return;
+            }
+            for (const auto& [name, url] : pages) {
+              // Inside the folder, the pages follow its link.
+              model.AddBookmark(created.value(), BookmarkModel::kEnd, name, url,
+                                ProfileId(), now);
+            }
+          });
+          store->set_last_used_folder(values.folder);
+        }
+        CloseBookmarkDialog();
+      });
+  bookmark_dialog_->ShowBelow(StarScreenRect());
+}
+
+void BrowserWindow::CloseBookmarkDialog() {
+  // Deleted from a task: this runs inside the dialog.
+  std::shared_ptr<BookmarkDialog> closed(bookmark_dialog_.release());
+  CefPostTask(TID_UI, new FunctionTask([closed] {}));
+  if (!closing_) {
+    SetForegroundWindow(window_);
+    FocusActiveTab();
+  }
+}
+
+void BrowserWindow::AppendBookmarkMenu(HMENU menu,
+                                       BookmarkId folder,
+                                       const ProfileId& profile,
+                                       std::vector<BookmarkId>& ids) {
+  const BookmarkModel& model = owner_.Bookmarks()->model();
+  const BookmarkItem* parent = model.Find(folder);
+  if (!parent) {
+    return;
+  }
+  bool any = false;
+  for (BookmarkId child : parent->children) {
+    const BookmarkItem* item = model.Find(child);
+    if (!item || !model.IsVisibleIn(child, profile)) {
+      continue;
+    }
+    any = true;
+    if (item->folder) {
+      HMENU submenu = CreatePopupMenu();
+      AppendBookmarkMenu(submenu, child, profile, ids);
+      AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(submenu),
+                  MenuText(item->name).c_str());
+      continue;
+    }
+    const UINT command = kFirstBookmarkCommand + static_cast<UINT>(ids.size());
+    AppendMenuW(menu, MF_STRING, command,
+                MenuText(item->name.empty() ? item->url : item->name).c_str());
+    ids.push_back(child);
+    // The site's icon (011), kept until the menu closes.
+    if (FaviconCache* favicons = owner_.Favicons()) {
+      Favicon icon = favicons->CopyOf(
+          profile, item->url,
+          GetSystemMetricsForDpi(SM_CXSMICON, GetDpiForWindow(window_)));
+      if (!icon.empty()) {
+        MENUITEMINFOW info = {};
+        info.cbSize = sizeof(info);
+        info.fMask = MIIM_BITMAP;
+        info.hbmpItem = icon.bitmap();
+        SetMenuItemInfoW(menu, command, FALSE, &info);
+        menu_icons_.push_back(std::move(icon));
+      }
+    }
+  }
+  if (!any) {
+    AppendMenuW(menu, MF_STRING | MF_GRAYED, 0, L"(empty)");
+  }
+}
+
+void BrowserWindow::OpenBookmark(BookmarkId id, BookmarkOpen how) {
+  BookmarkStore* store = owner_.Bookmarks();
+  const BookmarkItem* item = store ? store->model().Find(id) : nullptr;
+  if (!item || item->folder || item->url.empty()) {
+    return;
+  }
+  const std::string url = item->url;
+  Tab* active = ActiveTab();
+  const ProfileId linked = store->model().EffectiveProfile(id);
+  ProfileId profile = !linked.empty() ? linked
+                      : active        ? active->profile()
+                                      : owner_.DefaultProfile();
+  const auto& profiles = owner_.ProfileList();
+  if (std::ranges::none_of(profiles, [&profile](const ProfileInfo& p) {
+        return p.id == profile;
+      })) {
+    profile = owner_.DefaultProfile();
+  }
+  if (how == BookmarkOpen::kNewWindow) {
+    owner_.OpenWindow(url, profile);
+    return;
+  }
+  if (how == BookmarkOpen::kCurrentTab && active && !active->internal() &&
+      kind_ == Kind::kNormal && active->profile() == profile) {
+    active->MarkNextVisitBookmark();
+    active->Navigate(url);
+    active->Focus();
+    return;
+  }
+  const bool activate = how != BookmarkOpen::kBackgroundTab;
+  Tab* tab = active && active->profile() == profile
+                 ? InsertTabFromOpener(active, activate)
+                 : nullptr;
+  if (tab) {
+    tab->MarkNextVisitBookmark();
+    tab->CreateBrowser(url, owner_.RequestContext(profile));
+    if (activate) {
+      FocusActiveTab();
+    }
+    return;
+  }
+  OpenTab(url, activate, profile);
+}
+
+// A general bookmark opens in the manager tab's profile, a linked one in
+// its own (a new tab when the manager tab is in another profile).
+void BrowserWindow::OpenBookmarkFromTab(TabId from,
+                                        BookmarkId id,
+                                        bool new_tab) {
+  BookmarkStore* store = owner_.Bookmarks();
+  const BookmarkItem* item = store ? store->model().Find(id) : nullptr;
+  if (!item || item->folder || item->url.empty()) {
+    return;
+  }
+  const ProfileId linked = store->model().EffectiveProfile(id);
+  OpenPageFromTab(from, linked.empty() ? ProfileOfTab(from) : linked, item->url,
+                  new_tab);
+}
+
+DownloadService* BrowserWindow::TabDownloads() {
+  return owner_.Downloads();
+}
+
+bool BrowserWindow::TabAskWhereToSaveDownloads() {
+  return owner_.AskWhereToSaveDownloads();
+}
+
+DownloadTarget BrowserWindow::TabReserveDownloadPath(
+    const std::string& suggested,
+    const ProfileId& profile) {
+  return owner_.ReserveDownloadPath(suggested, profile);
+}
+
+void BrowserWindow::TabReleaseDownloadPath(const std::string& path) {
+  owner_.ReleaseDownloadPath(path);
+}
+
 void BrowserWindow::OnTabFullscreenChanged(Tab& tab, bool fullscreen) {
   if (fullscreen) {
     if (model_.active_id() != tab.id()) {
@@ -525,6 +1707,7 @@ void BrowserWindow::SetFullscreen(bool fullscreen) {
     ShowWindow(popups_, SW_HIDE);
   }
   UpdateIndicators();
+  UpdateBookmarksBar();
   Layout();
   InvalidateRect(window_, nullptr, TRUE);
 }
@@ -556,6 +1739,10 @@ int BrowserWindow::TabCountInProfile(const ProfileId& profile) const {
 }
 
 void BrowserWindow::CloseTabsInProfile(const ProfileId& profile) {
+  discarded_profiles_.insert(profile);  // Gone for good (005).
+  std::erase_if(closed_snapshot_, [&profile](const ClosedTab& tab) {
+    return tab.profile == profile;
+  });
   std::vector<TabId> ids;
   for (const auto& [id, tab] : tabs_) {
     if (tab->profile() == profile) {
@@ -633,6 +1820,10 @@ void BrowserWindow::ShowTabMenu(TabId id, POINT screen_point) {
   add(kDuplicateTabCommand, L"Duplicate", !tab->internal());
   add(kPinTabCommand, model_.IsPinned(id) ? L"Unpin" : L"Pin", true);
   add(kMuteTabCommand, tab->muted() ? L"Unmute site" : L"Mute site", true);
+  // Task manager (020).
+  add(kPauseTabCommand, tab->paused() ? L"Resume" : L"Pause",
+      tab->paused() || (tab->has_browser() && !tab->internal()));
+  add(kShowInTaskManagerCommand, L"Show in task manager", true);
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
   add(kCloseTabCommand, L"Close\tCtrl+W", true);
   add(kCloseOtherTabsCommand, L"Close other tabs", others);
@@ -668,6 +1859,12 @@ void BrowserWindow::ShowTabMenu(TabId id, POINT screen_point) {
       break;
     case kMuteTabCommand:
       tab->SetMuted(!tab->muted());
+      break;
+    case kPauseTabCommand:
+      tab->SetPaused(!tab->paused());
+      break;
+    case kShowInTaskManagerCommand:
+      owner_.OpenTaskManager("tab-" + std::to_string(id));
       break;
     case kCloseTabCommand:
       CloseTab(id);
@@ -739,6 +1936,23 @@ void BrowserWindow::ShowBlockedPopups() {
 
 void BrowserWindow::DrawIndicator(const DRAWITEMSTRUCT& item) {
   const bool pressed = (item.itemState & ODS_SELECTED) != 0;
+  if (item.hwndItem == star_) {
+    // Just the star; filled in the accent colour on a bookmarked page.
+    SetDCBrushColor(item.hDC, pressed ? theme_.hover : theme_.field);
+    FillRect(item.hDC, &item.rcItem,
+             static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
+    const std::wstring glyph = WindowText(star_);
+    HGDIOBJ previous = SelectObject(item.hDC, icon_font_);
+    SetBkMode(item.hDC, TRANSPARENT);
+    SetTextColor(item.hDC, glyph == kStarFilledGlyph
+                               ? GetSysColor(COLOR_HIGHLIGHT)
+                               : theme_.text_dim);
+    RECT area = item.rcItem;
+    DrawTextW(item.hDC, glyph.c_str(), -1, &area,
+              DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    SelectObject(item.hDC, previous);
+    return;
+  }
   SetDCBrushColor(item.hDC, theme_.field);
   FillRect(item.hDC, &item.rcItem,
            static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
@@ -782,10 +1996,28 @@ void BrowserWindow::UpdateIndicators() {
   }
   const bool popups_shown =
       !fullscreen_ && tab && !tab->blocked_popups().empty();
+  // The star (011): filled when the page is bookmarked by an item visible
+  // in the tab's profile.
+  const bool star_shown = !fullscreen_ && CanBookmark(tab);
+  if (star_shown) {
+    BookmarkStore* store = owner_.Bookmarks();
+    const bool bookmarked =
+        store &&
+        !store->model().BookmarksWithUrl(tab->url(), tab->profile()).empty();
+    const wchar_t* glyph = bookmarked ? kStarFilledGlyph : kStarGlyph;
+    if (WindowText(star_) != glyph) {
+      SetWindowTextW(star_, glyph);
+      SetAccessibleName(star_, bookmarked ? L"Edit bookmark for this tab"
+                                          : L"Bookmark this tab");
+      InvalidateRect(star_, nullptr, FALSE);
+    }
+  }
   if (shown != HasVisibleStyle(zoom_) ||
-      popups_shown != HasVisibleStyle(popups_)) {
+      popups_shown != HasVisibleStyle(popups_) ||
+      star_shown != HasVisibleStyle(star_)) {
     ShowWindow(zoom_, shown ? SW_SHOWNA : SW_HIDE);
     ShowWindow(popups_, popups_shown ? SW_SHOWNA : SW_HIDE);
+    ShowWindow(star_, star_shown ? SW_SHOWNA : SW_HIDE);
     Layout();
   }
 }
@@ -811,6 +2043,83 @@ void BrowserWindow::ShowAppMenu() {
               L"Manage profiles\u2026");
   AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(profiles),
               L"Profiles");
+  // History (013), as Chrome's: the history page, clearing it, recently
+  // closed tabs and windows (newest first) and recently visited pages of
+  // the active tab's profile.
+  HMENU closed = CreatePopupMenu();
+  AppendMenuW(closed, MF_STRING, kHistoryCommand, L"History\tCtrl+H");
+  AppendMenuW(closed, MF_STRING, kClearBrowsingDataCommand,
+              L"Clear browsing data\u2026\tCtrl+Shift+Del");
+  AppendMenuW(closed, MF_SEPARATOR, 0, nullptr);
+  std::vector<std::int64_t> closed_ids;
+  const std::deque<ClosedEntry>& entries = owner_.RecentlyClosed();
+  AppendMenuW(closed, MF_STRING | (entries.empty() ? MF_GRAYED : 0),
+              kReopenClosedTabCommand, L"Reopen closed tab\tCtrl+Shift+T");
+  for (const ClosedEntry& entry : entries) {
+    const ClosedTab& first = entry.tabs.front();
+    const std::wstring title =
+        entry.is_window
+            ? L"Window (" + std::to_wstring(entry.tabs.size()) +
+                  (entry.tabs.size() == 1 ? L" tab)" : L" tabs)")
+            : MenuText(first.title.empty() ? first.url : first.title);
+    AppendMenuW(closed, MF_STRING,
+                kFirstClosedCommand + static_cast<UINT>(closed_ids.size()),
+                title.c_str());
+    closed_ids.push_back(entry.id);
+  }
+  AppendMenuW(closed, MF_SEPARATOR, 0, nullptr);
+  const Tab* active_tab = ActiveTab();
+  const ProfileId recent_profile =
+      active_tab ? active_tab->profile() : owner_.DefaultProfile();
+  std::vector<std::string> recent_urls;
+  if (const std::vector<HistoryMatch>* recent =
+          owner_.RecentPages(recent_profile)) {
+    AppendMenuW(
+        closed, MF_STRING | MF_GRAYED, 0,
+        recent->empty() ? L"No recently visited pages" : L"Recently visited");
+    for (const HistoryMatch& page : *recent) {
+      AppendMenuW(
+          closed, MF_STRING,
+          kFirstRecentPageCommand + static_cast<UINT>(recent_urls.size()),
+          MenuText(page.title.empty() ? page.url : page.title).c_str());
+      recent_urls.push_back(page.url);
+    }
+  } else {
+    // Read from the history in the background; shown next time.
+    AppendMenuW(closed, MF_STRING | MF_GRAYED, 0, L"Loading\u2026");
+  }
+  AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(closed), L"History");
+  AppendMenuW(menu, MF_STRING, kDownloadsCommand, L"Downloads\tCtrl+J");
+  AppendMenuW(menu, MF_STRING, kTaskManagerCommand, L"Task manager\tShift+Esc");
+  AppendMenuW(menu, MF_STRING, kCommandPaletteCommand,
+              L"Command palette\u2026\tCtrl+K");
+  // Bookmarks (011), as Chrome's submenu: the actions, then the bar's
+  // items and Other bookmarks visible in the active tab's profile.
+  HMENU bookmarks = CreatePopupMenu();
+  const bool can_bookmark = CanBookmark(ActiveTab());
+  AppendMenuW(bookmarks, MF_STRING | (can_bookmark ? 0 : MF_GRAYED),
+              kBookmarkThisTabCommand, L"Bookmark this tab\u2026\tCtrl+D");
+  AppendMenuW(bookmarks, MF_STRING, kBookmarkAllTabsCommand,
+              L"Bookmark all tabs\u2026\tCtrl+Shift+D");
+  AppendMenuW(bookmarks, MF_STRING, kBookmarkManagerCommand,
+              L"Bookmark manager\tCtrl+Shift+O");
+  AppendMenuW(bookmarks,
+              MF_STRING | (owner_.BookmarksBarAlwaysShown() ? MF_CHECKED : 0),
+              kAlwaysShowBarCommand,
+              L"Always show bookmarks bar\tCtrl+Shift+B");
+  std::vector<BookmarkId> bookmark_ids;
+  if (owner_.Bookmarks()) {
+    AppendMenuW(bookmarks, MF_SEPARATOR, 0, nullptr);
+    AppendBookmarkMenu(bookmarks, BookmarkModel::kBarId, recent_profile,
+                       bookmark_ids);
+    HMENU other = CreatePopupMenu();
+    AppendBookmarkMenu(other, BookmarkModel::kOtherId, recent_profile,
+                       bookmark_ids);
+    AppendMenuW(bookmarks, MF_POPUP, reinterpret_cast<UINT_PTR>(other),
+                L"Other bookmarks");
+  }
+  AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(bookmarks),
+              L"Bookmarks");
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
   AppendMenuW(menu, MF_STRING, kZoomInCommand, L"Zoom in\tCtrl++");
   AppendMenuW(menu, MF_STRING, kZoomOutCommand, L"Zoom out\tCtrl+-");
@@ -829,7 +2138,25 @@ void BrowserWindow::ShowAppMenu() {
   const UINT command = static_cast<UINT>(TrackPopupMenuEx(
       menu, TPM_RIGHTALIGN | TPM_TOPALIGN | TPM_RETURNCMD | TPM_NONOTIFY,
       button.right, button.bottom, window_, nullptr));
-  DestroyMenu(menu);  // With its submenu.
+  DestroyMenu(menu);  // With its submenus.
+  menu_icons_.clear();
+  if (command >= kFirstClosedCommand &&
+      command - kFirstClosedCommand < closed_ids.size()) {
+    owner_.ReopenClosed(closed_ids[command - kFirstClosedCommand]);
+    return;
+  }
+  if (command >= kFirstBookmarkCommand &&
+      command - kFirstBookmarkCommand < bookmark_ids.size()) {
+    OpenBookmark(bookmark_ids[command - kFirstBookmarkCommand],
+                 BookmarkOpen::kCurrentTab);
+    return;
+  }
+  if (command >= kFirstRecentPageCommand &&
+      command - kFirstRecentPageCommand < recent_urls.size()) {
+    OpenTab(recent_urls[command - kFirstRecentPageCommand], true,
+            recent_profile);
+    return;
+  }
   if (command >= kFirstProfileCommand &&
       command - kFirstProfileCommand < profile_list.size()) {
     OpenTab(std::string(), true,
@@ -877,6 +2204,36 @@ void BrowserWindow::ShowAppMenu() {
     case kExitCommand:
       owner_.CloseAllWindows();
       break;
+    case kReopenClosedTabCommand:
+      owner_.ReopenClosed(std::nullopt);
+      break;
+    case kHistoryCommand:
+      OpenInternalPage("brouk://history/");
+      break;
+    case kClearBrowsingDataCommand:
+      owner_.OpenClearBrowsingData();
+      break;
+    case kDownloadsCommand:
+      ShowDownloads();
+      break;
+    case kTaskManagerCommand:
+      owner_.OpenTaskManager(std::string());
+      break;
+    case kCommandPaletteCommand:
+      ShowCommandPalette();
+      break;
+    case kBookmarkThisTabCommand:
+      BookmarkPage();
+      break;
+    case kBookmarkAllTabsCommand:
+      BookmarkAllTabs();
+      break;
+    case kBookmarkManagerCommand:
+      ShowBookmarkManager();
+      break;
+    case kAlwaysShowBarCommand:
+      ToggleBookmarksBar();
+      break;
     default:
       break;
   }
@@ -889,6 +2246,7 @@ void BrowserWindow::RefreshTheme() {
   theme_ = CurrentTheme();
   ApplyThemeToFrame(window_, theme_);
   UpdateFonts();
+  UpdateBookmarksBar();
   RedrawWindow(window_, nullptr, nullptr, RDW_INVALIDATE | RDW_ALLCHILDREN);
 }
 
@@ -915,20 +2273,81 @@ void BrowserWindow::OpenInternalPage(const std::string& url) {
     owner_.OpenSettings(url);  // Its own window, as on macOS.
     return;
   }
-  std::unique_ptr<CefMessageRouterBrowserSide::Handler> handler =
-      owner_.InternalPageHandler(*page);
-  if (!handler) {
-    return;  // Not on Windows yet.
+  Tab* active = ActiveTab();
+  if (active && active->internal() && !active->closing() &&
+      InternalPageOf(active->url()) == page) {
+    if (url != active->url()) {
+      active->Navigate(url);  // Same page: only the fragment changes.
+    }
+    FocusActiveTab();
+    return;
   }
   // In place of an empty tab, as Chrome loads chrome:// pages there.
-  Tab* active = ActiveTab();
   const bool replace = active && IsBlank(active->url()) && !active->internal();
   Tab* tab = InsertTabFromOpener(active, true);
+  std::unique_ptr<CefMessageRouterBrowserSide::Handler> handler =
+      owner_.InternalPageHandler(*page, *this, tab->id());
+  if (!handler) {
+    RemoveUncreatedTab(tab->id());  // Not on Windows yet.
+    return;
+  }
   tab->CreateInternalPage(url, std::move(handler), owner_.InternalContext());
   if (replace) {
+    replaced_tabs_.insert(active->id());
     CloseTab(active->id());
   }
   FocusActiveTab();
+}
+
+void BrowserWindow::OpenPageFromTab(TabId from,
+                                    const ProfileId& requested,
+                                    const std::string& url,
+                                    bool new_tab) {
+  Tab* source = FindTab(from);
+  const bool exists = std::ranges::any_of(
+      owner_.ProfileList(),
+      [&requested](const ProfileInfo& p) { return p.id == requested; });
+  const ProfileId profile = exists ? requested : ProfileOfTab(from);
+  if (!source || source->closing() || source->profile() != profile) {
+    OpenTab(url, !new_tab, profile);
+    if (!new_tab) {
+      Activate();
+    }
+    return;
+  }
+  // The history tab cannot load web pages (internal context): a web tab
+  // takes its place, or opens next to it.
+  Tab* web = InsertTabFromOpener(source, !new_tab);
+  web->CreateBrowser(url, owner_.RequestContext(profile));
+  if (!new_tab) {
+    replaced_tabs_.insert(from);
+    CloseTab(from);
+    FocusActiveTab();
+  }
+}
+
+ProfileId BrowserWindow::ProfileOfTab(TabId id) {
+  const Tab* tab = FindTab(id);
+  return tab ? tab->profile() : owner_.DefaultProfile();
+}
+
+CefRefPtr<CefBrowser> BrowserWindow::AnyBrowserInProfile(
+    const ProfileId& profile) const {
+  for (const auto& [id, tab] : tabs_) {
+    if (tab->profile() == profile && !tab->internal() && !tab->closing() &&
+        tab->browser()) {
+      return tab->browser();
+    }
+  }
+  return nullptr;
+}
+
+HistoryService* BrowserWindow::TabHistory() {
+  return owner_.History();
+}
+
+void BrowserWindow::OnTabHistoryChanged(Tab& tab) {
+  owner_.OnHistoryChanged(tab.profile());
 }
 
 std::optional<SessionWindow> BrowserWindow::SessionState() const {
@@ -1007,16 +2426,16 @@ void BrowserWindow::Restore(const SessionWindow& saved) {
         [&](const ProfileInfo& p) { return p.id == saved_tab.profile; });
     const ProfileId profile =
         exists ? saved_tab.profile : owner_.DefaultProfile();
+    const TabId id = NextTabId();
     std::unique_ptr<CefMessageRouterBrowserSide::Handler> handler;
     if (IsInternalPageUrl(saved_tab.url)) {
       // Pages with their own window (help, settings) do not come back.
       const std::optional<std::string> page = InternalPageOf(saved_tab.url);
-      handler = page ? owner_.InternalPageHandler(*page) : nullptr;
+      handler = page ? owner_.InternalPageHandler(*page, *this, id) : nullptr;
       if (!handler) {
         continue;
       }
     }
-    const TabId id = NextTabId();
     auto tab = std::make_unique<Tab>(*this, id, window_, profile);
     tab->SetBounds(ContentBounds());
     Tab* created = tab.get();
@@ -1092,8 +2511,8 @@ void BrowserWindow::OpenTab(const std::string& url,
         owner_.OpenSettings(url);
         return;
       }
-      if (auto handler = owner_.InternalPageHandler(*page)) {
-        const TabId id = NextTabId();
+      const TabId id = NextTabId();
+      if (auto handler = owner_.InternalPageHandler(*page, *this, id)) {
         auto tab = std::make_unique<Tab>(*this, id, window_, profile);
         tab->SetBounds(ContentBounds());
         Tab* created = tab.get();
@@ -1154,6 +2573,7 @@ void BrowserWindow::CloseTab(TabId id) {
 }
 
 void BrowserWindow::ModelChanged() {
+  CloseSuggestions();  // Another tab, or the list's tab changed.
   const std::optional<TabId> active = model_.active_id();
   // Like Chrome, switching tabs ends a page's full screen.
   if (fullscreen_tab_ && fullscreen_tab_ != active) {
@@ -1173,6 +2593,50 @@ void BrowserWindow::ModelChanged() {
   UpdateToolbar();
   UpdateSpinner();
   InvalidateStrip();
+  UpdateBookmarksBar();  // Another tab or profile.
+}
+
+ClosedTab BrowserWindow::ClosedTabFor(const Tab& tab, std::size_t index) const {
+  std::size_t start = index;
+  for (const TabStripModel::Group& group : model_.groups()) {
+    if (group.profile == tab.profile()) {
+      start = group.start;
+    }
+  }
+  return {.url = tab.url(),
+          .title = tab.title(),
+          .profile = tab.profile(),
+          .pinned = model_.IsPinned(tab.id()),
+          .window_id = window_id_,
+          .position = index - start};
+}
+
+void BrowserWindow::RestoreClosedTab(const ClosedTab& closed, bool activate) {
+  const TabId id = NextTabId();
+  auto tab = std::make_unique<Tab>(*this, id, window_, closed.profile);
+  tab->SetBounds(ContentBounds());
+  Tab* created = tab.get();
+  tabs_[id] = std::move(tab);
+  model_.InsertInGroup(id, closed.profile, closed.position, activate);
+  if (closed.pinned) {
+    model_.SetPinned(id, true);
+  }
+  std::unique_ptr<CefMessageRouterBrowserSide::Handler> handler;
+  if (const std::optional<std::string> page = InternalPageOf(closed.url)) {
+    handler = owner_.InternalPageHandler(*page, *this, id);
+  }
+  if (handler) {
+    created->CreateInternalPage(closed.url, std::move(handler),
+                                owner_.InternalContext());
+  } else {
+    created->CreateBrowser(
+        IsInternalPageUrl(closed.url) ? std::string("about:blank") : closed.url,
+        owner_.RequestContext(closed.profile));
+  }
+  ModelChanged();
+  if (activate) {
+    FocusActiveTab();
+  }
 }
 
 void BrowserWindow::FocusActiveTab() {
@@ -1226,22 +2690,243 @@ void BrowserWindow::ShowAddress() {
   // A new, empty tab shows an empty address bar (Chrome).
   const std::string shown =
       tab && !IsBlank(tab->url()) ? tab->url() : std::string();
+  setting_address_ = true;
   SetWindowTextW(address_, Utf8ToWide(shown).c_str());
+  setting_address_ = false;
+}
+
+void BrowserWindow::SetAddressText(const std::wstring& text, int select_from) {
+  setting_address_ = true;
+  SetWindowTextW(address_, text.c_str());
+  setting_address_ = false;
+  const int end = static_cast<int>(text.size());
+  SendMessageW(address_, EM_SETSEL, select_from < 0 ? end : select_from, end);
+}
+
+void BrowserWindow::OnAddressEdited() {
+  if (setting_address_ || GetFocus() != address_ || kind_ == Kind::kPopup) {
+    return;
+  }
+  const std::wstring text = WindowText(address_);
+  DWORD start = 0;
+  DWORD end = 0;
+  SendMessageW(address_, EM_GETSEL, reinterpret_cast<WPARAM>(&start),
+               reinterpret_cast<LPARAM>(&end));
+  allow_inline_ = start == end && end == text.size() &&
+                  text.size() > typed_text_.size() &&
+                  text.starts_with(typed_text_);
+  typed_text_ = text;
+  UpdateSuggestions();
+}
+
+void BrowserWindow::CloseSuggestions() {
+  ++suggest_generation_;
+  if (suggest_request_) {
+    suggest_request_->Cancel();
+    suggest_request_ = nullptr;
+  }
+  history_matches_.clear();
+  search_suggestions_.clear();
+  suggestion_rows_.clear();
+  suggesting_ = false;
+  if (suggestions_) {
+    suggestions_->Hide();
+  }
+}
+
+void BrowserWindow::UpdateSuggestions() {
+  Tab* tab = ActiveTab();
+  const std::string typed = WideToUtf8(typed_text_);
+  if (!tab || typed.find_first_not_of(" \t") == std::string::npos) {
+    CloseSuggestions();
+    return;
+  }
+  const std::uint64_t generation = ++suggest_generation_;
+  suggesting_ = true;
+  history_matches_.clear();
+  ShowSuggestions();
+  std::weak_ptr<int> alive = alive_;
+  HistoryService* history = owner_.History();
+  if (history && owner_.HistorySuggestionsEnabled()) {
+    history->Suggest(
+        tab->profile(), typed, kMaxHistorySuggestions,
+        [this, alive, generation](std::vector<HistoryMatch> m) {
+          if (alive.expired() || generation != suggest_generation_) {
+            return;
+          }
+          history_matches_ = std::move(m);
+          ShowSuggestions();
+        });
+  }
+  if (suggest_request_) {
+    suggest_request_->Cancel();
+    suggest_request_ = nullptr;
+  }
+  const std::string suggest_template = owner_.SearchSuggestTemplate();
+  if (suggest_template.empty() || !ShouldFetchSearchSuggestions(typed)) {
+    search_suggestions_.clear();
+    return;
+  }
+  suggest_request_ = SearchSuggestRequest::Start(
+      owner_.RequestContext(tab->profile()),
+      BuildSearchUrl(typed, suggest_template),
+      [this, alive, generation](std::vector<std::string> suggestions) {
+        if (alive.expired() || generation != suggest_generation_) {
+          return;
+        }
+        suggest_request_ = nullptr;
+        search_suggestions_ = std::move(suggestions);
+        ShowSuggestions();
+      });
+}
+
+void BrowserWindow::ShowSuggestions() {
+  if (!suggesting_ || GetFocus() != address_) {
+    return;
+  }
+  const TabClientDelegate::SearchEngine engine = owner_.SearchEngine();
+  const std::string typed = WideToUtf8(typed_text_);
+  // Bookmarks visible in the tab's profile (011).
+  std::vector<BookmarkMatch> bookmarks;
+  BookmarkStore* store = owner_.Bookmarks();
+  if (Tab* tab = ActiveTab();
+      tab && store && owner_.BookmarkSuggestionsEnabled()) {
+    const BookmarkModel& model = store->model();
+    for (BookmarkId id : model.Search(typed, tab->profile(), 10)) {
+      if (const BookmarkItem* item = model.Find(id)) {
+        bookmarks.push_back({.name = item->name, .url = item->url});
+      }
+    }
+  }
+  suggestion_rows_ =
+      BuildAddressSuggestions({.text = typed,
+                               .search_template = engine.url_template,
+                               .search_engine_name = engine.name,
+                               .history = history_matches_,
+                               .search_suggestions = search_suggestions_,
+                               .bookmarks = bookmarks});
+  if (!suggestions_) {
+    suggestions_ = std::make_unique<SuggestionsPopup>(
+        window_, [this](int row) { OpenSuggestionRow(row); });
+  }
+  RECT anchor = address_field_;
+  MapWindowPoints(window_, nullptr, reinterpret_cast<POINT*>(&anchor), 2);
+  suggestions_->Show(suggestion_rows_, anchor, theme_, text_font_, icon_font_);
+  // The first row's inline completion: the rest of an address typed
+  // before, selected so that typing on replaces it.
+  if (allow_inline_ && !suggestion_rows_.empty() &&
+      !suggestion_rows_.front().inline_completion.empty() &&
+      WindowText(address_) == typed_text_) {
+    SetAddressText(
+        typed_text_ + Utf8ToWide(suggestion_rows_.front().inline_completion),
+        static_cast<int>(typed_text_.size()));
+  }
+}
+
+bool BrowserWindow::HandleSuggestionKey(int key, bool shift) {
+  if (!suggestions_ || !suggestions_->visible() || suggestion_rows_.empty()) {
+    return false;
+  }
+  if (key == VK_DOWN || key == VK_UP) {
+    const int row =
+        std::clamp(suggestions_->selected() + (key == VK_DOWN ? 1 : -1), 0,
+                   suggestions_->count() - 1);
+    suggestions_->Select(row);
+    // The field shows the row's address or query; typed rows the typed
+    // text.
+    const AddressSuggestion& suggestion =
+        suggestion_rows_[static_cast<std::size_t>(row)];
+    switch (suggestion.kind) {
+      case AddressSuggestion::Kind::kHistory:
+      case AddressSuggestion::Kind::kBookmark:
+        SetAddressText(Utf8ToWide(suggestion.url));
+        break;
+      case AddressSuggestion::Kind::kSearch:
+        SetAddressText(Utf8ToWide(suggestion.text));
+        break;
+      case AddressSuggestion::Kind::kTypedUrl:
+      case AddressSuggestion::Kind::kTypedSearch:
+        SetAddressText(typed_text_);
+        break;
+    }
+    return true;
+  }
+  if (key == VK_ESCAPE) {
+    // The first Escape closes the list and drops the inline completion;
+    // the next one restores the page's address.
+    SetAddressText(typed_text_);
+    CloseSuggestions();
+    return true;
+  }
+  // Shift+Delete removes a history suggestion from the profile's history
+  // (013), as in Chrome.
+  const int row = suggestions_->selected();
+  if (key == VK_DELETE && shift && row >= 0 && row < suggestions_->count() &&
+      suggestion_rows_[static_cast<std::size_t>(row)].kind ==
+          AddressSuggestion::Kind::kHistory) {
+    const std::string url = suggestion_rows_[static_cast<std::size_t>(row)].url;
+    Tab* tab = ActiveTab();
+    if (HistoryService* history = owner_.History(); history && tab) {
+      history->DeletePage(tab->profile(), url);
+      owner_.OnHistoryChanged(tab->profile());
+    }
+    std::erase_if(history_matches_, [&url](const HistoryMatch& match) {
+      return match.url == url;
+    });
+    SetAddressText(typed_text_);
+    ShowSuggestions();
+    return true;
+  }
+  return false;
+}
+
+void BrowserWindow::OpenSuggestionRow(int row) {
+  if (row < 0 || row >= static_cast<int>(suggestion_rows_.size())) {
+    return;
+  }
+  const AddressSuggestion suggestion =
+      suggestion_rows_[static_cast<std::size_t>(row)];
+  CloseSuggestions();
+  if (suggestion.kind == AddressSuggestion::Kind::kBookmark) {
+    if (Tab* tab = ActiveTab(); tab && !tab->internal()) {
+      tab->MarkNextVisitBookmark();
+    }
+    NavigateActiveTab(suggestion.url, false);
+    return;
+  }
+  // Addresses and history pages count as typed (Chrome); searches do not.
+  NavigateActiveTab(suggestion.url,
+                    suggestion.kind == AddressSuggestion::Kind::kTypedUrl ||
+                        suggestion.kind == AddressSuggestion::Kind::kHistory);
 }
 
 void BrowserWindow::NavigateToAddressBarText() {
-  Tab* tab = ActiveTab();
-  if (!tab || kind_ == Kind::kPopup) {
+  if (!ActiveTab() || kind_ == Kind::kPopup) {
     return;
   }
+  if (suggestions_ && suggestions_->visible() &&
+      suggestions_->selected() >= 0) {
+    OpenSuggestionRow(suggestions_->selected());
+    return;
+  }
+  CloseSuggestions();
   const TabClientDelegate::SearchEngine engine = owner_.SearchEngine();
   const AddressInputResult input = ClassifyAddressInput(
       WideToUtf8(WindowText(address_)), engine.url_template);
   if (input.kind == AddressInputResult::Kind::kEmpty) {
     return;
   }
-  if (IsInternalPageUrl(input.url)) {
-    OpenInternalPage(input.url);
+  // Typed addresses count for history ranking; searches do not (Chrome).
+  NavigateActiveTab(input.url, input.kind == AddressInputResult::Kind::kUrl);
+}
+
+void BrowserWindow::NavigateActiveTab(const std::string& url, bool typed) {
+  Tab* tab = ActiveTab();
+  if (!tab) {
+    return;
+  }
+  if (IsInternalPageUrl(url)) {
+    OpenInternalPage(url);
     return;
   }
   if (tab->internal()) {
@@ -1249,12 +2934,19 @@ void BrowserWindow::NavigateToAddressBarText() {
     // place.
     const TabId internal = tab->id();
     Tab* web = InsertTabFromOpener(tab, true);
-    web->CreateBrowser(input.url, owner_.RequestContext(web->profile()));
+    if (typed) {
+      web->MarkNextVisitTyped();
+    }
+    web->CreateBrowser(url, owner_.RequestContext(web->profile()));
+    replaced_tabs_.insert(internal);
     CloseTab(internal);
     FocusActiveTab();
     return;
   }
-  tab->Navigate(input.url);
+  if (typed) {
+    tab->MarkNextVisitTyped();
+  }
+  tab->Navigate(url);
   tab->Focus();
 }
 
@@ -1345,6 +3037,48 @@ bool BrowserWindow::HandleShortcut(int key,
     OpenTab(std::string(), true);
     return true;
   }
+  if (control && !alt && key == 'D') {
+    if (shift) {
+      BookmarkAllTabs();
+    } else {
+      BookmarkPage();
+    }
+    return true;
+  }
+  if (control && !alt && shift && key == 'O') {
+    ShowBookmarkManager();
+    return true;
+  }
+  if (control && !alt && shift && key == 'B') {
+    ToggleBookmarksBar();
+    return true;
+  }
+  // Ctrl+K: the command palette (003), as Cmd+K on macOS.
+  if (control && !alt && !shift && key == 'K') {
+    ShowCommandPalette();
+    return true;
+  }
+  // Shift+Esc: the task manager, as in Chrome on Windows (020).
+  if (!control && !alt && shift && key == VK_ESCAPE) {
+    owner_.OpenTaskManager(std::string());
+    return true;
+  }
+  if (control && !alt && !shift && key == 'J') {
+    ShowDownloads();
+    return true;
+  }
+  if (control && !alt && !shift && key == 'H') {
+    OpenInternalPage("brouk://history/");
+    return true;
+  }
+  if (control && !alt && shift && key == VK_DELETE) {
+    owner_.OpenClearBrowsingData();
+    return true;
+  }
+  if (control && !alt && shift && key == 'T') {
+    owner_.ReopenClosed(std::nullopt);
+    return true;
+  }
   if (control && !alt && !shift && key == 'N') {
     owner_.OpenWindow(std::string(), ProfileId());
     return true;
@@ -1384,6 +3118,10 @@ void BrowserWindow::OnTabChanged(Tab& tab) {
   owner_.OnSessionChanged();
   if (model_.active_id() == tab.id()) {
     UpdateToolbar();
+    // A new tab got a page, or back: the bar comes or goes (011).
+    if (BookmarksBarShown() != bookmarks_bar_shown_) {
+      UpdateBookmarksBar();
+    }
   }
   UpdateSpinner();
   InvalidateStrip();
@@ -1397,6 +3135,15 @@ void BrowserWindow::OnTabClosed(Tab& tab) {
   }
   if (fullscreen_tab_ == id) {
     OnTabFullscreenChanged(tab, false);
+  }
+  // A tab closed on its own can be reopened; a window closing as a whole
+  // is kept as one entry (WM_DESTROY). The last tab of a window counts as
+  // a tab (Chrome).
+  const bool replaced = replaced_tabs_.erase(id) > 0;
+  if (const std::optional<std::size_t> index = model_.IndexOf(id);
+      index && !replaced && !closing_ && kind_ == Kind::kNormal &&
+      !discarded_profiles_.contains(tab.profile())) {
+    owner_.OnTabClosedToReopen(ClosedTabFor(tab, *index));
   }
   model_.RemoveTab(id);
   // Deleted from a task: this is called from inside the tab.
@@ -1541,6 +3288,7 @@ LRESULT BrowserWindow::OnNcHitTest(LPARAM lparam) {
         return HTCLOSE;
       case TabStrip::Part::kTab:
       case TabStrip::Part::kTabClose:
+      case TabStrip::Part::kTabAudio:
       case TabStrip::Part::kNewTab:
       case TabStrip::Part::kGroupLabel:
         return HTCLIENT;
@@ -1631,6 +3379,7 @@ void BrowserWindow::MoveTabToProfile(TabId id, const ProfileId& profile) {
     const std::string url =
         IsBlank(moved->url()) ? std::string() : moved->url();
     OpenTab(url, true, profile);
+    replaced_tabs_.insert(id);
     CloseTab(id);
   });
 }
@@ -1687,6 +3436,7 @@ void BrowserWindow::OnMouse(UINT message, POINT point) {
         drag_start_ = point;
         SetCapture(window_);
       } else if (hit.part == TabStrip::Part::kTabClose ||
+                 hit.part == TabStrip::Part::kTabAudio ||
                  hit.part == TabStrip::Part::kNewTab ||
                  hit.part == TabStrip::Part::kGroupLabel) {
         pressed_ = hit;
@@ -1708,6 +3458,11 @@ void BrowserWindow::OnMouse(UINT message, POINT point) {
         MoveTabToProfile(*dropped, *target);
       } else if (pressed == hit && hit.part == TabStrip::Part::kTabClose) {
         CloseTab(hit.tab);
+      } else if (pressed == hit && hit.part == TabStrip::Part::kTabAudio) {
+        // The speaker mutes or unmutes the tab (Chrome, 003).
+        if (Tab* tab = FindTab(hit.tab)) {
+          tab->SetMuted(!tab->muted());
+        }
       } else if (pressed == hit && hit.part == TabStrip::Part::kNewTab) {
         OpenTab(std::string(), true, hit.profile);
       } else if (pressed == hit && hit.part == TabStrip::Part::kGroupLabel) {
@@ -1718,7 +3473,8 @@ void BrowserWindow::OnMouse(UINT message, POINT point) {
     }
     case WM_RBUTTONUP:
       if (hit.part == TabStrip::Part::kTab ||
-          hit.part == TabStrip::Part::kTabClose) {
+          hit.part == TabStrip::Part::kTabClose ||
+          hit.part == TabStrip::Part::kTabAudio) {
         POINT screen = point;
         ClientToScreen(window_, &screen);
         ShowTabMenu(hit.tab, screen);
@@ -1727,7 +3483,8 @@ void BrowserWindow::OnMouse(UINT message, POINT point) {
     case WM_MBUTTONUP:
       // Middle-click closes a tab (Chrome).
       if (hit.part == TabStrip::Part::kTab ||
-          hit.part == TabStrip::Part::kTabClose) {
+          hit.part == TabStrip::Part::kTabClose ||
+          hit.part == TabStrip::Part::kTabAudio) {
         CloseTab(hit.tab);
       }
       break;
@@ -1761,6 +3518,9 @@ LRESULT CALLBACK BrowserWindow::AddressProc(HWND window,
     case WM_KEYDOWN:
     case WM_SYSKEYDOWN: {
       const int key = static_cast<int>(wparam);
+      if (self->HandleSuggestionKey(key, KeyDown(VK_SHIFT))) {
+        return 0;
+      }
       if (key == VK_RETURN) {
         self->NavigateToAddressBarText();
         return 0;
@@ -1784,6 +3544,8 @@ LRESULT CALLBACK BrowserWindow::AddressProc(HWND window,
       }
       break;
     case WM_KILLFOCUS:
+      self->CloseSuggestions();
+      self->typed_text_.clear();
       self->ShowAddress();
       break;
     case WM_NCDESTROY:
@@ -1842,9 +3604,15 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
         if (hover_.part == TabStrip::Part::kTab) {
           if (const Tab* tab = FindTab(hover_.tab)) {
             tooltip_text_ = Utf8ToWide(tab->DisplayTitle());
+            if (tab->paused()) {
+              tooltip_text_ += L" \u2013 Paused";
+            }
           }
         } else if (hover_.part == TabStrip::Part::kTabClose) {
           tooltip_text_ = L"Close tab";
+        } else if (hover_.part == TabStrip::Part::kTabAudio) {
+          const Tab* tab = FindTab(hover_.tab);
+          tooltip_text_ = tab && tab->muted() ? L"Unmute tab" : L"Mute tab";
         } else {
           tooltip_text_ = strip_.ToolTip(hover_);
         }
@@ -1863,16 +3631,19 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
       Paint();
       return 0;
     case WM_SIZE:
+      CloseSuggestions();
       Layout();
       owner_.OnSessionChanged();
       return 0;
     case WM_MOVE:
+      CloseSuggestions();
       owner_.OnSessionChanged();
       return 0;
     case WM_ACTIVATE:
       active_ = LOWORD(wparam) != WA_INACTIVE;
       InvalidateStrip();
       if (!active_) {
+        CloseSuggestions();
         HWND focus = GetFocus();
         saved_focus_ = focus && IsChild(window_, focus) ? focus : nullptr;
       } else if (HWND focus = GetFocus(); focus && IsChild(window_, focus)) {
@@ -1929,8 +3700,11 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
     }
     case WM_DRAWITEM:
       if (const auto* item = reinterpret_cast<const DRAWITEMSTRUCT*>(lparam);
-          item->hwndItem == zoom_ || item->hwndItem == popups_) {
+          item->hwndItem == zoom_ || item->hwndItem == popups_ ||
+          item->hwndItem == star_) {
         DrawIndicator(*item);
+      } else if (item->hwndItem == downloads_) {
+        DrawDownloadsButton(*item);
       } else {
         DrawToolbarButton(*reinterpret_cast<const DRAWITEMSTRUCT*>(lparam));
       }
@@ -1943,6 +3717,11 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
       return reinterpret_cast<LRESULT>(field_brush_);
     }
     case WM_COMMAND:
+      if (reinterpret_cast<HWND>(lparam) == address_ &&
+          HIWORD(wparam) == EN_CHANGE) {
+        OnAddressEdited();
+        return 0;
+      }
       if (Tab* tab = ActiveTab()) {
         switch (LOWORD(wparam)) {
           case kBackId:
@@ -1963,6 +3742,12 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
           case kMenuId:
             ShowAppMenu();
             return 0;
+          case kDownloadsId:
+            ShowDownloadsPopup();
+            return 0;
+          case kStarId:
+            BookmarkPage();
+            return 0;
           default:
             break;
         }
@@ -1982,7 +3767,17 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
         return 0;
       }
       if (!closing_) {
-        owner_.OnWindowClosing(*this);
+        if (!owner_.OnWindowClosing(*this)) {
+          return 0;  // The user kept downloads running.
+        }
+        closed_snapshot_.clear();
+        for (std::size_t i = 0; i < model_.count() && is_normal(); ++i) {
+          const Tab* tab = FindTab(model_.id_at(i));
+          if (tab && !tab->closing() &&
+              !discarded_profiles_.contains(tab->profile())) {
+            closed_snapshot_.push_back(ClosedTabFor(*tab, i));
+          }
+        }
       }
       closing_ = true;
       std::vector<TabId> ids;
@@ -1999,6 +3794,10 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
       HWND window = window_;
       window_ = nullptr;
       SetWindowLongPtrW(window, GWLP_USERDATA, 0);
+      if (!closed_snapshot_.empty()) {
+        owner_.OnWindowClosedToReopen(window_id_, std::move(closed_snapshot_));
+        closed_snapshot_.clear();
+      }
       owner_.OnWindowDestroyed(this);
       return 0;
     }

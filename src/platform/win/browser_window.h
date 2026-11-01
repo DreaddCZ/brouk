@@ -1,24 +1,42 @@
 #ifndef BROUK_PLATFORM_WIN_BROWSER_WINDOW_H_
 #define BROUK_PLATFORM_WIN_BROWSER_WINDOW_H_
 
+#include <shobjidl.h>
 #include <windows.h>
+#include <wrl/client.h>
 
+#include <cstdint>
+#include <deque>
 #include <functional>
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
+#include <vector>
 
+#include "cef/search_suggest_request.h"
 #include "cef/tab_client.h"
+#include "cef/task_manager_handler.h"
+#include "core/address_suggestions.h"
+#include "core/closed_tabs.h"
 #include "core/profile_registry.h"
 #include "core/session.h"
 #include "core/tab_strip_model.h"
 #include "include/cef_request_context.h"
+#include "platform/win/bookmark_dialog.h"
+#include "platform/win/bookmark_store.h"
+#include "platform/win/bookmarks_bar.h"
+#include "platform/win/command_palette.h"
+#include "platform/win/downloads_popup.h"
+#include "platform/win/favicon_cache.h"
+#include "platform/win/suggestions_popup.h"
 #include "platform/win/tab.h"
 #include "platform/win/tab_panel.h"
 #include "platform/win/tab_strip.h"
 #include "platform/win/theme.h"
+#include "platform/win/undo_notice.h"
 
 namespace brouk::win {
 
@@ -43,10 +61,51 @@ class BrowserWindowOwner {
   // The request context of internal pages (in memory only); only it can
   // load brouk:// pages.
   virtual CefRefPtr<CefRequestContext> InternalContext() = 0;
-  // The bridge handler of an internal page shown in a tab (the licences,
-  // 023), or null for pages that do not open in a tab (yet).
+  // The bridge handler of an internal page shown in tab `tab` of `window`
+  // (the licences, 023; history, 013), or null for pages that do not open
+  // in a tab (yet).
   virtual std::unique_ptr<CefMessageRouterBrowserSide::Handler>
-  InternalPageHandler(const std::string& page) = 0;
+  InternalPageHandler(const std::string& page,
+                      BrowserWindow& window,
+                      TabId tab) = 0;
+  // History (013): null before CEF is ready. A profile's history changed;
+  // its most recent pages for the menu (null until read, which starts
+  // reading them).
+  virtual HistoryService* History() = 0;
+  // Site icons for the bookmarks bar and menus (null before the history).
+  virtual FaviconCache* Favicons() = 0;
+  virtual void OnHistoryChanged(const ProfileId& profile) = 0;
+  virtual const std::vector<HistoryMatch>* RecentPages(
+      const ProfileId& profile) = 0;
+  // History → Clear browsing data (013): the dialog on the history page.
+  virtual void OpenClearBrowsingData() = 0;
+  // Address bar suggestions (003): the search engine's suggestion URL
+  // template (empty: none), and whether history pages are suggested.
+  virtual std::string SearchSuggestTemplate() = 0;
+  virtual bool HistorySuggestionsEnabled() = 0;
+  // Downloads (014): the app's list (null before CEF is ready), the
+  // setting downloads.ask_where_to_save, and unique paths in a profile's
+  // download folder.
+  virtual DownloadService* Downloads() = 0;
+  virtual bool AskWhereToSaveDownloads() = 0;
+  virtual DownloadTarget ReserveDownloadPath(const std::string& suggested,
+                                             const ProfileId& profile) = 0;
+  virtual void ReleaseDownloadPath(const std::string& path) = 0;
+  // Bookmarks (011): the app's store (null before CEF is ready), and
+  // whether address bar suggestions include them.
+  virtual BookmarkStore* Bookmarks() = 0;
+  virtual bool BookmarkSuggestionsEnabled() = 0;
+  // The setting bookmarks.bar: "always" or only on the new tab page.
+  virtual bool BookmarksBarAlwaysShown() = 0;
+  virtual void SetBookmarksBarAlwaysShown(bool always) = 0;
+  // The task manager window (020), with the row `row` ("tab-12") selected
+  // when not empty.
+  virtual void OpenTaskManager(const std::string& row) = 0;
+  // For the command palette (003): the normal browser windows, and help's
+  // sections as (anchor, title).
+  virtual std::vector<BrowserWindow*> NormalWindows() = 0;
+  virtual const std::vector<std::pair<std::string, std::string>>&
+  HelpSections() = 0;
   virtual const std::vector<ProfileInfo>& ProfileList() = 0;
   // Opens the profile manager (brouk://profiles, 005) in its own window.
   virtual void OpenProfileManager() = 0;
@@ -66,7 +125,17 @@ class BrowserWindowOwner {
   // order, pinning, collapsing, the frame), and a normal window is about to
   // close its tabs (while its session state is still complete).
   virtual void OnSessionChanged() = 0;
-  virtual void OnWindowClosing(BrowserWindow& window) = 0;
+  // Also asks first when closing would quit Brouk with downloads running
+  // (014); false: the window stays open.
+  virtual bool OnWindowClosing(BrowserWindow& window) = 0;
+  // Reopen closed tabs (013): a tab closed on its own, a window closed as a
+  // whole with its tabs, the list for the menu, and reopening one (nullopt:
+  // the newest, Ctrl+Shift+T).
+  virtual void OnTabClosedToReopen(ClosedTab tab) = 0;
+  virtual void OnWindowClosedToReopen(std::int64_t window_id,
+                                      std::vector<ClosedTab> tabs) = 0;
+  virtual const std::deque<ClosedEntry>& RecentlyClosed() = 0;
+  virtual void ReopenClosed(std::optional<std::int64_t> entry_id) = 0;
 
  protected:
   virtual ~BrowserWindowOwner() = default;
@@ -78,7 +147,9 @@ class BrowserWindowOwner {
 // forward, reload, address bar) and the active tab. Popup windows have the
 // system title bar and a read-only address bar (Chrome). The tabs' order
 // and selection follow the core's TabStripModel.
-class BrowserWindow final : public TabHost {
+class BrowserWindow final : public TabHost,
+                            public BookmarksBar::Delegate,
+                            public DownloadsPopup::Delegate {
  public:
   enum class Kind { kNormal, kPopup };
 
@@ -107,8 +178,42 @@ class BrowserWindow final : public TabHost {
   // browser.
   Tab* InsertTabFromOpener(const Tab* opener, bool foreground);
   // Opens an internal page (brouk://...) in a tab, in place of an empty
-  // active tab; help opens its own window.
+  // active tab; an active tab already showing it is reused (only the
+  // fragment changes). Help, settings and profiles open their own windows.
   void OpenInternalPage(const std::string& url);
+  // A page chosen on the history page in tab `from` (013): in place of the
+  // history tab when it is in `profile` (empty: the tab's own), else, or
+  // with `new_tab`, as a new tab of `profile`.
+  void OpenPageFromTab(TabId from,
+                       const ProfileId& profile,
+                       const std::string& url,
+                       bool new_tab);
+  // A tab's profile (the default profile if it is gone), and any web
+  // browser of `profile` here (for the DevTools protocol).
+  ProfileId ProfileOfTab(TabId id);
+  CefRefPtr<CefBrowser> AnyBrowserInProfile(const ProfileId& profile) const;
+  // Downloads (014): the toolbar button follows the app's list (shown once
+  // something was downloaded in this run, with the progress of running
+  // downloads and a dot for finished ones not seen yet); Retry on the
+  // downloads page starts a download again with a browser of its profile,
+  // or loads its address in a new tab.
+  void DownloadsChanged();
+  void RetryDownload(const DownloadEntry& entry);
+  // Bookmarks (011): the star follows the bookmarks; a bookmark opens in
+  // its linked profile, or a general one in the active tab's (from the
+  // manager page in tab `from`: in place of it when it may).
+  void BookmarksChanged();
+  // Site icons arrived (FaviconCache): the bookmarks bar redraws.
+  void FaviconsChanged();
+  void OpenBookmark(BookmarkId id, BookmarkOpen how) override;
+  // Task manager (020): this window's tabs as rows, in strip order, and
+  // an action on one of them (false if it is not here).
+  void AppendTaskPages(std::vector<TaskManagerPage>& pages);
+  // The command palette (003, Ctrl+K): this window's tabs as entries
+  // (choosing one goes to it).
+  void AppendPaletteTabs(std::vector<PaletteEntry>& entries);
+  bool ActOnTab(TabId id, TaskPageAction action);
+  void OpenBookmarkFromTab(TabId from, BookmarkId id, bool new_tab);
   // Removes a tab whose browser never came (the popup was aborted).
   void RemoveUncreatedTab(TabId id);
   Tab* FindTab(TabId id);
@@ -121,6 +226,10 @@ class BrowserWindow final : public TabHost {
   HWND hwnd() const { return window_; }
   bool is_normal() const { return kind_ == Kind::kNormal; }
   bool closing() const { return closing_; }
+  // Unique in this run: where a closed tab came from (013).
+  std::int64_t window_id() const { return window_id_; }
+  // A closed tab back at its place in its profile group (013).
+  void RestoreClosedTab(const ClosedTab& closed, bool activate);
 
   // Session restore (015). The window as the session saves it (nullopt for
   // popups and closing windows), and bringing a saved one back before
@@ -144,6 +253,39 @@ class BrowserWindow final : public TabHost {
   bool OnTabKey(const CefKeyEvent& event) override;
   TabClientDelegate::SearchEngine TabSearchEngine() override;
   int FaviconSize() override;
+  // BookmarksBar::Delegate:
+  void OpenAllBookmarks(BookmarkId folder) override;
+  void EditBookmark(BookmarkId id) override;
+  void RemoveBookmark(BookmarkId id) override;
+  void AddBookmark(BookmarkId folder, std::size_t index) override;
+  void AddBookmarkFolder(BookmarkId folder, std::size_t index) override;
+  void MoveBookmark(BookmarkId id,
+                    BookmarkId parent,
+                    std::size_t index) override;
+  void ShowBookmarkManager() override;
+  void ToggleBookmarksBar() override;
+  void DropLink(const std::string& url,
+                const std::string& title,
+                BookmarkId parent,
+                std::size_t index) override;
+
+  // DownloadsPopup::Delegate:
+  DownloadService* PopupDownloads() override;
+  COLORREF PopupProfileColor(const ProfileId& profile) override;
+  void PopupRetryDownload(const DownloadEntry& entry) override;
+  void PopupShowAllDownloads() override;
+  bool BookmarksBarAlwaysShown() override;
+
+  HistoryService* TabHistory() override;
+  void OnTabHistoryChanged(Tab& tab) override;
+  void OnTabFaviconStored(Tab& tab) override;
+  bool TabKeepsFocusOnNavigation(const Tab& tab) override;
+  void OnTabBrowserCreated(Tab& tab) override;
+  DownloadService* TabDownloads() override;
+  bool TabAskWhereToSaveDownloads() override;
+  DownloadTarget TabReserveDownloadPath(const std::string& suggested,
+                                        const ProfileId& profile) override;
+  void TabReleaseDownloadPath(const std::string& path) override;
 
  private:
   static LRESULT CALLBACK WindowProc(HWND window,
@@ -171,6 +313,59 @@ class BrowserWindow final : public TabHost {
   void Paint();
   void PaintToolbar(HDC dc);
   void DrawToolbarButton(const DRAWITEMSTRUCT& item);
+  // The downloads button: its glyph, a progress line under it while
+  // downloads run, a dot for unseen finished ones.
+  void DrawDownloadsButton(const DRAWITEMSTRUCT& item);
+  // The downloads page (brouk://downloads, Ctrl+J); everything is seen.
+  void ShowDownloads();
+  // After deleting a bookmark or folder (011): `message` with Undo for a
+  // few seconds, under `anchor` (screen pixels).
+  void OfferUndoRemove(const wchar_t* message, const RECT& anchor);
+  // The star's bubble for an existing bookmark (`added`: just saved).
+  void ShowBookmarkBubble(BookmarkId bookmark,
+                          bool added,
+                          const ProfileId& profile);
+  void AskNewFolderFor(BookmarkId bookmark,
+                       const BookmarkDialogValues& values,
+                       const ProfileId& profile);
+  // The toolbar button: the list under it (Chrome's downloads bubble).
+  void ShowDownloadsPopup();
+  // The last 24 hours of downloads of all profiles, for the list.
+  void ListRecentDownloads(
+      std::function<void(std::vector<DownloadEntry>)> done);
+  // The running downloads' progress on the window's taskbar button, as
+  // Chrome shows it.
+  void UpdateTaskbarProgress();
+  // Ctrl+K: the command palette over this window.
+  void ShowCommandPalette();
+  std::vector<PaletteEntry> PaletteActions();
+  // Bookmarks (011): whether a tab's page can be bookmarked (a web or file
+  // page); Ctrl+D (the star): bookmarks the page, or edits its bookmark, in
+  // a bubble under the star; Ctrl+Shift+D: the active profile's tabs into
+  // a new folder; the "⋮" → Bookmarks submenu with the bar and Other
+  // bookmarks, folders as submenus (`ids` maps its commands).
+  bool CanBookmark(const Tab* tab) const;
+  void BookmarkPage();
+  void BookmarkAllTabs();
+  void AppendBookmarkMenu(HMENU menu,
+                          BookmarkId folder,
+                          const ProfileId& profile,
+                          std::vector<BookmarkId>& ids);
+  // Opens a bookmark dialog under `anchor` (screen pixels), unless one is
+  // open; `done` runs when it closes.
+  void ShowBookmarkDialog(BookmarkDialog::Options options,
+                          const RECT& anchor,
+                          BookmarkDialog::Done done);
+  // The bubble or folder dialog closed: deleted from a task.
+  void CloseBookmarkDialog();
+  // Where a dialog opened from the bar goes: under the mouse.
+  RECT CursorAnchor() const;
+  // The bookmarks bar (011): shown always, or on the new tab page only
+  // (the setting); updated from the bookmarks and the active tab.
+  bool BookmarksBarShown();
+  void UpdateBookmarksBar();
+  RECT BookmarksBarBounds() const;
+  RECT StarScreenRect() const;
   // The indicators at the right of the address bar: zoom ("110 %", click
   // resets to 100 %) and "Pop-ups blocked" (click lists them).
   void DrawIndicator(const DRAWITEMSTRUCT& item);
@@ -207,6 +402,8 @@ class BrowserWindow final : public TabHost {
   void FocusActiveTab();
   Tab* ActiveTab();
   void CloseTab(TabId id);
+  // The tab as Reopen Closed Tab needs it; `index` is its model index.
+  ClosedTab ClosedTabFor(const Tab& tab, std::size_t index) const;
   void UpdateToolbar();
   void UpdateSpinner();
 
@@ -221,9 +418,34 @@ class BrowserWindow final : public TabHost {
   void FocusAddressBar();
   void NavigateToAddressBarText();
   void ShowAddress();
+  // Sets the address field's text without it counting as typing, with the
+  // selection from `select_from` to the end (-1: the caret at the end).
+  void SetAddressText(const std::wstring& text, int select_from = -1);
+  // Loads `url` from the address bar in the active tab; `typed` counts for
+  // history ranking (addresses, not searches; Chrome).
+  void NavigateActiveTab(const std::string& url, bool typed);
+
+  // Address bar suggestions (003), as on macOS: the field's text changed by
+  // typing; asking the sources again (the profile's history, the search
+  // engine); showing the list with the first row's inline completion; the
+  // keys the field passes on while the list is open (Up, Down, Escape,
+  // Shift+Delete); running a row as Return does.
+  void OnAddressEdited();
+  void UpdateSuggestions();
+  void ShowSuggestions();
+  void CloseSuggestions();
+  bool HandleSuggestionKey(int key, bool shift);
+  void OpenSuggestionRow(int row);
 
   BrowserWindowOwner& owner_;
   const Kind kind_;
+  const std::int64_t window_id_;
+  // Closed tabs (013): the window's tabs when it started closing as a
+  // whole (one entry), tabs replaced by another (moved to a profile) and
+  // profiles being deleted, whose tabs are not kept.
+  std::vector<ClosedTab> closed_snapshot_;
+  std::set<TabId> replaced_tabs_;
+  std::set<ProfileId> discarded_profiles_;
   TabStripModel model_;
   std::map<TabId, std::unique_ptr<Tab>> tabs_;
   // Popups being created from this window's tabs: (opener, popup id) to
@@ -236,6 +458,18 @@ class BrowserWindow final : public TabHost {
   HWND forward_ = nullptr;
   HWND reload_ = nullptr;
   HWND menu_ = nullptr;
+  HWND downloads_ = nullptr;
+  HWND star_ = nullptr;  // In the address bar (011).
+  std::unique_ptr<BookmarkDialog> bookmark_dialog_;
+  std::unique_ptr<BookmarksBar> bookmarks_bar_;
+  CommandPalette palette_;
+  DownloadsPopup downloads_popup_{*this};
+  UndoNotice undo_notice_;
+  Microsoft::WRL::ComPtr<ITaskbarList3> taskbar_;
+  bool taskbar_progress_ = false;
+  // The site icons of the "⋮" menu while it shows.
+  std::vector<Favicon> menu_icons_;
+  bool bookmarks_bar_shown_ = false;
   HWND zoom_ = nullptr;
   HWND popups_ = nullptr;
   // Tab titles and the strip's buttons on hover.
@@ -262,6 +496,21 @@ class BrowserWindow final : public TabHost {
   // address bar, a find bar, a dialog over a page, ...), to go back there.
   HWND saved_focus_ = nullptr;
   bool closing_ = false;
+  // Address bar suggestions (003). Answers carry suggest_generation_, so
+  // late answers for older text are dropped.
+  std::unique_ptr<SuggestionsPopup> suggestions_;
+  std::wstring typed_text_;
+  // The last edit added text at the end: inline completion is allowed.
+  bool allow_inline_ = false;
+  bool setting_address_ = false;
+  bool suggesting_ = false;
+  std::uint64_t suggest_generation_ = 0;
+  std::vector<HistoryMatch> history_matches_;
+  std::vector<std::string> search_suggestions_;
+  std::vector<AddressSuggestion> suggestion_rows_;
+  CefRefPtr<SearchSuggestRequest> suggest_request_;
+  // Expires with the window, for answers that come later.
+  std::shared_ptr<int> alive_ = std::make_shared<int>(0);
   bool spinner_running_ = false;
   bool fullscreen_ = false;
   // The window went full screen because a page asked (not F11), and leaves

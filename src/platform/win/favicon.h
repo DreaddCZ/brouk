@@ -25,6 +25,8 @@ class Favicon {
   static Favicon FromPng(const std::vector<std::uint8_t>& png, int size);
 
   bool empty() const { return bitmap_ == nullptr; }
+  // For menu items (MENUITEMINFO::hbmpItem); stays owned by this object.
+  HBITMAP bitmap() const { return bitmap_; }
   // Draws the icon with its alpha channel at (x, y).
   void Draw(HDC dc, int x, int y) const;
 

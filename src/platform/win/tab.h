@@ -10,6 +10,7 @@
 #include <string>
 #include <vector>
 
+#include "cef/history_service.h"
 #include "cef/internal_page_client.h"
 #include "cef/tab_client.h"
 #include "core/tab_strip_model.h"
@@ -47,6 +48,26 @@ class TabHost {
   virtual TabClientDelegate::SearchEngine TabSearchEngine() = 0;
   // The tab icon's size in pixels at the window's current DPI.
   virtual int FaviconSize() = 0;
+  // History (013): where visits are recorded (null before it exists), and
+  // that the tab's profile's history changed (the Recently visited menu).
+  virtual HistoryService* TabHistory() = 0;
+  virtual void OnTabHistoryChanged(Tab& tab) = 0;
+  // The tab's page icon went into its profile's history (bookmark icons).
+  virtual void OnTabFaviconStored(Tab& tab) = 0;
+  // Whether the address bar keeps the keyboard when the tab's page loads
+  // (the user is typing there, as on a new tab), instead of the page
+  // taking it.
+  virtual bool TabKeepsFocusOnNavigation(const Tab& tab) = 0;
+  // The tab's browser exists now (CEF gives it the keyboard focus).
+  virtual void OnTabBrowserCreated(Tab& tab) = 0;
+  // Downloads (014): the app's list (null before it exists), whether every
+  // download asks where to save, and a unique path in `profile`'s download
+  // folder (released when the download ends).
+  virtual DownloadService* TabDownloads() = 0;
+  virtual bool TabAskWhereToSaveDownloads() = 0;
+  virtual DownloadTarget TabReserveDownloadPath(const std::string& suggested,
+                                                const ProfileId& profile) = 0;
+  virtual void TabReleaseDownloadPath(const std::string& path) = 0;
 
  protected:
   virtual ~TabHost() = default;
@@ -86,6 +107,24 @@ class Tab final : public TabClientDelegate,
   // Chrome's "Restore pages?" after a crash (015); `restore` runs on
   // Restore.
   void ShowRestorePagesPanel(std::function<void()> restore);
+  // The next visit was typed in the address bar (013: CEF has no "typed"
+  // transition of its own).
+  void MarkNextVisitTyped() { next_visit_typed_ = true; }
+  // Task manager (020): Pause freezes the page (scripts, timers, media)
+  // until Resume, with a bar over it; Unload closes its browser but keeps
+  // the tab, which loads again when shown, like a restored tab.
+  void SetPaused(bool paused);
+  void Unload();
+  bool paused() const { return paused_; }
+  const std::vector<std::uint8_t>& favicon_png() const { return favicon_png_; }
+  bool audible() const { return audible_; }
+  bool uses_camera() const { return camera_; }
+  bool uses_microphone() const { return microphone_; }
+  bool crashed() const { return sad_tab_ != nullptr; }
+  int renderer_pid() const;
+  std::int64_t received_bytes() const;
+  // The next visit opens a bookmark (011).
+  void MarkNextVisitBookmark() { next_visit_bookmark_ = true; }
   void SetBounds(const RECT& bounds);
   void SetVisible(bool visible);
   // The icon again at a new size (the window's DPI changed).
@@ -141,6 +180,8 @@ class Tab final : public TabClientDelegate,
   bool internal() const { return internal_client_ != nullptr; }
 
   TabId id() const { return id_; }
+  // Whether keyboard focus is in this tab (its page or a panel), or nowhere.
+  bool FocusInTab() const;
   const ProfileId& profile() const { return profile_; }
   HWND container() const { return container_; }
   const std::string& title() const { return title_; }
@@ -254,8 +295,6 @@ class Tab final : public TabClientDelegate,
   std::unique_ptr<TabPanel> MakePanel(TabPanel::Content content,
                                       TabPanel::Done done);
   TabPanel* ModalPanel() const;
-  // Whether keyboard focus is in this tab (its page or a panel), or nowhere.
-  bool FocusInTab() const;
   // After a panel came or went: blocks the page while a dialog is open, and
   // moves focus to the dialog or back to the page if `refocus`.
   void UpdatePanels(bool refocus);
@@ -287,6 +326,20 @@ class Tab final : public TabClientDelegate,
   // A restored tab's context until its browser is created.
   CefRefPtr<CefRequestContext> deferred_context_;
   std::unique_ptr<TabPanel> restore_pages_;
+  // History (013): how the next visit started, and the last visit (a page
+  // that forwards by itself is not kept, only the end of the chain).
+  // Task manager (020).
+  bool paused_ = false;
+  std::unique_ptr<TabPanel> paused_bar_;
+  bool unloading_ = false;
+  CefRefPtr<CefRequestContext> unload_context_;
+  bool audible_ = false;
+  bool camera_ = false;
+  bool microphone_ = false;
+  bool next_visit_typed_ = false;
+  bool next_visit_bookmark_ = false;
+  std::string last_visit_url_;
+  VisitTransition last_visit_kind_ = VisitTransition::kOther;
   std::unique_ptr<TabPanel> js_dialog_;
   // The dialog came while no page was loading: a new navigation cancels it.
   bool js_dialog_while_idle_ = false;

@@ -9,10 +9,12 @@
 
 #include "brouk/app_info.h"
 #include "cef/color_scheme.h"
+#include "cef/devtools_call.h"
 #include "cef/function_task.h"
 #include "core/external_protocol.h"
 #include "core/permissions.h"
 #include "include/cef_task.h"
+#include "include/cef_values.h"
 #include "include/wrapper/cef_helpers.h"
 #include "platform/win/desktop_sources.h"
 #include "platform/win/theme.h"
@@ -85,6 +87,8 @@ bool RegisterContainerClass(WNDPROC procedure) {
 Tab::Tab(TabHost& host, TabId id, HWND parent, ProfileId profile)
     : host_(host), id_(id), profile_(std::move(profile)) {
   client_ = new TabClient(this);
+  // Downloads (014) go to the app's list.
+  client_->SetDownloads(host_.TabDownloads(), profile_);
   if (RegisterContainerClass(&Tab::ContainerProc)) {
     container_ = CreateWindowExW(0, kContainerClass, L"",
                                  WS_CHILD | WS_CLIPCHILDREN, 0, 0, 0, 0, parent,
@@ -107,7 +111,8 @@ Tab::~Tab() {
   }
   // The panels' windows go before the container they are in.
   for (auto* panel : {&js_dialog_, &unresponsive_, &external_protocol_,
-                      &screen_picker_, &sad_tab_, &permission_prompt_}) {
+                      &screen_picker_, &sad_tab_, &permission_prompt_,
+                      &move_question_, &restore_pages_, &paused_bar_}) {
     panel->reset();
   }
   find_bar_.reset();
@@ -351,6 +356,7 @@ void Tab::GoForward() {
 }
 
 void Tab::Reload() {
+  SetPaused(false);
   if (browser_) {
     browser_->Reload();
   }
@@ -496,10 +502,15 @@ void Tab::OnBrowserCreated(CefRefPtr<CefBrowser> browser) {
     browser_->GetMainFrame()->LoadURL(pending_url_);
     pending_url_.clear();
   }
+  host_.OnTabBrowserCreated(*this);
 }
 
 void Tab::OnTitleChanged(const std::string& title) {
   title_ = title;
+  if (HistoryService* history = host_.TabHistory();
+      history && !internal() && !url_.empty()) {
+    history->SetTitle(profile_, url_, title_);
+  }
   host_.OnTabChanged(*this);
 }
 
@@ -515,10 +526,41 @@ void Tab::OnAddressChanged(const std::string& url) {
   host_.OnTabChanged(*this);
 }
 
-void Tab::OnPageVisited(const std::string& /*url*/,
-                        const std::string& /*title*/,
-                        cef_transition_type_t /*transition*/) {
-  // History (013) comes with W2.
+// For history (013): how the visit started.
+void Tab::OnPageVisited(const std::string& url,
+                        const std::string& title,
+                        cef_transition_type_t transition) {
+  VisitTransition kind = VisitTransition::kOther;
+  const int source = transition & TT_SOURCE_MASK;
+  if (next_visit_typed_) {
+    kind = VisitTransition::kTyped;
+  } else if (next_visit_bookmark_) {
+    kind = VisitTransition::kBookmark;
+  } else if (source == TT_RELOAD) {
+    kind = VisitTransition::kReload;
+  } else if (source == TT_AUTO_BOOKMARK) {
+    kind = VisitTransition::kBookmark;
+  } else if (source == TT_LINK || source == TT_FORM_SUBMIT) {
+    kind = VisitTransition::kLink;
+  }
+  next_visit_typed_ = false;
+  next_visit_bookmark_ = false;
+  HistoryService* history = host_.TabHistory();
+  if (!history || internal()) {
+    return;
+  }
+  // A page that forwarded here by itself (meta refresh, script) is not
+  // kept: only the end of a redirect chain is. The chain keeps how it
+  // started (typed, link...).
+  if ((transition & TT_CLIENT_REDIRECT_FLAG) && !last_visit_url_.empty() &&
+      last_visit_url_ != url) {
+    history->RemoveRedirectSource(profile_, last_visit_url_);
+    kind = last_visit_kind_;
+  }
+  last_visit_url_ = url;
+  last_visit_kind_ = kind;
+  history->RecordVisit(profile_, url, title, kind);
+  host_.OnTabHistoryChanged(*this);
 }
 
 void Tab::OnLoadingStateChanged(bool is_loading,
@@ -538,11 +580,22 @@ void Tab::OnLoadingStateChanged(bool is_loading,
   loading_ = is_loading;
   can_go_back_ = can_go_back;
   can_go_forward_ = can_go_forward;
+  // A new tab page starts at 100 %: Chromium keeps one zoom for every
+  // about:blank page, so zooming one new tab zoomed all later ones.
+  if (!is_loading && browser_ && (url_.empty() || url_ == "about:blank") &&
+      browser_->GetHost()->GetZoomLevel() != 0.0) {
+    browser_->GetHost()->SetZoomLevel(0.0);
+  }
   host_.OnTabChanged(*this);
 }
 
-void Tab::OnFaviconChanged(const std::string& /*icon_url*/,
+void Tab::OnFaviconChanged(const std::string& icon_url,
                            const std::vector<std::uint8_t>& png) {
+  if (HistoryService* history = host_.TabHistory();
+      history && !internal() && !url_.empty()) {
+    history->SetFavicon(profile_, url_, icon_url, png);
+    host_.OnTabFaviconStored(*this);
+  }
   favicon_png_ = png;
   UpdateFaviconSize();
   host_.OnTabChanged(*this);
@@ -577,7 +630,113 @@ void Tab::OnCloseReady() {
   }
 }
 
+int Tab::renderer_pid() const {
+  if (client_) {
+    return client_->renderer_pid();
+  }
+  return internal_client_ ? internal_client_->renderer_pid() : 0;
+}
+
+std::int64_t Tab::received_bytes() const {
+  return client_ ? client_->received_bytes() : 0;
+}
+
+void Tab::SetPaused(bool paused) {
+  CEF_REQUIRE_UI_THREAD();
+  if (paused == paused_ ||
+      (paused && (!browser_ || internal() || sad_tab_ || unloading_))) {
+    return;
+  }
+  paused_ = paused;
+  if (paused) {
+    // A paused tab stays paused when shown (unlike Chrome), with a bar
+    // that says so (020).
+    TabPanel::Content content;
+    content.placement = TabPanel::Placement::kTopCenter;
+    content.width = 380;
+    content.title = L"This page is paused";
+    content.message =
+        L"The task manager paused it: its scripts, timers and "
+        L"media are stopped.";
+    content.buttons = {L"Resume"};
+    std::weak_ptr<int> alive = alive_;
+    paused_bar_ =
+        MakePanel(std::move(content), [this, alive](const TabPanel::Answer&) {
+          if (!alive.expired()) {
+            // From a task: this runs inside the panel.
+            CefPostTask(TID_UI, new FunctionTask([this, alive] {
+                          if (!alive.expired()) {
+                            SetPaused(false);
+                          }
+                        }));
+          }
+        });
+  } else {
+    paused_bar_.reset();
+  }
+  if (browser_) {
+    // Not Page.setWebLifecycleState "frozen" as on macOS: on Windows it
+    // leaves the page marked hidden after "active", and a hidden page takes
+    // no keys (also after a reload). Instead the page's media stop and its
+    // scripts are switched off (timers and events run no code), and back.
+    constexpr char kPauseMedia[] =
+        "for (const m of document.querySelectorAll('audio, video')) "
+        "{ if (!m.paused) { m.__broukPaused = true; m.pause(); } }";
+    constexpr char kResumeMedia[] =
+        "for (const m of document.querySelectorAll('audio, video')) "
+        "{ if (m.__broukPaused) { delete m.__broukPaused; m.play(); } }";
+    auto evaluate = [this](const char* code) {
+      CefRefPtr<CefDictionaryValue> params = CefDictionaryValue::Create();
+      params->SetString("expression", code);
+      CallDevToolsMethod(browser_, "Runtime.evaluate", params,
+                         [](bool, const std::string&) {});
+    };
+    CefRefPtr<CefDictionaryValue> scripts = CefDictionaryValue::Create();
+    scripts->SetBool("value", paused);
+    if (paused) {
+      evaluate(kPauseMedia);
+    }
+    CallDevToolsMethod(browser_, "Emulation.setScriptExecutionDisabled",
+                       scripts, [](bool, const std::string&) {});
+    if (!paused) {
+      evaluate(kResumeMedia);
+    }
+  }
+  host_.OnTabChanged(*this);
+}
+
+void Tab::Unload() {
+  CEF_REQUIRE_UI_THREAD();
+  if (!browser_ || internal() || closing_ || unloading_) {
+    return;
+  }
+  SetPaused(false);
+  unloading_ = true;
+  unload_context_ = browser_->GetHost()->GetRequestContext();
+  // As Chrome discards a tab: no "leave site?" question.
+  browser_->GetHost()->CloseBrowser(true);
+}
+
 void Tab::OnBrowserClosed() {
+  if (unloading_ && !closing_) {
+    // Unloaded (020): the tab stays, like a restored tab that loads when
+    // shown; a new client for the browser it gets then.
+    unloading_ = false;
+    if (client_) {
+      client_->DetachDelegate();
+    }
+    browser_ = nullptr;
+    client_ = new TabClient(this);
+    client_->SetDownloads(host_.TabDownloads(), profile_);
+    deferred_context_ = std::move(unload_context_);
+    loading_ = false;
+    audible_ = false;
+    camera_ = false;
+    microphone_ = false;
+    sad_tab_.reset();
+    host_.OnTabChanged(*this);
+    return;
+  }
   if (client_) {
     client_->DetachDelegate();
     client_ = nullptr;
@@ -849,9 +1008,16 @@ void Tab::OnFullscreenModeChanged(bool fullscreen) {
   host_.OnTabFullscreenChanged(*this, fullscreen);
 }
 
-void Tab::OnAudibleChanged(bool /*audible*/) {}
+void Tab::OnAudibleChanged(bool audible) {
+  audible_ = audible;
+  host_.OnTabChanged(*this);
+}
 
-void Tab::OnMediaAccessChanged(bool /*video*/, bool /*audio*/) {}
+void Tab::OnMediaAccessChanged(bool video, bool audio) {
+  camera_ = video;
+  microphone_ = audio;
+  host_.OnTabChanged(*this);
+}
 
 // Windows has no system picker that names Chromium's sources, so Brouk
 // lists the screens and windows itself (Chrome's picker, without the
@@ -927,14 +1093,16 @@ void Tab::InspectElement(int /*x*/, int /*y*/) {}
 void Tab::OnInspectElement(int /*x*/, int /*y*/) {}  // Dev tools (006): W3.
 
 bool Tab::AskWhereToSaveDownloads() {
-  return false;
+  return host_.TabAskWhereToSaveDownloads();
 }
 
-DownloadTarget Tab::ReserveDownloadPath(const std::string& /*suggested*/) {
-  return {std::string(), true};
+DownloadTarget Tab::ReserveDownloadPath(const std::string& suggested) {
+  return host_.TabReserveDownloadPath(suggested, profile_);
 }
 
-void Tab::ReleaseDownloadPath(const std::string& /*path*/) {}
+void Tab::ReleaseDownloadPath(const std::string& path) {
+  host_.TabReleaseDownloadPath(path);
+}
 
 void Tab::OnAdblockRequest(const AdblockRequestInfo& /*info*/) {}
 
@@ -945,11 +1113,20 @@ void Tab::OnElementPicked(const std::string& /*url*/,
 
 bool Tab::OnUnhandledKeyEvent(const CefKeyEvent& event,
                               CefEventHandle /*os_event*/) {
+  // Escape the page did not use closes the find bar, as in Chrome.
+  if (event.type == KEYEVENT_RAWKEYDOWN &&
+      event.windows_key_code == VK_ESCAPE &&
+      (event.modifiers & (EVENTFLAG_CONTROL_DOWN | EVENTFLAG_ALT_DOWN |
+                          EVENTFLAG_SHIFT_DOWN)) == 0 &&
+      find_bar_) {
+    OnFindClose();
+    return true;
+  }
   return host_.OnTabKey(event);
 }
 
 bool Tab::KeepsFocusOnNavigation() {
-  return false;
+  return host_.TabKeepsFocusOnNavigation(*this);
 }
 
 void Tab::ShowPasswordMenu(const PasswordMenu& /*menu*/,
