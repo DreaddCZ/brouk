@@ -524,9 +524,11 @@ async function adblockMyFilter({ port, pagesBase, pid }) {
   const front = targets.find((t) => t.type === 'page' && t.url === `${pagesBase}/009/checkout.html`);
   if (!check(settings !== undefined && front !== undefined, 'the settings window and a test page are open for ad blocking')) return;
   const settingsPage = await Cdp.connect(settings.webSocketDebuggerUrl);
+  // The rule names the host (local hosts are blocked only then); `^*`
+  // matches the port, which `||127.0.0.1/` would not.
   const { result } = await settingsPage.send('Runtime.evaluate', {
     expression:
-      "new Promise((ok) => window.cefQuery({ request: JSON.stringify({ type: 'adblock.saveMyFilters', text: '||127.0.0.1/brouk-smoke-ad.png' }), " +
+      "new Promise((ok) => window.cefQuery({ request: JSON.stringify({ type: 'adblock.saveMyFilters', text: '||127.0.0.1^*/brouk-smoke-ad.png' }), " +
       "onSuccess: (r) => ok('ok ' + r), onFailure: (c, m) => ok('failed ' + m) }))",
     awaitPromise: true,
     returnByValue: true,
