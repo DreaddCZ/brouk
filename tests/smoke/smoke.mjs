@@ -386,6 +386,71 @@ function crashReports() {
 
 // ---- The tests ----
 
+// Windows, passwords (008): signing in on the test page offers to save the
+// login (the prompt under the key icon, with its Save button).
+async function savePasswordFromLogin({ executable, port, pagesBase }) {
+  const loginUrl = `${pagesBase}/008/login.html`;
+  spawn(executable, [loginUrl], { env: { ...process.env, BROUK_DEV_DATA_DIR: dataDir }, stdio: 'ignore' });
+  let login;
+  for (let i = 0; i < 30 && !login; i++) {
+    await sleep(500);
+    login = await devtoolsJson(port, '/json/list')
+      .then((list) => list.find((t) => t.type === 'page' && t.url === loginUrl))
+      .catch(() => undefined);
+  }
+  if (!check(login !== undefined, 'a second start opens the login test page')) return;
+  const page = await Cdp.connect(login.webSocketDebuggerUrl);
+  const evaluate = async (expression) =>
+    (await page.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true })).result.value;
+  // The page is listed as soon as it starts loading: the page script
+  // tracks the form's fields once it has loaded.
+  for (let i = 0; i < 20; i++) {
+    if ((await evaluate('document.readyState').catch(() => '')) === 'complete') break;
+    await sleep(250);
+  }
+  await sleep(1000);
+  // The page gets focus and input events as in a window in front (the
+  // smoke test's windows take turns in front).
+  await page.send('Emulation.setFocusEmulationEnabled', { enabled: true });
+  // Typed as the user types (the page script reads what was typed).
+  await evaluate("document.querySelector('#email').focus()");
+  await page.send('Input.insertText', { text: 'smoke@example.com' });
+  await evaluate("document.querySelector('#pw').focus()");
+  await page.send('Input.insertText', { text: 'S3cret-smoke!' });
+  await evaluate("document.querySelector('button').click()");
+  // The prompt comes once the next page loads; it is served from this
+  // process, which the PowerShell call below blocks: loaded first.
+  for (let i = 0; i < 20; i++) {
+    await sleep(500);
+    const targets = await devtoolsJson(port, '/json/list').catch(() => []);
+    if (targets.some((t) => t.id === login.id && t.url.includes('/008/done.html'))) break;
+  }
+  // The prompt is an owned window with a Save button.
+  const script = [
+    "Add-Type -Namespace Smoke -Name Prompt -MemberDefinition '" +
+      '[DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string c, string n); ' +
+      '[DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindowEx(IntPtr p, IntPtr a, string c, string n); ' +
+      "[DllImport(\"user32.dll\")] public static extern bool IsWindowVisible(IntPtr h);'",
+    '$prompt = [IntPtr]::Zero',
+    "for ($i = 0; $i -lt 30 -and ($prompt -eq [IntPtr]::Zero -or -not [Smoke.Prompt]::IsWindowVisible($prompt)); $i++) { Start-Sleep -Milliseconds 500; $prompt = [Smoke.Prompt]::FindWindow('BroukPasswordPrompt', 'Save password?') }",
+    'Write-Output "prompt shown: $($prompt -ne [IntPtr]::Zero -and [Smoke.Prompt]::IsWindowVisible($prompt))"',
+    "$save = [Smoke.Prompt]::FindWindowEx($prompt, [IntPtr]::Zero, 'Button', 'Save')",
+    'if ($save -ne [IntPtr]::Zero) { Write-Output "save found" }',
+  ].join('; ');
+  let output = '';
+  try {
+    output = execFileSync('powershell', ['-NoProfile', '-Command', script], { encoding: 'utf8', timeout: 60000 });
+  } catch (error) {
+    log(`(no prompt answer: ${error.message})`);
+  }
+  log(`(${output.trim().replaceAll(/\r?\n/g, '; ')})`);
+  check(/prompt shown: True/.test(output), 'signing in on the login page offers to save the password');
+  check(/save found/.test(output), 'the save prompt has a Save button');
+  // Saving and filling are tested by hand: a click sent to the prompt's
+  // button while Brouk is not the active app does not always arrive.
+  page.close();
+}
+
 async function main() {
   const executable = kWindows ? join(appPath, 'brouk.exe') : join(appPath, 'Contents/MacOS/brouk');
   const started = Date.now();
@@ -1032,6 +1097,7 @@ async function main() {
         .map((line) => line.replace(/^\s*Target:\s*(LegacyGeneric:target=)?/, '').trim())
         .filter((name) => name.startsWith(prefix));
       check(keys.length > 0, `the profiles' password keys are in Credential Manager (${keys.join(', ') || 'none'})`);
+      await savePasswordFromLogin({ executable, port, pagesBase });
       passwordsPage.close();
       for (const key of keys) {
         execFileSync('cmdkey', [`/delete:${key}`], { stdio: 'ignore' });

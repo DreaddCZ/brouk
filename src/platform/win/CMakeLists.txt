@@ -8,6 +8,8 @@
 
 set(APP_DIR "${CMAKE_BINARY_DIR}/${APP_NAME}")
 
+include(BroukZxing)
+
 add_library(brouk_app SHARED
   app.cc
   app.h
@@ -32,6 +34,8 @@ add_library(brouk_app SHARED
   downloaded_files.cc
   downloaded_files.h
   downloads_popup.cc
+  export_password_dialog.cc
+  export_password_dialog.h
   downloads_popup.h
   file_dialogs.cc
   file_dialogs.h
@@ -44,6 +48,12 @@ add_library(brouk_app SHARED
   internal_page_window.cc
   internal_page_window.h
   main.cc
+  password_drop_down.cc
+  password_drop_down.h
+  password_prompt.cc
+  password_prompt.h
+  qr_reader.cc
+  qr_reader.h
   settings_watcher.cc
   settings_watcher.h
   suggestions_popup.cc
@@ -64,8 +74,11 @@ add_library(brouk_app SHARED
   wide_string.h
 )
 brouk_target_options(brouk_app CEF APP)
+# zxing-cpp may throw (see cmake/BroukZxing.cmake): this file catches.
+set_source_files_properties(qr_reader.cc PROPERTIES
+  COMPILE_OPTIONS "${BROUK_EXCEPTIONS_FLAG}")
 target_link_libraries(brouk_app PRIVATE
-  brouk_cef brouk_renderer brouk_core libcef_lib ${CEF_STANDARD_LIBS}
+  brouk_cef brouk_renderer brouk_core libcef_lib ZXing ${CEF_STANDARD_LIBS}
   advapi32 credui dwmapi msimg32 ole32 oleacc runtimeobject shell32 shlwapi user32 uuid uxtheme windowscodecs)
 # Chromium's delay-loaded system DLLs: some must not load in sandboxed
 # processes, which run this DLL too.

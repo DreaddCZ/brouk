@@ -226,6 +226,12 @@ const README_SOURCES = [
     texts: (o) => [{ file: 'LICENSE', text: o.standard['MPL-2.0'] }],
   },
   {
+    match: /^zxing-cpp/,
+    homepage: 'https://github.com/zxing-cpp/zxing-cpp',
+    windowsOnly: true,
+    texts: (o) => readTexts(path.join(o.deps, 'zxing-src')),
+  },
+  {
     match: /^Sparkle/,
     homepage: 'https://sparkle-project.org',
     macOnly: true,
@@ -267,6 +273,8 @@ function collect(options) {
       continue;
     }
     if (source.shipped === false || source.covered || (source.macOnly && !options.sparkle)) continue;
+    // Built only into the Windows app (credits run where the app is built).
+    if (source.windowsOnly && process.platform !== 'win32') continue;
     const texts = source.texts(collectOptions);
     if (texts.length === 0) problems.push(`${row.name}: no licence text found`);
     components.push({

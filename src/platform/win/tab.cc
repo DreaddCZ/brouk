@@ -3,7 +3,6 @@
 #include <shellapi.h>
 #include <shlwapi.h>
 
-#include <cstring>
 #include <memory>
 #include <utility>
 
@@ -16,7 +15,9 @@
 #include "include/cef_task.h"
 #include "include/cef_values.h"
 #include "include/wrapper/cef_helpers.h"
+#include "platform/win/controls.h"
 #include "platform/win/desktop_sources.h"
+#include "platform/win/qr_reader.h"
 #include "platform/win/theme.h"
 #include "platform/win/wide_string.h"
 
@@ -87,8 +88,9 @@ bool RegisterContainerClass(WNDPROC procedure) {
 Tab::Tab(TabHost& host, TabId id, HWND parent, ProfileId profile)
     : host_(host), id_(id), profile_(std::move(profile)) {
   client_ = new TabClient(this);
-  // Downloads (014) go to the app's list.
+  // Downloads (014) go to the app's list; passwords (008) are the profile's.
   client_->SetDownloads(host_.TabDownloads(), profile_);
+  client_->SetPasswords(host_.TabPasswords(), profile_);
   if (RegisterContainerClass(&Tab::ContainerProc)) {
     container_ = CreateWindowExW(0, kContainerClass, L"",
                                  WS_CHILD | WS_CLIPCHILDREN, 0, 0, 0, 0, parent,
@@ -728,6 +730,7 @@ void Tab::OnBrowserClosed() {
     browser_ = nullptr;
     client_ = new TabClient(this);
     client_->SetDownloads(host_.TabDownloads(), profile_);
+    client_->SetPasswords(host_.TabPasswords(), profile_);
     deferred_context_ = std::move(unload_context_);
     loading_ = false;
     audible_ = false;
@@ -1129,49 +1132,85 @@ bool Tab::KeepsFocusOnNavigation() {
   return host_.TabKeepsFocusOnNavigation(*this);
 }
 
-void Tab::ShowPasswordMenu(const PasswordMenu& /*menu*/,
-                           PasswordMenuDone /*done*/) {}
-
-void Tab::HidePasswordMenu() {}
-
-void Tab::ShowPasswordPrompt(const PasswordPrompt& /*prompt*/,
-                             PasswordPromptDone /*done*/) {}
-
-void Tab::OnPasswordIconChanged(PasswordIcon /*icon*/) {}
-
-void Tab::OpenPasswordsPage() {}
-
-void Tab::CopyTextToClipboard(const std::string& text) {
-  if (!OpenClipboard(nullptr)) {
+void Tab::ShowPasswordMenu(const PasswordMenu& menu, PasswordMenuDone done) {
+  HWND browser = BrowserWindowHandle();
+  if (menu.at_key_icon) {
+    host_.ShowTabPasswordList(*this, menu.items, std::nullopt, std::move(done));
     return;
   }
-  EmptyClipboard();
-  const std::wstring wide = Utf8ToWide(text);
-  const size_t bytes = (wide.size() + 1) * sizeof(wchar_t);
-  if (HGLOBAL memory = GlobalAlloc(GMEM_MOVEABLE, bytes)) {
-    if (void* data = GlobalLock(memory)) {
-      std::memcpy(data, wide.c_str(), bytes);
-      GlobalUnlock(memory);
-      if (!SetClipboardData(CF_UNICODETEXT, memory)) {
-        GlobalFree(memory);  // Owned by the clipboard only on success.
-      }
-    } else {
-      GlobalFree(memory);
-    }
+  if (!browser || !IsWindowVisible(container_)) {
+    done(-1);
+    return;
   }
-  CloseClipboard();
+  // The page gives the field's box in DIPs from the top left of its view.
+  const double scale = GetDpiForWindow(browser) / 96.0;
+  POINT origin = {0, 0};
+  ClientToScreen(browser, &origin);
+  const RECT field = {
+      origin.x + static_cast<LONG>(menu.x * scale),
+      origin.y + static_cast<LONG>(menu.y * scale),
+      origin.x + static_cast<LONG>((menu.x + menu.width) * scale),
+      origin.y + static_cast<LONG>((menu.y + menu.height) * scale)};
+  host_.ShowTabPasswordList(*this, menu.items, field, std::move(done));
 }
 
-bool Tab::HandlePasswordMenuKey(int /*windows_key_code*/) {
-  return false;
+void Tab::HidePasswordMenu() {
+  host_.HideTabPasswordList(*this);
 }
 
-void Tab::DecodeQrCodes(std::vector<std::uint8_t> /*png*/, QrDone done) {
-  done({});
+void Tab::ShowPasswordPrompt(const PasswordPrompt& prompt,
+                             PasswordPromptDone done) {
+  host_.ShowTabPasswordPrompt(*this, prompt, std::move(done));
 }
 
-void Tab::ShowPasswordMessage(const std::string& /*title*/,
-                              const std::string& /*text*/) {}
+void Tab::OnPasswordIconChanged(PasswordIcon icon) {
+  if (icon != password_icon_) {
+    password_icon_ = icon;
+    host_.OnTabPasswordIconChanged(*this);
+  }
+}
+
+void Tab::PasswordKeyIconClicked() {
+  if (client_) {
+    client_->OnPasswordKeyIconClicked();
+  }
+}
+
+void Tab::OpenPasswordsPage() {
+  host_.OpenTabPasswordsPage(*this);
+}
+
+void Tab::CopyTextToClipboard(const std::string& text) {
+  // 2FA codes and passwords (008): kept out of the clipboard history.
+  SetClipboardText(container_, Utf8ToWide(text), /*secret=*/true);
+}
+
+bool Tab::HandlePasswordMenuKey(int windows_key_code) {
+  return host_.TabPasswordListKey(*this, windows_key_code);
+}
+
+void Tab::DecodeQrCodes(std::vector<std::uint8_t> png, QrDone done) {
+  // Off the UI thread: reading a large page takes a moment.
+  auto image = std::make_shared<std::vector<std::uint8_t>>(std::move(png));
+  CefPostTask(TID_FILE_USER_BLOCKING, new FunctionTask([image, done] {
+                std::vector<std::string> texts = ReadQrCodes(*image);
+                CefPostTask(TID_UI,
+                            new FunctionTask([texts, done] { done(texts); }));
+              }));
+}
+
+void Tab::ShowPasswordMessage(const std::string& title,
+                              const std::string& text) {
+  // From a task: the message box runs its own message loop, which must not
+  // run inside the page's message.
+  HWND owner = GetAncestor(container_, GA_ROOT);
+  const std::wstring caption = Utf8ToWide(title);
+  const std::wstring message = Utf8ToWide(text);
+  CefPostTask(TID_UI, new FunctionTask([owner, caption, message] {
+                MessageBoxW(IsWindow(owner) ? owner : nullptr, message.c_str(),
+                            caption.c_str(), MB_OK | MB_ICONINFORMATION);
+              }));
+}
 
 void Tab::AskBitwardenPassword(const BitwardenPasswordRequest& /*request*/,
                                BitwardenPasswordSubmit /*submit*/,

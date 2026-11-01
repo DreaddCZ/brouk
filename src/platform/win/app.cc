@@ -33,6 +33,8 @@
 #include "core/crypto.h"
 #include "core/help.h"
 #include "core/password_generator.h"
+#include "core/password_profile.h"
+#include "core/password_store.h"
 #include "core/profile_export.h"
 #include "core/search_engines.h"
 #include "core/settings_export.h"
@@ -1700,28 +1702,109 @@ void App::DeleteProfile(const ProfileId& id, DeleteDone done) {
 }
 
 void App::ExportProfile(const ProfileId& id, ExportDone done) {
+  const ProfileInfo* info = profiles_.Find(id);
+  if (!info) {
+    done(false, Error{"There is no such profile."});
+    return;
+  }
+  if (!passwords_) {
+    WriteProfileExport(id, YamlNode(), std::move(done));
+    return;
+  }
+  // The profile's built-in passwords (008) go in encrypted with an export
+  // password the user chooses, or are left out, as on macOS.
+  auto count = std::make_shared<std::size_t>(0);
+  passwords_->Run(
+      id,
+      [count](PasswordStore& store) {
+        std::vector<PasswordEntry> entries = store.All();
+        *count = entries.size();
+        for (PasswordEntry& entry : entries) {
+          Wipe(entry.password);
+        }
+      },
+      [this, id, count, done](const std::optional<std::string>& /*failed*/) {
+        if (quitting_) {
+          done(false, std::nullopt);
+          return;
+        }
+        if (*count == 0) {
+          WriteProfileExport(id, YamlNode(), done);
+          return;
+        }
+        AskExportPassword(
+            DialogOwner(), true,
+            L"The profile has " + std::to_wstring(*count) +
+                L" saved passwords. They go into the file encrypted with "
+                L"this password, and it is needed to import them again. "
+                L"Brouk cannot recover it.",
+            [this, id, done](ExportPasswordAnswer choice) {
+              using Choice = ExportPasswordAnswer::Choice;
+              if (choice.choice == Choice::kCancel || !passwords_) {
+                done(false, std::nullopt);
+                return;
+              }
+              if (choice.choice == Choice::kWithoutPasswords) {
+                WriteProfileExport(id, YamlNode(), done);
+                return;
+              }
+              auto node = std::make_shared<YamlNode>();
+              auto password =
+                  std::make_shared<std::string>(std::move(choice.password));
+              // Encrypting (Argon2id) takes a moment: on the password thread.
+              passwords_->Run(
+                  id,
+                  [node, password](PasswordStore& store) {
+                    std::vector<PasswordEntry> entries = store.All();
+                    *node = ExportProfilePasswords(entries, *password);
+                    Wipe(*password);
+                    for (PasswordEntry& entry : entries) {
+                      Wipe(entry.password);
+                      Wipe(entry.note);
+                      Wipe(entry.totp);
+                    }
+                  },
+                  [this, id, node,
+                   done](const std::optional<std::string>& failed) {
+                    if (failed) {
+                      done(false, Error{*failed});
+                      return;
+                    }
+                    WriteProfileExport(id, *node, done);
+                  });
+            });
+      });
+}
+
+void App::WriteProfileExport(const ProfileId& id,
+                             const YamlNode& passwords,
+                             ExportDone done) {
   std::optional<Settings> settings = profiles_.ProfileSettings(id);
   const ProfileInfo* info = profiles_.Find(id);
   if (!settings || !info) {
     done(false, Error{"There is no such profile."});
     return;
   }
-  // Passwords (008) come to Windows later; the file then has the
-  // profile's settings and bookmarks.
   const std::string exported_at =
       std::format("{:%FT%TZ}", std::chrono::floor<std::chrono::seconds>(
                                    std::chrono::system_clock::now()));
   const YamlNode bookmarks =
       bookmarks_ ? ExportProfileBookmarks(bookmarks_->model(), id) : YamlNode();
-  std::string text = brouk::ExportProfile(*settings, exported_at, bookmarks);
+  std::string text =
+      brouk::ExportProfile(*settings, exported_at, bookmarks, passwords);
   FileDialogOptions options;
   options.title = L"Export \u201C" + Utf8ToWide(info->name) + L"\u201D";
   options.type_name = L"Brouk profile";
   options.extension = Utf8ToWide(kProfileExportExtension);
   options.file_name = SafeFileName(Utf8ToWide(info->name));
   options.note =
-      L"The file contains the profile's name, colour, settings and the "
-      L"bookmarks linked to it. It contains no sign-ins, cookies or cache.";
+      passwords.kind == YamlNode::Kind::kMap
+          ? L"The file contains the profile's name, colour, settings, "
+            L"bookmarks and its passwords (encrypted). It contains no "
+            L"sign-ins, cookies or cache."
+          : L"The file contains the profile's name, colour, settings and the "
+            L"bookmarks linked to it. It contains no sign-ins, cookies or "
+            L"cache.";
   // Asked from a task: the dialog runs its own message loop, which must not
   // run inside the page's request.
   HWND owner = DialogOwner();
@@ -1735,6 +1818,75 @@ void App::ExportProfile(const ProfileId& id, ExportDone done) {
         std::optional<Error> error = WriteTextFileAtomically(*path, text);
         done(!error, error);
       }));
+}
+
+void App::AskExportPassword(HWND owner,
+                            bool confirm,
+                            std::wstring message,
+                            ExportPasswordDialog::Done done) {
+  if (export_password_dialog_) {
+    done({});  // One at a time.
+    return;
+  }
+  export_password_dialog_ = std::make_unique<ExportPasswordDialog>(
+      owner, confirm, std::move(message),
+      [this, done = std::move(done)](ExportPasswordAnswer answer) {
+        // Deleted from a task: this runs inside the dialog.
+        std::shared_ptr<ExportPasswordDialog> closed(
+            export_password_dialog_.release());
+        CefPostTask(TID_UI, new FunctionTask([closed] {}));
+        done(std::move(answer));
+      });
+  export_password_dialog_->Show();
+}
+
+// The encrypted passwords of an imported profile (008): asks for the
+// export password until it is right, or the user goes on without them.
+void App::ImportProfilePasswordsInto(const ProfileId& profile,
+                                     YamlNode section,
+                                     std::wstring message,
+                                     std::vector<std::string> problems,
+                                     ImportDone done) {
+  auto node = std::make_shared<YamlNode>(std::move(section));
+  auto notes = std::make_shared<std::vector<std::string>>(std::move(problems));
+  AskExportPassword(
+      DialogOwner(), false, std::move(message),
+      [this, profile, node, notes, done](ExportPasswordAnswer choice) {
+        if (choice.choice != ExportPasswordAnswer::Choice::kPassword ||
+            !passwords_) {
+          notes->emplace_back("The passwords were not imported.");
+          done(ImportResult{profile, *notes});
+          return;
+        }
+        Result<std::vector<PasswordEntry>> entries =
+            ImportProfilePasswords(*node, choice.password);
+        Wipe(choice.password);
+        if (!entries) {
+          ImportProfilePasswordsInto(profile, *node,
+                                     Utf8ToWide(entries.error().message),
+                                     *notes, done);
+          return;
+        }
+        auto list = std::make_shared<std::vector<PasswordEntry>>(
+            std::move(entries).value());
+        passwords_->Run(
+            profile,
+            [list](PasswordStore& store) {
+              const std::int64_t now = NowSeconds();
+              for (PasswordEntry& entry : *list) {
+                store.Add(entry, entry.created > 0 ? entry.created : now);
+                Wipe(entry.password);
+                Wipe(entry.note);
+                Wipe(entry.totp);
+              }
+            },
+            [profile, notes, done](const std::optional<std::string>& failed) {
+              if (failed) {
+                notes->push_back("The passwords were not imported: " + *failed);
+              }
+              done(ImportResult{profile, *notes});
+            });
+      });
 }
 
 void App::ImportProfile(ImportDone done) {
@@ -1780,12 +1932,15 @@ void App::ImportProfile(ImportDone done) {
           problems.insert(problems.end(), imported.problems.begin(),
                           imported.problems.end());
         }
-        if (parsed.value().passwords) {
-          problems.emplace_back(
-              "The passwords were not imported: Brouk on Windows "
-              "cannot import them from a profile file yet.");
-        }
         ProfilesChanged();
+        if (parsed.value().passwords && passwords_) {
+          ImportProfilePasswordsInto(
+              created.value(), *parsed.value().passwords,
+              L"Type the export password chosen when the profile was "
+              L"exported.",
+              std::move(problems), done);
+          return;
+        }
         done(ImportResult{created.value(), problems});
       }));
 }

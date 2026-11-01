@@ -61,6 +61,7 @@ enum ControlId : int {
   kPopupsId,
   kDownloadsId,
   kStarId,
+  kKeyId,
 };
 
 // Items of the "⋮" menu.
@@ -116,6 +117,9 @@ constexpr wchar_t kBlockedGlyph[] = L"\uE8A7";  // OpenInNewWindow.
 constexpr wchar_t kDownloadGlyph[] = L"\uE896";
 constexpr wchar_t kStarGlyph[] = L"\uE734";        // FavoriteStar.
 constexpr wchar_t kStarFilledGlyph[] = L"\uE735";  // FavoriteStarFill.
+constexpr wchar_t kKeyGlyph[] = L"\uE8D7";         // Permissions (a key).
+constexpr wchar_t kLockGlyph[] = L"\uE72E";
+constexpr wchar_t kUnlockingGlyph[] = L"\uE895";  // Sync.
 
 std::int64_t NowSeconds() {
   return std::chrono::duration_cast<std::chrono::seconds>(
@@ -297,6 +301,10 @@ void BrowserWindow::CreateControls() {
       reinterpret_cast<HMENU>(static_cast<INT_PTR>(kStarId)), instance,
       nullptr);
   SetAccessibleName(star_, L"Bookmark this tab");
+  key_ = CreateWindowExW(
+      0, WC_BUTTONW, kKeyGlyph, WS_CHILD | BS_OWNERDRAW, 0, 0, 0, 0, window_,
+      reinterpret_cast<HMENU>(static_cast<INT_PTR>(kKeyId)), instance, nullptr);
+  SetAccessibleName(key_, L"Saved passwords");
   if (kind_ == Kind::kNormal) {
     // One tool over the tab strip; its text follows the hovered part.
     tooltip_ = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr,
@@ -447,8 +455,8 @@ void BrowserWindow::Layout() {
   // The indicators at the right end of the address bar, right to left.
   int indicator_right = static_cast<int>(address_field_.right) - Scale(4);
   for (const auto& [indicator, width] :
-       {std::pair{star_, Scale(30)}, std::pair{zoom_, Scale(56)},
-        std::pair{popups_, Scale(30)}}) {
+       {std::pair{star_, Scale(30)}, std::pair{key_, Scale(30)},
+        std::pair{zoom_, Scale(56)}, std::pair{popups_, Scale(30)}}) {
     if (HasVisibleStyle(indicator)) {
       indicator_right -= width;
       SetWindowPos(indicator, nullptr, indicator_right, field_top + Scale(4),
@@ -1646,6 +1654,110 @@ void BrowserWindow::TabReleaseDownloadPath(const std::string& path) {
   owner_.ReleaseDownloadPath(path);
 }
 
+PasswordManager* BrowserWindow::TabPasswords() {
+  return owner_.Passwords();
+}
+
+void BrowserWindow::ShowTabPasswordList(
+    Tab& tab,
+    const std::vector<PasswordMenuItem>& items,
+    const std::optional<RECT>& field,
+    PasswordMenuDone done) {
+  ClosePasswordList();
+  // Only the shown tab's page has the keyboard; the key icon is its too.
+  if (ActiveTab() != &tab || IsIconic(window_) || closing_) {
+    done(-1);
+    return;
+  }
+  RECT anchor = {};
+  if (field) {
+    anchor = *field;
+  } else {
+    anchor = KeyScreenRect();
+    anchor.right = anchor.left + 1;  // The list's own width, as on macOS.
+  }
+  if (!password_list_) {
+    password_list_ = std::make_unique<PasswordDropDown>(window_);
+  }
+  password_list_tab_ = tab.id();
+  std::weak_ptr<int> alive = alive_;
+  password_list_->Show(items, anchor, theme_, text_font_, icon_font_,
+                       [this, alive, done = std::move(done)](int index) {
+                         if (!alive.expired()) {
+                           password_list_tab_.reset();
+                         }
+                         done(index);
+                       });
+}
+
+void BrowserWindow::HideTabPasswordList(Tab& tab) {
+  if (password_list_tab_ == tab.id()) {
+    ClosePasswordList();
+  }
+}
+
+bool BrowserWindow::TabPasswordListKey(Tab& tab, int key) {
+  return password_list_ && password_list_tab_ == tab.id() &&
+         password_list_->HandleKey(key);
+}
+
+void BrowserWindow::ClosePasswordList() {
+  if (password_list_) {
+    password_list_->Close();
+  }
+  password_list_tab_.reset();
+}
+
+RECT BrowserWindow::KeyScreenRect() const {
+  RECT anchor = {};
+  if (HasVisibleStyle(key_)) {
+    GetWindowRect(key_, &anchor);
+  } else {
+    anchor = address_field_;
+    MapWindowPoints(window_, nullptr, reinterpret_cast<POINT*>(&anchor), 2);
+  }
+  return anchor;
+}
+
+void BrowserWindow::ShowTabPasswordPrompt(Tab& tab,
+                                          const PasswordPrompt& prompt,
+                                          PasswordPromptDone done) {
+  // Reachable later from the key icon, as on macOS.
+  if (ActiveTab() != &tab || IsIconic(window_) || closing_ ||
+      !IsWindowVisible(window_) || password_prompt_) {
+    done(PasswordPromptAnswer{});
+    return;
+  }
+  ClosePasswordList();
+  UpdateIndicators();
+  password_prompt_ = std::make_unique<PasswordPromptBubble>(
+      window_, prompt, theme_, text_font_, icon_font_,
+      [this, done = std::move(done)](PasswordPromptAnswer answer) {
+        ClosePasswordPrompt();
+        done(std::move(answer));
+      });
+  password_prompt_->ShowBelow(KeyScreenRect());
+}
+
+void BrowserWindow::ClosePasswordPrompt() {
+  // Deleted from a task: this runs inside the prompt.
+  std::shared_ptr<PasswordPromptBubble> closed(password_prompt_.release());
+  CefPostTask(TID_UI, new FunctionTask([closed] {}));
+  if (!closing_) {
+    FocusActiveTab();
+  }
+}
+
+void BrowserWindow::OnTabPasswordIconChanged(Tab& tab) {
+  if (ActiveTab() == &tab) {
+    UpdateIndicators();
+  }
+}
+
+void BrowserWindow::OpenTabPasswordsPage(Tab& /*tab*/) {
+  OpenInternalPage("brouk://passwords/");
+}
+
 void BrowserWindow::OnTabFullscreenChanged(Tab& tab, bool fullscreen) {
   if (fullscreen) {
     if (model_.active_id() != tab.id()) {
@@ -1938,17 +2050,21 @@ void BrowserWindow::ShowBlockedPopups() {
 
 void BrowserWindow::DrawIndicator(const DRAWITEMSTRUCT& item) {
   const bool pressed = (item.itemState & ODS_SELECTED) != 0;
-  if (item.hwndItem == star_) {
-    // Just the star; filled in the accent colour on a bookmarked page.
+  if (item.hwndItem == star_ || item.hwndItem == key_) {
+    // Just the glyph: the star filled on a bookmarked page, the key while a
+    // password waits to be saved, in the accent colour.
     SetDCBrushColor(item.hDC, pressed ? theme_.hover : theme_.field);
     FillRect(item.hDC, &item.rcItem,
              static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
-    const std::wstring glyph = WindowText(star_);
+    const std::wstring glyph = WindowText(item.hwndItem);
+    const bool accent = item.hwndItem == star_
+                            ? glyph == kStarFilledGlyph
+                            : ActiveTab() && ActiveTab()->password_icon() ==
+                                                 PasswordIcon::kSavePending;
     HGDIOBJ previous = SelectObject(item.hDC, icon_font_);
     SetBkMode(item.hDC, TRANSPARENT);
-    SetTextColor(item.hDC, glyph == kStarFilledGlyph
-                               ? GetSysColor(COLOR_HIGHLIGHT)
-                               : theme_.text_dim);
+    SetTextColor(item.hDC,
+                 accent ? GetSysColor(COLOR_HIGHLIGHT) : theme_.text_dim);
     RECT area = item.rcItem;
     DrawTextW(item.hDC, glyph.c_str(), -1, &area,
               DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
@@ -2014,12 +2130,31 @@ void BrowserWindow::UpdateIndicators() {
       InvalidateRect(star_, nullptr, FALSE);
     }
   }
+  // The key (008): the site has saved logins, a password waits to be
+  // saved, or Bitwarden is locked.
+  const PasswordIcon key = tab ? tab->password_icon() : PasswordIcon::kHidden;
+  const bool key_shown = !fullscreen_ && key != PasswordIcon::kHidden;
+  if (key_shown) {
+    const wchar_t* glyph = key == PasswordIcon::kLocked      ? kLockGlyph
+                           : key == PasswordIcon::kUnlocking ? kUnlockingGlyph
+                                                             : kKeyGlyph;
+    const wchar_t* name = key == PasswordIcon::kSavePending ? L"Save password"
+                          : key == PasswordIcon::kLocked ? L"Unlock Bitwarden"
+                          : key == PasswordIcon::kUnlocking
+                              ? L"Unlocking Bitwarden\u2026"
+                              : L"Saved passwords";
+    SetWindowTextW(key_, glyph);
+    SetAccessibleName(key_, name);
+    InvalidateRect(key_, nullptr, FALSE);
+  }
   if (shown != HasVisibleStyle(zoom_) ||
       popups_shown != HasVisibleStyle(popups_) ||
-      star_shown != HasVisibleStyle(star_)) {
+      star_shown != HasVisibleStyle(star_) ||
+      key_shown != HasVisibleStyle(key_)) {
     ShowWindow(zoom_, shown ? SW_SHOWNA : SW_HIDE);
     ShowWindow(popups_, popups_shown ? SW_SHOWNA : SW_HIDE);
     ShowWindow(star_, star_shown ? SW_SHOWNA : SW_HIDE);
+    ShowWindow(key_, key_shown ? SW_SHOWNA : SW_HIDE);
     Layout();
   }
 }
@@ -2582,6 +2717,7 @@ void BrowserWindow::CloseTab(TabId id) {
 
 void BrowserWindow::ModelChanged() {
   CloseSuggestions();  // Another tab, or the list's tab changed.
+  ClosePasswordList();
   const std::optional<TabId> active = model_.active_id();
   // Like Chrome, switching tabs ends a page's full screen.
   if (fullscreen_tab_ && fullscreen_tab_ != active) {
@@ -3640,11 +3776,13 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
       return 0;
     case WM_SIZE:
       CloseSuggestions();
+      ClosePasswordList();
       Layout();
       owner_.OnSessionChanged();
       return 0;
     case WM_MOVE:
       CloseSuggestions();
+      ClosePasswordList();
       owner_.OnSessionChanged();
       return 0;
     case WM_ACTIVATE:
@@ -3652,6 +3790,7 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
       InvalidateStrip();
       if (!active_) {
         CloseSuggestions();
+        ClosePasswordList();
         HWND focus = GetFocus();
         saved_focus_ = focus && IsChild(window_, focus) ? focus : nullptr;
       } else if (HWND focus = GetFocus(); focus && IsChild(window_, focus)) {
@@ -3709,7 +3848,7 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
     case WM_DRAWITEM:
       if (const auto* item = reinterpret_cast<const DRAWITEMSTRUCT*>(lparam);
           item->hwndItem == zoom_ || item->hwndItem == popups_ ||
-          item->hwndItem == star_) {
+          item->hwndItem == star_ || item->hwndItem == key_) {
         DrawIndicator(*item);
       } else if (item->hwndItem == downloads_) {
         DrawDownloadsButton(*item);
@@ -3755,6 +3894,9 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
             return 0;
           case kStarId:
             BookmarkPage();
+            return 0;
+          case kKeyId:
+            tab->PasswordKeyIconClicked();
             return 0;
           default:
             break;

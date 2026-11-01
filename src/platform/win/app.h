@@ -26,8 +26,10 @@
 #include "core/launch_args.h"
 #include "core/profile_registry.h"
 #include "core/session.h"
+#include "core/yaml_value.h"
 #include "include/cef_request_context.h"
 #include "platform/win/browser_window.h"
+#include "platform/win/export_password_dialog.h"
 #include "platform/win/internal_page_window.h"
 #include "platform/win/settings_watcher.h"
 
@@ -55,8 +57,6 @@ class App final : public BrowserWindowOwner,
   void ReleaseBrowserObjects();
   // content.json_viewer (006), for new renderer processes.
   bool JsonViewerEnabled() const;
-  // Built-in passwords (008); null before CEF is ready.
-  PasswordManager* Passwords();
   // For the history page (013): the view it opens with, Clean up's keep
   // list of a profile, and clearing cookies, site data and the cache.
   std::string HistoryView() const;
@@ -90,6 +90,7 @@ class App final : public BrowserWindowOwner,
   std::string SearchSuggestTemplate() override;
   bool HistorySuggestionsEnabled() override;
   DownloadService* Downloads() override;
+  PasswordManager* Passwords() override;
   BookmarkStore* Bookmarks() override;
   bool BookmarkSuggestionsEnabled() override;
   bool BookmarksBarAlwaysShown() override;
@@ -214,6 +215,23 @@ class App final : public BrowserWindowOwner,
   void ApplySettings();
   // The window the settings and profile pages' dialogs belong to.
   HWND DialogOwner() const;
+  // Profile export (005) with `passwords` (the encrypted section, or none):
+  // asks where to save and writes the file.
+  void WriteProfileExport(const ProfileId& id,
+                          const YamlNode& passwords,
+                          ExportDone done);
+  // The export password dialog (008), one at a time.
+  void AskExportPassword(HWND owner,
+                         bool confirm,
+                         std::wstring message,
+                         ExportPasswordDialog::Done done);
+  // Profile import (005): the file's passwords go into the new profile once
+  // the user types the right export password.
+  void ImportProfilePasswordsInto(const ProfileId& profile,
+                                  YamlNode section,
+                                  std::wstring message,
+                                  std::vector<std::string> problems,
+                                  ImportDone done);
 
   ProfileRegistry profiles_;
   // One per profile, made when its first tab opens.
@@ -269,6 +287,7 @@ class App final : public BrowserWindowOwner,
   int next_download_watcher_ = 1;
   // Built-in passwords (008), for every profile; made when CEF is ready.
   std::unique_ptr<PasswordManager> passwords_;
+  std::unique_ptr<ExportPasswordDialog> export_password_dialog_;
   std::vector<std::unique_ptr<BrowserWindow>> windows_;
 };
 
