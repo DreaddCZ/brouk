@@ -127,9 +127,32 @@ jobs:
           # A crash ends the process instead of waiting in a dialog.
           reg add "HKCU\Software\Microsoft\Windows\Windows Error Reporting" \
             //v DontShowUI //t REG_DWORD //d 1 //f
+          # Brouk's crashes leave a minidump, read by the next step (the
+          # renderer the test crashes on purpose leaves one too).
+          mkdir -p build/smoke/dumps
+          key="HKLM\SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\brouk.exe"
+          reg add "$key" //v DumpFolder //t REG_EXPAND_SZ \
+            //d "$(cygpath -w "$PWD/build/smoke/dumps")" //f
+          reg add "$key" //v DumpType //t REG_DWORD //d 1 //f
           source scripts/env.sh
           version="$(sed -n 's/^set(APP_VERSION "\(.*\)")$/\1/p' CMakeLists.txt)"
           node tests/smoke/smoke.mjs build/debug/Brouk "$version" unknown x86_64 build/smoke
+
+      # The stack of each crash, with Brouk's symbols from the build.
+      - name: Read crash dumps
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: |
+          $cdb = "${env:ProgramFiles(x86)}\Windows Kits\10\Debuggers\x64\cdb.exe"
+          $dumps = Get-ChildItem build/smoke/dumps -Filter *.dmp -ErrorAction SilentlyContinue
+          if (-not $dumps) { "No crash dumps."; exit 0 }
+          if (-not (Test-Path $cdb)) { "No cdb.exe: dumps are uploaded unread."; exit 0 }
+          foreach ($dump in $dumps) {
+            "== $($dump.Name)"
+            & $cdb -z $dump.FullName -y "build\debug\Brouk" -c ".ecxr; kn 50; q" |
+              Tee-Object -FilePath "$($dump.FullName).txt" |
+              Select-String -Pattern "^ *[0-9a-f]{2} " | Select-Object -First 30
+          }
 
       - name: Upload the smoke test's screenshots and logs
         if: ${{ !cancelled() }}
