@@ -72,11 +72,20 @@ set_target_properties(brouk_app PROPERTIES
   # The import library is not part of the app.
   ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
-# CEF's files next to the DLL, and the bootstrap executable as brouk.exe.
+# Gives brouk.exe Brouk's name and version (a build tool, exe_stamp.cc).
+add_executable(brouk_exe_stamp exe_stamp.cc)
+brouk_target_options(brouk_exe_stamp NO_SANITIZE)
+add_dependencies(brouk_app brouk_exe_stamp)
+
+# CEF's files next to the DLL, and the bootstrap executable as brouk.exe,
+# with Brouk's version information (Windows shows its name).
 set(_copy_commands
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
           "${BROUK_CEF_BINARY_DIR}/bootstrap.exe"
-          "${APP_DIR}/${APP_EXECUTABLE_NAME}.exe")
+          "${APP_DIR}/${APP_EXECUTABLE_NAME}.exe"
+  COMMAND $<TARGET_FILE:brouk_exe_stamp>
+          "${APP_DIR}/${APP_EXECUTABLE_NAME}.exe" "${APP_NAME}"
+          "${APP_VERSION}" "${APP_EXECUTABLE_NAME}")
 foreach(_file IN LISTS CEF_BINARY_FILES)
   list(APPEND _copy_commands
     COMMAND ${CMAKE_COMMAND} -E copy_if_different

@@ -989,6 +989,12 @@ void BrowserWindow::FaviconsChanged() {
   }
 }
 
+bool BrowserWindow::TabKeepsFocusOnNavigation(const Tab& tab) {
+  // A new tab's page loading must not take the keyboard from the address
+  // bar (as on macOS and in Chrome).
+  return &tab == ActiveTab() && GetFocus() == address_;
+}
+
 void BrowserWindow::OnTabFaviconStored(Tab& tab) {
   if (FaviconCache* favicons = owner_.Favicons()) {
     favicons->IconChanged(tab.profile(), tab.url());

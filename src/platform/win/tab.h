@@ -54,6 +54,10 @@ class TabHost {
   virtual void OnTabHistoryChanged(Tab& tab) = 0;
   // The tab's page icon went into its profile's history (bookmark icons).
   virtual void OnTabFaviconStored(Tab& tab) = 0;
+  // Whether the address bar keeps the keyboard when the tab's page loads
+  // (the user is typing there, as on a new tab), instead of the page
+  // taking it.
+  virtual bool TabKeepsFocusOnNavigation(const Tab& tab) = 0;
   // Downloads (014): the app's list (null before it exists), whether every
   // download asks where to save, and a unique path in `profile`'s download
   // folder (released when the download ends).

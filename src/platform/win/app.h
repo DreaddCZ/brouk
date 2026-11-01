@@ -238,6 +238,15 @@ class App final : public BrowserWindowOwner,
   bool session_ready_ = false;
   bool session_save_scheduled_ = false;
   std::optional<Session> frozen_session_;
+  // Windows that started closing shortly before the last one: the
+  // taskbar's "Close all windows" closes them one by one, and they all
+  // come back at the next start, as with Exit (015).
+  struct ClosingWindow {
+    const BrowserWindow* window = nullptr;  // Compared only, never used.
+    ULONGLONG closed_at = 0;
+    SessionWindow state;
+  };
+  std::vector<ClosingWindow> closing_windows_;
   // Tabs and windows closed in this run (013).
   ClosedTabList closed_tabs_;
   // History (013): one database per profile, on its own thread; each

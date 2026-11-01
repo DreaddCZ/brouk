@@ -579,6 +579,12 @@ void Tab::OnLoadingStateChanged(bool is_loading,
   loading_ = is_loading;
   can_go_back_ = can_go_back;
   can_go_forward_ = can_go_forward;
+  // A new tab page starts at 100 %: Chromium keeps one zoom for every
+  // about:blank page, so zooming one new tab zoomed all later ones.
+  if (!is_loading && browser_ && (url_.empty() || url_ == "about:blank") &&
+      browser_->GetHost()->GetZoomLevel() != 0.0) {
+    browser_->GetHost()->SetZoomLevel(0.0);
+  }
   host_.OnTabChanged(*this);
 }
 
@@ -1119,7 +1125,7 @@ bool Tab::OnUnhandledKeyEvent(const CefKeyEvent& event,
 }
 
 bool Tab::KeepsFocusOnNavigation() {
-  return false;
+  return host_.TabKeepsFocusOnNavigation(*this);
 }
 
 void Tab::ShowPasswordMenu(const PasswordMenu& /*menu*/,

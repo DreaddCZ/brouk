@@ -11,6 +11,7 @@
 #include <cstring>
 #include <filesystem>
 #include <format>
+#include <iterator>
 #include <set>
 #include <system_error>
 #include <utility>
@@ -699,14 +700,41 @@ bool App::OnWindowClosing(BrowserWindow& window) {
   if (!session_ready_ || frozen_session_) {
     return true;
   }
+  // Windows closed within this time of each other close together.
+  constexpr ULONGLONG kTogetherMs = 3000;
+  const ULONGLONG now = GetTickCount64();
+  std::erase_if(closing_windows_, [&](const ClosingWindow& closing) {
+    return now - closing.closed_at > kTogetherMs || closing.window == &window;
+  });
   if (!last) {
+    if (std::optional<SessionWindow> state = window.SessionState()) {
+      closing_windows_.push_back(
+          {.window = &window, .closed_at = now, .state = std::move(*state)});
+    }
     OnSessionChanged();
     return true;
   }
   // Closing the last window quits Brouk (as Chrome on Windows): the next
   // start continues with this window, not with what is left of it once
-  // its tabs have closed.
-  frozen_session_ = CurrentSession();
+  // its tabs have closed, and with the windows that closed just before it
+  // (the taskbar's "Close all windows"), behind it.
+  Session session = CurrentSession();
+  std::vector<SessionWindow> together;
+  for (ClosingWindow& closing : closing_windows_) {
+    // Not one whose page kept it open ("Leave site?" → Stay).
+    const bool still_open = std::ranges::any_of(
+        windows_, [&closing](const std::unique_ptr<BrowserWindow>& other) {
+          return other.get() == closing.window && !other->closing();
+        });
+    if (!still_open) {
+      together.push_back(std::move(closing.state));
+    }
+  }
+  closing_windows_.clear();
+  session.windows.insert(session.windows.begin(),
+                         std::make_move_iterator(together.begin()),
+                         std::make_move_iterator(together.end()));
+  frozen_session_ = std::move(session);
   SaveSessionFile(*frozen_session_);
   return true;
 }

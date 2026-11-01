@@ -1105,6 +1105,13 @@ class TabInternalPageBridge : public InternalPageDelegate {
   if (!loading && _title.length == 0) {
     _title = _url;
   }
+  // A new tab page starts at 100 %: Chromium keeps one zoom for every
+  // about:blank page, so zooming one new tab zoomed all later ones.
+  if (!loading && _browser &&
+      (_url.length == 0 || [_url isEqualToString:@"about:blank"]) &&
+      _browser->GetHost()->GetZoomLevel() != 0.0) {
+    _browser->GetHost()->SetZoomLevel(0.0);
+  }
   [_delegate tabDidChangeState:self];
 }
 

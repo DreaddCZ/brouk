@@ -391,6 +391,16 @@ async function main() {
   const printed = execFileSync(executable, ['--version'], { encoding: 'utf8' }).trim();
   check(printed === `Brouk ${version} (${commit})`, `--version prints "Brouk ${version} (${commit})" (got "${printed}")`);
 
+  if (kWindows) {
+    // Windows shows this as the app's name (taskbar menu, Task Manager).
+    const description = execFileSync(
+      'powershell',
+      ['-NoProfile', '-Command', `(Get-Item -LiteralPath '${executable.replaceAll("'", "''")}').VersionInfo.FileDescription`],
+      { encoding: 'utf8' },
+    ).trim();
+    check(description === 'Brouk', `brouk.exe is described as "Brouk" (got "${description}")`);
+  }
+
   if (!kWindows) {
     const feed = execFileSync('plutil', ['-extract', 'SUFeedURL', 'raw', '-o', '-', join(appPath, 'Contents/Info.plist')], {
       encoding: 'utf8',
@@ -883,6 +893,12 @@ async function main() {
     if (check(paletteRan !== undefined, 'the command palette runs the chosen action')) {
       sendKeys('Bookmarks', ['^w']);
     }
+
+    // A new tab puts the keyboard in the address bar, also once its page
+    // has loaded (as on macOS and in Chrome).
+    const newTab = sendKeys('Downloads test', ['^t'], { windowsOf: brouk.pid, thenKeys: ['{END}'] });
+    check(/then focus: Edit/.test(newTab), 'a new tab focuses the address bar');
+    sendKeys('New Tab', ['^w']);
   }
 
   // A crashed renderer shows the crash page (012); Brouk keeps running.

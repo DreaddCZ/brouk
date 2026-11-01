@@ -541,8 +541,15 @@ class TabClient : public CefClient,
   // main frame's current load failed (an error page). UI thread.
   bool loading_ = false;
   bool main_load_failed_ = false;
-  // Reports the visible navigation entry as a visit.
-  void ReportVisit(const CefRefPtr<CefBrowser>& browser);
+  // The main frame's last navigation (whether the user started it, and
+  // when) and when its page before finished loading, to tell pages that
+  // forwarded by themselves (013). Steady-clock milliseconds; UI thread.
+  bool main_navigation_gesture_ = false;
+  std::int64_t main_navigation_started_ms_ = 0;
+  std::int64_t page_loaded_ms_ = 0;
+  // Reports the visible navigation entry as a visit; `document`: a page
+  // load, not a same-document navigation.
+  void ReportVisit(const CefRefPtr<CefBrowser>& browser, bool document);
   void SetFrameAudible(const std::string& frame_id, bool audible);
   // An external-protocol question is open (one at a time, like Chrome).
   bool asking_external_protocol_ = false;
