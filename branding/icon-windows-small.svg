@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="tile" x1="0.2" y1="0" x2="0.8" y2="1">
+      <stop offset="0" stop-color="#1B2A47"/>
+      <stop offset="1" stop-color="#0B1220"/>
+    </linearGradient>
+    <linearGradient id="bug" gradientUnits="userSpaceOnUse" x1="430" y1="150" x2="180" y2="560">
+      <stop offset="0" stop-color="#6EE7B7"/>
+      <stop offset="0.42" stop-color="#14B8A6"/>
+      <stop offset="0.9" stop-color="#3B82F6"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="1024" height="1024" rx="180" fill="url(#tile)"/>
+  <g transform="translate(25.999999999999943 -32.32000000000005) scale(1.62)">
+    <g fill="none" stroke="url(#bug)" stroke-width="40" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M262 168 C250 130 228 108 196 98"/>
+      <path d="M338 168 C350 130 372 108 404 98"/>
+      <path d="M178 266 L132 244 L114 330"/>
+      <path d="M422 266 L468 244 L486 330"/>
+      <path d="M124 404 L106 422 L106 492"/>
+      <path d="M476 404 L494 422 L494 492"/>
+    </g>
+    <g fill="url(#bug)">
+      <path d="M200 250 C200 196 246 160 300 160 C354 160 400 196 400 250 Z"/>
+      <path d="M292 266 H226 C170 266 150 322 150 395 C150 490 205 560 292 574 Z"/>
+      <path d="M308 266 H374 C430 266 450 322 450 395 C450 490 395 560 308 574 Z"/>
+    </g>
+  </g>
+</svg>
