@@ -2,6 +2,35 @@
 
 What changed in each release of Brouk. Written by `scripts/release` (spec 019).
 
+## 0.3.0 (beta) – 2026-11-02
+
+### New
+
+- **Brouk for Windows (beta).** Brouk now runs on Windows. It comes with a per-user installer that needs no administrator rights.
+- Brouk updates itself on Windows. It downloads the newest release of your chosen channel and checks its signature. The update installs when you quit, or right away with Restart to update.
+- You can make Brouk your default browser on Windows from Settings → Links.
+- On Windows, tabs sit in the title bar, with snap layouts and light and dark mode that follow the system. You get tab tooltips, Chrome's tab menu, muting, and a speaker icon on tabs that play sound.
+- Profiles on Windows: tab groups in each profile's colour, the profile manager, export and import, and dragging a tab to another profile.
+- Link routing on Windows works with the profile and window picker. It shows live window previews and uses Windows virtual desktops in place of Spaces.
+- Passwords on Windows: the built-in password manager or Bitwarden. Unlock with Windows Hello, and fill and save passwords on sites. Keys are kept in Windows Credential Manager, and copied passwords stay out of the clipboard history.
+- Autofill on Windows: fill and save forms, with export and import in Settings → Autofill.
+- Ad blocking on Windows, with the shield button and its popup, the blocked requests window and the element picker.
+- Developer tools on Windows, docked in the tab or in their own window (F12, Ctrl+Shift+I/J/C). Tabs opened from a tab that has them open start with them on.
+- Bookmarks on Windows: the star, the bookmarks bar with site icons and dropped links, the menu, the manager, and Undo after deleting.
+- History, clear browsing data, reopening closed tabs and session restore on Windows.
+- Downloads on Windows, with a list under the toolbar button and progress on the taskbar.
+- On Windows: address bar suggestions, the command palette (Ctrl+K), find in page, zoom, printing, full screen, and the task manager with pause and unload.
+- On Windows: page dialogs, permission prompts, the crash page with Chrome's names for crash codes, the screen sharing picker, the blocked pop-ups indicator, the settings window with live reload, and help (F1).
+
+### Changed
+
+- Brouk now remembers whether a window was maximised when it restores your last session.
+
+### Fixed
+
+- Sign-in pages that forward you on by themselves no longer clutter your history.
+- New tab pages always open at 100 % zoom.
+
 ## 0.2.1 – 2026-10-29
 
 ### New
