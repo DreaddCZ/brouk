@@ -17,6 +17,8 @@ add_library(brouk_app SHARED
   adblock_requests_window.h
   app.cc
   app.h
+  app_icon.cc
+  app_icon.h
   autofill_prompt.cc
   autofill_prompt.h
   bitwarden_certificates.cc
@@ -129,7 +131,11 @@ set_target_properties(brouk_app PROPERTIES
   # The import library is not part of the app.
   ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}")
 
-# Gives brouk.exe Brouk's name and version (a build tool, exe_stamp.cc).
+# Gives brouk.exe Brouk's name, version and icon (a build tool,
+# exe_stamp.cc). The icon is made by scripts/make_icons; a new one relinks
+# the DLL, which copies and stamps brouk.exe again.
+set(_app_icon "${CMAKE_CURRENT_SOURCE_DIR}/app.ico")
+set_property(TARGET brouk_app APPEND PROPERTY LINK_DEPENDS "${_app_icon}")
 add_executable(brouk_exe_stamp exe_stamp.cc)
 brouk_target_options(brouk_exe_stamp NO_SANITIZE)
 add_dependencies(brouk_app brouk_exe_stamp)
@@ -142,7 +148,7 @@ set(_copy_commands
           "${APP_DIR}/${APP_EXECUTABLE_NAME}.exe"
   COMMAND $<TARGET_FILE:brouk_exe_stamp>
           "${APP_DIR}/${APP_EXECUTABLE_NAME}.exe" "${APP_NAME}"
-          "${APP_VERSION}" "${APP_EXECUTABLE_NAME}")
+          "${APP_VERSION}" "${APP_EXECUTABLE_NAME}" "${_app_icon}")
 # The bundled copy of Brave's ad blocking resources (007).
 list(APPEND _copy_commands
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
