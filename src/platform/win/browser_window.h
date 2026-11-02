@@ -37,6 +37,7 @@
 #include "platform/win/favicon_cache.h"
 #include "platform/win/password_drop_down.h"
 #include "platform/win/password_prompt.h"
+#include "platform/win/sign_in_dialog.h"
 #include "platform/win/suggestions_popup.h"
 #include "platform/win/tab.h"
 #include "platform/win/tab_panel.h"
@@ -233,9 +234,10 @@ class BrowserWindow final : public TabHost,
   // its profile, after the opener if it is here. The caller creates its
   // browser.
   Tab* InsertTabFromOpener(const Tab* opener, bool foreground);
-  // Opens an internal page (brouk://...) in a tab, in place of an empty
-  // active tab; an active tab already showing it is reused (only the
-  // fragment changes). Help, settings and profiles open their own windows.
+  // Opens an internal page (brouk://...) as the last tab, in the default
+  // profile's group, closing an empty active tab; a tab already showing it
+  // is reused (only the fragment changes). Help, settings and profiles open
+  // their own windows.
   void OpenInternalPage(const std::string& url);
   // A page chosen on the history page in tab `from` (013): in place of the
   // history tab when it is in `profile` (empty: the tab's own), else, or
@@ -259,8 +261,9 @@ class BrowserWindow final : public TabHost,
                         const ProfileId& profile,
                         bool foreground);
   void CloseTabIfUnused(TabId tab);
-  // A tab's profile (the default profile if it is gone), and any web
-  // browser of `profile` here (for the DevTools protocol).
+  // A tab's profile (the default profile if it is gone; for an internal
+  // page, the profile it was opened from, which the page preselects), and
+  // any web browser of `profile` here (for the DevTools protocol).
   ProfileId ProfileOfTab(TabId id);
   CefRefPtr<CefBrowser> AnyBrowserInProfile(const ProfileId& profile) const;
   // Downloads (014): the toolbar button follows the app's list (shown once
@@ -412,6 +415,9 @@ class BrowserWindow final : public TabHost,
                                const BitwardenPasswordRequest& request,
                                BitwardenPasswordSubmit submit,
                                std::function<void()> cancelled) override;
+  void ShowTabSignInDialog(Tab& tab,
+                           const HttpAuthDialog& dialog,
+                           HttpAuthDone done) override;
 
  private:
   static LRESULT CALLBACK WindowProc(HWND window,
@@ -587,6 +593,9 @@ class BrowserWindow final : public TabHost,
   // profiles being deleted, whose tabs are not kept.
   std::vector<ClosedTab> closed_snapshot_;
   std::set<TabId> replaced_tabs_;
+  // Internal page tabs (in the default profile's group): the profile of the
+  // tab they were opened from.
+  std::map<TabId, ProfileId> opened_from_;
   std::set<ProfileId> discarded_profiles_;
   TabStripModel model_;
   std::map<TabId, std::unique_ptr<Tab>> tabs_;
@@ -610,7 +619,11 @@ class BrowserWindow final : public TabHost,
   std::unique_ptr<PasswordDropDown> password_list_;
   std::optional<TabId> password_list_tab_;
   std::unique_ptr<PasswordPromptBubble> password_prompt_;
+  // A tab in the background asked to offer saving a password (its login
+  // opened a new tab): offered when it is back in front, as Chrome. 0: none.
+  TabId password_prompt_tab_ = 0;
   std::unique_ptr<BitwardenPasswordDialog> bitwarden_dialog_;
+  std::unique_ptr<SignInDialog> sign_in_dialog_;
   // Autofill (009): the offer to save a submitted form, under the star.
   std::unique_ptr<AutofillPromptBubble> autofill_prompt_;
   // Ad blocking (007): the shield button, its popup, and the blocked

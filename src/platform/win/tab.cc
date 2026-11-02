@@ -1529,6 +1529,12 @@ void Tab::PasswordKeyIconClicked() {
   }
 }
 
+void Tab::ShowWaitingPasswordPrompt() {
+  if (client_) {
+    client_->ShowWaitingPasswordPrompt();
+  }
+}
+
 void Tab::OpenPasswordsPage() {
   host_.OpenTabPasswordsPage(*this);
 }
@@ -1583,6 +1589,10 @@ void Tab::ConfirmWithTouchId(const std::string& reason, TouchIdDone done) {
              : result == HelloResult::kCancelled ? TouchIdResult::kCancelled
                                                  : TouchIdResult::kUnavailable);
       });
+}
+
+void Tab::ShowHttpAuthDialog(const HttpAuthDialog& dialog, HttpAuthDone done) {
+  host_.ShowTabSignInDialog(*this, dialog, std::move(done));
 }
 
 void Tab::ShowAutofillPrompt(const AutofillPrompt& prompt,

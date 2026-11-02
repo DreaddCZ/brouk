@@ -1788,6 +1788,9 @@ void BrowserWindow::ShowTabPasswordPrompt(Tab& tab,
   // Reachable later from the key icon, as on macOS.
   if (ActiveTab() != &tab || IsIconic(window_) || closing_ ||
       !IsWindowVisible(window_) || password_prompt_) {
+    if (ActiveTab() != &tab) {
+      password_prompt_tab_ = tab.id();
+    }
     done(PasswordPromptAnswer{});
     return;
   }
@@ -2199,6 +2202,28 @@ void BrowserWindow::AskTabBitwardenPassword(
         }
       });
   bitwarden_dialog_->Show();
+}
+
+void BrowserWindow::ShowTabSignInDialog(Tab& /*tab*/,
+                                        const HttpAuthDialog& dialog,
+                                        HttpAuthDone done) {
+  if (sign_in_dialog_ || closing_) {
+    // One at a time: the request is cancelled (the page can be reloaded).
+    done(std::nullopt);
+    return;
+  }
+  sign_in_dialog_ = std::make_unique<SignInDialog>(
+      window_, dialog,
+      [this, done = std::move(done)](std::optional<HttpAuthAnswer> answer) {
+        // Deleted from a task: this runs inside the dialog.
+        std::shared_ptr<SignInDialog> closed(sign_in_dialog_.release());
+        CefPostTask(TID_UI, new FunctionTask([closed] {}));
+        if (!closing_) {
+          FocusActiveTab();
+        }
+        done(std::move(answer));
+      });
+  sign_in_dialog_->Show();
 }
 
 void BrowserWindow::OnTabFullscreenChanged(Tab& tab, bool fullscreen) {
@@ -2913,25 +2938,47 @@ void BrowserWindow::OpenInternalPage(const std::string& url) {
     owner_.OpenSettings(url);  // Its own window, as on macOS.
     return;
   }
-  Tab* active = ActiveTab();
-  if (active && active->internal() && !active->closing() &&
-      InternalPageOf(active->url()) == page) {
-    if (url != active->url()) {
-      active->Navigate(url);  // Same page: only the fragment changes.
+  // As Chrome opens chrome://history and the like: a tab already showing
+  // the page is reused, otherwise it opens last, in the default profile's
+  // group, as these pages are not tied to one profile.
+  for (std::size_t i = 0; i < model_.count(); ++i) {
+    Tab* open = FindTab(model_.id_at(i));
+    if (open && open->internal() && !open->closing() &&
+        InternalPageOf(open->url()) == page) {
+      if (url.find('#') != std::string::npos && url != open->url()) {
+        open->Navigate(url);  // Same page: only the fragment changes.
+      }
+      if (model_.ActivateTab(open->id())) {
+        ModelChanged();
+      }
+      FocusActiveTab();
+      return;
     }
-    FocusActiveTab();
-    return;
   }
-  // In place of an empty tab, as Chrome loads chrome:// pages there.
+  Tab* active = ActiveTab();
+  // An empty tab closes, as Chrome loads chrome:// pages there.
   const bool replace = active && IsBlank(active->url()) && !active->internal();
-  Tab* tab = InsertTabFromOpener(active, true);
+  const ProfileId from =
+      active ? ProfileOfTab(active->id()) : model_.default_profile();
+  const TabId id = NextTabId();
   std::unique_ptr<CefMessageRouterBrowserSide::Handler> handler =
-      owner_.InternalPageHandler(*page, *this, tab->id());
+      owner_.InternalPageHandler(*page, *this, id);
   if (!handler) {
-    RemoveUncreatedTab(tab->id());  // Not on Windows yet.
-    return;
+    return;  // Not on Windows yet.
+  }
+  auto created =
+      std::make_unique<Tab>(*this, id, window_, model_.default_profile());
+  created->SetBounds(ContentBounds());
+  Tab* tab = created.get();
+  tabs_[id] = std::move(created);
+  opened_from_[id] = from;
+  if (active && !replace) {
+    model_.AppendFromOpener(id, active->id(), true);
+  } else {
+    model_.AppendTab(id, true);
   }
   tab->CreateInternalPage(url, std::move(handler), owner_.InternalContext());
+  ModelChanged();
   if (replace) {
     replaced_tabs_.insert(active->id());
     CloseTab(active->id());
@@ -2976,6 +3023,9 @@ void BrowserWindow::OpenPageFromTab(TabId from,
 }
 
 ProfileId BrowserWindow::ProfileOfTab(TabId id) {
+  if (const auto opened = opened_from_.find(id); opened != opened_from_.end()) {
+    return opened->second;
+  }
   const Tab* tab = FindTab(id);
   return tab ? tab->profile() : owner_.DefaultProfile();
 }
@@ -3313,6 +3363,18 @@ void BrowserWindow::FocusActiveTab() {
 
 void BrowserWindow::UpdateToolbar() {
   Tab* tab = ActiveTab();
+  if (tab && tab->id() == password_prompt_tab_ && !closing_) {
+    password_prompt_tab_ = 0;
+    // After the switch has finished.
+    std::weak_ptr<int> alive = alive_;
+    const TabId id = tab->id();
+    CefPostTask(TID_UI, new FunctionTask([this, alive, id] {
+                  Tab* active = alive.lock() ? ActiveTab() : nullptr;
+                  if (active && active->id() == id) {
+                    active->ShowWaitingPasswordPrompt();
+                  }
+                }));
+  }
   EnableWindow(back_, tab && tab->can_go_back());
   EnableWindow(forward_, tab && tab->can_go_forward());
   if (GetFocus() != address_) {
@@ -3894,6 +3956,7 @@ void BrowserWindow::OnTabClosed(Tab& tab) {
   // is kept as one entry (WM_DESTROY). The last tab of a window counts as
   // a tab (Chrome).
   const bool replaced = replaced_tabs_.erase(id) > 0;
+  opened_from_.erase(id);
   if (const std::optional<std::size_t> index = model_.IndexOf(id);
       index && !replaced && !closing_ && kind_ == Kind::kNormal &&
       !discarded_profiles_.contains(tab.profile())) {
@@ -4573,6 +4636,9 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
       }
       if (bitwarden_dialog_) {
         bitwarden_dialog_->Cancel();  // Before the tab asking for it goes.
+      }
+      if (sign_in_dialog_) {
+        sign_in_dialog_->Cancel();
       }
       closing_ = true;
       std::vector<TabId> ids;

@@ -12,6 +12,7 @@ Profiles are local: there is no account to sign in to. Two things are deliberate
 - Tabs opened from a page (links, popups, "Open Link in New Tab") stay in the page's profile — unless a [link routing rule](#link-routing) sends them elsewhere.
 - **Moving a tab to another profile:** drag it into the other profile's group. Brouk asks first, because the page reloads in the other profile and is signed in only if you are signed in there.
 - The bookmarks bar, password filling and the new tab page follow the active tab's profile.
+- Brouk's own pages — history, passwords, bookmarks, downloads and the open-source licences — belong to no profile. They open as the **last tab**, in the default profile's group, and if one is already open Brouk switches to it. Their profile filter still starts at the profile you were in.
 
 ### Profile manager {#profiles-manager}
 

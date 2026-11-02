@@ -67,6 +67,8 @@ NSString* StripFragment(NSString* url) {
 - (void)showJsDialog:(const brouk::JsDialogRequest&)request
                 done:(brouk::JsDialogDone)done;
 - (void)dismissJsDialog;
+- (void)showHttpAuthDialog:(const brouk::HttpAuthDialog&)dialog
+                      done:(brouk::HttpAuthDone)done;
 - (void)handleRendererGone:(brouk::RendererGoneReason)reason
                  errorCode:(NSString*)errorCode;
 - (void)handleUnresponsive:(brouk::UnresponsiveDone)done;
@@ -243,6 +245,10 @@ class TabDelegateBridge : public TabClientDelegate {
   void ConfirmWithTouchId(const std::string& reason,
                           TouchIdDone done) override {
     mac::ConfirmWithTouchId(reason, std::move(done));
+  }
+  void ShowHttpAuthDialog(const HttpAuthDialog& dialog,
+                          HttpAuthDone done) override {
+    [tab_ showHttpAuthDialog:dialog done:std::move(done)];
   }
   void ShowAutofillPrompt(const AutofillPrompt& prompt,
                           AutofillPromptDone done) override {
@@ -467,6 +473,7 @@ class TabInternalPageBridge : public InternalPageDelegate {
   BOOL _deferred;
   CefRefPtr<CefRequestContext> _deferredContext;
   BRTabDialogView* _dialog;
+  BRTabDialogView* _authDialog;  // A site's sign-in (HTTP authentication).
   BRTabDialogView* _unresponsiveDialog;
   // An unresponsive report that arrived while a modal panel (e.g. the print
   // dialog, which blocks the page) was up; shown once the panel is gone.
@@ -707,7 +714,8 @@ class TabInternalPageBridge : public InternalPageDelegate {
 }
 
 - (BOOL)hasDialog {
-  return _dialog != nil && _dialog.superview != nil;
+  return (_dialog != nil && _dialog.superview != nil) ||
+         (_authDialog != nil && _authDialog.superview != nil);
 }
 
 - (void)screenChanged {
@@ -717,7 +725,7 @@ class TabInternalPageBridge : public InternalPageDelegate {
 
 - (void)focusContent {
   if ([self hasDialog]) {
-    [_dialog focus];
+    [(_dialog.superview ? _dialog : _authDialog) focus];
     return;
   }
   if (_browser) {
@@ -1146,6 +1154,19 @@ class TabInternalPageBridge : public InternalPageDelegate {
   _dialog = nil;
 }
 
+// Tab-modal as in Chrome; a newer request replaces an open dialog (its
+// request is cancelled).
+- (void)showHttpAuthDialog:(const brouk::HttpAuthDialog&)dialog
+                      done:(brouk::HttpAuthDone)done {
+  [_authDialog dismiss];
+  _authDialog = [BRTabDialogView loginDialogFor:dialog done:std::move(done)];
+  _authDialog.frame = _containerView.bounds;
+  [_containerView addSubview:_authDialog];
+  if (!_tabView.isHiddenOrHasHiddenAncestor) {
+    [_authDialog focus];
+  }
+}
+
 // The page asked to share a screen or window (getDisplayMedia).
 - (void)chooseDesktopSource:(brouk::TabClientDelegate::DesktopSourceDone)done {
   CEF_REQUIRE_UI_THREAD();
@@ -1478,6 +1499,12 @@ class TabInternalPageBridge : public InternalPageDelegate {
   }
 }
 
+- (void)showWaitingPasswordPrompt {
+  if (_client) {
+    _client->ShowWaitingPasswordPrompt();
+  }
+}
+
 - (void)removeBlockedView {
   [_blockedView removeFromSuperview];
   _blockedView = nil;
@@ -1502,6 +1529,8 @@ class TabInternalPageBridge : public InternalPageDelegate {
 
 - (void)handleCloseReady {
   [self dismissJsDialog];
+  [_authDialog dismiss];
+  _authDialog = nil;
   if (_unloading) {
     // Unload (020): only the browser goes; the tab stays.
     if (_browser) {

@@ -128,6 +128,8 @@ NS_ASSUME_NONNULL_BEGIN
 // The key icon of the password manager (008) and its click.
 @property(nonatomic, readonly) brouk::PasswordIcon passwordIcon;
 - (void)passwordKeyIconClicked;
+// The tab is back in front: a save prompt that waited shows (008).
+- (void)showWaitingPasswordPrompt;
 
 @property(nonatomic, readonly) brouk::TabId tabId;
 @property(nonatomic, weak) id<BRTabDelegate> delegate;

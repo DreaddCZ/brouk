@@ -4,6 +4,51 @@
 
 #include "core/url_display.h"
 
+// Keeps the text, shown or edited, clear of the field's right end, where
+// the window puts its indicators.
+@interface BRAddressFieldCell : NSTextFieldCell
+@property(nonatomic) CGFloat trailingInset;
+@end
+
+@implementation BRAddressFieldCell
+
+- (NSRect)textRectForBounds:(NSRect)rect {
+  rect.size.width = MAX(0, rect.size.width - _trailingInset);
+  return rect;
+}
+
+- (NSRect)drawingRectForBounds:(NSRect)rect {
+  return [super drawingRectForBounds:[self textRectForBounds:rect]];
+}
+
+- (void)editWithFrame:(NSRect)rect
+               inView:(NSView*)controlView
+               editor:(NSText*)textObj
+             delegate:(nullable id)delegate
+                event:(nullable NSEvent*)event {
+  [super editWithFrame:[self textRectForBounds:rect]
+                inView:controlView
+                editor:textObj
+              delegate:delegate
+                 event:event];
+}
+
+- (void)selectWithFrame:(NSRect)rect
+                 inView:(NSView*)controlView
+                 editor:(NSText*)textObj
+               delegate:(nullable id)delegate
+                  start:(NSInteger)selStart
+                 length:(NSInteger)selLength {
+  [super selectWithFrame:[self textRectForBounds:rect]
+                  inView:controlView
+                  editor:textObj
+                delegate:delegate
+                   start:selStart
+                  length:selLength];
+}
+
+@end
+
 @interface BRAddressField () <NSTextFieldDelegate>
 @end
 
@@ -15,6 +60,10 @@
   BOOL _allowInline;
   // The field got the focus from the mouse click being handled.
   BOOL _focusedByClick;
+}
+
++ (Class)cellClass {
+  return [BRAddressFieldCell class];
 }
 
 - (instancetype)initWithFrame:(NSRect)frame {
@@ -31,6 +80,24 @@
     _typedText = @"";
   }
   return self;
+}
+
+- (CGFloat)trailingInset {
+  return static_cast<BRAddressFieldCell*>(self.cell).trailingInset;
+}
+
+- (void)setTrailingInset:(CGFloat)inset {
+  auto* cell = static_cast<BRAddressFieldCell*>(self.cell);
+  if (cell.trailingInset == inset) {
+    return;
+  }
+  cell.trailingInset = inset;
+  // An open field editor keeps the frame it was given: move it.
+  if (NSText* editor = self.currentEditor) {
+    NSRect frame = [cell textRectForBounds:self.bounds];
+    editor.superview.frame = [cell drawingRectForBounds:frame];
+  }
+  self.needsDisplay = YES;
 }
 
 - (NSString*)typedText {

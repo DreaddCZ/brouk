@@ -136,6 +136,10 @@ class TabHost {
                                        const BitwardenPasswordRequest& request,
                                        BitwardenPasswordSubmit submit,
                                        std::function<void()> cancelled) = 0;
+  // A site's sign-in dialog (HTTP authentication), modal to the window.
+  virtual void ShowTabSignInDialog(Tab& tab,
+                                   const HttpAuthDialog& dialog,
+                                   HttpAuthDone done) = 0;
 
  protected:
   virtual ~TabHost() = default;
@@ -360,6 +364,8 @@ class Tab final : public TabClientDelegate,
   // Passwords (008): the key icon's look, and a click on it.
   PasswordIcon password_icon() const { return password_icon_; }
   void PasswordKeyIconClicked();
+  // The tab is back in front: a save prompt that waited shows (008).
+  void ShowWaitingPasswordPrompt();
 
   // PasswordTabDelegate:
   void ShowPasswordMenu(const PasswordMenu& menu,
@@ -378,6 +384,8 @@ class Tab final : public TabClientDelegate,
                             BitwardenPasswordSubmit submit,
                             std::function<void()> cancelled) override;
   void ConfirmWithTouchId(const std::string& reason, TouchIdDone done) override;
+  void ShowHttpAuthDialog(const HttpAuthDialog& dialog,
+                          HttpAuthDone done) override;
 
   // DevToolsDock::Delegate:
   void DockClosed(DevToolsDock& dock) override;

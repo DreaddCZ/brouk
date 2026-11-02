@@ -29,6 +29,9 @@ NS_ASSUME_NONNULL_BEGIN
 // Full URL of the page; shown shortened while the field is not focused.
 @property(nonatomic, copy) NSString* pageURL;
 @property(nonatomic, readonly) BOOL isEditing;
+// Room kept free at the right end for the indicators drawn over the field
+// (star, key, shield…), so long text ends before them.
+@property(nonatomic) CGFloat trailingInset;
 
 // Focuses the field and selects its text (Cmd+L).
 - (void)focusAndSelectAll;

@@ -24,6 +24,13 @@ void BrowserApp::OnBeforeCommandLineProcessing(
     command_line->AppendSwitchWithValue("remote-debugging-address",
                                         "127.0.0.1");
   }
+  // HTTP authentication (012, 008) asks TabClient::GetAuthCredentials,
+  // which shows Brouk's sign-in dialog with the password manager; without
+  // this switch Chromium shows its own dialog and never asks (CEF issue
+  // 3603).
+  if (process_type.empty()) {
+    command_line->AppendSwitch("disable-chrome-login-prompt");
+  }
 #if defined(OS_WIN)
   // Chromium's own profile (behind CEF's global request context, used only
   // for background downloads) lives in <root>\Default, and the first Brouk

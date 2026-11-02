@@ -274,6 +274,8 @@ class TabClient : public CefClient,
   void SetPasswords(PasswordManager* manager, const ProfileId& profile);
   // The key icon in the address bar was clicked. UI thread.
   void OnPasswordKeyIconClicked();
+  // The tab is back in front: a save prompt that waited shows. UI thread.
+  void ShowWaitingPasswordPrompt();
   // Form autofill (009), set before the browser is created. UI thread.
   void SetAutofill(AutofillManager* manager);
   // The app's downloads (014), set before the browser is created; the
@@ -461,6 +463,16 @@ class TabClient : public CefClient,
       CefRefPtr<CefBrowser> browser,
       CefRefPtr<CefUnresponsiveProcessCallback> callback) override;
   void OnRenderProcessResponsive(CefRefPtr<CefBrowser> browser) override;
+  // HTTP authentication (012, 008): Brouk's sign-in dialog, with the
+  // password manager for sites (not for proxies). IO thread.
+  bool GetAuthCredentials(CefRefPtr<CefBrowser> browser,
+                          const CefString& origin_url,
+                          bool isProxy,
+                          const CefString& host,
+                          int port,
+                          const CefString& realm,
+                          const CefString& scheme,
+                          CefRefPtr<CefAuthCallback> callback) override;
   CefRefPtr<CefResourceRequestHandler> GetResourceRequestHandler(
       CefRefPtr<CefBrowser> browser,
       CefRefPtr<CefFrame> frame,
@@ -471,6 +483,11 @@ class TabClient : public CefClient,
       bool& disable_default_handling) override;
 
  private:
+  // The sign-in dialog for GetAuthCredentials. UI thread.
+  void AskAuthCredentials(const std::string& origin_url,
+                          bool proxy,
+                          const std::string& realm,
+                          const CefRefPtr<CefAuthCallback>& callback);
   void AddAutofillMenu(const CefRefPtr<CefContextMenuParams>& params,
                        const CefRefPtr<CefMenuModel>& model);
   void HandleAdblockMessage(const CefRefPtr<CefBrowser>& browser,

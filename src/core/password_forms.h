@@ -96,6 +96,25 @@ SaveDecision DecideSave(const SubmittedLogin& login,
                         bool never_for_site,
                         bool offer_to_save);
 
+// Whether a window the page opened tells that a login submitted at
+// `submit_time` succeeded (times in seconds). Some logins open what they
+// log in to in a new window and leave the form as it was (a remote desktop
+// in a browser tab): neither a new page nor the form going away shows
+// success there. The window may be reported just before the submit.
+inline constexpr std::int64_t kPopupAfterLoginSeconds = 10;
+bool PopupConfirmsLogin(std::int64_t submit_time, std::int64_t popup_time);
+
+// HTTP authentication (a site's own sign-in dialog, basic or digest):
+// the saved login the dialog starts with, as in Chrome — of those saved
+// for the exact origin, the one used most recently, else the one saved
+// last. An index into `exact`; nullopt if there is none.
+std::optional<std::size_t> HttpAuthChoice(
+    const std::vector<PasswordEntry>& exact);
+// Whether the page that loaded after the dialog's login shows that the
+// login worked: any HTTP answer except another "401 Unauthorized" (or 407
+// from a proxy), as Chrome counts it.
+bool HttpAuthSucceeded(int http_status);
+
 // The entry filled when the page loads, as in Chrome: only on https (or
 // localhost), only with exactly one entry for the exact origin (or exactly
 // one with the user name remembered from the previous step), and not with

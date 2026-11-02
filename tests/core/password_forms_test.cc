@@ -136,6 +136,42 @@ TEST(PasswordFormsTest, ChoosesFormAndBuildsFillMessages) {
       "{\n  \"fields\": {\n    \"8\": \"gen\",\n    \"9\": \"gen\"\n  }\n}\n");
 }
 
+TEST(PasswordFormsTest, PopupRightAfterLoginConfirmsIt) {
+  EXPECT_TRUE(PopupConfirmsLogin(100, 100));
+  EXPECT_TRUE(PopupConfirmsLogin(100, 110));
+  EXPECT_TRUE(PopupConfirmsLogin(100, 98));
+  EXPECT_FALSE(PopupConfirmsLogin(100, 111));
+  EXPECT_FALSE(PopupConfirmsLogin(100, 97));
+}
+
+TEST(PasswordFormsTest, HttpAuthStartsWithTheLoginUsedLast) {
+  EXPECT_EQ(HttpAuthChoice({}), std::nullopt);
+  PasswordEntry old;
+  old.username = "old";
+  old.created = 10;
+  old.last_used = 50;
+  PasswordEntry recent;
+  recent.username = "recent";
+  recent.created = 20;
+  recent.last_used = 90;
+  EXPECT_EQ(HttpAuthChoice({old, recent}), 1u);
+  EXPECT_EQ(HttpAuthChoice({recent, old}), 0u);
+  // Never used: the one saved last.
+  old.last_used = 0;
+  recent.last_used = 0;
+  EXPECT_EQ(HttpAuthChoice({recent, old}), 0u);
+  EXPECT_EQ(HttpAuthChoice({old, recent}), 1u);
+}
+
+TEST(PasswordFormsTest, HttpAuthSucceedsUnlessAskedAgain) {
+  EXPECT_TRUE(HttpAuthSucceeded(200));
+  EXPECT_TRUE(HttpAuthSucceeded(404));
+  EXPECT_TRUE(HttpAuthSucceeded(403));
+  EXPECT_FALSE(HttpAuthSucceeded(401));
+  EXPECT_FALSE(HttpAuthSucceeded(407));
+  EXPECT_FALSE(HttpAuthSucceeded(0));  // Not an HTTP answer (an error).
+}
+
 TEST(PasswordFormsTest, SecureOrigins) {
   EXPECT_TRUE(IsSecureOriginForPasswords("https://example.com"));
   EXPECT_TRUE(IsSecureOriginForPasswords("http://localhost:3000"));
