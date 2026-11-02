@@ -2,6 +2,12 @@
 
 What changed in each release of Brouk. Written by `scripts/release` (spec 019).
 
+## 0.3.1 (beta) – 2026-11-02
+
+### Fixed
+
+- Windows release builds are now built with full optimisation, so Brouk on Windows is faster and smaller.
+
 ## 0.3.0 (beta) – 2026-11-02
 
 ### New
