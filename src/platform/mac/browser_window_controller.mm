@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <optional>
 #include <set>
@@ -199,6 +200,9 @@ NSButton* ToolbarButton(NSString* symbol,
   // Tabs replaced by another tab (internal page <-> web page): closed
   // without being kept for Reopen Closed Tab.
   std::set<brouk::TabId> _replacedTabs;
+  // Internal page tabs (in the default profile's group): the profile of the
+  // tab they were opened from, which the page preselects.
+  std::map<brouk::TabId, brouk::ProfileId> _openedFromProfile;
   std::set<brouk::ProfileId, std::less<>> _discardedProfiles;
   // Address bar suggestions (003) for the text in `_suggestText`. Answers
   // carry `_suggestGeneration`, so late answers for older text are dropped.
@@ -666,11 +670,18 @@ NSButton* ToolbarButton(NSString* symbol,
 // What the address bar does with an address: web pages load in the tab;
 // an internal page or a web page in an internal tab replaces the tab, so
 // web content never runs in the internal context and the other way round.
+// An internal page typed in a web tab opens as from the menu, in the
+// default profile's group.
 - (void)navigateTab:(BRTab*)tab toURL:(NSString*)url typed:(BOOL)typed {
   NSString* page = [self internalPageOf:url];
   if (page && ![self opensInTab:page]) {
     [self openInternalPageWindow:page];
     [self updateToolbar];
+    return;
+  }
+  if (page &&
+      !(tab.isInternalPage && tab.profileId == _model->default_profile())) {
+    [self showInternalPageURL:url];
     return;
   }
   if (page || tab.isInternalPage) {
@@ -694,6 +705,10 @@ NSButton* ToolbarButton(NSString* symbol,
 
 - (BRTab*)replaceTab:(BRTab*)old withURL:(NSString*)url typed:(BOOL)typed {
   BRTab* tab = [self makeTabInProfile:old.profileId];
+  if (auto opened = _openedFromProfile.find(old.tabId);
+      opened != _openedFromProfile.end() && [self internalPageOf:url]) {
+    _openedFromProfile[tab.tabId] = opened->second;
+  }
   _model->InsertAfter(tab.tabId, old.tabId, true);
   if (_model->IsPinned(old.tabId)) {
     _model->SetPinned(tab.tabId, true);
@@ -733,36 +748,55 @@ NSButton* ToolbarButton(NSString* symbol,
   [self showInternalPage:@"credits" fragment:@""];
 }
 
-// An internal page as a tab in the current tab's profile group, in place of
-// an unused new tab; an active tab already showing it is reused.
+// An internal page as a tab, as Chrome opens chrome://history and the like:
+// a tab already showing it is reused, otherwise it opens last, in the
+// default profile's group, as these pages are not tied to one profile; an
+// unused new tab closes. The pages still preselect the profile they were
+// opened from (`_openedFromProfile`).
 - (void)showInternalPage:(NSString*)page fragment:(NSString*)fragment {
   NSString* base = [NSString stringWithFormat:@"brouk://%@/", page];
-  NSString* url =
-      fragment.length ? [base stringByAppendingFormat:@"#%@", fragment] : base;
-  BRTab* active = [self activeTab];
-  if (active.isInternalPage &&
-      [[self internalPageOf:active.url] isEqualToString:page]) {
-    CefRefPtr<CefBrowser> browser = [active browser];
-    if (fragment.length && browser) {
-      // Same page: only the fragment changes (the page opens the dialog).
-      browser->GetMainFrame()->LoadURL(url.UTF8String);
+  [self
+      showInternalPageURL:fragment.length
+                              ? [base stringByAppendingFormat:@"#%@", fragment]
+                              : base];
+}
+
+- (void)showInternalPageURL:(NSString*)url {
+  NSString* page = [self internalPageOf:url];
+  BOOL hasFragment = [url rangeOfString:@"#"].location != NSNotFound;
+  for (std::size_t i = 0; i < _model->count(); ++i) {
+    BRTab* open = _tabs[@(_model->id_at(i))];
+    if (open.isInternalPage && !open.isClosing &&
+        [[self internalPageOf:open.url] isEqualToString:page]) {
+      CefRefPtr<CefBrowser> browser = [open browser];
+      if (hasFragment && browser) {
+        // Same page: only the fragment changes (the page opens the dialog).
+        browser->GetMainFrame()->LoadURL(url.UTF8String);
+      }
+      if (open != [self activeTab]) {
+        _model->ActivateTab(open.tabId);
+        [self modelDidChange];
+      }
+      [self focusActiveTab];
+      return;
     }
-    return;
   }
-  if (active &&
-      (active.url.length == 0 || [active.url isEqualToString:@"about:blank"])) {
-    [self replaceTab:active withURL:url typed:NO];
-    return;
-  }
-  brouk::ProfileId profile = [self activeProfileId];
-  BRTab* tab = [self makeTabInProfile:profile];
-  if (active) {
-    _model->InsertAfter(tab.tabId, active.tabId, true);
-  } else {
-    _model->AppendTab(tab.tabId, profile, true);
-  }
+  BRTab* active = [self activeTab];
+  BRTab* unused = active && !active.isInternalPage &&
+                          (active.url.length == 0 ||
+                           [active.url isEqualToString:@"about:blank"])
+                      ? active
+                      : nil;
+  BRTab* tab = [self makeTabInProfile:_model->default_profile()];
+  _openedFromProfile[tab.tabId] = [self activeProfileId];
+  _model->AppendTab(tab.tabId, true);
   [self startTab:tab url:url];
+  if (unused) {
+    _replacedTabs.insert(unused.tabId);
+    [unused forceClose];
+  }
   [self modelDidChange];
+  [self focusActiveTab];
 }
 
 - (CefRefPtr<CefBrowser>)anyBrowserInProfile:(const brouk::ProfileId&)profile {
@@ -776,6 +810,10 @@ NSButton* ToolbarButton(NSString* symbol,
 }
 
 - (brouk::ProfileId)profileOfTab:(brouk::TabId)tabId {
+  if (auto opened = _openedFromProfile.find(tabId);
+      opened != _openedFromProfile.end()) {
+    return opened->second;
+  }
   BRTab* tab = _tabs[@(tabId)];
   return tab ? tab.profileId : _model->default_profile();
 }
@@ -798,7 +836,8 @@ NSButton* ToolbarButton(NSString* symbol,
         bookmark:(BOOL)bookmark {
   BRTab* history = _tabs[@(historyTab)];
   if (profile.empty() || ![_owner profileExists:profile]) {
-    brouk::ProfileId own = history ? history.profileId : [self activeProfileId];
+    brouk::ProfileId own =
+        history ? [self profileOfTab:historyTab] : [self activeProfileId];
     [self openPage:url
            profile:own
             newTab:newTab
@@ -1521,6 +1560,7 @@ NSButton* ToolbarButton(NSString* symbol,
   // kept as one entry (windowWillClose:).
   std::optional<std::size_t> index = _model->IndexOf(tab.tabId);
   bool replaced = _replacedTabs.erase(tab.tabId) > 0;
+  _openedFromProfile.erase(tab.tabId);
   if (index && !replaced && !_closingWindow &&
       !_discardedProfiles.contains(tab.profileId)) {
     [_owner browserWindow:self

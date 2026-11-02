@@ -2916,25 +2916,43 @@ void BrowserWindow::OpenInternalPage(const std::string& url) {
     owner_.OpenSettings(url);  // Its own window, as on macOS.
     return;
   }
-  Tab* active = ActiveTab();
-  if (active && active->internal() && !active->closing() &&
-      InternalPageOf(active->url()) == page) {
-    if (url != active->url()) {
-      active->Navigate(url);  // Same page: only the fragment changes.
+  // As Chrome opens chrome://history and the like: a tab already showing
+  // the page is reused, otherwise it opens last, in the default profile's
+  // group, as these pages are not tied to one profile.
+  for (std::size_t i = 0; i < model_.count(); ++i) {
+    Tab* open = FindTab(model_.id_at(i));
+    if (open && open->internal() && !open->closing() &&
+        InternalPageOf(open->url()) == page) {
+      if (url.find('#') != std::string::npos && url != open->url()) {
+        open->Navigate(url);  // Same page: only the fragment changes.
+      }
+      if (model_.ActivateTab(open->id())) {
+        ModelChanged();
+      }
+      FocusActiveTab();
+      return;
     }
-    FocusActiveTab();
-    return;
   }
-  // In place of an empty tab, as Chrome loads chrome:// pages there.
+  Tab* active = ActiveTab();
+  // An empty tab closes, as Chrome loads chrome:// pages there.
   const bool replace = active && IsBlank(active->url()) && !active->internal();
-  Tab* tab = InsertTabFromOpener(active, true);
+  const ProfileId from =
+      active ? ProfileOfTab(active->id()) : model_.default_profile();
+  const TabId id = NextTabId();
   std::unique_ptr<CefMessageRouterBrowserSide::Handler> handler =
-      owner_.InternalPageHandler(*page, *this, tab->id());
+      owner_.InternalPageHandler(*page, *this, id);
   if (!handler) {
-    RemoveUncreatedTab(tab->id());  // Not on Windows yet.
-    return;
+    return;  // Not on Windows yet.
   }
+  auto created =
+      std::make_unique<Tab>(*this, id, window_, model_.default_profile());
+  created->SetBounds(ContentBounds());
+  Tab* tab = created.get();
+  tabs_[id] = std::move(created);
+  opened_from_[id] = from;
+  model_.AppendTab(id, true);
   tab->CreateInternalPage(url, std::move(handler), owner_.InternalContext());
+  ModelChanged();
   if (replace) {
     replaced_tabs_.insert(active->id());
     CloseTab(active->id());
@@ -2979,6 +2997,9 @@ void BrowserWindow::OpenPageFromTab(TabId from,
 }
 
 ProfileId BrowserWindow::ProfileOfTab(TabId id) {
+  if (const auto opened = opened_from_.find(id); opened != opened_from_.end()) {
+    return opened->second;
+  }
   const Tab* tab = FindTab(id);
   return tab ? tab->profile() : owner_.DefaultProfile();
 }
@@ -3909,6 +3930,7 @@ void BrowserWindow::OnTabClosed(Tab& tab) {
   // is kept as one entry (WM_DESTROY). The last tab of a window counts as
   // a tab (Chrome).
   const bool replaced = replaced_tabs_.erase(id) > 0;
+  opened_from_.erase(id);
   if (const std::optional<std::size_t> index = model_.IndexOf(id);
       index && !replaced && !closing_ && kind_ == Kind::kNormal &&
       !discarded_profiles_.contains(tab.profile())) {
