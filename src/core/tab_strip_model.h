@@ -53,6 +53,13 @@ class TabStripModel {
   // Returns its index.
   std::size_t InsertFromOpener(TabId id, TabId opener, bool activate);
 
+  // Appends a tab at the end of the default profile's group (the end of the
+  // strip), opened from `opener`: Brouk's own pages (History, Passwords…),
+  // which belong to no profile. As Chrome does for its pages, closing it
+  // goes back to `opener` unless the user switched tabs in between.
+  // Returns its index.
+  std::size_t AppendFromOpener(TabId id, TabId opener, bool activate);
+
   // Inserts a tab in `after`'s profile right after it (never among the
   // pinned tabs), without an opener relation: "New Tab to the Right" and
   // "Duplicate". Falls back to appending in the default profile if `after`

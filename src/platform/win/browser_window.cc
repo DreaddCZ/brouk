@@ -2972,7 +2972,11 @@ void BrowserWindow::OpenInternalPage(const std::string& url) {
   Tab* tab = created.get();
   tabs_[id] = std::move(created);
   opened_from_[id] = from;
-  model_.AppendTab(id, true);
+  if (active && !replace) {
+    model_.AppendFromOpener(id, active->id(), true);
+  } else {
+    model_.AppendTab(id, true);
+  }
   tab->CreateInternalPage(url, std::move(handler), owner_.InternalContext());
   ModelChanged();
   if (replace) {

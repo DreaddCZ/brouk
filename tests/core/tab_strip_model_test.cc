@@ -74,6 +74,22 @@ TEST(TabStripModelTest, ClosingOpenedTabReturnsToOpener) {
   EXPECT_EQ(model.active_id(), 1);
 }
 
+TEST(TabStripModelTest, AppendedFromOpenerGoesLastAndReturnsToOpener) {
+  TabStripModel model(kMain);
+  model.AppendTab(1, kWork, true);
+  model.AppendTab(2, true);
+  model.AppendTab(3, false);
+  model.ActivateTab(1);
+  model.AppendFromOpener(10, 1, true);
+  EXPECT_EQ(Order(model), (std::vector<TabId>{1, 2, 3, 10}));
+  EXPECT_EQ(*model.ProfileOf(10), kMain);
+  model.RemoveTab(10);
+  EXPECT_EQ(model.active_id(), 1);
+  // Unknown opener: appended without one.
+  model.AppendFromOpener(11, 99, true);
+  EXPECT_EQ(model.OpenerOf(11), std::nullopt);
+}
+
 TEST(TabStripModelTest, ClosingOpenedTabPrefersSibling) {
   TabStripModel model(kMain);
   model.AppendTab(1, true);

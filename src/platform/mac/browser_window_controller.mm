@@ -789,7 +789,11 @@ NSButton* ToolbarButton(NSString* symbol,
                       : nil;
   BRTab* tab = [self makeTabInProfile:_model->default_profile()];
   _openedFromProfile[tab.tabId] = [self activeProfileId];
-  _model->AppendTab(tab.tabId, true);
+  if (active && !unused) {
+    _model->AppendFromOpener(tab.tabId, active.tabId, true);
+  } else {
+    _model->AppendTab(tab.tabId, true);
+  }
   [self startTab:tab url:url];
   if (unused) {
     _replacedTabs.insert(unused.tabId);

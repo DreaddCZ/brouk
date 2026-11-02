@@ -44,6 +44,15 @@ std::size_t TabStripModel::InsertFromOpener(TabId id,
   return InsertAt(index, {id, profile, opener}, activate);
 }
 
+std::size_t TabStripModel::AppendFromOpener(TabId id,
+                                            TabId opener,
+                                            bool activate) {
+  std::optional<TabId> known =
+      IndexOf(opener) ? std::optional<TabId>(opener) : std::nullopt;
+  return InsertAt(GroupEnd(default_profile_), {id, default_profile_, known},
+                  activate);
+}
+
 std::size_t TabStripModel::InsertAfter(TabId id, TabId after, bool activate) {
   std::optional<std::size_t> after_index = IndexOf(after);
   if (!after_index) {
