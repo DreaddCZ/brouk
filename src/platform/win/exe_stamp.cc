@@ -287,9 +287,8 @@ int wmain(int argc, wchar_t** argv) {
       UpdateResourceW(update, old.type, old.name.Get(), language, nullptr, 0);
     }
   }
-  const WORD language = MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US);
-  auto write = [&update, language](LPCWSTR type, LPCWSTR resource_name,
-                                   Bytes data) {
+  constexpr WORD language = MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US);
+  auto write = [&update](LPCWSTR type, LPCWSTR resource_name, Bytes data) {
     return UpdateResourceW(update, type, resource_name, language, data.data(),
                            static_cast<DWORD>(data.size())) != FALSE;
   };
