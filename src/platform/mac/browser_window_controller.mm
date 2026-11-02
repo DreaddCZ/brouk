@@ -1314,7 +1314,7 @@ NSButton* ToolbarButton(NSString* symbol,
   [self updateShield];
   [self updateKeyButton];
 
-  BOOL bookmarkable = [self canBookmarkTab:tab];
+  BOOL bookmarkable = tab != nil && [self canBookmarkTab:tab];
   _starButton.hidden = !bookmarkable;
   if (bookmarkable) {
     BOOL bookmarked =

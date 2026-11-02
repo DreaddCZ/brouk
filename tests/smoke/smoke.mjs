@@ -793,16 +793,30 @@ async function main() {
   }
 
   // Windows app (024): the page's blocked popup shows the "Pop-ups blocked"
-  // indicator in the address bar; an HTTP sign-in shows Chromium's login
-  // dialog. Screenshots of both for a look.
+  // indicator in the address bar; an HTTP sign-in shows Brouk's sign-in
+  // dialog (008), which is then cancelled. Screenshots of both for a look.
   if (kWindows) {
     await cdp.send('Page.navigate', { url: `${pagesBase}/popups.html` });
     await waitForTitle(cdp, 'Popups test');
     await sleep(1500);
     desktopScreenshot('popup-blocked');
-    await cdp.send('Page.navigate', { url: `${pagesBase}/sign-in` });
+    // The navigation waits for the dialog's answer: not awaited.
+    cdp.send('Page.navigate', { url: `${pagesBase}/sign-in` }).catch(() => {});
     await sleep(2000);
     desktopScreenshot('sign-in');
+    let closed = '';
+    try {
+      closed = execFileSync('powershell', ['-NoProfile', '-Command', [
+        "Add-Type -Namespace Smoke -Name SignIn -MemberDefinition '[DllImport(\"user32.dll\", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string c, string n); [DllImport(\"user32.dll\")] public static extern bool PostMessage(IntPtr h, uint m, IntPtr w, IntPtr l);'",
+        "$d = [Smoke.SignIn]::FindWindow('BroukSignIn', 'Sign in')",
+        // WM_CLOSE: the dialog's Cancel.
+        'if ($d -ne [IntPtr]::Zero) { [Smoke.SignIn]::PostMessage($d, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null; Write-Output "closed" }',
+      ].join('; ')], { encoding: 'utf8', timeout: 60000 }).trim();
+    } catch (error) {
+      log(`(sign-in dialog not checked: ${error.message})`);
+    }
+    check(closed === 'closed', "an HTTP sign-in shows Brouk's sign-in dialog");
+    await sleep(1000);
   }
 
   // Menus (Windows app, 024): the tab menu on a right-click on the first
