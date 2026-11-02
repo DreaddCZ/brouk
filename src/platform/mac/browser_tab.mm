@@ -1478,6 +1478,12 @@ class TabInternalPageBridge : public InternalPageDelegate {
   }
 }
 
+- (void)showWaitingPasswordPrompt {
+  if (_client) {
+    _client->ShowWaitingPasswordPrompt();
+  }
+}
+
 - (void)removeBlockedView {
   [_blockedView removeFromSuperview];
   _blockedView = nil;

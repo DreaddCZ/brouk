@@ -136,6 +136,14 @@ TEST(PasswordFormsTest, ChoosesFormAndBuildsFillMessages) {
       "{\n  \"fields\": {\n    \"8\": \"gen\",\n    \"9\": \"gen\"\n  }\n}\n");
 }
 
+TEST(PasswordFormsTest, PopupRightAfterLoginConfirmsIt) {
+  EXPECT_TRUE(PopupConfirmsLogin(100, 100));
+  EXPECT_TRUE(PopupConfirmsLogin(100, 110));
+  EXPECT_TRUE(PopupConfirmsLogin(100, 98));
+  EXPECT_FALSE(PopupConfirmsLogin(100, 111));
+  EXPECT_FALSE(PopupConfirmsLogin(100, 97));
+}
+
 TEST(PasswordFormsTest, SecureOrigins) {
   EXPECT_TRUE(IsSecureOriginForPasswords("https://example.com"));
   EXPECT_TRUE(IsSecureOriginForPasswords("http://localhost:3000"));

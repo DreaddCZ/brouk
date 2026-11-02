@@ -173,6 +173,9 @@ NSButton* ToolbarButton(NSString* symbol,
   BRDownloadsButton* _downloadsButton;  // Downloads (014).
   // The tab whose page is in HTML full screen, if any.
   __weak BRTab* _fullscreenTab;
+  // A tab in the background asked to offer saving a password (its login
+  // opened a new tab): offered when the user comes back to it, as Chrome.
+  __weak BRTab* _passwordPromptTab;
   // We put the window into macOS full screen for that page (and leave it
   // again afterwards).
   BOOL _windowFullscreenForPage;
@@ -1204,6 +1207,16 @@ NSButton* ToolbarButton(NSString* symbol,
 
 - (void)updateToolbar {
   BRTab* tab = [self activeTab];
+  if (tab && tab == _passwordPromptTab && self.window.visible) {
+    _passwordPromptTab = nil;
+    // After the switch has finished: the prompt opens from the key icon.
+    __weak BRTab* weakTab = tab;
+    dispatch_async(dispatch_get_main_queue(), ^{
+      if (weakTab && weakTab == [self activeTab]) {
+        [weakTab showWaitingPasswordPrompt];
+      }
+    });
+  }
   _devToolsToggle.state =
       tab.devToolsOn ? NSControlStateValueOn : NSControlStateValueOff;
   // On: filled and in the accent colour, so the state is visible at once.
@@ -2996,7 +3009,8 @@ static std::int64_t Now() {
     showPasswordPrompt:(const brouk::PasswordPrompt&)prompt
                   done:(brouk::PasswordPromptDone)done {
   if (tab != [self activeTab] || !self.window.visible) {
-    // Reachable later from the key icon.
+    // Reachable from the key icon, and shown when the tab is back in front.
+    _passwordPromptTab = tab;
     done(brouk::PasswordPromptAnswer{});
     return;
   }

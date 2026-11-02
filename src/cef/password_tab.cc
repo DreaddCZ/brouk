@@ -414,6 +414,21 @@ void PasswordTab::OnSubmit(const CefRefPtr<CefFrame>& frame,
   }
   submitted_ = Submitted{FrameId(frame), *origin, frame->GetURL().ToString(),
                          std::move(*login), Now()};
+  if (last_popup_time_ != 0 &&
+      PopupConfirmsLogin(submitted_->time, last_popup_time_)) {
+    EvaluateSubmitted();
+  }
+}
+
+void PasswordTab::OnPopupOpened() {
+  CEF_REQUIRE_UI_THREAD();
+  if (!delegate_) {
+    return;
+  }
+  last_popup_time_ = Now();
+  if (submitted_ && PopupConfirmsLogin(submitted_->time, last_popup_time_)) {
+    EvaluateSubmitted();
+  }
 }
 
 void PasswordTab::OnMainFrameLoadStart() {
@@ -582,6 +597,13 @@ void PasswordTab::ShowPrompt() {
     }
     self->UpdateIcon();
   });
+}
+
+void PasswordTab::ShowWaitingPrompt() {
+  CEF_REQUIRE_UI_THREAD();
+  if (prompt_ && delegate_) {
+    ShowPrompt();
+  }
 }
 
 void PasswordTab::OnKeyIconClicked() {

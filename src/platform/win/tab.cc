@@ -1529,6 +1529,12 @@ void Tab::PasswordKeyIconClicked() {
   }
 }
 
+void Tab::ShowWaitingPasswordPrompt() {
+  if (client_) {
+    client_->ShowWaitingPasswordPrompt();
+  }
+}
+
 void Tab::OpenPasswordsPage() {
   host_.OpenTabPasswordsPage(*this);
 }

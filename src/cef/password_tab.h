@@ -152,9 +152,15 @@ class PasswordTab : public std::enable_shared_from_this<PasswordTab> {
   // A new document starts loading in the main frame: a submitted login now
   // counts as successful; the old forms are gone.
   void OnMainFrameLoadStart();
+  // The page opened a window (a popup or a new tab): right after a login,
+  // the login counts as successful.
+  void OnPopupOpened();
   // The key icon was clicked: the save prompt if one is waiting, else the
   // site's logins.
   void OnKeyIconClicked();
+  // The tab is back in front: the save prompt, if one is still waiting
+  // (it could not show while the tab was in the background).
+  void ShowWaitingPrompt();
   // The tab is closing: no more calls to the delegate.
   void Detach();
 
@@ -228,6 +234,7 @@ class PasswordTab : public std::enable_shared_from_this<PasswordTab> {
   CefRefPtr<CefBrowser> browser_;
   std::map<std::string, Frame> frames_;  // By frame identifier.
   std::optional<Submitted> submitted_;
+  std::int64_t last_popup_time_ = 0;  // When the page last opened a window.
   struct Remembered {
     std::string site;
     std::string username;

@@ -274,6 +274,8 @@ class TabClient : public CefClient,
   void SetPasswords(PasswordManager* manager, const ProfileId& profile);
   // The key icon in the address bar was clicked. UI thread.
   void OnPasswordKeyIconClicked();
+  // The tab is back in front: a save prompt that waited shows. UI thread.
+  void ShowWaitingPasswordPrompt();
   // Form autofill (009), set before the browser is created. UI thread.
   void SetAutofill(AutofillManager* manager);
   // The app's downloads (014), set before the browser is created; the

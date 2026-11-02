@@ -301,7 +301,17 @@ const SKIPPED_TYPES = new Set(['hidden', 'submit', 'button', 'reset', 'image', '
   // A submitted login: the form's values at the time of the submit.
   let lastSubmit = '';
   let watchTimer = 0;
-  const submitted = (formId: number): void => {
+  // The login form the user last typed in: a button outside it (a portal's
+  // "Connect" in a panel footer) logs in with it.
+  let lastTypedForm: number | undefined;
+  document.addEventListener('input', (event) => {
+    if (event.target instanceof HTMLInputElement) {
+      const info = tracked.get(event.target);
+      if (info !== undefined) lastTypedForm = info.formId;
+    }
+  }, true);
+  // Returns whether the form had login values to send.
+  const submitted = (formId: number): boolean => {
     let username = '';
     let password = '';
     let newPassword = '';
@@ -323,11 +333,11 @@ const SKIPPED_TYPES = new Set(['hidden', 'submit', 'button', 'reset', 'image', '
       }
     }
     if (username === '' && password === '' && newPassword === '') {
-      return;
+      return false;
     }
     const key = `${formId}\n${username}\n${password}\n${newPassword}`;
     if (key === lastSubmit) {
-      return;
+      return true;
     }
     lastSubmit = key;
     send('submit', { form: formId, username, password, new_password: newPassword });
@@ -343,6 +353,7 @@ const SKIPPED_TYPES = new Set(['hidden', 'submit', 'button', 'reset', 'image', '
         window.clearInterval(watchTimer);
       }
     }, 500);
+    return true;
   };
   const formOfTarget = (target: EventTarget | null): number | undefined => {
     if (target instanceof HTMLInputElement) {
@@ -388,8 +399,11 @@ const SKIPPED_TYPES = new Set(['hidden', 'submit', 'button', 'reset', 'image', '
     }
     const form = target.closest('form');
     const id = form !== null ? ids.get(form) : ids.get(document.documentElement);
+    if ((id === undefined || !submitted(id)) && lastTypedForm !== undefined &&
+        lastTypedForm !== id) {
+      submitted(lastTypedForm);
+    }
     if (id !== undefined) {
-      submitted(id);
       // Autofill only for buttons that submit (not "add to cart" and such).
       const submits = target instanceof HTMLButtonElement ? target.type === 'submit'
         : target instanceof HTMLInputElement;

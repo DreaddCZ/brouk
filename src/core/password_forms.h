@@ -96,6 +96,14 @@ SaveDecision DecideSave(const SubmittedLogin& login,
                         bool never_for_site,
                         bool offer_to_save);
 
+// Whether a window the page opened tells that a login submitted at
+// `submit_time` succeeded (times in seconds). Some logins open what they
+// log in to in a new window and leave the form as it was (a remote desktop
+// in a browser tab): neither a new page nor the form going away shows
+// success there. The window may be reported just before the submit.
+inline constexpr std::int64_t kPopupAfterLoginSeconds = 10;
+bool PopupConfirmsLogin(std::int64_t submit_time, std::int64_t popup_time);
+
 // The entry filled when the page loads, as in Chrome: only on https (or
 // localhost), only with exactly one entry for the exact origin (or exactly
 // one with the user name remembered from the previous step), and not with

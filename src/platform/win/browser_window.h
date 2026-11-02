@@ -610,6 +610,9 @@ class BrowserWindow final : public TabHost,
   std::unique_ptr<PasswordDropDown> password_list_;
   std::optional<TabId> password_list_tab_;
   std::unique_ptr<PasswordPromptBubble> password_prompt_;
+  // A tab in the background asked to offer saving a password (its login
+  // opened a new tab): offered when it is back in front, as Chrome. 0: none.
+  TabId password_prompt_tab_ = 0;
   std::unique_ptr<BitwardenPasswordDialog> bitwarden_dialog_;
   // Autofill (009): the offer to save a submitted form, under the star.
   std::unique_ptr<AutofillPromptBubble> autofill_prompt_;

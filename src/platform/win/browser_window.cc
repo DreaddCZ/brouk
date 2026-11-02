@@ -1788,6 +1788,9 @@ void BrowserWindow::ShowTabPasswordPrompt(Tab& tab,
   // Reachable later from the key icon, as on macOS.
   if (ActiveTab() != &tab || IsIconic(window_) || closing_ ||
       !IsWindowVisible(window_) || password_prompt_) {
+    if (ActiveTab() != &tab) {
+      password_prompt_tab_ = tab.id();
+    }
     done(PasswordPromptAnswer{});
     return;
   }
@@ -3313,6 +3316,18 @@ void BrowserWindow::FocusActiveTab() {
 
 void BrowserWindow::UpdateToolbar() {
   Tab* tab = ActiveTab();
+  if (tab && tab->id() == password_prompt_tab_ && !closing_) {
+    password_prompt_tab_ = 0;
+    // After the switch has finished.
+    std::weak_ptr<int> alive = alive_;
+    const TabId id = tab->id();
+    CefPostTask(TID_UI, new FunctionTask([this, alive, id] {
+                  Tab* active = alive.lock() ? ActiveTab() : nullptr;
+                  if (active && active->id() == id) {
+                    active->ShowWaitingPasswordPrompt();
+                  }
+                }));
+  }
   EnableWindow(back_, tab && tab->can_go_back());
   EnableWindow(forward_, tab && tab->can_go_forward());
   if (GetFocus() != address_) {

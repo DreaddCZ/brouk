@@ -133,6 +133,13 @@ void TabClient::OnPasswordKeyIconClicked() {
   }
 }
 
+void TabClient::ShowWaitingPasswordPrompt() {
+  CEF_REQUIRE_UI_THREAD();
+  if (passwords_) {
+    passwords_->ShowWaitingPrompt();
+  }
+}
+
 bool TabClient::OnProcessMessageReceived(CefRefPtr<CefBrowser> browser,
                                          CefRefPtr<CefFrame> frame,
                                          CefProcessId source_process,
@@ -863,6 +870,9 @@ bool TabClient::OnBeforePopup(CefRefPtr<CefBrowser> browser,
   window_info.SetAsChild(host->parent_view, host->bounds);
   window_info.runtime_style = CEF_RUNTIME_STYLE_ALLOY;
   client = host->client;
+  if (passwords_) {
+    passwords_->OnPopupOpened();
+  }
   return false;
 }
 

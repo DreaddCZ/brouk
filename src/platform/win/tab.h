@@ -360,6 +360,8 @@ class Tab final : public TabClientDelegate,
   // Passwords (008): the key icon's look, and a click on it.
   PasswordIcon password_icon() const { return password_icon_; }
   void PasswordKeyIconClicked();
+  // The tab is back in front: a save prompt that waited shows (008).
+  void ShowWaitingPasswordPrompt();
 
   // PasswordTabDelegate:
   void ShowPasswordMenu(const PasswordMenu& menu,

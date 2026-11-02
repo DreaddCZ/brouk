@@ -182,6 +182,13 @@ std::optional<SubmittedLogin> ParseSubmittedLogin(std::string_view json) {
                         std::move(*new_password)};
 }
 
+bool PopupConfirmsLogin(std::int64_t submit_time, std::int64_t popup_time) {
+  // The page's click handler may open the window before the submit message
+  // arrives: up to 2 seconds earlier counts too.
+  return popup_time >= submit_time - 2 &&
+         popup_time <= submit_time + kPopupAfterLoginSeconds;
+}
+
 SaveDecision DecideSave(const SubmittedLogin& login,
                         const std::vector<PasswordEntry>& exact,
                         std::string_view remembered_username,

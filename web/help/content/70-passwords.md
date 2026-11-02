@@ -7,7 +7,7 @@ Brouk has its own password manager. Each profile keeps its own passwords, encryp
 - When a site has exactly one saved login, Brouk fills it as the page loads. Settings → [Passwords](#settings-passwords) → **Fill only on click** turns that off.
 - Clicking a login field shows a list of the site's logins, **Generate password** on sign-up forms, and **Manage passwords…**. Use <kbd>↑</kbd> <kbd>↓</kbd> and <kbd>Return</kbd> to choose.
 - The **key icon** in the address bar shows that the site has saved logins and opens the same list.
-- After you sign in, Brouk offers **Save** (or **Update password**), **Never for this site** or **Not now**. You can correct the username and password before saving.
+- After you sign in, Brouk offers **Save** (or **Update password**), **Never for this site** or **Not now**. You can correct the username and password before saving. When the sign-in opens a new tab (a remote desktop, for example), the offer waits in the original tab and shows when you go back to it; the key icon has it too.
 - Logins of other hosts of the same site (e.g. `login.example.com` for `www.example.com`) are listed with their host but never filled automatically.
 - On pages without `https`, Brouk fills only when you click, and warns that the connection is not secure.
 
