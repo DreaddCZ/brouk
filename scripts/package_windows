@@ -6,7 +6,7 @@
 #     e.g. scripts/package_windows build/release build/dist
 #
 # Writes <output dir>/<AppName>-<version>-setup.exe and its .sha256 file.
-# The installer is not code-signed yet (SignPath comes later, 024).
+# The installer is not code-signed (024).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 

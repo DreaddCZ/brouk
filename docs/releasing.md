@@ -62,8 +62,7 @@ the Windows feed `windows-x64.json` (beta when the release is a
 pre-release). Running it again continues after an interruption.
 
 The installer is **not code-signed** yet, so SmartScreen warns about an
-unknown publisher (More info → Run anyway). Code signing through SignPath
-Foundation follows once the application is accepted (024).
+unknown publisher (More info → Run anyway).
 
 On Windows, Brouk's own updater (not Sparkle) reads
 `https://dreaddcz.github.io/brouk-releases/windows-x64.json`, checks a minute

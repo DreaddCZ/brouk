@@ -6,7 +6,7 @@
 
 ## Download
 
-Builds are on the [releases page](https://github.com/DreaddCZ/brouk-releases/releases): disk images for macOS (signed and notarized by Apple) and an installer for Windows (see [Code signing policy](#code-signing-policy)). Brouk then updates itself.
+Builds are on the [releases page](https://github.com/DreaddCZ/brouk-releases/releases): disk images for macOS (signed and notarized by Apple) and an installer for Windows (not code-signed, see [Code signing](#code-signing)). Brouk then updates itself.
 
 ## Documentation
 
@@ -16,14 +16,9 @@ Builds are on the [releases page](https://github.com/DreaddCZ/brouk-releases/rel
 - Requirements and features: [`specs/`](specs/README.md)
 - Guidance for Claude Code, and the project's coding rules: [`CLAUDE.md`](CLAUDE.md)
 
-## Code signing policy
+## Code signing
 
-Windows releases: free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/). *(Applied for; until the application is approved, the Windows installer is not signed.)* macOS releases are signed with the maintainer's Apple Developer ID and notarized by Apple.
-
-- **Committers and reviewers:** [DreaddCZ](https://github.com/DreaddCZ) (maintainer). Changes from other people come as pull requests, and the maintainer reviews every one before it is merged ([`CONTRIBUTING.md`](CONTRIBUTING.md)).
-- **Approvers:** [DreaddCZ](https://github.com/DreaddCZ). Every signing request is approved by hand.
-- Only release builds made by GitHub Actions from a release tag of this repository are signed (`.github/workflows/windows-release.yml`). Build scripts and the CI configuration are part of this repository.
-- Privacy: see [Privacy](#privacy).
+macOS releases are signed with the maintainer's Apple Developer ID and notarized by Apple. The Windows installer is not code-signed, so Windows SmartScreen warns about an unknown publisher (More info → Run anyway). Updates on both systems are checked against Brouk's own signing key (Ed25519) before they are installed.
 
 ## Privacy
 

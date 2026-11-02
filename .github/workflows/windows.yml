@@ -174,7 +174,7 @@ jobs:
 
       # The per-user installer (W4), built in every run so its script stays
       # tested: installed quietly for the runner's user, started and
-      # uninstalled again. Not signed yet (SignPath, 024).
+      # uninstalled again. Not code-signed (024).
       - name: Installer
         run: |
           source scripts/env.sh
