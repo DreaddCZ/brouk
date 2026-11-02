@@ -6,7 +6,7 @@ What changed in each release of Brouk. Written by `scripts/release` (spec 019).
 
 ### Fixed
 
-- Windows release builds are now built with full optimisation, so Brouk on Windows is faster and smaller.
+- The Windows installer is out: the Windows build of 0.3.0 failed, so 0.3.0 was released for macOS only. 0.3.1 brings everything listed under 0.3.0 to Windows.
 
 ## 0.3.0 (beta) – 2026-11-02
 
