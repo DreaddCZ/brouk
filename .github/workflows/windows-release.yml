@@ -117,11 +117,12 @@ jobs:
           scripts/package_windows "$BUILD" build/dist
           scripts/test_windows_installer build/dist
 
-      # scripts/release_windows downloads it by this name.
+      # scripts/release_windows downloads it by this name (a trial run on a
+      # branch: by its commit).
       - name: Upload the installer
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: brouk-windows-setup-${{ github.ref_name }}
+          name: brouk-windows-setup-${{ github.ref_type == 'tag' && github.ref_name || github.sha }}
           path: build/dist/
           retention-days: 90
           if-no-files-found: error
