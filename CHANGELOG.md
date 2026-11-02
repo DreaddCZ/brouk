@@ -2,6 +2,21 @@
 
 What changed in each release of Brouk. Written by `scripts/release` (spec 019).
 
+## 0.3.3 (beta) – 2026-11-02
+
+### New
+
+- Sites that ask for a sign-in through the browser itself (HTTP authentication) now show Brouk's own sign-in dialog. It fills in the site's saved login, asks again if the login is refused, and offers to save or update the login once the page loads.
+
+### Changed
+
+- History, Passwords, Bookmarks, Downloads and the licences page now open the way Chrome opens its own pages. If one is already open, Brouk switches to it. Otherwise it opens as the last tab of the window, in the default profile's group. Closing it takes you back to the tab you opened it from.
+
+### Fixed
+
+- Brouk now offers to save a login when the site opens your session in a new tab after you sign in. A save prompt waiting on a background tab now shows when you come back to that tab. Sign-in buttons placed outside the login form now work too.
+- On macOS, the address bar icons (star, key, shield, zoom, blocked pop-ups and others) no longer cover long addresses. They now sit side by side on the right, and the address ends before them.
+
 ## 0.3.2 (beta) – 2026-11-02
 
 ### New
