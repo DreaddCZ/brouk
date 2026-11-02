@@ -1094,23 +1094,42 @@ NSButton* ToolbarButton(NSString* symbol,
     right -= 36;
   }
   _addressField.frame = NSMakeRect(left, 8, right - left, 24);
-  CGFloat end = NSMaxX(_addressField.frame);
-  _starButton.frame = NSMakeRect(end - 28, 8, 26, 24);
-  _keyButton.frame = NSMakeRect(end - 54, 8, 26, 24);
-  _shieldButton.frame = NSMakeRect(end - 104, 8, 48, 24);
-  _zoomButton.frame = NSMakeRect(end - 162, 10, 54, 20);
-  _popupBlockedButton.frame = NSMakeRect(end - 192, 8, 26, 24);
-  _settingsProblemButton.frame = NSMakeRect(end - 222, 8, 26, 24);
+  [self layoutAddressIndicators];
+}
+
+// The indicators over the address field's right end, from the right: the
+// shown ones side by side, as in Chrome, and the field's text ends before
+// them. Called again whenever one is shown or hidden.
+- (void)layoutAddressIndicators {
   [_remoteDebuggingButton sizeToFit];
-  NSSize size = _remoteDebuggingButton.frame.size;
-  _remoteDebuggingButton.frame =
-      NSMakeRect(end - 226 - size.width, 10, size.width, 20);
-  for (NSView* view in @[
-         _starButton, _keyButton, _shieldButton, _zoomButton,
-         _popupBlockedButton, _settingsProblemButton, _remoteDebuggingButton
-       ]) {
-    view.autoresizingMask = NSViewMinXMargin;
+  struct Indicator {
+    NSView* view;
+    CGFloat width;
+    CGFloat y;
+    CGFloat height;
+  };
+  const Indicator indicators[] = {
+      {_starButton, 26, 8, 24},
+      {_keyButton, 26, 8, 24},
+      {_shieldButton, 48, 8, 24},
+      {_zoomButton, 54, 10, 20},
+      {_popupBlockedButton, 26, 8, 24},
+      {_settingsProblemButton, 26, 8, 24},
+      {_remoteDebuggingButton, _remoteDebuggingButton.frame.size.width, 10, 20},
+  };
+  CGFloat end = NSMaxX(_addressField.frame);
+  CGFloat x = end - 2;
+  for (const Indicator& indicator : indicators) {
+    indicator.view.autoresizingMask = NSViewMinXMargin;
+    if (indicator.view.hidden) {
+      continue;
+    }
+    x -= indicator.width;
+    indicator.view.frame =
+        NSMakeRect(x, indicator.y, indicator.width, indicator.height);
+    x -= 2;
   }
+  _addressField.trailingInset = end - x;
 }
 
 - (void)setDevToolsToggleOnLeft:(BOOL)left {
@@ -1130,8 +1149,8 @@ NSButton* ToolbarButton(NSString* symbol,
         @"Remote debugging is on: programs on this Mac can control tabs of "
         @"all profiles, including their sign-ins.";
     _remoteDebuggingButton.accessibilityLabel = _remoteDebuggingButton.toolTip;
-    [self layoutAddressArea];
   }
+  [self layoutAddressIndicators];
 }
 
 - (void)explainRemoteDebugging:(id)sender {
@@ -1156,6 +1175,7 @@ NSButton* ToolbarButton(NSString* symbol,
 - (void)setSettingsProblemCount:(NSUInteger)count {
   _settingsProblemCount = count;
   _settingsProblemButton.hidden = count == 0;
+  [self layoutAddressIndicators];
 }
 
 - (NSUInteger)tabCountInProfile:(const brouk::ProfileId&)profile {
@@ -1262,6 +1282,7 @@ NSButton* ToolbarButton(NSString* symbol,
 
   double level = [tab zoomLevel];
   _zoomButton.hidden = !brouk::IsZoomIndicatorShown(level);
+  [self layoutAddressIndicators];
   _zoomButton.title =
       [NSString stringWithFormat:@"%d %%", brouk::ZoomPercentFromLevel(level)];
   _zoomButton.toolTip =
@@ -2938,6 +2959,7 @@ static std::int64_t Now() {
 - (void)updateKeyButton {
   brouk::PasswordIcon icon = [self activeTab].passwordIcon;
   _keyButton.hidden = icon == brouk::PasswordIcon::kHidden;
+  [self layoutAddressIndicators];
   BOOL pending = icon == brouk::PasswordIcon::kSavePending;
   BOOL locked = icon == brouk::PasswordIcon::kLocked;
   BOOL unlocking = icon == brouk::PasswordIcon::kUnlocking;
@@ -3047,6 +3069,7 @@ static std::int64_t Now() {
   BRTab* tab = [self activeTab];
   BOOL shown = [_owner adblockService] && [self canBookmarkTab:tab];
   _shieldButton.hidden = !shown;
+  [self layoutAddressIndicators];
   if (!shown) {
     return;
   }
