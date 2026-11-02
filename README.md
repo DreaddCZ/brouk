@@ -1,4 +1,4 @@
-# Brouk
+# <img src="branding/symbol.svg" alt="" width="48" height="48" align="top"> Brouk
 
 *Brouk* (Czech for "beetle") is a lightweight, fully configurable, multiplatform web browser based on Chromium (via CEF), focused on work.
 

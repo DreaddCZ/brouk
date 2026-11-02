@@ -6,7 +6,7 @@
 ;
 ; Defines given by scripts/package_windows (from CMakeLists.txt):
 ;   AppName, AppExe (without .exe), AppVersion, SourceDir (the built app
-;   folder), OutputDir.
+;   folder), OutputDir, AppIcon (the app's .ico, for Setup itself).
 ;
 ; Updates (Brouk's updater) run this installer with /VERYSILENT; /RELAUNCH=1
 ; starts Brouk again afterwards ("Restart to update").
@@ -39,6 +39,7 @@ OutputBaseFilename={#AppName}-{#AppVersion}-setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile={#AppIcon}
 UninstallDisplayIcon={app}\{#AppExe}.exe
 UninstallDisplayName={#AppName}
 ; Brouk is closed by the user or by its updater; Setup waits for it below.

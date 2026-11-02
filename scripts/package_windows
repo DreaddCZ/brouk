@@ -39,6 +39,7 @@ DIST="$(cd "$DIST" && pwd)"
 iscc //Q \
   "//DAppName=$APP_NAME" "//DAppExe=$APP_EXE" "//DAppVersion=$VERSION" \
   "//DSourceDir=$(cygpath -w "$APP_DIR")" "//DOutputDir=$(cygpath -w "$DIST")" \
+  "//DAppIcon=$(cygpath -w "$ROOT/src/platform/win/app.ico")" \
   "$(cygpath -w "$ROOT/src/platform/win/installer/brouk.iss")"
 
 SETUP="$DIST/$APP_NAME-$VERSION-setup.exe"

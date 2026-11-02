@@ -212,6 +212,12 @@ list(APPEND _bundle_commands
           "${_sparkle_dir}/Sparkle.framework" "${_sparkle}"
   COMMAND rm -rf "${_sparkle}/Versions/B/XPCServices" "${_sparkle}/XPCServices")
 
+# The app's icon (made by scripts/make_icons).
+set(_app_icon "${CMAKE_CURRENT_SOURCE_DIR}/AppIcon.icns")
+list(APPEND _bundle_commands
+  COMMAND ${CMAKE_COMMAND} -E copy "${_app_icon}"
+          "${APP_BUNDLE}/Contents/Resources/AppIcon.icns")
+
 # Ad blocking resources (007), the first copy (see BroukAdblock.cmake).
 list(APPEND _bundle_commands
   COMMAND ${CMAKE_COMMAND} -E copy "${BROUK_ADBLOCK_RESOURCES}"
@@ -325,7 +331,7 @@ add_custom_command(OUTPUT "${_bundle_stamp}"
   ${_bundle_commands}
   DEPENDS brouk_app brouk_helper "${_web_stamp}"
           "$<TARGET_FILE:brouk_app>" "$<TARGET_FILE:brouk_helper>"
-          ${_signing_inputs}
+          "${_app_icon}" ${_signing_inputs}
   COMMENT "Assembling and signing ${APP_NAME}.app (${_identity})"
   VERBATIM)
 add_custom_target(brouk_bundle ALL DEPENDS "${_bundle_stamp}")

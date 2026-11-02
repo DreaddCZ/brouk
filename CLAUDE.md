@@ -77,6 +77,7 @@ When a new open decision comes up, list it here until it is decided, then record
 CMakeLists.txt        top-level build; app name/bundle ID variables live here
 cmake/                CMake helper modules
 scripts/              fetch_cef (pinned version + checksum), build, format, lint
+branding/             the app icon and logo, written by scripts/make_icons
 src/core/             portable C++: window/tab model, profiles, config, routing, storage
 src/cef/              CEF integration (browser/request handlers, request contexts) — portable
 src/renderer/         code running in CEF renderer processes (injected scripts, V8 bindings)

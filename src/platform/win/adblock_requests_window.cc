@@ -7,6 +7,7 @@
 #include <map>
 #include <utility>
 
+#include "platform/win/app_icon.h"
 #include "platform/win/wide_string.h"
 
 namespace brouk::win {
@@ -24,6 +25,7 @@ bool RegisterWindowClass() {
     window_class.lpfnWndProc = DefWindowProcW;
     window_class.hInstance = GetModuleHandleW(nullptr);
     window_class.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    SetAppIcon(window_class);
     window_class.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
     window_class.lpszClassName = kWindowClass;
     return RegisterClassExW(&window_class) != 0;

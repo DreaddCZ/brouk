@@ -8,6 +8,8 @@
 	<string>@APP_NAME@</string>
 	<key>CFBundleExecutable</key>
 	<string>@APP_EXECUTABLE_NAME@</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>@APP_BUNDLE_ID@</string>
 	<key>CFBundleInfoDictionaryVersion</key>

@@ -33,6 +33,7 @@
 #include "include/cef_parser.h"
 #include "include/cef_task.h"
 #include "include/wrapper/cef_helpers.h"
+#include "platform/win/app_icon.h"
 #include "platform/win/controls.h"
 #include "platform/win/link_routing.h"
 #include "platform/win/wide_string.h"
@@ -169,6 +170,7 @@ bool RegisterWindowClass() {
     window_class.lpfnWndProc = DefWindowProcW;  // Replaced per window.
     window_class.hInstance = GetModuleHandleW(nullptr);
     window_class.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    SetAppIcon(window_class);
     window_class.lpszClassName = kWindowClass;
     return RegisterClassExW(&window_class) != 0;
   }();

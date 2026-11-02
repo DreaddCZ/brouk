@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# Writes Brouk's icons (branding/, the macOS .icns, the Windows .ico) with
+# the pinned Node.js; see scripts/make_icons.mjs. Run by hand on a Mac.
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck source=/dev/null
+source "$ROOT/scripts/env.sh"
+exec node "$ROOT/scripts/make_icons.mjs" "$@"
