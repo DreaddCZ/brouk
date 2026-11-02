@@ -2,6 +2,12 @@
 
 What changed in each release of Brouk. Written by `scripts/release` (spec 019).
 
+## 0.3.2 (beta) – 2026-11-02
+
+### New
+
+- Brouk has its own beetle icon. It shows on the macOS app, the Windows program and its windows, and the Windows installer.
+
 ## 0.3.1 (beta) – 2026-11-02
 
 ### Fixed
