@@ -2204,6 +2204,28 @@ void BrowserWindow::AskTabBitwardenPassword(
   bitwarden_dialog_->Show();
 }
 
+void BrowserWindow::ShowTabSignInDialog(Tab& /*tab*/,
+                                        const HttpAuthDialog& dialog,
+                                        HttpAuthDone done) {
+  if (sign_in_dialog_ || closing_) {
+    // One at a time: the request is cancelled (the page can be reloaded).
+    done(std::nullopt);
+    return;
+  }
+  sign_in_dialog_ = std::make_unique<SignInDialog>(
+      window_, dialog,
+      [this, done = std::move(done)](std::optional<HttpAuthAnswer> answer) {
+        // Deleted from a task: this runs inside the dialog.
+        std::shared_ptr<SignInDialog> closed(sign_in_dialog_.release());
+        CefPostTask(TID_UI, new FunctionTask([closed] {}));
+        if (!closing_) {
+          FocusActiveTab();
+        }
+        done(std::move(answer));
+      });
+  sign_in_dialog_->Show();
+}
+
 void BrowserWindow::OnTabFullscreenChanged(Tab& tab, bool fullscreen) {
   if (fullscreen) {
     if (model_.active_id() != tab.id()) {
@@ -4610,6 +4632,9 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
       }
       if (bitwarden_dialog_) {
         bitwarden_dialog_->Cancel();  // Before the tab asking for it goes.
+      }
+      if (sign_in_dialog_) {
+        sign_in_dialog_->Cancel();
       }
       closing_ = true;
       std::vector<TabId> ids;

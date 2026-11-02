@@ -51,6 +51,96 @@ void PasswordTab::Detach() {
   frames_.clear();
   submitted_.reset();
   prompt_.reset();
+  ForgetAuth();
+}
+
+void PasswordTab::ForgetAuth() {
+  if (auth_) {
+    Wipe(auth_->password);
+    auth_.reset();
+  }
+}
+
+void PasswordTab::OnAuthRequest(const std::string& origin_url,
+                                const std::string& realm,
+                                HttpAuthDone done) {
+  CEF_REQUIRE_UI_THREAD();
+  if (!delegate_) {
+    done(std::nullopt);
+    return;
+  }
+  std::optional<std::string> web_origin = WebOriginOf(origin_url);
+  if (!web_origin) {
+    // Not a web origin: the dialog without saved logins.
+    delegate_->ShowHttpAuthDialog({origin_url, realm, {}, {}}, std::move(done));
+    return;
+  }
+  std::string origin = std::move(*web_origin);
+  // Asked again right after a login for the same place: it was refused.
+  std::optional<std::string> refused;
+  if (auth_ && auth_->origin == origin && auth_->realm == realm &&
+      Now() - auth_->time <= kSubmitSeconds) {
+    refused = auth_->username;
+  }
+  ForgetAuth();
+  std::weak_ptr<PasswordTab> weak = weak_from_this();
+  manager_->Lookup(
+      profile_, origin, origin_url,
+      [weak, origin, realm, refused, done](PasswordLookup lookup) {
+        std::shared_ptr<PasswordTab> self = weak.lock();
+        if (!self || !self->delegate_) {
+          done(std::nullopt);
+          return;
+        }
+        HttpAuthDialog dialog{origin, realm, {}, {}};
+        if (refused) {
+          dialog.username = *refused;
+        } else if (!lookup.error && !lookup.locked) {
+          if (std::optional<std::size_t> choice =
+                  HttpAuthChoice(lookup.matches.exact)) {
+            const PasswordEntry& entry = lookup.matches.exact[*choice];
+            dialog.username = entry.username;
+            // Bitwarden's re-prompt items are never filled unasked.
+            if (!entry.reprompt) {
+              dialog.password = entry.password;
+            }
+          }
+        }
+        for (PasswordEntry& entry : lookup.matches.exact) {
+          Wipe(entry.password);
+        }
+        self->delegate_->ShowHttpAuthDialog(
+            dialog,
+            [weak, origin, realm, done](std::optional<HttpAuthAnswer> answer) {
+              if (std::shared_ptr<PasswordTab> self = weak.lock();
+                  self && answer) {
+                self->ForgetAuth();
+                self->auth_ = AuthLogin{origin, realm, answer->username,
+                                        answer->password, Now()};
+              }
+              done(std::move(answer));
+            });
+        Wipe(dialog.password);
+      });
+}
+
+void PasswordTab::OnMainFrameLoadEnd(const std::string& url, int http_status) {
+  CEF_REQUIRE_UI_THREAD();
+  if (!auth_ || !delegate_ || WebOriginOf(url) != auth_->origin) {
+    return;
+  }
+  AuthLogin auth = std::move(*auth_);
+  auth_.reset();
+  if (!HttpAuthSucceeded(http_status) || Now() - auth.time > kSubmitSeconds) {
+    Wipe(auth.password);
+    return;
+  }
+  // Saved, updated or counted as used like a submitted login form.
+  SubmittedLogin login;
+  login.username = std::move(auth.username);
+  login.password = std::move(auth.password);
+  submitted_ = Submitted{"", auth.origin, url, std::move(login), auth.time};
+  EvaluateSubmitted();
 }
 
 void PasswordTab::HandleMessage(const CefRefPtr<CefBrowser>& browser,

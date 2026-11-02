@@ -37,6 +37,7 @@
 #include "platform/win/favicon_cache.h"
 #include "platform/win/password_drop_down.h"
 #include "platform/win/password_prompt.h"
+#include "platform/win/sign_in_dialog.h"
 #include "platform/win/suggestions_popup.h"
 #include "platform/win/tab.h"
 #include "platform/win/tab_panel.h"
@@ -414,6 +415,9 @@ class BrowserWindow final : public TabHost,
                                const BitwardenPasswordRequest& request,
                                BitwardenPasswordSubmit submit,
                                std::function<void()> cancelled) override;
+  void ShowTabSignInDialog(Tab& tab,
+                           const HttpAuthDialog& dialog,
+                           HttpAuthDone done) override;
 
  private:
   static LRESULT CALLBACK WindowProc(HWND window,
@@ -619,6 +623,7 @@ class BrowserWindow final : public TabHost,
   // opened a new tab): offered when it is back in front, as Chrome. 0: none.
   TabId password_prompt_tab_ = 0;
   std::unique_ptr<BitwardenPasswordDialog> bitwarden_dialog_;
+  std::unique_ptr<SignInDialog> sign_in_dialog_;
   // Autofill (009): the offer to save a submitted form, under the star.
   std::unique_ptr<AutofillPromptBubble> autofill_prompt_;
   // Ad blocking (007): the shield button, its popup, and the blocked

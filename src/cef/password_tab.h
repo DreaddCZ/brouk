@@ -72,6 +72,21 @@ struct PasswordPromptAnswer {
 };
 using PasswordPromptDone = std::function<void(PasswordPromptAnswer)>;
 
+// A site's own sign-in dialog (HTTP authentication: basic, digest, NTLM),
+// prefilled from a saved login (008).
+struct HttpAuthDialog {
+  std::string origin;  // "https://intranet.example.com".
+  std::string realm;   // The site's name for what it protects; may be empty.
+  std::string username;
+  std::string password;
+};
+struct HttpAuthAnswer {
+  std::string username;
+  std::string password;
+};
+// nullopt: the user cancelled.
+using HttpAuthDone = std::function<void(std::optional<HttpAuthAnswer>)>;
+
 // The key icon in the address bar.
 enum class PasswordIcon {
   kHidden,
@@ -130,6 +145,10 @@ class PasswordTabDelegate {
   // Touch ID, with `reason` completing "Brouk wants to …".
   virtual void ConfirmWithTouchId(const std::string& reason,
                                   TouchIdDone done) = 0;
+  // The sign-in dialog of HTTP authentication, modal to the window. `done`
+  // is called once, unless the tab closes first.
+  virtual void ShowHttpAuthDialog(const HttpAuthDialog& dialog,
+                                  HttpAuthDone done) = 0;
 };
 
 // The password manager's work in one tab (008): looks up the logins of the
@@ -155,6 +174,16 @@ class PasswordTab : public std::enable_shared_from_this<PasswordTab> {
   // The page opened a window (a popup or a new tab): right after a login,
   // the login counts as successful.
   void OnPopupOpened();
+  // The site at `origin_url` asks for HTTP authentication: the sign-in
+  // dialog, prefilled with the login saved for the origin (or, when the
+  // login just sent was refused, with its user name), as in Chrome.
+  void OnAuthRequest(const std::string& origin_url,
+                     const std::string& realm,
+                     HttpAuthDone done);
+  // The main frame finished loading `url` with `http_status`: after a
+  // login from the sign-in dialog, a success offers to save it like a
+  // submitted form.
+  void OnMainFrameLoadEnd(const std::string& url, int http_status);
   // The key icon was clicked: the save prompt if one is waiting, else the
   // site's logins.
   void OnKeyIconClicked();
@@ -234,6 +263,17 @@ class PasswordTab : public std::enable_shared_from_this<PasswordTab> {
   CefRefPtr<CefBrowser> browser_;
   std::map<std::string, Frame> frames_;  // By frame identifier.
   std::optional<Submitted> submitted_;
+  // The last login sent from the sign-in dialog, until the page shows
+  // whether it worked.
+  struct AuthLogin {
+    std::string origin;
+    std::string realm;
+    std::string username;
+    std::string password;
+    std::int64_t time = 0;
+  };
+  std::optional<AuthLogin> auth_;
+  void ForgetAuth();
   std::int64_t last_popup_time_ = 0;  // When the page last opened a window.
   struct Remembered {
     std::string site;

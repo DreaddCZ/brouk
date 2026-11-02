@@ -1,6 +1,7 @@
 // Tab-modal dialog: covers only its tab's page, so other tabs stay usable,
 // as in Chrome (012). Used for JavaScript dialogs (alert, confirm, prompt,
-// "leave site?") and for "page unresponsive". Main thread only.
+// "leave site?"), "page unresponsive" and a site's sign-in (HTTP
+// authentication). Main thread only.
 
 #import <Cocoa/Cocoa.h>
 
@@ -28,6 +29,12 @@ typedef void (^BRTabDialogCompletion)(BOOL ok, NSString* input, BOOL suppress);
 // A JavaScript dialog; `done` is called once when the user answers.
 + (instancetype)dialogForRequest:(const brouk::JsDialogRequest&)request
                             done:(brouk::JsDialogDone)done;
+
+// The sign-in dialog of HTTP authentication (012, 008), with user name and
+// password fields filled from `dialog`; `done` gets the login, or nullopt
+// for Cancel. Dismissed without an answer, `done` is dropped uncalled.
++ (instancetype)loginDialogFor:(const brouk::HttpAuthDialog&)dialog
+                          done:(brouk::HttpAuthDone)done;
 
 // Gives keyboard focus to the dialog (prompt field or default button).
 - (void)focus;

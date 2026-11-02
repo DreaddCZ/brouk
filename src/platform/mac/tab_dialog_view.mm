@@ -1,5 +1,6 @@
 #import "platform/mac/tab_dialog_view.h"
 
+#include <optional>
 #include <string>
 #include <utility>
 
@@ -24,6 +25,10 @@ NSString* ToNSString(const std::string& s) {
   BOOL _hasCancel;
   NSView* _panel;
   NSTextField* _input;
+  // The sign-in dialog: its fields and answer.
+  NSTextField* _username;
+  NSSecureTextField* _password;
+  brouk::HttpAuthDone _authDone;
   NSButton* _suppress;
   NSButton* _okButton;
 }
@@ -64,6 +69,49 @@ NSString* ToNSString(const std::string& s) {
          completion:^(BOOL ok, NSString* input, BOOL suppress) {
            js_done(ok, input.UTF8String ?: "", suppress);
          }];
+}
+
++ (instancetype)loginDialogFor:(const brouk::HttpAuthDialog&)dialog
+                          done:(brouk::HttpAuthDone)done {
+  NSString* origin = ToNSString(dialog.origin);
+  // As Chrome: a login sent over plain http can be read on the way.
+  NSString* message =
+      [origin hasPrefix:@"http:"]
+          ? [origin stringByAppendingString:
+                        @"\nYour connection to this site is not private."]
+          : origin;
+  return
+      [[BRTabDialogView alloc] initLoginWithMessage:message
+                                           username:ToNSString(dialog.username)
+                                           password:ToNSString(dialog.password)
+                                               done:std::move(done)];
+}
+
+- (instancetype)initLoginWithMessage:(NSString*)message
+                            username:(NSString*)username
+                            password:(NSString*)password
+                                done:(brouk::HttpAuthDone)done {
+  // The fields exist before the panel is built, which lays them out.
+  _username = [NSTextField textFieldWithString:username];
+  _username.placeholderString = @"Username";
+  _username.accessibilityLabel = @"Username";
+  _password = [NSSecureTextField textFieldWithString:password];
+  _password.placeholderString = @"Password";
+  _password.accessibilityLabel = @"Password";
+  _authDone = std::move(done);
+  self = [self initWithTitle:@"Sign in"
+                     message:message
+                     okTitle:@"Sign In"
+                 cancelTitle:@"Cancel"
+                  promptText:nil
+               checkboxTitle:nil
+                  completion:^(BOOL, NSString*, BOOL){
+                  }];
+  _username.target = self;
+  _username.action = @selector(okClicked:);
+  _password.target = self;
+  _password.action = @selector(okClicked:);
+  return self;
 }
 
 - (instancetype)initWithTitle:(NSString*)title
@@ -206,6 +254,15 @@ NSString* ToNSString(const std::string& s) {
     [_panel addSubview:_input];
     y += _input.frame.size.height + 10;
   }
+  if (_username) {
+    for (NSTextField* field in @[ _password, _username ]) {
+      field.frame =
+          NSMakeRect(kPadding, y, contentWidth, field.fittingSize.height);
+      [_panel addSubview:field];
+      y += field.frame.size.height + 8;
+    }
+    y += 2;
+  }
   if (message.length > 0) {
     scroll.frame = NSMakeRect(kPadding, y, contentWidth, messageHeight);
     [_panel addSubview:scroll];
@@ -228,10 +285,32 @@ NSString* ToNSString(const std::string& s) {
 }
 
 - (void)focus {
+  if (_username) {
+    // The password when the user name is known already.
+    [self.window makeFirstResponder:_username.stringValue.length ? _password
+                                                                 : _username];
+    return;
+  }
   [self.window makeFirstResponder:_input ?: static_cast<NSView*>(_okButton)];
 }
 
 - (void)finish:(BOOL)ok {
+  if (_username) {
+    brouk::HttpAuthDone done = std::move(_authDone);
+    _authDone = nullptr;
+    _completion = nil;
+    std::optional<brouk::HttpAuthAnswer> answer;
+    if (ok) {
+      answer = brouk::HttpAuthAnswer{_username.stringValue.UTF8String ?: "",
+                                     _password.stringValue.UTF8String ?: ""};
+    }
+    _password.stringValue = @"";
+    [self removeFromSuperview];
+    if (done) {
+      done(std::move(answer));
+    }
+    return;
+  }
   BRTabDialogCompletion completion = _completion;
   _completion = nil;
   NSString* input = _input.stringValue ?: @"";
@@ -257,6 +336,7 @@ NSString* ToNSString(const std::string& s) {
 
 - (void)dismiss {
   _completion = nil;
+  _authDone = nullptr;
   [self removeFromSuperview];
 }
 

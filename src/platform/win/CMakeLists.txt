@@ -82,6 +82,8 @@ add_library(brouk_app SHARED
   qr_reader.h
   settings_watcher.cc
   settings_watcher.h
+  sign_in_dialog.cc
+  sign_in_dialog.h
   suggestions_popup.cc
   suggestions_popup.h
   system_events.cc

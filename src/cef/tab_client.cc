@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdint>
+#include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -13,6 +15,7 @@
 #include "cef/profile_prefs.h"
 #include "core/address_input.h"
 #include "core/crash_error_code.h"
+#include "core/crypto.h"
 #include "core/external_protocol.h"
 #include "core/page_events.h"
 #include "core/visit_forwarding.h"
@@ -947,8 +950,12 @@ void TabClient::OnLoadingStateChange(CefRefPtr<CefBrowser> /*browser*/,
 
 void TabClient::OnLoadEnd(CefRefPtr<CefBrowser> browser,
                           CefRefPtr<CefFrame> frame,
-                          int /*http_status_code*/) {
+                          int http_status_code) {
   CEF_REQUIRE_UI_THREAD();
+  if (frame->IsMain() && passwords_) {
+    passwords_->OnMainFrameLoadEnd(frame->GetURL().ToString(),
+                                   http_status_code);
+  }
   // Error pages are not recorded (013).
   if (frame->IsMain() && !main_load_failed_) {
     ReportVisit(browser, /*document=*/true);
@@ -1304,6 +1311,85 @@ void TabClient::OnRenderProcessResponsive(CefRefPtr<CefBrowser> /*browser*/) {
   CEF_REQUIRE_UI_THREAD();
   if (delegate_) {
     delegate_->OnRendererResponsive();
+  }
+}
+
+namespace {
+
+// Answers an authentication request exactly once: with the login, or with
+// Cancel when the dialog went away without an answer (the tab closed), so
+// the request never hangs.
+class AuthReply {
+ public:
+  explicit AuthReply(CefRefPtr<CefAuthCallback> callback)
+      : callback_(std::move(callback)) {}
+  AuthReply(const AuthReply&) = delete;
+  AuthReply& operator=(const AuthReply&) = delete;
+  ~AuthReply() {
+    if (callback_) {
+      callback_->Cancel();
+    }
+  }
+  void Answer(std::optional<HttpAuthAnswer> answer) {
+    if (!callback_) {
+      return;
+    }
+    if (answer) {
+      callback_->Continue(answer->username, answer->password);
+      Wipe(answer->password);
+    } else {
+      callback_->Cancel();
+    }
+    callback_ = nullptr;
+  }
+
+ private:
+  CefRefPtr<CefAuthCallback> callback_;
+};
+
+}  // namespace
+
+bool TabClient::GetAuthCredentials(CefRefPtr<CefBrowser> /*browser*/,
+                                   const CefString& origin_url,
+                                   bool isProxy,
+                                   const CefString& host,
+                                   int port,
+                                   const CefString& realm,
+                                   const CefString& /*scheme*/,
+                                   CefRefPtr<CefAuthCallback> callback) {
+  CEF_REQUIRE_IO_THREAD();
+  CefRefPtr<TabClient> self(this);
+  // A proxy is named by its host; its logins are not saved.
+  std::string origin =
+      isProxy ? "Proxy " + host.ToString() + ":" + std::to_string(port)
+              : origin_url.ToString();
+  std::string area = realm.ToString();
+  CefPostTask(TID_UI, new FunctionTask([self, origin, isProxy, area, callback] {
+                self->AskAuthCredentials(origin, isProxy, area, callback);
+              }));
+  return true;
+}
+
+void TabClient::AskAuthCredentials(const std::string& origin_url,
+                                   bool proxy,
+                                   const std::string& realm,
+                                   const CefRefPtr<CefAuthCallback>& callback) {
+  CEF_REQUIRE_UI_THREAD();
+  auto reply = std::make_shared<AuthReply>(callback);
+  HttpAuthDone done = [reply](std::optional<HttpAuthAnswer> answer) {
+    reply->Answer(std::move(answer));
+  };
+  if (proxy) {
+    if (delegate_) {
+      delegate_->ShowHttpAuthDialog({origin_url, realm, {}, {}},
+                                    std::move(done));
+    }
+  } else if (passwords_) {
+    passwords_->OnAuthRequest(origin_url, realm, std::move(done));
+  } else if (delegate_) {
+    // No password manager in this tab: the dialog alone.
+    delegate_->ShowHttpAuthDialog({OriginOf(origin_url), realm, {}, {}},
+                                  std::move(done));
   }
 }
 

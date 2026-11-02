@@ -1591,6 +1591,10 @@ void Tab::ConfirmWithTouchId(const std::string& reason, TouchIdDone done) {
       });
 }
 
+void Tab::ShowHttpAuthDialog(const HttpAuthDialog& dialog, HttpAuthDone done) {
+  host_.ShowTabSignInDialog(*this, dialog, std::move(done));
+}
+
 void Tab::ShowAutofillPrompt(const AutofillPrompt& prompt,
                              AutofillPromptDone done) {
   host_.ShowTabAutofillPrompt(*this, prompt, std::move(done));

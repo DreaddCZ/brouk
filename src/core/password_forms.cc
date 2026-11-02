@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 #include "core/crypto.h"
 #include "core/json.h"
@@ -187,6 +188,22 @@ bool PopupConfirmsLogin(std::int64_t submit_time, std::int64_t popup_time) {
   // arrives: up to 2 seconds earlier counts too.
   return popup_time >= submit_time - 2 &&
          popup_time <= submit_time + kPopupAfterLoginSeconds;
+}
+
+std::optional<std::size_t> HttpAuthChoice(
+    const std::vector<PasswordEntry>& exact) {
+  std::optional<std::size_t> best;
+  for (std::size_t i = 0; i < exact.size(); ++i) {
+    if (!best || std::pair(exact[i].last_used, exact[i].created) >
+                     std::pair(exact[*best].last_used, exact[*best].created)) {
+      best = i;
+    }
+  }
+  return best;
+}
+
+bool HttpAuthSucceeded(int http_status) {
+  return http_status >= 200 && http_status != 401 && http_status != 407;
 }
 
 SaveDecision DecideSave(const SubmittedLogin& login,
