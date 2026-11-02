@@ -52,6 +52,11 @@ endif()
 # fail on CEF's own code, which is third-party code (no warnings, as
 # BroukSodium.cmake). Our targets get our flags (BroukCompilerOptions.cmake).
 if(MSVC)
+  # With Ninja, CEF's CMake clears CMake's default flags. CEF's own targets get
+  # theirs from CEF_COMPILER_FLAGS_*; ours need the Release ones back, or a
+  # Release build has no optimisation and no NDEBUG (and then expects the
+  # wrapper's DCHECK-only symbols, which a Release wrapper lacks).
+  set(CMAKE_CXX_FLAGS_RELEASE "/O2 /Ob2 /DNDEBUG")
   list(REMOVE_ITEM CEF_COMPILER_FLAGS /MP /W4 /WX)
   list(APPEND CEF_COMPILER_FLAGS /w)
   list(REMOVE_ITEM CEF_COMPILER_FLAGS_DEBUG /RTC1)

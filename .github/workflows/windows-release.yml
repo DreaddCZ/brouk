@@ -23,8 +23,6 @@ permissions:
 jobs:
   release:
     name: windows-release
-    # Release tags only (also when started by hand).
-    if: ${{ startsWith(github.ref, 'refs/tags/v') }}
     runs-on: windows-2025
     timeout-minutes: 150
     defaults:
@@ -38,8 +36,10 @@ jobs:
         with:
           persist-credentials: false
 
-      # The tag names the version the build says it is.
+      # The tag names the version the build says it is. Started by hand on a
+      # branch, it is a trial run of the release build.
       - name: Check the version
+        if: ${{ startsWith(github.ref, 'refs/tags/v') }}
         env:
           TAG: ${{ github.ref_name }}
         run: |
