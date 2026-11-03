@@ -293,7 +293,7 @@ function checkLog() {
     // line per process before Chromium has its log settings.
     const other = (besideApp ?? '')
       .split(/\r?\n/)
-      .filter((line) => line && !/:crash_reporting\.cc:\d+\] Crash reporting enabled for process: /.test(line));
+      .filter((line) => line && !/crash_reporting\.cc:\d+\] Crash reporting enabled for process: /.test(line));
     check(other.length === 0, 'no debug.log is written next to brouk.exe (but for the crash reporter that only this test enables)');
   }
 }
