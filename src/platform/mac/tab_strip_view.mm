@@ -29,6 +29,8 @@ constexpr CGFloat kIconOnlyTabWidth =
     kTabPadding * 2 + kIconSize + kCloseButtonSize + 6;
 // Horizontal mouse movement that turns a click into a drag.
 constexpr CGFloat kDragThreshold = 4;
+// How far above or below the strip a drag leaves it (026).
+constexpr CGFloat kDetachDistance = 12;
 
 NSColor* StripBackgroundColor() {
   return [NSColor.windowBackgroundColor
@@ -40,6 +42,17 @@ NSColor* ActiveTabColor() {
   return NSColor.windowBackgroundColor;
 }
 
+// What a view shows, as the image that follows the mouse when it is
+// dragged out of the strip (026).
+NSImage* SnapshotOf(NSView* view) {
+  NSBitmapImageRep* rep =
+      [view bitmapImageRepForCachingDisplayInRect:view.bounds];
+  [view cacheDisplayInRect:view.bounds toBitmapImageRep:rep];
+  NSImage* image = [[NSImage alloc] initWithSize:view.bounds.size];
+  [image addRepresentation:rep];
+  return image;
+}
+
 }  // namespace
 
 @class BRTabView;
@@ -48,6 +61,8 @@ NSColor* ActiveTabColor() {
 @interface BRTabStripView ()
 - (void)tabViewMouseDown:(BRTabView*)tabView event:(NSEvent*)event;
 - (void)groupLabelClicked:(BRGroupLabelView*)label;
+- (void)groupLabelMouseDown:(BRGroupLabelView*)label event:(NSEvent*)event;
+- (nullable NSMenu*)menuForGroupLabel:(BRGroupLabelView*)label;
 - (void)tabViewClose:(BRTabView*)tabView;
 - (void)tabViewToggleMute:(BRTabView*)tabView;
 - (nullable NSMenu*)menuForTabView:(BRTabView*)tabView;
@@ -130,6 +145,7 @@ NSColor* ActiveTabColor() {
     _pin.hidden = YES;
     [self addSubview:_pin];
 
+    self.accessibilityElement = YES;
     self.accessibilityRole = NSAccessibilityRadioButtonRole;
   }
   return self;
@@ -326,9 +342,24 @@ NSColor* ActiveTabColor() {
   return YES;
 }
 
+// VoiceOver's "show menu" opens the right-click menu.
+- (BOOL)accessibilityPerformShowMenu {
+  NSMenu* menu = [_strip menuForTabView:self];
+  [menu popUpMenuPositioningItem:nil
+                      atLocation:NSMakePoint(0, NSMaxY(self.bounds))
+                          inView:self];
+  return menu != nil;
+}
+
 @end
 
 @implementation BRTabGroupInfo
+@end
+
+@implementation BRTabDropPlace
+@end
+
+@implementation BRWindowChoice
 @end
 
 // A group's label: a chip in the profile's colour with its name and number
@@ -376,6 +407,7 @@ NSColor* ActiveTabColor() {
               ? [NSString stringWithFormat:@"%@  %lu", _name,
                                            static_cast<unsigned long>(_count)]
               : _name;
+  self.accessibilityElement = YES;
   self.accessibilityRole = NSAccessibilityButtonRole;
   [self updateDescriptions];
   self.needsDisplay = YES;
@@ -445,12 +477,24 @@ NSColor* ActiveTabColor() {
 }
 
 - (void)mouseDown:(NSEvent*)event {
-  [_strip groupLabelClicked:self];
+  [_strip groupLabelMouseDown:self event:event];
+}
+
+- (nullable NSMenu*)menuForEvent:(NSEvent*)event {
+  return [_strip menuForGroupLabel:self];
 }
 
 - (BOOL)accessibilityPerformPress {
   [_strip groupLabelClicked:self];
   return YES;
+}
+
+- (BOOL)accessibilityPerformShowMenu {
+  NSMenu* menu = [_strip menuForGroupLabel:self];
+  [menu popUpMenuPositioningItem:nil
+                      atLocation:NSMakePoint(0, NSMaxY(self.bounds))
+                          inView:self];
+  return menu != nil;
 }
 
 @end
@@ -477,6 +521,9 @@ NSColor* ActiveTabColor() {
   NSMutableDictionary<NSString*, NSButton*>* _moreButtons;
   NSMutableDictionary<NSNumber*, BRTab*>* _tabsById;
   brouk::TabId _activeTabId;
+  // Dragging tabs (026): the insertion mark, and tabs being dragged out.
+  NSView* _dropMark;
+  std::vector<brouk::TabId> _fadedTabs;
 }
 
 - (instancetype)initWithFrame:(NSRect)frame {
@@ -496,6 +543,19 @@ NSColor* ActiveTabColor() {
 
 - (BOOL)isFlipped {
   return YES;
+}
+
+// VoiceOver reads groups and tabs left to right, whatever order their
+// views were added in.
+- (nullable NSArray*)accessibilityChildren {
+  return [[super accessibilityChildren]
+      sortedArrayUsingComparator:^NSComparisonResult(id a, id b) {
+        CGFloat ax = NSMinX([a accessibilityFrame]);
+        CGFloat bx = NSMinX([b accessibilityFrame]);
+        return ax < bx   ? NSOrderedAscending
+               : ax > bx ? NSOrderedDescending
+                         : NSOrderedSame;
+      }];
 }
 
 // Fill only our bounds: since macOS 14 views do not clip to their bounds and
@@ -677,6 +737,9 @@ NSColor* ActiveTabColor() {
       // Views exist for all tabs of groups the user did not collapse.
       for (NSUInteger t = 0; t < group.tabs.count; ++t) {
         BRTabView* view = _tabViews[next++];
+        view.alphaValue =
+            std::ranges::find(_fadedTabs, view.tabId) != _fadedTabs.end() ? 0.35
+                                                                          : 1;
         CGFloat width = layout.tab_widths[t];
         view.hidden = width <= 0;
         if (width > 0) {
@@ -822,6 +885,11 @@ NSColor* ActiveTabColor() {
   [menu addItem:NSMenuItem.separatorItem];
   add(@"Reload", @selector(menuReload:), YES);
   add(@"Duplicate", @selector(menuDuplicate:), YES);
+  NSMenuItem* move = [menu addItemWithTitle:@"Move Tab to Another Window"
+                                     action:nil
+                              keyEquivalent:@""];
+  move.submenu = [self moveMenuForTabs:std::vector<brouk::TabId>{tabView.tabId}
+                             newWindow:[self tabCount] > 1];
   add([self isPinned:tabView.tabId] ? @"Unpin Tab" : @"Pin Tab",
       @selector(menuTogglePin:), YES);
   add(tab.isMuted ? @"Unmute Tab" : @"Mute Tab", @selector(menuToggleMute:),
@@ -916,15 +984,49 @@ NSColor* ActiveTabColor() {
   return nearest;
 }
 
+- (NSUInteger)tabCount {
+  NSUInteger count = 0;
+  for (BRTabGroupInfo* group in _groups) {
+    count += group.tabs.count;
+  }
+  return count;
+}
+
+- (BOOL)isOutside:(NSPoint)point {
+  return point.y < -kDetachDistance ||
+         point.y > self.bounds.size.height + kDetachDistance;
+}
+
+// Hands a drag that left the strip to the delegate (026). `start` is where
+// the mouse went down, in strip coordinates.
+- (void)dragOutTabs:(const std::vector<brouk::TabId>&)tabIds
+            profile:(NSString*)profileId
+              group:(BOOL)group
+               view:(NSView*)view
+              start:(NSPoint)start {
+  NSImage* image = SnapshotOf(view);
+  // The image is not flipped: its origin is at the bottom left.
+  NSPoint grab =
+      NSMakePoint(start.x - NSMinX(view.frame), NSMaxY(view.frame) - start.y);
+  self.needsLayout = YES;
+  [_delegate tabStripDidDragOutTabs:tabIds
+                            profile:profileId
+                              group:group
+                              image:image
+                               grab:grab];
+}
+
 // Click selects; a horizontal drag moves the tab (the dragged tab follows
 // the mouse). Dropped in its own group, the slot under its centre is the new
 // position; dropped on another profile's group, the delegate reopens it
-// there.
+// there. Dragged above or below the strip, or the window's only tab, it
+// leaves the strip (026).
 - (void)tabViewMouseDown:(BRTabView*)tabView event:(NSEvent*)event {
   [_delegate tabStripDidSelectTab:tabView.tabId];
 
   NSPoint start = [self convertPoint:event.locationInWindow fromView:nil];
   NSRect startFrame = tabView.frame;
+  BOOL onlyTab = [self tabCount] == 1;
   BOOL dragging = NO;
   while (true) {
     NSEvent* next =
@@ -934,6 +1036,19 @@ NSColor* ActiveTabColor() {
     CGFloat dx = p.x - start.x;
     if (next.type == NSEventTypeLeftMouseUp) {
       break;
+    }
+    if (!dragging && std::fabs(dx) < kDragThreshold &&
+        std::fabs(p.y - start.y) < kDragThreshold) {
+      continue;
+    }
+    BRTabGroupInfo* group = [self groupOfTab:tabView.tabId];
+    if (group && (onlyTab || [self isOutside:p])) {
+      [self dragOutTabs:std::vector<brouk::TabId>{tabView.tabId}
+                profile:group.profileId
+                  group:NO
+                   view:tabView
+                  start:start];
+      return;
     }
     if (!dragging && std::fabs(dx) < kDragThreshold) {
       continue;
@@ -977,6 +1092,291 @@ NSColor* ActiveTabColor() {
   }
   [_delegate tabStripDidMoveTab:tabView.tabId
                         toIndex:source.startIndex + position];
+}
+
+#pragma mark - Moving groups and tabs (026)
+
+- (nullable BRTabGroupInfo*)groupOfProfile:(NSString*)profileId {
+  for (BRTabGroupInfo* group in _groups) {
+    if ([group.profileId isEqualToString:profileId]) {
+      return group;
+    }
+  }
+  return nil;
+}
+
+- (std::vector<brouk::TabId>)tabIdsOfGroup:(BRTabGroupInfo*)group {
+  std::vector<brouk::TabId> ids;
+  for (BRTab* tab in group.tabs) {
+    ids.push_back(tab.tabId);
+  }
+  return ids;
+}
+
+// The views drawn for a group: label, tabs, "N more", "+" and its line.
+- (NSArray<NSView*>*)viewsOfGroup:(BRTabGroupInfo*)group {
+  NSMutableArray<NSView*>* views = [NSMutableArray array];
+  for (NSView* view in @[
+         _labels[group.profileId] ?: NSNull.null,
+         _plusButtons[group.profileId] ?: NSNull.null,
+         _lines[group.profileId] ?: NSNull.null,
+         _moreButtons[group.profileId] ?: NSNull.null
+       ]) {
+    if ([view isKindOfClass:NSView.class]) {
+      [views addObject:view];
+    }
+  }
+  for (BRTab* tab in group.tabs) {
+    BRTabView* view = [self viewOfTab:tab.tabId];
+    if (view) {
+      [views addObject:view];
+    }
+  }
+  return views;
+}
+
+// The middle of a group's area, from its label to its "+".
+- (CGFloat)centerOfGroup:(BRTabGroupInfo*)group {
+  return (NSMinX(_labels[group.profileId].frame) +
+          NSMaxX(_plusButtons[group.profileId].frame)) /
+         2;
+}
+
+// Click collapses or expands the group; a horizontal drag moves the whole
+// group among the others (never after the default profile's group, which
+// does not move); dragged above or below the strip, or holding all the
+// window's tabs, the group leaves the strip.
+- (void)groupLabelMouseDown:(BRGroupLabelView*)label event:(NSEvent*)event {
+  BRTabGroupInfo* group = [self groupOfProfile:label.profileId];
+  if (!group) {
+    return;
+  }
+  BOOL isDefault = group == _groups.lastObject;
+  BOOL wholeWindow =
+      group.tabs.count > 0 && group.tabs.count == [self tabCount];
+  NSPoint start = [self convertPoint:event.locationInWindow fromView:nil];
+  NSArray<NSView*>* views = [self viewsOfGroup:group];
+  NSMutableArray<NSValue*>* frames = [NSMutableArray array];
+  for (NSView* view in views) {
+    [frames addObject:[NSValue valueWithRect:view.frame]];
+  }
+  BOOL moved = NO;
+  while (true) {
+    NSEvent* next =
+        [self.window nextEventMatchingMask:NSEventMaskLeftMouseDragged |
+                                           NSEventMaskLeftMouseUp];
+    if (next.type == NSEventTypeLeftMouseUp) {
+      break;
+    }
+    NSPoint p = [self convertPoint:next.locationInWindow fromView:nil];
+    CGFloat dx = p.x - start.x;
+    if (!moved && std::fabs(dx) < kDragThreshold &&
+        std::fabs(p.y - start.y) < kDragThreshold) {
+      continue;
+    }
+    moved = YES;
+    if (group.tabs.count > 0 && (wholeWindow || [self isOutside:p])) {
+      [self dragOutTabs:[self tabIdsOfGroup:group]
+                profile:group.profileId
+                  group:YES
+                   view:label
+                  start:start];
+      return;
+    }
+    if (isDefault) {
+      continue;
+    }
+    for (NSUInteger i = 0; i < views.count; ++i) {
+      NSRect f = frames[i].rectValue;
+      f.origin.x += dx;
+      views[i].frame = f;
+      [self addSubview:views[i] positioned:NSWindowAbove relativeTo:nil];
+    }
+  }
+  if (!moved) {
+    [self groupLabelClicked:label];
+    return;
+  }
+  self.needsLayout = YES;
+  if (isDefault) {
+    return;
+  }
+  CGFloat center = [self centerOfGroup:group];
+  NSUInteger index = 0;
+  for (BRTabGroupInfo* other in _groups) {
+    if (other != group && other != _groups.lastObject &&
+        [self centerOfGroup:other] < center) {
+      ++index;
+    }
+  }
+  [_delegate tabStripDidMoveGroup:group.profileId toIndex:index];
+}
+
+- (BRTabDropPlace*)dropPlaceForProfile:(NSString*)profileId
+                               atPoint:(NSPoint)point
+                             excluding:
+                                 (const std::vector<brouk::TabId>&)excluded
+                                 group:(BOOL)group {
+  BRTabDropPlace* place = [[BRTabDropPlace alloc] init];
+  CGFloat x = point.x;
+  BRTabGroupInfo* own = [self groupOfProfile:profileId];
+  BRTabGroupInfo* under = nil;
+  // Where the group would go: before the first other group whose middle
+  // is right of the mouse, at the latest before the default group.
+  NSUInteger groupIndex = 0;
+  BRTabGroupInfo* nextGroup = nil;
+  for (BRTabGroupInfo* other in _groups) {
+    NSRect label = _labels[other.profileId].frame;
+    if (x >= NSMinX(label) &&
+        x <= NSMaxX(_plusButtons[other.profileId].frame)) {
+      under = other;
+    }
+    if (other == own) {
+      continue;
+    }
+    BOOL isDefault = other == _groups.lastObject;
+    if (!isDefault && [self centerOfGroup:other] < x) {
+      ++groupIndex;
+    } else if (!nextGroup) {
+      nextGroup = other;
+    }
+  }
+  place.groupIndex = groupIndex;
+  CGFloat gapX =
+      nextGroup ? NSMinX(_labels[nextGroup.profileId].frame) - kGroupGap / 2
+                : x;
+  // A group dragged inside its own window, or into a window without a
+  // group of its profile, goes between groups.
+  BOOL ownDragged =
+      own && !excluded.empty() && own.tabs.count > 0 &&
+      std::ranges::find(excluded, own.tabs.firstObject.tabId) != excluded.end();
+  if (!own || (group && ownDragged)) {
+    place.markX = gapX;
+    place.position = 0;
+    return place;
+  }
+  if (!group && under && under != own) {
+    place.otherProfile = under.profileId;
+    place.markX = NSMidX(_labels[under.profileId].frame);
+    return place;
+  }
+  if (own.collapsed) {
+    place.position = own.tabs.count;
+    place.markX = NSMaxX(_labels[own.profileId].frame) + kLabelGap / 2;
+    return place;
+  }
+  // After the last shown tab left of the mouse (hidden tabs keep their
+  // place).
+  NSUInteger position = 0;
+  NSUInteger counted = 0;
+  CGFloat mark = NSMaxX(_labels[own.profileId].frame) + kLabelGap / 2;
+  for (BRTab* tab in own.tabs) {
+    if (std::ranges::find(excluded, tab.tabId) != excluded.end()) {
+      continue;
+    }
+    ++counted;
+    BRTabView* view = [self viewOfTab:tab.tabId];
+    if (view && !view.hidden && NSMidX(view.frame) < x) {
+      position = counted;
+      mark = NSMaxX(view.frame);
+    }
+  }
+  place.position = position;
+  place.markX = mark;
+  return place;
+}
+
+- (void)showDropMarkAtX:(CGFloat)x {
+  if (std::isnan(x)) {
+    _dropMark.hidden = YES;
+    return;
+  }
+  if (!_dropMark) {
+    _dropMark = [[NSView alloc] initWithFrame:NSZeroRect];
+    _dropMark.wantsLayer = YES;
+    _dropMark.layer.backgroundColor = NSColor.controlAccentColor.CGColor;
+    _dropMark.layer.cornerRadius = 1;
+  }
+  if (_dropMark.superview != self) {
+    [self addSubview:_dropMark positioned:NSWindowAbove relativeTo:nil];
+  }
+  _dropMark.hidden = NO;
+  _dropMark.frame = NSMakeRect(x - 1, 6, 2, self.bounds.size.height - 10);
+}
+
+- (void)setFadedTabs:(const std::vector<brouk::TabId>&)tabIds {
+  _fadedTabs = tabIds;
+  self.needsLayout = YES;
+}
+
+// "Move … to Another Window": New Window, then the other windows. Each
+// item carries the tabs in its represented object and the window in its
+// tag (0: a new window).
+- (NSMenu*)moveMenuForTabs:(const std::vector<brouk::TabId>&)tabIds
+                 newWindow:(BOOL)newWindow {
+  NSMenu* menu = [[NSMenu alloc] initWithTitle:@""];
+  menu.autoenablesItems = NO;
+  NSMutableArray<NSNumber*>* ids = [NSMutableArray array];
+  for (brouk::TabId tabId : tabIds) {
+    [ids addObject:@(tabId)];
+  }
+  NSMenuItem* item = [menu addItemWithTitle:@"New Window"
+                                     action:@selector(menuMoveToWindow:)
+                              keyEquivalent:@""];
+  item.target = self;
+  item.tag = 0;
+  item.representedObject = ids;
+  item.enabled = newWindow;
+  NSArray<BRWindowChoice*>* windows = [_delegate tabStripOtherWindows];
+  if (windows.count > 0) {
+    [menu addItem:NSMenuItem.separatorItem];
+  }
+  for (BRWindowChoice* window in windows) {
+    NSMenuItem* choice = [menu addItemWithTitle:window.title
+                                         action:@selector(menuMoveToWindow:)
+                                  keyEquivalent:@""];
+    choice.target = self;
+    choice.tag = static_cast<NSInteger>(window.windowId);
+    choice.representedObject = ids;
+  }
+  return menu;
+}
+
+- (void)menuMoveToWindow:(NSMenuItem*)item {
+  std::vector<brouk::TabId> ids;
+  for (NSNumber* tabId in item.representedObject) {
+    ids.push_back(tabId.longLongValue);
+  }
+  [_delegate tabStripDidMoveTabs:ids toWindow:item.tag];
+}
+
+// Chrome's group menu, for profile groups: move the group's tabs to a new
+// window or another window.
+- (nullable NSMenu*)menuForGroupLabel:(BRGroupLabelView*)label {
+  BRTabGroupInfo* group = [self groupOfProfile:label.profileId];
+  if (!group || group.tabs.count == 0) {
+    return nil;
+  }
+  std::vector<brouk::TabId> ids = [self tabIdsOfGroup:group];
+  BOOL others = group.tabs.count < [self tabCount];
+  NSMenu* menu = [[NSMenu alloc] initWithTitle:@""];
+  menu.autoenablesItems = NO;
+  NSMenuItem* newWindow = [menu addItemWithTitle:@"Move Group to New Window"
+                                          action:@selector(menuMoveToWindow:)
+                                   keyEquivalent:@""];
+  newWindow.target = self;
+  newWindow.tag = 0;
+  NSMutableArray<NSNumber*>* tabIds = [NSMutableArray array];
+  for (brouk::TabId tabId : ids) {
+    [tabIds addObject:@(tabId)];
+  }
+  newWindow.representedObject = tabIds;
+  newWindow.enabled = others;
+  NSMenuItem* another = [menu addItemWithTitle:@"Move Group to Another Window"
+                                        action:nil
+                                 keyEquivalent:@""];
+  another.submenu = [self moveMenuForTabs:ids newWindow:others];
+  return menu;
 }
 
 @end

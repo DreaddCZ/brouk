@@ -11,6 +11,7 @@
 #import "platform/mac/command_palette_panel.h"
 #import "platform/mac/devtools_dock.h"
 #import "platform/mac/favicon_cache.h"
+#import "platform/mac/tab_strip_view.h"
 
 #include "cef/adblock_service.h"
 #include "cef/devtools_preferences.h"
@@ -255,6 +256,30 @@ NS_ASSUME_NONNULL_BEGIN
 // (nil) next to this one, and shows them there.
 - (void)moveTabs:(const std::vector<brouk::TabId>&)tabIds
         toWindow:(nullable BRBrowserWindowController*)target;
+// The same at a place in `target` (see attachTabs:), or into a new window
+// with `frame`. A window left without tabs closes.
+- (void)moveTabs:(const std::vector<brouk::TabId>&)tabIds
+        toWindow:(BRBrowserWindowController*)target
+        position:(NSUInteger)position
+      groupIndex:(NSUInteger)groupIndex;
+- (void)moveTabs:(const std::vector<brouk::TabId>&)tabIds
+    newWindowFrame:(NSRect)frame;
+// Dragging in this window: a group to another place among the groups, a
+// tab inside its group, or a tab onto another profile's group (asks
+// first, 005).
+- (void)moveGroup:(NSString*)profileId toIndex:(NSUInteger)index;
+- (void)moveTab:(brouk::TabId)tabId toPosition:(NSUInteger)position;
+- (void)askToMoveTab:(brouk::TabId)tabId toProfile:(NSString*)profileId;
+// While tabs are dragged: where they would go in this window's tab strip
+// at `screenPoint`, with the insertion mark shown there, or nil when the
+// point is not on the strip; hiding the mark; fading the dragged tabs.
+- (nullable BRTabDropPlace*)tabDropPlaceAt:(NSPoint)screenPoint
+                                   profile:(NSString*)profileId
+                                 excluding:
+                                     (const std::vector<brouk::TabId>&)excluded
+                                     group:(BOOL)group;
+- (void)hideTabDropMark;
+- (void)setFadedTabs:(const std::vector<brouk::TabId>&)tabIds;
 
 // Starts closing every tab (pages may ask to stay via beforeunload); the
 // window closes when the last tab is gone.

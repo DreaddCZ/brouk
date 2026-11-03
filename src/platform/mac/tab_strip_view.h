@@ -9,6 +9,9 @@
 
 #import <Cocoa/Cocoa.h>
 
+#include <cstdint>
+#include <vector>
+
 #include "core/tab_strip_model.h"
 
 NS_ASSUME_NONNULL_BEGIN
@@ -27,6 +30,26 @@ NS_ASSUME_NONNULL_BEGIN
 // Its first `pinnedCount` tabs are pinned.
 @property(nonatomic) NSUInteger pinnedCount;
 @property(nonatomic, copy) NSArray<BRTab*>* tabs;
+@end
+
+// Where tabs dropped on the strip go (026).
+@interface BRTabDropPlace : NSObject
+// Position inside the dragged tabs' profile group (tabs being dragged in
+// this strip not counted).
+@property(nonatomic) NSUInteger position;
+// The group's place among the groups if it has to be created, or moved
+// (a dragged group), not counting the dragged group itself.
+@property(nonatomic) NSUInteger groupIndex;
+// Dropped inside another profile's group: that profile, else nil.
+@property(nonatomic, copy, nullable) NSString* otherProfile;
+// Where the insertion mark goes (strip coordinates).
+@property(nonatomic) CGFloat markX;
+@end
+
+// A window another window's tab or group can be moved to (menus, 026).
+@interface BRWindowChoice : NSObject
+@property(nonatomic) std::int64_t windowId;
+@property(nonatomic, copy) NSString* title;
 @end
 
 @protocol BRTabStripDelegate <NSObject>
@@ -52,6 +75,22 @@ NS_ASSUME_NONNULL_BEGIN
 // Task manager (020): Pause / Resume Tab and Show in Task Manager.
 - (void)tabStripDidTogglePause:(brouk::TabId)tabId;
 - (void)tabStripDidShowInTaskManager:(brouk::TabId)tabId;
+// Moving tabs and groups (026). A group's label was dragged to another
+// place in the strip; `index` counts the groups without it.
+- (void)tabStripDidMoveGroup:(NSString*)profileId toIndex:(NSUInteger)index;
+// A tab, or a group's label (`group`; `tabIds` are then all its tabs), was
+// dragged out of the strip: the delegate carries on with the drag until
+// the mouse button goes up. `image` follows the mouse, held at `grab`.
+- (void)tabStripDidDragOutTabs:(const std::vector<brouk::TabId>&)tabIds
+                       profile:(NSString*)profileId
+                         group:(BOOL)group
+                         image:(NSImage*)image
+                          grab:(NSPoint)grab;
+// The other browser windows, and "Move … to Another Window": windowId 0 is
+// a new window.
+- (NSArray<BRWindowChoice*>*)tabStripOtherWindows;
+- (void)tabStripDidMoveTabs:(const std::vector<brouk::TabId>&)tabIds
+                   toWindow:(std::int64_t)windowId;
 @end
 
 @interface BRTabStripView : NSView
@@ -65,6 +104,19 @@ NS_ASSUME_NONNULL_BEGIN
       activeTabId:(brouk::TabId)activeTabId;
 // Refreshes title, icon and loading state of one tab.
 - (void)updateTab:(BRTab*)tab;
+
+// Dropping tabs (026): where tabs of `profileId` dropped at `point` (strip
+// coordinates) would go, not counting `excluded` tabs (those dragged from
+// this strip) and, for a dragged group, its own group.
+- (BRTabDropPlace*)dropPlaceForProfile:(NSString*)profileId
+                               atPoint:(NSPoint)point
+                             excluding:
+                                 (const std::vector<brouk::TabId>&)excluded
+                                 group:(BOOL)group;
+// The insertion mark while tabs are dragged over the strip; NAN hides it.
+- (void)showDropMarkAtX:(CGFloat)x;
+// Tabs being dragged out are shown faded.
+- (void)setFadedTabs:(const std::vector<brouk::TabId>&)tabIds;
 
 @end
 
