@@ -106,6 +106,8 @@
                              BRInternalPageOwner,
                              BRLinkRoutingHost,
                              NSMenuDelegate>
+// The window holding a tab, which changes when the tab is moved (026).
+- (nullable BRBrowserWindowController*)controllerWithTab:(brouk::TabId)tabId;
 - (std::vector<brouk::ProfileManagerDelegate::Summary>)profileSummaries;
 - (brouk::Result<brouk::ProfileId>)createProfileNamed:(const std::string&)name
                                                 color:(const std::string&)color;
@@ -255,10 +257,7 @@ class AppProfileManager : public ProfileManagerDelegate {
 // delegate and the window holding the tab.
 class AppHistoryPage : public HistoryPageDelegate {
  public:
-  AppHistoryPage(BRAppDelegate* app,
-                 BRBrowserWindowController* controller,
-                 TabId tab)
-      : app_(app), controller_(controller), tab_(tab) {}
+  AppHistoryPage(BRAppDelegate* app, TabId tab) : app_(app), tab_(tab) {}
 
   std::vector<ProfileInfo> Profiles() override {
     BRAppDelegate* app = app_;
@@ -268,17 +267,17 @@ class AppHistoryPage : public HistoryPageDelegate {
   void OpenPage(const ProfileId& profile,
                 const std::string& url,
                 bool new_tab) override {
-    [controller_ openPage:@(url.c_str())
-                  profile:profile
-                   newTab:new_tab
-              fromHistory:tab_];
+    [Controller() openPage:@(url.c_str())
+                   profile:profile
+                    newTab:new_tab
+               fromHistory:tab_];
   }
   std::string View() override {
     BRAppDelegate* app = app_;
     return app ? [app historyView] : "site";
   }
   ProfileId CurrentProfile() override {
-    return [controller_ profileOfTab:tab_];
+    return [Controller() profileOfTab:tab_];
   }
   std::vector<std::string> KeepList(const ProfileId& profile) override {
     BRAppDelegate* app = app_;
@@ -334,7 +333,10 @@ class AppHistoryPage : public HistoryPageDelegate {
 
  private:
   __weak BRAppDelegate* app_;
-  __weak BRBrowserWindowController* controller_;
+  // The window holding the tab now (tabs move between windows, 026).
+  BRBrowserWindowController* Controller() const {
+    return [app_ controllerWithTab:tab_];
+  }
   TabId tab_;
 };
 
@@ -342,11 +344,8 @@ class AppHistoryPage : public HistoryPageDelegate {
 // opening and file panels through the window holding the tab.
 class AppBookmarksPage : public BookmarksPageDelegate {
  public:
-  AppBookmarksPage(BRAppDelegate* app,
-                   BRBookmarkStore* store,
-                   BRBrowserWindowController* controller,
-                   TabId tab)
-      : app_(app), store_(store), controller_(controller), tab_(tab) {}
+  AppBookmarksPage(BRAppDelegate* app, BRBookmarkStore* store, TabId tab)
+      : app_(app), store_(store), tab_(tab) {}
   ~AppBookmarksPage() override {
     if (observer_) {
       [NSNotificationCenter.defaultCenter removeObserver:observer_];
@@ -360,7 +359,7 @@ class AppBookmarksPage : public BookmarksPageDelegate {
     return app ? [app allProfiles] : std::vector<ProfileInfo>{};
   }
   ProfileId CurrentProfile() override {
-    return [controller_ profileOfTab:tab_];
+    return [Controller() profileOfTab:tab_];
   }
   const BookmarkModel& Model() override { return [store_ model]; }
   void Favicons(const ProfileId& profile,
@@ -395,11 +394,11 @@ class AppBookmarksPage : public BookmarksPageDelegate {
       return;
     }
     ProfileId profile = [store_ model].EffectiveProfile(id);
-    [controller_ openPage:@(item->url.c_str())
-                  profile:profile
-                   newTab:new_tab
-                  fromTab:tab_
-                 bookmark:YES];
+    [Controller() openPage:@(item->url.c_str())
+                   profile:profile
+                    newTab:new_tab
+                   fromTab:tab_
+                  bookmark:YES];
   }
   void Watch(std::function<void()> changed) override {
     if (observer_) {
@@ -414,7 +413,7 @@ class AppBookmarksPage : public BookmarksPageDelegate {
                 }];
   }
   void SaveHtml(std::string html, SaveDone done) override {
-    NSWindow* window = controller_.window;
+    NSWindow* window = Controller().window;
     if (!window) {
       done(false, std::nullopt);
       return;
@@ -447,7 +446,7 @@ class AppBookmarksPage : public BookmarksPageDelegate {
                }];
   }
   void OpenHtml(OpenDone done) override {
-    NSWindow* window = controller_.window;
+    NSWindow* window = Controller().window;
     if (!window) {
       done(std::nullopt, std::nullopt);
       return;
@@ -486,7 +485,10 @@ class AppBookmarksPage : public BookmarksPageDelegate {
  private:
   __weak BRAppDelegate* app_;
   BRBookmarkStore* store_;
-  __weak BRBrowserWindowController* controller_;
+  // The window holding the tab now (tabs move between windows, 026).
+  BRBrowserWindowController* Controller() const {
+    return [app_ controllerWithTab:tab_];
+  }
   TabId tab_;
   id observer_;
 };
@@ -499,10 +501,7 @@ static NSString* const BRDownloadsDidChangeNotification =
 // the window holding the tab.
 class AppDownloadsPage : public DownloadsPageDelegate {
  public:
-  AppDownloadsPage(BRAppDelegate* app,
-                   BRBrowserWindowController* controller,
-                   TabId tab)
-      : app_(app), controller_(controller), tab_(tab) {}
+  AppDownloadsPage(BRAppDelegate* app, TabId tab) : app_(app), tab_(tab) {}
   ~AppDownloadsPage() override {
     if (observer_) {
       [NSNotificationCenter.defaultCenter removeObserver:observer_];
@@ -516,7 +515,7 @@ class AppDownloadsPage : public DownloadsPageDelegate {
     return app ? [app allProfiles] : std::vector<ProfileInfo>{};
   }
   ProfileId CurrentProfile() override {
-    return [controller_ profileOfTab:tab_];
+    return [Controller() profileOfTab:tab_];
   }
   DownloadService* Service() override { return [app_ downloadService]; }
   bool FileExists(const std::string& path) override {
@@ -537,7 +536,7 @@ class AppDownloadsPage : public DownloadsPageDelegate {
     [pasteboard setString:@(text.c_str()) forType:NSPasteboardTypeString];
   }
   void Retry(const DownloadEntry& entry) override {
-    [controller_ retryDownload:entry];
+    [Controller() retryDownload:entry];
   }
   void Watch(std::function<void()> changed) override {
     if (observer_) {
@@ -554,7 +553,10 @@ class AppDownloadsPage : public DownloadsPageDelegate {
 
  private:
   __weak BRAppDelegate* app_;
-  __weak BRBrowserWindowController* controller_;
+  // The window holding the tab now (tabs move between windows, 026).
+  BRBrowserWindowController* Controller() const {
+    return [app_ controllerWithTab:tab_];
+  }
   TabId tab_;
   id observer_;
 };
@@ -757,10 +759,7 @@ class AppTaskManager : public TaskManagerDelegate {
 
 class AppPasswordsPage : public PasswordsPageDelegate {
  public:
-  AppPasswordsPage(BRAppDelegate* app,
-                   BRBrowserWindowController* controller,
-                   TabId tab)
-      : app_(app), controller_(controller), tab_(tab) {}
+  AppPasswordsPage(BRAppDelegate* app, TabId tab) : app_(app), tab_(tab) {}
 
   std::vector<PasswordsPageProfile> Profiles() override {
     BRAppDelegate* app = app_;
@@ -776,7 +775,7 @@ class AppPasswordsPage : public PasswordsPageDelegate {
     return profiles;
   }
   ProfileId CurrentProfile() override {
-    return [controller_ profileOfTab:tab_];
+    return [Controller() profileOfTab:tab_];
   }
   PasswordManager* Manager() override { return [app_ passwordManager]; }
   bool BreachCheckEnabled() override { return [app_ breachCheckEnabled]; }
@@ -808,7 +807,7 @@ class AppPasswordsPage : public PasswordsPageDelegate {
     [pasteboard setString:value ?: @"" forType:NSPasteboardTypeString];
   }
   void SaveCsv(std::string csv, SaveDone done) override {
-    NSWindow* window = controller_.window;
+    NSWindow* window = Controller().window;
     if (!window) {
       Wipe(csv);
       done(false, std::nullopt);
@@ -846,7 +845,7 @@ class AppPasswordsPage : public PasswordsPageDelegate {
                }];
   }
   void OpenCsv(OpenDone done) override {
-    NSWindow* window = controller_.window;
+    NSWindow* window = Controller().window;
     if (!window) {
       done(std::nullopt, std::nullopt);
       return;
@@ -883,7 +882,10 @@ class AppPasswordsPage : public PasswordsPageDelegate {
 
  private:
   __weak BRAppDelegate* app_;
-  __weak BRBrowserWindowController* controller_;
+  // The window holding the tab now (tabs move between windows, 026).
+  BRBrowserWindowController* Controller() const {
+    return [app_ controllerWithTab:tab_];
+  }
   TabId tab_;
 };
 
@@ -2539,26 +2541,34 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
   return [self internalContext];
 }
 
+- (nullable BRBrowserWindowController*)controllerWithTab:(brouk::TabId)tabId {
+  for (BRBrowserWindowController* controller in _windows) {
+    if ([controller tabWithId:tabId]) {
+      return controller;
+    }
+  }
+  return nil;
+}
+
 - (std::unique_ptr<CefMessageRouterBrowserSide::Handler>)
     internalPageHandler:(NSString*)page
                   tabId:(brouk::TabId)tabId
              controller:(BRBrowserWindowController*)controller {
   if ([page isEqualToString:@"history"]) {
     return std::make_unique<brouk::HistoryPageHandler>(
-        std::make_unique<brouk::AppHistoryPage>(self, controller, tabId));
+        std::make_unique<brouk::AppHistoryPage>(self, tabId));
   }
   if ([page isEqualToString:@"downloads"]) {
     return std::make_unique<brouk::DownloadsPageHandler>(
-        std::make_unique<brouk::AppDownloadsPage>(self, controller, tabId));
+        std::make_unique<brouk::AppDownloadsPage>(self, tabId));
   }
   if ([page isEqualToString:@"passwords"]) {
     return std::make_unique<brouk::PasswordsPageHandler>(
-        std::make_unique<brouk::AppPasswordsPage>(self, controller, tabId));
+        std::make_unique<brouk::AppPasswordsPage>(self, tabId));
   }
   if ([page isEqualToString:@"bookmarks"]) {
     return std::make_unique<brouk::BookmarksPageHandler>(
-        std::make_unique<brouk::AppBookmarksPage>(self, _bookmarks, controller,
-                                                  tabId));
+        std::make_unique<brouk::AppBookmarksPage>(self, _bookmarks, tabId));
   }
   if ([page isEqualToString:@"credits"]) {
     return std::make_unique<brouk::StaticPageHandler>();
