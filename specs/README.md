@@ -50,6 +50,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 023 | [Open-source licences (credits)](023-credits.md) | done | P1 |
 | 024 | [Windows app](024-windows-app.md) | in-progress — first beta released (0.3.1: W1–W3, installer and automatic updates, not code-signed); left: screen readers, padlock popup, zoom indicator, quit crash #45 | P2 |
 | 025 | [Logging](025-logging.md) | ready | P2 |
+| 026 | [Dragging tabs and profile groups](026-tab-dragging.md) | ready | P1 |
 
 ## Roadmap
 
@@ -63,6 +64,7 @@ Build order. Each milestone ends with a build the user tests on their Macs.
 | **M4 – Full browser UI** | Tab overflow, pinned tabs, command palette, remappable shortcuts, themes, address bar suggestions from history. | 003, history storage needed by 003 (013) |
 | **M5 – Developer tools** | Dock, per-tab toggle, own tools, request rules, API export, remote debugging. | 006 |
 | **W1–W4 – Windows** | The Windows app in four stages: browse the web, everyday browser, work features, release. | 024 |
+| **Next – Tab dragging** | Reorder profile groups; drag tabs and groups to other windows or new windows, macOS and Windows. | 026 |
 | **Later** | In an order to be agreed: | 010, 007, 008, 009, 011, 013, 014, 017 (after checking company computers), 018 and 019 (at the start of phase 2, before the first beta testers), 021 (later phase), 025 last |
 
 2026-10-22 (user's decision): the rest of 012 (folder upload and file drop, pinch zoom, Picture-in-Picture, permissions in settings) is postponed; profiles (005) come next, on top of the configuration foundation from 004 that they need (settings files, typed settings, live reload). The settings page of 004 follows later.
@@ -96,5 +98,7 @@ Build order. Each milestone ends with a build the user tests on their Macs.
 2026-10-29 (user's decision): the Windows app (024) starts now, in stages W1–W4; the user tests in a Windows 11 x64 virtual machine on the Intel Mac.
 
 2026-11-03 (user's decision): logging (025) is ready and goes near the end of the roadmap.
+
+2026-11-03 (user's decision): dragging tabs and profile groups (026) is built next, for macOS and Windows.
 
 Rules: a milestone uses only `ready` specs; later milestones may be re-ordered by the user. Unspecified standard browser behaviour follows Chrome (see `CLAUDE.md`).
