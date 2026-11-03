@@ -3,11 +3,13 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <optional>
 #include <system_error>
 #include <utility>
 
 #include "cef/function_task.h"
 #include "core/debug_logging.h"
+#include "core/file_lock.h"
 #include "core/log.h"
 #include "include/cef_task.h"
 #include "include/wrapper/cef_helpers.h"
@@ -16,9 +18,13 @@ namespace brouk {
 
 namespace {
 
-// Chromium's log does not rotate itself: at each start with debug logging
-// on, a log over this size becomes chromium.1.log (one older file kept).
-constexpr std::uintmax_t kChromiumLogMaxBytes = std::uintmax_t{5} * 1024 * 1024;
+// Held by the Brouk that runs, for as long as it runs: Chromium empties
+// chromium.log at every start, also of a Brouk that only hands its links
+// to the running one, which would lose the running one's log.
+std::optional<FileLock>& ChromiumLogLock() {
+  static std::optional<FileLock> lock;
+  return lock;
+}
 // Checked at least this often, so a computer that slept still turns debug
 // logging off soon after its time.
 constexpr auto kLongestCheckDelay = std::chrono::hours(1);
@@ -84,17 +90,23 @@ void StartAppLogging(const std::filesystem::path& logs,
     LogWarning() << "Logging: " << error->message;
   }
   const DebugLoggingDecision decision = Decide(profiles);
-  if (!decision.on) {
+  // Taken whether debug logging is on or not, so a later start knows a
+  // Brouk runs even if it was started with debug logging off.
+  ChromiumLogLock() = FileLock::TryLock(logs / "chromium.lock");
+  if (decision.on && !ChromiumLogLock()) {
+    LogDebug() << "Logging: another Brouk is running; this start writes no "
+                  "Chromium log";
+  }
+  if (!decision.on || !ChromiumLogLock()) {
     // No file; FATAL messages still go to stderr.
     settings.log_severity = LOGSEVERITY_DISABLE;
     return;
   }
+  // Chromium starts its log afresh: the previous run's is kept as
+  // chromium.1.log.
   const std::filesystem::path chromium = logs / "chromium.log";
   std::error_code error;
-  if (std::filesystem::file_size(chromium, error) > kChromiumLogMaxBytes &&
-      !error) {
-    std::filesystem::rename(chromium, logs / "chromium.1.log", error);
-  }
+  std::filesystem::rename(chromium, logs / "chromium.1.log", error);
   CefString(&settings.log_file) = chromium.native();
   settings.log_severity = LOGSEVERITY_INFO;
   settings.log_items = static_cast<cef_log_items_t>(LOG_ITEMS_FLAG_PROCESS_ID |

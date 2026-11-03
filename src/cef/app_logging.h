@@ -15,7 +15,8 @@ namespace brouk {
 
 // In the browser process, before CefInitialize: brouk.log in `logs`,
 // debug logging as the settings say, and Chromium's own log
-// (`logs`/chromium.log) only while debug logging is on. Chromium reads its
+// (`logs`/chromium.log, the previous run's kept as chromium.1.log) only
+// while debug logging is on and no other Brouk runs. Chromium reads its
 // log setting only here, so turning debug logging on later adds Brouk's
 // details at once and Chromium's at the next start.
 void StartAppLogging(const std::filesystem::path& logs,

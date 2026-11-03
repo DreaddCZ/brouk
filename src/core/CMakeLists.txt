@@ -61,6 +61,7 @@ set(BROUK_CORE_SOURCES
   download_record.h
   external_protocol.cc
   external_protocol.h
+  file_lock.h
   help.cc
   help.h
   history_query.cc
@@ -172,11 +173,11 @@ set(BROUK_CORE_SOURCES
   zoom.h
 )
 
-# Starting programs is the one part that needs each system's own API.
+# Starting programs and locking files need each system's own API.
 if(WIN32)
-  list(APPEND BROUK_CORE_SOURCES process_runner_win.cc)
+  list(APPEND BROUK_CORE_SOURCES file_lock_win.cc process_runner_win.cc)
 else()
-  list(APPEND BROUK_CORE_SOURCES process_runner_posix.cc)
+  list(APPEND BROUK_CORE_SOURCES file_lock_posix.cc process_runner_posix.cc)
 endif()
 
 # Built twice with different sanitizers (see BroukCompilerOptions.cmake):

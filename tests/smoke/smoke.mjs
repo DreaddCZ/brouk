@@ -60,6 +60,7 @@ setTimeout(() => {
 }, kTotalLimitMs).unref();
 
 let brouk = null;
+let firstPid = null; // The first start's browser process (025: Chromium's log).
 let server = null;
 let dataDir = null;
 // The CI runner's screen on Windows, where no one can look: Brouk's own
@@ -262,14 +263,32 @@ function checkLog() {
     chromium = false;
   }
   check(chromium, "Chromium's own log is in logs/ while debug logging is on");
-  if (kWindows) {
-    let besideApp = true;
+  if (brouk && brouk.pid !== firstPid) {
+    // The second starts that hand over links must not have emptied it.
+    let previous = '';
     try {
-      besideApp = readdirSync(appPath).includes('debug.log');
-    } catch {
-      besideApp = false;
+      previous = readFileSync(join(dataDir, 'logs', 'chromium.1.log'), 'utf8');
+    } catch (error) {
+      log(`(no chromium.1.log: ${error.message})`);
     }
-    check(!besideApp, 'no debug.log is written next to brouk.exe');
+    check(previous.includes(`[${firstPid}:`), "after the restart, chromium.1.log keeps the first run's Chromium log");
+  }
+  if (kWindows) {
+    let besideApp = '';
+    try {
+      besideApp = readFileSync(join(appPath, 'debug.log'), 'utf8');
+    } catch {
+      besideApp = null;
+    }
+    if (besideApp !== null) {
+      log(`(debug.log next to brouk.exe:\n${besideApp.slice(0, 2000)})`);
+      try {
+        copyFileSync(join(appPath, 'debug.log'), join(outDir, 'debug.log'));
+      } catch (error) {
+        log(`(debug.log not copied: ${error.message})`);
+      }
+    }
+    check(besideApp === null, 'no debug.log is written next to brouk.exe');
   }
 }
 
@@ -278,7 +297,7 @@ function finish(code) {
   // Brouk's and Chromium's logs (025), for reading after a failure.
   if (dataDir) {
     mkdirSync(join(outDir, 'logs'), { recursive: true });
-    for (const name of ['brouk.log', 'chromium.log']) {
+    for (const name of ['brouk.log', 'chromium.log', 'chromium.1.log']) {
       try {
         copyFileSync(join(dataDir, 'logs', name), join(outDir, 'logs', name));
       } catch (error) {
@@ -714,6 +733,7 @@ async function main() {
   writeFileSync(appLog, '');
   brouk.stdout.on('data', (chunk) => appendFileSync(appLog, chunk));
   brouk.stderr.on('data', (chunk) => appendFileSync(appLog, chunk));
+  firstPid = brouk.pid;
   log(`Started Brouk (pid ${brouk.pid}), data in ${dataDir}`);
 
   let target = null;

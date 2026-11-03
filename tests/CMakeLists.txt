@@ -45,6 +45,7 @@ add_executable(brouk_core_tests
   core/download_paths_test.cc
   core/download_record_test.cc
   core/external_protocol_test.cc
+  core/file_lock_test.cc
   core/help_test.cc
   core/history_query_test.cc
   core/history_sql_test.cc
