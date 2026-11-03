@@ -1,6 +1,6 @@
 # 026 – Dragging tabs and profile groups
 
-- **Status:** ready
+- **Status:** in-progress
 - **Priority:** P1
 - **Depends on:** 003 (browser UI), 005 (profiles), 024 (Windows app)
 
@@ -73,3 +73,8 @@ None.
 - 2026-11-03 (user's decisions): asked for by the user (beta feedback): reorder profile groups by dragging their label, and drag pages out of the window into another window or a new one, as in Chrome. The default profile's group stays last; whole groups can also be dragged to other windows; macOS and Windows; built next. Spec set to `ready`.
 - Chrome behaviour followed: tab drag out of the strip creates a window that follows the pointer; the only tab drags the window; tab groups drag by their header; menus "Move tab to another window" and "Move group to new window". Brouk merges a group into the target window's group of the same profile, because a window has one group per profile (005).
 - Verify during implementation: moving a CEF browser to another native window keeps the page alive (macOS: re-parenting the browser's `NSView`; Windows: `SetParent` of the browser's `HWND`, then `NotifyMoveOrResizeStarted` and `WasResized`); tab-modal panels (permission, password, sign-in dialogs) and the dev tools dock must move with the tab or be closed first.
+- 2026-11-03 (implementation): verified on macOS that moving the tab's view (with the CEF browser's `NSView` and the dev tools dock) into another window keeps the page live: a running counter and typed form text survive, and nothing reloads. On Windows the tab's container window is re-parented with `SetParent`, the docked dev tools go along (a dock in its own window stays there) and CEF is told with `NotifyMoveOrResizeStarted`. Open tab-modal panels live inside the tab and move with it; the window's password and save prompts close when their tab leaves.
+- Chrome behaviour followed in details: the drag image is a picture of the tab or label; Esc cancels a drag; a tab dragged back over its own strip shows the mark and goes there; the menu's window list names each window by its active tab with "and N more"; "New Window" is disabled for a window's only tab; a maximised window dragged by its only tab is restored under the mouse (Windows).
+- Internal pages (history, bookmarks, downloads, passwords) act on the window holding their tab at the time, found by the tab's id, so they keep working after the tab moves (found while implementing; before, they kept the window they were opened in).
+- macOS: Tab → Move Tab to New Window has a configurable shortcut `shortcuts.move_tab_new_window` (unset by default, as in Chrome). Windows has no menu bar, so the action is in the tab menu only.
+- Testing: the core's group moves and moved-tab inserts have unit tests; dragging gestures are tested by hand (`docs/testing/026-tab-dragging.md`), as posted mouse events do not reach a separate test copy of Brouk on macOS.

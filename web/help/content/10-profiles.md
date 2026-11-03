@@ -7,7 +7,7 @@ Profiles are local: there is no account to sign in to. Two things are deliberate
 ### Profiles side by side {#profiles-groups}
 
 - A window can hold tabs of several profiles. All tabs of one profile in a window form **one group**, labelled with the profile's name and colour.
-- Click a group's label to collapse or expand it. The **+** after a group opens a new tab in that profile.
+- Click a group's label to collapse or expand it; drag it to put the groups in another order or to [move the whole group to another window](#tabs-dragging). The **+** after a group opens a new tab in that profile.
 - New tabs and windows (<kbd>⌘T</kbd>, <kbd>⌘N</kbd>) open in the **default profile**. Its group is in every window, even without tabs.
 - Tabs opened from a page (links, popups, "Open Link in New Tab") stay in the page's profile — unless a [link routing rule](#link-routing) sends them elsewhere.
 - **Moving a tab to another profile:** drag it into the other profile's group. Brouk asks first, because the page reloads in the other profile and is signed in only if you are signed in there.
