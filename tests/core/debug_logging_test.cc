@@ -27,8 +27,8 @@ TEST(DebugLoggingTest, UtcTimesReadBack) {
 }
 
 TEST(DebugLoggingTest, OffClearsTheEndTime) {
-  const DebugLoggingDecision off =
-      DecideDebugLogging({.debug = false}, Time("2026-11-04T10:00:00Z"));
+  const DebugLoggingDecision off = DecideDebugLogging(
+      {.debug = false, .until = ""}, Time("2026-11-04T10:00:00Z"));
   EXPECT_FALSE(off.on);
   EXPECT_FALSE(off.write_until);
   const DebugLoggingDecision stale =
@@ -40,7 +40,7 @@ TEST(DebugLoggingTest, OffClearsTheEndTime) {
 
 TEST(DebugLoggingTest, SwitchingOnSetsTheEndTime) {
   const DebugLoggingDecision decision = DecideDebugLogging(
-      {.debug = true, .hours = 24}, Time("2026-11-04T10:00:00Z"));
+      {.debug = true, .until = "", .hours = 24}, Time("2026-11-04T10:00:00Z"));
   EXPECT_TRUE(decision.on);
   EXPECT_EQ(decision.write_until, "2026-11-05T10:00:00Z");
   EXPECT_FALSE(decision.write_debug);
