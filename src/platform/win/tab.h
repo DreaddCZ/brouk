@@ -200,6 +200,10 @@ class Tab final : public TabClientDelegate,
   void MarkNextVisitBookmark() { next_visit_bookmark_ = true; }
   void SetBounds(const RECT& bounds);
   void SetVisible(bool visible);
+  // Moving the tab to another window (026): its page, panels and dev tools
+  // go into `parent` (hidden until shown there), and `host` gets its
+  // events. The page keeps running.
+  void MoveToWindow(TabHost& host, HWND parent);
   // The icon again at a new size (the window's DPI changed).
   void UpdateFaviconSize();
   void Navigate(const std::string& url);
@@ -437,7 +441,7 @@ class Tab final : public TabClientDelegate,
                                         WPARAM wparam,
                                         LPARAM lparam);
 
-  TabHost& host_;
+  TabHost* host_;  // Changes when the tab moves to another window (026).
   const TabId id_;
   const ProfileId profile_;
   HWND container_ = nullptr;

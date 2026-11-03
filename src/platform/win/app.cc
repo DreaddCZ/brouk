@@ -153,8 +153,7 @@ std::optional<std::string> UsableFolder(const std::string& configured) {
 // actions through Windows.
 class AppDownloadsPage final : public DownloadsPageDelegate {
  public:
-  AppDownloadsPage(App& app, BrowserWindow& window, TabId tab)
-      : app_(app), window_(&window), tab_(tab) {}
+  AppDownloadsPage(App& app, TabId tab) : app_(app), tab_(tab) {}
   ~AppDownloadsPage() override {
     if (watcher_) {
       app_.UnwatchDownloads(watcher_);
@@ -165,8 +164,7 @@ class AppDownloadsPage final : public DownloadsPageDelegate {
 
   std::vector<ProfileInfo> Profiles() override { return app_.ProfileList(); }
   ProfileId CurrentProfile() override {
-    return app_.IsOpenWindow(window_) ? window_->ProfileOfTab(tab_)
-                                      : app_.DefaultProfile();
+    return Window() ? Window()->ProfileOfTab(tab_) : app_.DefaultProfile();
   }
   DownloadService* Service() override { return app_.Downloads(); }
   bool FileExists(const std::string& path) override {
@@ -180,12 +178,11 @@ class AppDownloadsPage final : public DownloadsPageDelegate {
     return RecycleDownloadedFile(path);
   }
   void CopyText(const std::string& text) override {
-    SetClipboardText(app_.IsOpenWindow(window_) ? window_->hwnd() : nullptr,
-                     Utf8ToWide(text));
+    SetClipboardText(Window() ? Window()->hwnd() : nullptr, Utf8ToWide(text));
   }
   void Retry(const DownloadEntry& entry) override {
-    if (app_.IsOpenWindow(window_)) {
-      window_->RetryDownload(entry);
+    if (Window()) {
+      Window()->RetryDownload(entry);
     }
   }
   void Watch(std::function<void()> changed) override {
@@ -198,7 +195,8 @@ class AppDownloadsPage final : public DownloadsPageDelegate {
  private:
   App& app_;
   // Checked with IsOpenWindow before use: the window may close first.
-  BrowserWindow* window_;
+  // The window holding the tab now (tabs move between windows, 026).
+  BrowserWindow* Window() const { return app_.WindowWithTab(tab_); }
   TabId tab_;
   int watcher_ = 0;
 };
@@ -207,8 +205,7 @@ class AppDownloadsPage final : public DownloadsPageDelegate {
 // opening and file dialogs through the window holding the tab.
 class AppBookmarksPage final : public BookmarksPageDelegate {
  public:
-  AppBookmarksPage(App& app, BrowserWindow& window, TabId tab)
-      : app_(app), window_(&window), tab_(tab) {}
+  AppBookmarksPage(App& app, TabId tab) : app_(app), tab_(tab) {}
   ~AppBookmarksPage() override {
     if (BookmarkStore* store = app_.Bookmarks(); store && watcher_) {
       store->Unwatch(watcher_);
@@ -219,8 +216,7 @@ class AppBookmarksPage final : public BookmarksPageDelegate {
 
   std::vector<ProfileInfo> Profiles() override { return app_.ProfileList(); }
   ProfileId CurrentProfile() override {
-    return app_.IsOpenWindow(window_) ? window_->ProfileOfTab(tab_)
-                                      : app_.DefaultProfile();
+    return Window() ? Window()->ProfileOfTab(tab_) : app_.DefaultProfile();
   }
   // The store goes before the pages at quit: each call looks it up.
   const BookmarkModel& Model() override {
@@ -247,8 +243,8 @@ class AppBookmarksPage final : public BookmarksPageDelegate {
     return true;
   }
   void Open(BookmarkId id, bool new_tab) override {
-    if (app_.IsOpenWindow(window_)) {
-      window_->OpenBookmarkFromTab(tab_, id, new_tab);
+    if (Window()) {
+      Window()->OpenBookmarkFromTab(tab_, id, new_tab);
     }
   }
   void Favicons(const ProfileId& profile,
@@ -277,7 +273,7 @@ class AppBookmarksPage final : public BookmarksPageDelegate {
     options.type_name = L"HTML bookmark file";
     options.extension = L"html";
     options.file_name = L"Bookmarks";
-    HWND owner = app_.IsOpenWindow(window_) ? window_->hwnd() : nullptr;
+    HWND owner = Window() ? Window()->hwnd() : nullptr;
     // Asked from a task: the dialog runs its own message loop, which must
     // not run inside the page's request.
     CefPostTask(TID_UI, new FunctionTask([options, owner, html, done] {
@@ -300,7 +296,7 @@ class AppBookmarksPage final : public BookmarksPageDelegate {
     options.note =
         L"An HTML bookmark file, as exported by Chrome, Edge or Firefox. The "
         L"bookmarks go into \u201CImported\u201D under Other bookmarks.";
-    HWND owner = app_.IsOpenWindow(window_) ? window_->hwnd() : nullptr;
+    HWND owner = Window() ? Window()->hwnd() : nullptr;
     CefPostTask(TID_UI, new FunctionTask([options, owner, done] {
                   std::optional<std::filesystem::path> path =
                       AskOpenPath(owner, options);
@@ -321,7 +317,8 @@ class AppBookmarksPage final : public BookmarksPageDelegate {
  private:
   App& app_;
   // Checked with IsOpenWindow before use: the window may close first.
-  BrowserWindow* window_;
+  // The window holding the tab now (tabs move between windows, 026).
+  BrowserWindow* Window() const { return app_.WindowWithTab(tab_); }
   TabId tab_;
   int watcher_ = 0;
 };
@@ -355,16 +352,15 @@ class AppTaskManager final : public TaskManagerDelegate {
 // window holding the tab, if it is still open.
 class AppHistoryPage final : public HistoryPageDelegate {
  public:
-  AppHistoryPage(App& app, BrowserWindow& window, TabId tab)
-      : app_(app), window_(&window), tab_(tab) {}
+  AppHistoryPage(App& app, TabId tab) : app_(app), tab_(tab) {}
 
   std::vector<ProfileInfo> Profiles() override { return app_.ProfileList(); }
   HistoryService* History() override { return app_.History(); }
   void OpenPage(const ProfileId& profile,
                 const std::string& url,
                 bool new_tab) override {
-    if (app_.IsOpenWindow(window_)) {
-      window_->OpenPageFromTab(tab_, profile, url, new_tab);
+    if (Window()) {
+      Window()->OpenPageFromTab(tab_, profile, url, new_tab);
     } else {
       app_.OpenWindow(url, profile);
     }
@@ -374,12 +370,10 @@ class AppHistoryPage final : public HistoryPageDelegate {
     app_.SetGlobalSetting("history.view", SettingValue(view));
   }
   void CopyText(const std::string& text) override {
-    SetClipboardText(app_.IsOpenWindow(window_) ? window_->hwnd() : nullptr,
-                     Utf8ToWide(text));
+    SetClipboardText(Window() ? Window()->hwnd() : nullptr, Utf8ToWide(text));
   }
   ProfileId CurrentProfile() override {
-    return app_.IsOpenWindow(window_) ? window_->ProfileOfTab(tab_)
-                                      : app_.DefaultProfile();
+    return Window() ? Window()->ProfileOfTab(tab_) : app_.DefaultProfile();
   }
   std::vector<std::string> KeepList(const ProfileId& profile) override {
     return app_.KeepList(profile);
@@ -410,7 +404,8 @@ class AppHistoryPage final : public HistoryPageDelegate {
  private:
   App& app_;
   // Checked with IsOpenWindow before use: the window may close first.
-  BrowserWindow* window_;
+  // The window holding the tab now (tabs move between windows, 026).
+  BrowserWindow* Window() const { return app_.WindowWithTab(tab_); }
   TabId tab_;
 };
 
@@ -418,8 +413,7 @@ class AppHistoryPage final : public HistoryPageDelegate {
 // the file dialogs through the window holding the tab.
 class AppPasswordsPage final : public PasswordsPageDelegate {
  public:
-  AppPasswordsPage(App& app, BrowserWindow& window, TabId tab)
-      : app_(app), window_(&window), tab_(tab) {}
+  AppPasswordsPage(App& app, TabId tab) : app_(app), tab_(tab) {}
 
   std::vector<PasswordsPageProfile> Profiles() override {
     std::vector<PasswordsPageProfile> profiles;
@@ -430,8 +424,7 @@ class AppPasswordsPage final : public PasswordsPageDelegate {
     return profiles;
   }
   ProfileId CurrentProfile() override {
-    return app_.IsOpenWindow(window_) ? window_->ProfileOfTab(tab_)
-                                      : app_.DefaultProfile();
+    return Window() ? Window()->ProfileOfTab(tab_) : app_.DefaultProfile();
   }
   PasswordManager* Manager() override { return app_.Passwords(); }
   bool BreachCheckEnabled() override {
@@ -439,13 +432,13 @@ class AppPasswordsPage final : public PasswordsPageDelegate {
   }
   void Authenticate(const std::string& reason,
                     std::function<void(bool)> done) override {
-    if (!app_.IsOpenWindow(window_)) {
+    if (!Window()) {
       done(false);
       return;
     }
     // As macOS words it: "Brouk is trying to show and change ...".
     VerifyUser(
-        window_->hwnd(),
+        Window()->hwnd(),
         Utf8ToWide(std::string(kAppName) + " is trying to " + reason + "."),
         std::move(done));
   }
@@ -505,13 +498,12 @@ class AppPasswordsPage final : public PasswordsPageDelegate {
   }
 
  private:
-  HWND Owner() const {
-    return app_.IsOpenWindow(window_) ? window_->hwnd() : nullptr;
-  }
+  HWND Owner() const { return Window() ? Window()->hwnd() : nullptr; }
 
   App& app_;
   // Checked with IsOpenWindow before use: the window may close first.
-  BrowserWindow* window_;
+  // The window holding the tab now (tabs move between windows, 026).
+  BrowserWindow* Window() const { return app_.WindowWithTab(tab_); }
   TabId tab_;
 };
 
@@ -1035,7 +1027,6 @@ CefRefPtr<CefRequestContext> App::InternalContext() {
 
 std::unique_ptr<CefMessageRouterBrowserSide::Handler> App::InternalPageHandler(
     const std::string& page,
-    BrowserWindow& window,
     TabId tab) {
   // The other pages come with their features (024, W2 and W3).
   if (page == "credits") {
@@ -1043,19 +1034,19 @@ std::unique_ptr<CefMessageRouterBrowserSide::Handler> App::InternalPageHandler(
   }
   if (page == "bookmarks" && bookmarks_) {
     return std::make_unique<BookmarksPageHandler>(
-        std::make_unique<AppBookmarksPage>(*this, window, tab));
+        std::make_unique<AppBookmarksPage>(*this, tab));
   }
   if (page == "downloads" && downloads_) {
     return std::make_unique<DownloadsPageHandler>(
-        std::make_unique<AppDownloadsPage>(*this, window, tab));
+        std::make_unique<AppDownloadsPage>(*this, tab));
   }
   if (page == "history" && history_) {
     return std::make_unique<HistoryPageHandler>(
-        std::make_unique<AppHistoryPage>(*this, window, tab));
+        std::make_unique<AppHistoryPage>(*this, tab));
   }
   if (page == "passwords" && passwords_) {
     return std::make_unique<PasswordsPageHandler>(
-        std::make_unique<AppPasswordsPage>(*this, window, tab));
+        std::make_unique<AppPasswordsPage>(*this, tab));
   }
   return nullptr;
 }
@@ -1725,6 +1716,32 @@ void App::OpenWindow(const std::string& url, const ProfileId& profile) {
   window->Show();
   windows_.push_back(std::move(window));
   frozen_session_.reset();  // A window again: the session goes on.
+}
+
+BrowserWindow* App::OpenWindowForMovedTabs(const RECT& frame) {
+  CEF_REQUIRE_UI_THREAD();
+  auto window =
+      std::make_unique<BrowserWindow>(*this, BrowserWindow::Kind::kNormal);
+  if (!window->Create()) {
+    LOG(ERROR) << "Could not create a browser window (error " << GetLastError()
+               << ")";
+    return nullptr;
+  }
+  SetWindowPos(window->hwnd(), nullptr, frame.left, frame.top,
+               frame.right - frame.left, frame.bottom - frame.top,
+               SWP_NOZORDER | SWP_NOACTIVATE);
+  BrowserWindow* created = window.get();
+  windows_.push_back(std::move(window));
+  return created;
+}
+
+BrowserWindow* App::WindowWithTab(TabId tab) {
+  for (const std::unique_ptr<BrowserWindow>& window : windows_) {
+    if (window->FindTab(tab)) {
+      return window.get();
+    }
+  }
+  return nullptr;
 }
 
 BrowserWindow* App::OpenPopupWindow(int width, int height) {

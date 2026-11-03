@@ -91,13 +91,13 @@ bool RegisterContainerClass(WNDPROC procedure) {
 }  // namespace
 
 Tab::Tab(TabHost& host, TabId id, HWND parent, ProfileId profile)
-    : host_(host), id_(id), profile_(std::move(profile)) {
+    : host_(&host), id_(id), profile_(std::move(profile)) {
   client_ = new TabClient(this);
   // Downloads (014) go to the app's list; passwords (008) are the profile's.
-  client_->SetDownloads(host_.TabDownloads(), profile_);
-  client_->SetPasswords(host_.TabPasswords(), profile_);
-  client_->SetAutofill(host_.TabAutofill());
-  client_->SetAdblock(host_.TabAdblock(), profile_);
+  client_->SetDownloads(host_->TabDownloads(), profile_);
+  client_->SetPasswords(host_->TabPasswords(), profile_);
+  client_->SetAutofill(host_->TabAutofill());
+  client_->SetAdblock(host_->TabAdblock(), profile_);
   if (RegisterContainerClass(&Tab::ContainerProc)) {
     container_ = CreateWindowExW(0, kContainerClass, L"",
                                  WS_CHILD | WS_CLIPCHILDREN, 0, 0, 0, 0, parent,
@@ -275,7 +275,7 @@ bool Tab::ForwardShortcut(int key, bool control, bool alt, bool shift) {
   event.modifiers = (control ? EVENTFLAG_CONTROL_DOWN : 0) |
                     (alt ? EVENTFLAG_ALT_DOWN : 0) |
                     (shift ? EVENTFLAG_SHIFT_DOWN : 0);
-  return host_.OnTabKey(event);
+  return host_->OnTabKey(event);
 }
 
 std::unique_ptr<TabPanel> Tab::MakePanel(TabPanel::Content content,
@@ -362,6 +362,18 @@ void Tab::LayoutWithDock() {
                page.bottom - page.top, SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
+void Tab::MoveToWindow(TabHost& host, HWND parent) {
+  host_ = &host;
+  SetVisible(false);
+  SetParent(container_, parent);
+  // A docked dock goes along; one in its own window stays there.
+  PlaceDock();
+  UpdateFaviconSize();
+  if (browser_) {
+    browser_->GetHost()->NotifyMoveOrResizeStarted();
+  }
+}
+
 void Tab::SetVisible(bool visible) {
   // Chromium notices a hidden window and stops rendering the tab (CEF's
   // WasHidden is only for windowless browsers).
@@ -372,7 +384,7 @@ void Tab::SetVisible(bool visible) {
 }
 
 void Tab::UpdateFaviconSize() {
-  favicon_ = Favicon::FromPng(favicon_png_, host_.FaviconSize());
+  favicon_ = Favicon::FromPng(favicon_png_, host_->FaviconSize());
 }
 
 void Tab::Navigate(const std::string& url) {
@@ -484,7 +496,7 @@ bool Tab::OnFindShortcut(int key, bool control, bool alt, bool shift) {
 void Tab::Zoom(cef_zoom_command_t command) {
   if (browser_ && browser_->GetHost()->CanZoom(command)) {
     browser_->GetHost()->Zoom(command);
-    host_.OnTabChanged(*this);
+    host_->OnTabChanged(*this);
   }
 }
 
@@ -509,7 +521,7 @@ void Tab::SetMuted(bool muted) {
   if (browser_) {
     browser_->GetHost()->SetAudioMuted(muted);
   }
-  host_.OnTabChanged(*this);
+  host_->OnTabChanged(*this);
 }
 
 void Tab::Close() {
@@ -526,7 +538,7 @@ void Tab::Close() {
     std::weak_ptr<int> alive = alive_;
     CefPostTask(TID_UI, new FunctionTask([this, alive] {
                   if (!alive.expired()) {
-                    host_.OnTabClosed(*this);
+                    host_->OnTabClosed(*this);
                   }
                 }));
   }
@@ -551,7 +563,7 @@ void Tab::OnBrowserCreated(CefRefPtr<CefBrowser> browser) {
     browser_->GetMainFrame()->LoadURL(pending_url_);
     pending_url_.clear();
   }
-  host_.OnTabBrowserCreated(*this);
+  host_->OnTabBrowserCreated(*this);
   if (devtools_when_created_) {
     devtools_when_created_ = false;
     OpenDock(inspect_when_created_);
@@ -564,11 +576,11 @@ void Tab::OnTitleChanged(const std::string& title) {
     dock_frame_->SetTitle(L"Developer Tools \u2013 " +
                           Utf8ToWide(title_.empty() ? url_ : title_));
   }
-  if (HistoryService* history = host_.TabHistory();
+  if (HistoryService* history = host_->TabHistory();
       history && !internal() && !url_.empty()) {
     history->SetTitle(profile_, url_, title_);
   }
-  host_.OnTabChanged(*this);
+  host_->OnTabChanged(*this);
 }
 
 void Tab::OnAddressChanged(const std::string& url) {
@@ -580,7 +592,7 @@ void Tab::OnAddressChanged(const std::string& url) {
     blocked_popups_.clear();
   }
   url_ = url;
-  host_.OnTabChanged(*this);
+  host_->OnTabChanged(*this);
 }
 
 // For history (013): how the visit started.
@@ -603,7 +615,7 @@ void Tab::OnPageVisited(const std::string& url,
   }
   next_visit_typed_ = false;
   next_visit_bookmark_ = false;
-  HistoryService* history = host_.TabHistory();
+  HistoryService* history = host_->TabHistory();
   if (!history || internal()) {
     return;
   }
@@ -618,7 +630,7 @@ void Tab::OnPageVisited(const std::string& url,
   last_visit_url_ = url;
   last_visit_kind_ = kind;
   history->RecordVisit(profile_, url, title, kind);
-  host_.OnTabHistoryChanged(*this);
+  host_->OnTabHistoryChanged(*this);
 }
 
 void Tab::OnLoadingStateChanged(bool is_loading,
@@ -644,23 +656,23 @@ void Tab::OnLoadingStateChanged(bool is_loading,
       browser_->GetHost()->GetZoomLevel() != 0.0) {
     browser_->GetHost()->SetZoomLevel(0.0);
   }
-  host_.OnTabChanged(*this);
+  host_->OnTabChanged(*this);
 }
 
 void Tab::OnFaviconChanged(const std::string& icon_url,
                            const std::vector<std::uint8_t>& png) {
-  if (HistoryService* history = host_.TabHistory();
+  if (HistoryService* history = host_->TabHistory();
       history && !internal() && !url_.empty()) {
     history->SetFavicon(profile_, url_, icon_url, png);
-    host_.OnTabFaviconStored(*this);
+    host_->OnTabFaviconStored(*this);
   }
   favicon_png_ = png;
   UpdateFaviconSize();
-  host_.OnTabChanged(*this);
+  host_->OnTabChanged(*this);
 }
 
 std::optional<PopupHost> Tab::OnBeforePopup(const PopupRequest& request) {
-  return host_.OnTabPopup(*this, request);
+  return host_->OnTabPopup(*this, request);
 }
 
 void Tab::OnPopupBlocked(const std::string& target_url) {
@@ -668,16 +680,16 @@ void Tab::OnPopupBlocked(const std::string& target_url) {
   if (blocked_popups_.size() < kMaxBlockedPopups) {
     blocked_popups_.push_back(target_url);
   }
-  host_.OnTabChanged(*this);
+  host_->OnTabChanged(*this);
 }
 
 void Tab::ClearBlockedPopups() {
   blocked_popups_.clear();
-  host_.OnTabChanged(*this);
+  host_->OnTabChanged(*this);
 }
 
 void Tab::OnPopupAborted(int popup_id) {
-  host_.OnTabPopupAborted(*this, popup_id);
+  host_->OnTabPopupAborted(*this, popup_id);
 }
 
 void Tab::OnCloseReady() {
@@ -760,7 +772,7 @@ void Tab::SetPaused(bool paused) {
       evaluate(kResumeMedia);
     }
   }
-  host_.OnTabChanged(*this);
+  host_->OnTabChanged(*this);
 }
 
 void Tab::Unload() {
@@ -786,17 +798,17 @@ void Tab::OnBrowserClosed() {
     }
     browser_ = nullptr;
     client_ = new TabClient(this);
-    client_->SetDownloads(host_.TabDownloads(), profile_);
-    client_->SetPasswords(host_.TabPasswords(), profile_);
-    client_->SetAutofill(host_.TabAutofill());
-    client_->SetAdblock(host_.TabAdblock(), profile_);
+    client_->SetDownloads(host_->TabDownloads(), profile_);
+    client_->SetPasswords(host_->TabPasswords(), profile_);
+    client_->SetAutofill(host_->TabAutofill());
+    client_->SetAdblock(host_->TabAdblock(), profile_);
     deferred_context_ = std::move(unload_context_);
     loading_ = false;
     audible_ = false;
     camera_ = false;
     microphone_ = false;
     sad_tab_.reset();
-    host_.OnTabChanged(*this);
+    host_->OnTabChanged(*this);
     return;
   }
   if (client_) {
@@ -814,7 +826,7 @@ void Tab::OnBrowserClosed() {
     return;  // DockClosed finishes, once the dock's browsers are gone.
   }
   // May delete this tab later; nothing here touches it afterwards.
-  host_.OnTabClosed(*this);
+  host_->OnTabClosed(*this);
 }
 
 void Tab::ShowJsDialog(const JsDialogRequest& request, JsDialogDone done) {
@@ -888,7 +900,7 @@ void Tab::OnRendererGone(RendererGoneReason reason,
     sad_tab_->Focus();
   }
   loading_ = false;
-  host_.OnTabChanged(*this);
+  host_->OnTabChanged(*this);
 }
 
 // Chrome's "Page unresponsive" question, over the tab.
@@ -1071,18 +1083,18 @@ void Tab::OpenExternalUrl(const std::string& url) {
 }
 
 void Tab::OnFullscreenModeChanged(bool fullscreen) {
-  host_.OnTabFullscreenChanged(*this, fullscreen);
+  host_->OnTabFullscreenChanged(*this, fullscreen);
 }
 
 void Tab::OnAudibleChanged(bool audible) {
   audible_ = audible;
-  host_.OnTabChanged(*this);
+  host_->OnTabChanged(*this);
 }
 
 void Tab::OnMediaAccessChanged(bool video, bool audio) {
   camera_ = video;
   microphone_ = audio;
-  host_.OnTabChanged(*this);
+  host_->OnTabChanged(*this);
 }
 
 // Windows has no system picker that names Chromium's sources, so Brouk
@@ -1141,17 +1153,17 @@ void Tab::OnFindResult(int count, int active, bool final_update) {
 }
 
 void Tab::OpenUrl(const std::string& url, OpenDisposition disposition) {
-  host_.OpenUrlFromTab(*this, url, disposition);
+  host_->OpenUrlFromTab(*this, url, disposition);
 }
 
 bool Tab::RouteFirstNavigation(const std::string& url) {
-  return host_.RouteTabFirstNavigation(*this, url);
+  return host_->RouteTabFirstNavigation(*this, url);
 }
 
 void Tab::CopyImageToClipboard(const std::vector<std::uint8_t>& /*png*/) {}
 
 TabClientDelegate::SearchEngine Tab::CurrentSearchEngine() {
-  return host_.TabSearchEngine();
+  return host_->TabSearchEngine();
 }
 
 // "Inspect" in a web page's context menu (006): the dock, at the element.
@@ -1163,8 +1175,8 @@ void Tab::InspectElement(int x, int y) {
 // its own, as on macOS (our own tools need a web page and its profile).
 void Tab::OnInspectElement(int x, int y) {
   if (browser_) {
-    host_.InspectPage(browser_, Utf8ToWide(title_.empty() ? url_ : title_),
-                      POINT{x, y});
+    host_->InspectPage(browser_, Utf8ToWide(title_.empty() ? url_ : title_),
+                       POINT{x, y});
   }
 }
 
@@ -1176,8 +1188,8 @@ void Tab::SetDevToolsOn(bool on) {
   if (on && internal()) {
     // Brouk's pages: Chromium's DevTools only, in a window of its own.
     if (browser_) {
-      host_.InspectPage(browser_, Utf8ToWide(title_.empty() ? url_ : title_),
-                        std::nullopt);
+      host_->InspectPage(browser_, Utf8ToWide(title_.empty() ? url_ : title_),
+                         std::nullopt);
     }
     return;
   }
@@ -1190,7 +1202,7 @@ void Tab::SetDevToolsOn(bool on) {
       dock_->Close();  // DockClosed finishes.
     }
   }
-  host_.OnTabDevToolsChanged(*this);
+  host_->OnTabDevToolsChanged(*this);
 }
 
 void Tab::InspectElementAt(POINT point) {
@@ -1203,7 +1215,7 @@ void Tab::InspectElementAt(POINT point) {
   }
   devtools_on_ = true;
   OpenDock(point);
-  host_.OnTabDevToolsChanged(*this);
+  host_->OnTabDevToolsChanged(*this);
 }
 
 void Tab::ShowDevToolsConsole() {
@@ -1229,15 +1241,15 @@ void Tab::OpenDock(std::optional<POINT> inspect) {
     inspect_when_created_ = inspect;
     return;
   }
-  dock_position_ = host_.TabDockPosition();
-  dock_size_ = host_.TabDockSize();
+  dock_position_ = host_->TabDockPosition();
+  dock_size_ = host_->TabDockSize();
   rules_affected_page_ = false;
   dock_ = std::make_unique<DevToolsDock>(
-      GetParent(container_), browser_, inspect, host_.TabDevToolsContext(),
-      host_.TabDevToolsPreferences(), /*own_tools=*/true, *this);
+      GetParent(container_), browser_, inspect, host_->TabDevToolsContext(),
+      host_->TabDevToolsPreferences(), /*own_tools=*/true, *this);
   dock_->SetPosition(dock_position_);
-  dock_->SetSecretHeaderNames(host_.TabSecretHeaderNames());
-  dock_->ApplyRequestRules(host_.TabRequestRules(profile_).set);
+  dock_->SetSecretHeaderNames(host_->TabSecretHeaderNames());
+  dock_->ApplyRequestRules(host_->TabRequestRules(profile_).set);
   PlaceDock();
 }
 
@@ -1301,21 +1313,21 @@ void Tab::DockClosed(DevToolsDock& dock) {
   LayoutWithDock();
   if (devtools_on_) {
     devtools_on_ = false;
-    host_.OnTabDevToolsChanged(*this);
+    host_->OnTabDevToolsChanged(*this);
   }
   if (browser_closed_) {
     // The tab's browser closed first: the tab goes now (later, posted).
     std::weak_ptr<int> alive = alive_;
     CefPostTask(TID_UI, new FunctionTask([this, alive] {
                   if (!alive.expired()) {
-                    host_.OnTabClosed(*this);
+                    host_->OnTabClosed(*this);
                   }
                 }));
   }
 }
 
 void Tab::DockWantsPosition(const std::string& position) {
-  host_.SetTabDockPosition(position);
+  host_->SetTabDockPosition(position);
 }
 
 void Tab::DockResized(int size, bool done) {
@@ -1323,52 +1335,52 @@ void Tab::DockResized(int size, bool done) {
   dock_size_ = MulDiv(size, 96, dpi);
   LayoutWithDock();
   if (done) {
-    host_.SetTabDockSize(dock_size_);
+    host_->SetTabDockSize(dock_size_);
   }
 }
 
 bool Tab::DockKey(const CefKeyEvent& event) {
-  return host_.OnTabKey(event);
+  return host_->OnTabKey(event);
 }
 
 void Tab::DockOpenUrl(const std::string& url) {
   // A link in DevTools opens next to the tab, in its profile.
-  host_.OpenUrlFromTab(*this, url, OpenDisposition::kNewForegroundTab);
+  host_->OpenUrlFromTab(*this, url, OpenDisposition::kNewForegroundTab);
 }
 
 ToolsHost::Rules Tab::DockRequestRules() {
-  return host_.TabRequestRules(profile_);
+  return host_->TabRequestRules(profile_);
 }
 
 std::optional<Error> Tab::DockSetRequestRules(RequestRuleSet rules) {
-  return host_.SetTabRequestRules(profile_, std::move(rules));
+  return host_->SetTabRequestRules(profile_, std::move(rules));
 }
 
 void Tab::DockRulesAffectedPage() {
   if (!rules_affected_page_) {
     rules_affected_page_ = true;
-    host_.OnTabDevToolsChanged(*this);
+    host_->OnTabDevToolsChanged(*this);
   }
 }
 
 void Tab::DockInspectTools(CefRefPtr<CefBrowser> tools, int x, int y) {
-  host_.InspectPage(tools, L"Brouk tools", POINT{x, y});
+  host_->InspectPage(tools, L"Brouk tools", POINT{x, y});
 }
 
 void Tab::DockBrowserCount(int delta) {
-  host_.TabBrowserCount(delta);
+  host_->TabBrowserCount(delta);
 }
 
 bool Tab::AskWhereToSaveDownloads() {
-  return host_.TabAskWhereToSaveDownloads();
+  return host_->TabAskWhereToSaveDownloads();
 }
 
 DownloadTarget Tab::ReserveDownloadPath(const std::string& suggested) {
-  return host_.TabReserveDownloadPath(suggested, profile_);
+  return host_->TabReserveDownloadPath(suggested, profile_);
 }
 
 void Tab::ReleaseDownloadPath(const std::string& path) {
-  host_.TabReleaseDownloadPath(path);
+  host_->TabReleaseDownloadPath(path);
 }
 
 void Tab::OnAdblockRequest(const AdblockRequestInfo& info) {
@@ -1384,7 +1396,7 @@ void Tab::OnAdblockRequest(const AdblockRequestInfo& info) {
   if (info.blocked) {
     ++adblock_blocked_;
   }
-  host_.OnTabAdblockChanged(*this);
+  host_->OnTabAdblockChanged(*this);
 }
 
 // The ad blocker blocked the page itself (007): which list did, with
@@ -1396,7 +1408,7 @@ void Tab::OnPageBlocked(const AdblockRequestInfo& info) {
   content.icon = kShieldGlyph;
   content.title = Utf8ToWide(std::string(kAppName) + " blocked this page");
   content.message = Utf8ToWide(info.host) + L" is blocked by the list \u201C" +
-                    Utf8ToWide(host_.TabAdblockListName(info.list_id)) +
+                    Utf8ToWide(host_->TabAdblockListName(info.list_id)) +
                     L"\u201D.";
   content.detail = L"Rule: " + Utf8ToWide(info.rule);
   content.buttons = {L"Go back", L"Allow this site"};
@@ -1412,7 +1424,7 @@ void Tab::OnPageBlocked(const AdblockRequestInfo& info) {
                               if (answer.button == 1) {
                                 // Off for the site in the tab's profile, then
                                 // the page loads.
-                                host_.AllowAdblockSiteFromTab(*this, url);
+                                host_->AllowAdblockSiteFromTab(*this, url);
                               } else if (can_go_back_ && browser_) {
                                 browser_->GoBack();
                               }
@@ -1462,7 +1474,7 @@ void Tab::OnElementPicked(const std::string& url, const std::string& selector) {
                                  rule.find(L'\n') != std::wstring::npos) {
                                return;
                              }
-                             host_.AddTabAdblockRule(*this, WideToUtf8(rule));
+                             host_->AddTabAdblockRule(*this, WideToUtf8(rule));
                            });
   picked_rule_->Focus();
 }
@@ -1478,17 +1490,18 @@ bool Tab::OnUnhandledKeyEvent(const CefKeyEvent& event,
     OnFindClose();
     return true;
   }
-  return host_.OnTabKey(event);
+  return host_->OnTabKey(event);
 }
 
 bool Tab::KeepsFocusOnNavigation() {
-  return host_.TabKeepsFocusOnNavigation(*this);
+  return host_->TabKeepsFocusOnNavigation(*this);
 }
 
 void Tab::ShowPasswordMenu(const PasswordMenu& menu, PasswordMenuDone done) {
   HWND browser = BrowserWindowHandle();
   if (menu.at_key_icon) {
-    host_.ShowTabPasswordList(*this, menu.items, std::nullopt, std::move(done));
+    host_->ShowTabPasswordList(*this, menu.items, std::nullopt,
+                               std::move(done));
     return;
   }
   if (!browser || !IsWindowVisible(container_)) {
@@ -1504,22 +1517,22 @@ void Tab::ShowPasswordMenu(const PasswordMenu& menu, PasswordMenuDone done) {
       origin.y + static_cast<LONG>(menu.y * scale),
       origin.x + static_cast<LONG>((menu.x + menu.width) * scale),
       origin.y + static_cast<LONG>((menu.y + menu.height) * scale)};
-  host_.ShowTabPasswordList(*this, menu.items, field, std::move(done));
+  host_->ShowTabPasswordList(*this, menu.items, field, std::move(done));
 }
 
 void Tab::HidePasswordMenu() {
-  host_.HideTabPasswordList(*this);
+  host_->HideTabPasswordList(*this);
 }
 
 void Tab::ShowPasswordPrompt(const PasswordPrompt& prompt,
                              PasswordPromptDone done) {
-  host_.ShowTabPasswordPrompt(*this, prompt, std::move(done));
+  host_->ShowTabPasswordPrompt(*this, prompt, std::move(done));
 }
 
 void Tab::OnPasswordIconChanged(PasswordIcon icon) {
   if (icon != password_icon_) {
     password_icon_ = icon;
-    host_.OnTabPasswordIconChanged(*this);
+    host_->OnTabPasswordIconChanged(*this);
   }
 }
 
@@ -1536,7 +1549,7 @@ void Tab::ShowWaitingPasswordPrompt() {
 }
 
 void Tab::OpenPasswordsPage() {
-  host_.OpenTabPasswordsPage(*this);
+  host_->OpenTabPasswordsPage(*this);
 }
 
 void Tab::CopyTextToClipboard(const std::string& text) {
@@ -1545,7 +1558,7 @@ void Tab::CopyTextToClipboard(const std::string& text) {
 }
 
 bool Tab::HandlePasswordMenuKey(int windows_key_code) {
-  return host_.TabPasswordListKey(*this, windows_key_code);
+  return host_->TabPasswordListKey(*this, windows_key_code);
 }
 
 void Tab::DecodeQrCodes(std::vector<std::uint8_t> png, QrDone done) {
@@ -1574,8 +1587,8 @@ void Tab::ShowPasswordMessage(const std::string& title,
 void Tab::AskBitwardenPassword(const BitwardenPasswordRequest& request,
                                BitwardenPasswordSubmit submit,
                                std::function<void()> cancelled) {
-  host_.AskTabBitwardenPassword(*this, request, std::move(submit),
-                                std::move(cancelled));
+  host_->AskTabBitwardenPassword(*this, request, std::move(submit),
+                                 std::move(cancelled));
 }
 
 void Tab::ConfirmWithTouchId(const std::string& reason, TouchIdDone done) {
@@ -1592,16 +1605,16 @@ void Tab::ConfirmWithTouchId(const std::string& reason, TouchIdDone done) {
 }
 
 void Tab::ShowHttpAuthDialog(const HttpAuthDialog& dialog, HttpAuthDone done) {
-  host_.ShowTabSignInDialog(*this, dialog, std::move(done));
+  host_->ShowTabSignInDialog(*this, dialog, std::move(done));
 }
 
 void Tab::ShowAutofillPrompt(const AutofillPrompt& prompt,
                              AutofillPromptDone done) {
-  host_.ShowTabAutofillPrompt(*this, prompt, std::move(done));
+  host_->ShowTabAutofillPrompt(*this, prompt, std::move(done));
 }
 
 void Tab::OpenAutofillSettings() {
-  host_.OpenTabAutofillSettings(*this);
+  host_->OpenTabAutofillSettings(*this);
 }
 
 }  // namespace brouk::win

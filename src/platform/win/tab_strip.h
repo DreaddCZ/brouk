@@ -80,6 +80,35 @@ class TabStrip {
   std::optional<ProfileId> GroupAt(POINT point) const;
   std::optional<RECT> TabRect(TabId tab) const;
 
+  // Where tabs of `profile` dropped at `x` go (026), not counting
+  // `excluded` tabs (dragged from this strip) and, for a dragged group
+  // (`group`), the group itself.
+  struct DropPlace {
+    // Position inside the profile's group.
+    std::size_t position = 0;
+    // The group's place among the groups if it is created or moved.
+    std::size_t group_index = 0;
+    // Dropped inside another profile's group (a single tab: asks to move
+    // it to that profile, 005).
+    std::optional<ProfileId> other_profile;
+    int mark_x = 0;  // Where the insertion mark goes.
+  };
+  DropPlace DropPlaceAt(int x,
+                        const ProfileId& profile,
+                        const TabStripModel& model,
+                        const std::vector<TabId>& excluded,
+                        bool group) const;
+  // Whether `point` is on the strip or a little above or below it, where
+  // dragged tabs attach.
+  bool InDropArea(POINT point) const;
+  // How far above or below the strip a dragged tab leaves it.
+  int DetachDistance() const { return Scale(12); }
+  // Where a group's label is, for the image of a dragged group.
+  std::optional<RECT> GroupLabelRect(const ProfileId& profile) const;
+  // Whether `profile`'s group is the last one: the default profile's,
+  // which does not move within the strip.
+  bool IsLastGroup(const ProfileId& profile) const;
+
   struct PaintState {
     const Theme* theme = nullptr;
     std::function<const Tab*(TabId)> tab;
@@ -90,6 +119,8 @@ class TabStrip {
     bool maximized = false;
     bool dark = false;     // Profile colours have a dark-mode shade.
     int spinner_step = 0;  // Animation of loading tabs.
+    // Tabs dragged over the strip: where they would go (026).
+    std::optional<int> drop_mark;
   };
   void Paint(HDC dc, const PaintState& state) const;
 
