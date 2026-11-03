@@ -11,6 +11,7 @@
 
 #include "cef/function_task.h"
 #include "core/crypto.h"
+#include "core/log.h"
 #include "core/process_runner.h"
 #include "core/utf8_path.h"
 #include "include/cef_task.h"
@@ -82,14 +83,14 @@ struct PasswordManager::State {
         LoadOrCreateKey(*keychain, PasswordKeyAccount(profile));
     if (!key) {
       last_error = "The keychain could not be read: " + key.error().message;
-      LOG(ERROR) << "Passwords of profile " << profile << ": " << last_error;
+      LogError() << "Passwords of profile " << profile << ": " << last_error;
       return nullptr;
     }
     Result<std::unique_ptr<PasswordStore>> store =
         PasswordStore::Open(database_path(profile), key.value());
     if (!store) {
       last_error = store.error().message;
-      LOG(ERROR) << "Passwords of profile " << profile << ": " << last_error;
+      LogError() << "Passwords of profile " << profile << ": " << last_error;
       return nullptr;
     }
     return open.emplace(profile, std::move(store).value()).first->second.get();

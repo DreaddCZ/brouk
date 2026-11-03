@@ -5,6 +5,7 @@
 #include <utility>
 
 #include "cef/function_task.h"
+#include "core/log.h"
 #include "include/cef_task.h"
 #include "include/wrapper/cef_helpers.h"
 
@@ -59,7 +60,7 @@ AutofillManager::AutofillManager(std::filesystem::path database,
       }
     }
     if (error) {
-      LOG(ERROR) << "Autofill: " << *error;
+      LogError() << "Autofill: " << *error;
     }
     PostToUi([this, alive, error, entries = std::move(entries),
               custom = std::move(custom)]() mutable {

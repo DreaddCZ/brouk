@@ -57,9 +57,8 @@ int main(int argc, char* argv[]) {
                                    NSBundle.mainBundle.privateFrameworksPath,
                                    brouk::kAppName, brouk::kAppName];
     CefString(&settings.browser_subprocess_path) = helper.UTF8String;
-#if defined(NDEBUG)
-    settings.log_severity = LOGSEVERITY_WARNING;
-#endif
+    // Brouk's log, and Chromium's while debug logging is on (025).
+    [delegate startLoggingWith:settings];
     // Remote debugging (006): off unless enabled in the settings (or by the
     // --remote-debugging-port switch). Chromium listens on localhost only.
     settings.remote_debugging_port = [delegate remoteDebuggingPortSetting];

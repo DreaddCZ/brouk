@@ -1,7 +1,5 @@
 #import "platform/mac/link_routing_controller.h"
 
-#include <os/log.h>
-
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -10,6 +8,7 @@
 
 #include "cef/devtools_channel.h"
 #include "core/link_unwrap.h"
+#include "core/log.h"
 #include "include/cef_values.h"
 #include "include/wrapper/cef_helpers.h"
 #import "platform/mac/browser_tab.h"
@@ -100,7 +99,7 @@ NSScreen* ScreenWithMouse() {
   _problems.clear();
   _config = brouk::LoadLinkRouting(_path, _problems);
   for (const std::string& problem : _problems) {
-    NSLog(@"Link routing: %s", problem.c_str());
+    brouk::LogWarning() << "Link routing: " << problem;
   }
 }
 
@@ -281,9 +280,9 @@ NSScreen* ScreenWithMouse() {
   [self showPickerFor:request decision:decision];
 }
 
-// One line in the macOS log per routed link, so a link that opens in an
-// unexpected profile can be explained (Console, process "brouk"). Never
-// query values: LinkForLog leaves them out.
+// One line in Brouk's log per routed link while debug logging is on
+// (025), so a link that opens in an unexpected profile can be explained.
+// Never query values: LinkForLog leaves them out.
 - (void)logRouting:(BRLinkRequest*)request
           decision:(const brouk::ProfileDecision&)decision {
   std::string profiles;
@@ -298,8 +297,7 @@ NSScreen* ScreenWithMouse() {
       (request.wrapper ? request.wrapper.UTF8String : "no wrapper") +
       ", routed by " + brouk::LinkForLog(request.realURL.UTF8String ?: "") +
       ": " + rule + " -> " + profiles;
-  // Public: macOS hides NSLog's arguments, and the line holds no secrets.
-  os_log(OS_LOG_DEFAULT, "Link routing: %{public}s", line.c_str());
+  brouk::LogInfo() << "Link routing: " << line;
 }
 
 - (std::vector<brouk::RoutingWindow>)
@@ -504,7 +502,7 @@ NSScreen* ScreenWithMouse() {
       if (brouk::NarrowRoutingRule(config, pattern.UTF8String,
                                    result.profile)) {
         if (std::optional<brouk::Error> error = [self setConfig:config]) {
-          NSLog(@"Link routing: %s", error->message.c_str());
+          brouk::LogWarning() << "Link routing: " << error->message;
         }
       }
     }

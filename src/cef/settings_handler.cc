@@ -273,6 +273,9 @@ bool SettingsHandler::OnQuery(CefRefPtr<CefBrowser> /*browser*/,
   } else if (*type == "settings.clearBrowsingData") {
     delegate.OpenClearBrowsingData();
     callback->Success("");
+  } else if (*type == "settings.showLog") {
+    delegate.RevealLog();
+    callback->Success("");
   } else if (*type == "settings.export") {
     delegate.ExportSettings(FileAnswer(callback));
   } else if (*type == "settings.import") {

@@ -67,7 +67,7 @@ void Write(LogLevel level,
     std::fprintf(stderr, "%s\n", line.c_str());
   }
   LogState& state = State();
-  const std::lock_guard<std::mutex> lock(state.mutex);
+  const std::scoped_lock lock(state.mutex);
   if (state.file) {
     state.file->Write(line);
   }
@@ -87,19 +87,19 @@ LogMessage::~LogMessage() {
 }
 
 LogMessage LogDebug(std::source_location where) {
-  return LogMessage(LogLevel::kDebug, where);
+  return {LogLevel::kDebug, where};
 }
 
 LogMessage LogInfo(std::source_location where) {
-  return LogMessage(LogLevel::kInfo, where);
+  return {LogLevel::kInfo, where};
 }
 
 LogMessage LogWarning(std::source_location where) {
-  return LogMessage(LogLevel::kWarning, where);
+  return {LogLevel::kWarning, where};
 }
 
 LogMessage LogError(std::source_location where) {
-  return LogMessage(LogLevel::kError, where);
+  return {LogLevel::kError, where};
 }
 
 std::optional<Error> StartLogFile(const std::filesystem::path& directory,
@@ -110,14 +110,14 @@ std::optional<Error> StartLogFile(const std::filesystem::path& directory,
     return file.error();
   }
   LogState& state = State();
-  const std::lock_guard<std::mutex> lock(state.mutex);
+  const std::scoped_lock lock(state.mutex);
   state.file.emplace(std::move(file).value());
   return std::nullopt;
 }
 
 void StopLogFile() {
   LogState& state = State();
-  const std::lock_guard<std::mutex> lock(state.mutex);
+  const std::scoped_lock lock(state.mutex);
   state.file.reset();
 }
 

@@ -8,6 +8,7 @@
 
 #include "cef/function_task.h"
 #include "core/crypto.h"
+#include "core/log.h"
 #include "core/text_file.h"
 #include "include/base/cef_logging.h"
 #include "include/cef_request_context.h"
@@ -240,19 +241,23 @@ void Updater::OnFeed(std::optional<std::string> body,
                      const std::string& error) {
   fetch_ = nullptr;
   if (!body) {
-    LOG(WARNING) << "Updates: " << error;
+    LogWarning() << "Updates: " << error;
     SetState(release_ ? State::kAvailable : State::kIdle);
     FinishCheck(error);
     return;
   }
   Result<std::vector<UpdateRelease>> releases = ParseUpdateFeed(*body);
   if (!releases) {
-    LOG(WARNING) << "Updates: " << releases.error().message;
+    LogWarning() << "Updates: " << releases.error().message;
     SetState(release_ ? State::kAvailable : State::kIdle);
     FinishCheck("The update feed could not be read.");
     return;
   }
   release_ = ChooseUpdate(releases.value(), config_.current_version, channel_);
+  LogDebug() << "Updates: " << releases.value().size() << " release(s) in "
+             << "the feed, channel " << channel_ << ": "
+             << (release_ ? "version " + release_->version + " available"
+                          : std::string("up to date"));
   SetState(release_ ? State::kAvailable : State::kIdle);
   // Downloading first, so a check asked for reports it as such.
   if (release_ && mode_ == "install") {
@@ -278,7 +283,7 @@ void Updater::Download() {
   const std::filesystem::path part = InstallerPath().wstring() + L".part";
   File file(_wfopen(part.c_str(), L"wb"));
   if (!file) {
-    LOG(WARNING) << "Updates: cannot write to the updates folder.";
+    LogWarning() << "Updates: cannot write to the updates folder.";
     return;
   }
   SetState(State::kDownloading);
@@ -296,7 +301,7 @@ void Updater::OnDownloaded(bool ok, const std::string& error) {
   fetch_ = nullptr;
   const std::filesystem::path part = InstallerPath().wstring() + L".part";
   if (!ok || !release_) {
-    LOG(WARNING) << "Updates: download failed: " << error;
+    LogWarning() << "Updates: download failed: " << error;
     std::error_code ignored;
     std::filesystem::remove(part, ignored);
     SetState(State::kAvailable);
@@ -329,7 +334,7 @@ void Updater::OnVerified(bool ok) {
   if (!ok) {
     // Not what the release was signed as: never run it. The next check
     // tries again.
-    LOG(WARNING) << "Updates: the downloaded installer's signature is wrong.";
+    LogWarning() << "Updates: the downloaded installer's signature is wrong.";
     SetState(State::kAvailable);
     return;
   }

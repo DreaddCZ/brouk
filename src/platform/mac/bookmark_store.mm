@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "core/bookmark_file.h"
+#include "core/log.h"
 
 NSNotificationName const BRBookmarksDidChangeNotification =
     @"BRBookmarksDidChangeNotification";
@@ -27,7 +28,7 @@ constexpr NSTimeInterval kSaveDelay = 1.0;
     _path = path.fileSystemRepresentation;
     brouk::LoadedBookmarks loaded = brouk::LoadBookmarks(_path);
     if (loaded.problem) {
-      NSLog(@"Bookmarks: %s", loaded.problem->c_str());
+      brouk::LogWarning() << "Bookmarks: " << *loaded.problem;
     }
     _model = std::move(loaded.model);
     _lastUsedFolder = brouk::BookmarkModel::kBarId;
@@ -100,7 +101,7 @@ constexpr NSTimeInterval kSaveDelay = 1.0;
   [_saveTimer invalidate];
   _saveTimer = nil;
   if (std::optional<brouk::Error> error = brouk::SaveBookmarks(_path, _model)) {
-    NSLog(@"Bookmarks not saved: %s", error->message.c_str());
+    brouk::LogError() << "Bookmarks not saved: " << error->message;
   }
 }
 

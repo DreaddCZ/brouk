@@ -8,6 +8,7 @@
 #include "cef/breach_check.h"
 #include "cef/devtools_channel.h"
 #include "core/crypto.h"
+#include "core/log.h"
 #include "core/totp.h"
 #include "core/web_origin.h"
 #include "include/cef_process_message.h"
@@ -190,6 +191,10 @@ void PasswordTab::OnForms(const CefRefPtr<CefFrame>& frame,
   }
   state.main = frame->IsMain();
   state.forms = std::move(*forms);
+  if (!state.forms.empty()) {
+    LogDebug() << "Passwords: " << state.forms.size() << " login form(s) on "
+               << *origin << (state.main ? "" : " (in a frame)");
+  }
   if (!state.lookup || Stale(state)) {
     LookUp(id);
   } else {
@@ -218,6 +223,11 @@ void PasswordTab::LookUp(const std::string& frame_id,
         if (frame == self->frames_.end() || frame->second.origin != origin) {
           return;
         }
+        LogDebug() << "Passwords: " << lookup.matches.exact.size()
+                   << " saved login(s) for " << origin << ", "
+                   << lookup.matches.same_site.size() << " for the site"
+                   << (lookup.locked ? ", Bitwarden locked" : "")
+                   << (lookup.error ? ", lookup failed" : "");
         frame->second.lookup = std::move(lookup);
         frame->second.generation = generation;
         self->UpdateIcon();
@@ -284,8 +294,11 @@ void PasswordTab::TryAutofill(const std::string& frame_id) {
                      IsSecureOriginForPasswords(frame.origin),
                      manager_->options().fill_on_click);
   if (!choice) {
+    LogDebug() << "Passwords: not filled automatically on " << frame.origin
+               << " (" << exact.size() << " candidate(s))";
     return;
   }
+  LogDebug() << "Passwords: filled automatically on " << frame.origin;
   frame.filled_forms.push_back(form->id);
   Fill(frame_id, *form, exact[*choice]);
 }
@@ -566,6 +579,8 @@ void PasswordTab::EvaluateSubmitted() {
         // A locked Bitwarden vault cannot tell a new login from a changed
         // one: nothing is offered.
         if (!self || !self->delegate_ || lookup.error || lookup.locked) {
+          LogDebug() << "Passwords: nothing offered after signing in on "
+                     << shared->origin << " (passwords not available)";
           wipe();
           return;
         }
@@ -590,6 +605,8 @@ void PasswordTab::EvaluateSubmitted() {
           return;
         }
         if (decision.offer == SaveDecision::Offer::kNothing) {
+          LogDebug() << "Passwords: nothing to save after signing in on "
+                     << shared->origin;
           if (decision.entry_id) {
             self->manager_->MarkUsed(self->profile_, *decision.entry_id);
           }
@@ -603,6 +620,8 @@ void PasswordTab::EvaluateSubmitted() {
           existing = *found;
         }
         bool update = decision.offer == SaveDecision::Offer::kUpdate;
+        LogDebug() << "Passwords: " << (update ? "update" : "save")
+                   << " offered on " << shared->origin;
         self->prompt_ = Prompt{{update,
                                 DisplayHost(shared->origin),
                                 decision.username,
@@ -964,6 +983,15 @@ void PasswordTab::UnlockBitwarden() {
       return;
     }
     self->SetUnlockBusy(false);
+    LogDebug() << "Bitwarden: unlock asked; the vault is "
+               << (state.status.state == BitwardenSource::State::kNoCli
+                       ? "not set up (no CLI)"
+                   : state.status.state == BitwardenSource::State::kLoggedOut
+                       ? "logged out"
+                   : state.status.state == BitwardenSource::State::kUnlocked
+                       ? "unlocked"
+                       : "locked")
+               << (state.stored_session ? ", a stored session exists" : "");
     switch (state.status.state) {
       case BitwardenSource::State::kNoCli:
       case BitwardenSource::State::kLoggedOut:
@@ -1003,6 +1031,8 @@ void PasswordTab::UnlockBitwarden() {
                 }
                 again->SetUnlockBusy(false);
                 if (error) {
+                  LogDebug() << "Bitwarden: the stored session did not "
+                                "unlock; asking for the master password";
                   again->AskMasterPassword(state);
                   return;
                 }

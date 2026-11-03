@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "cef/function_task.h"
+#include "core/log.h"
 #include "include/cef_request_context.h"
 #include "include/cef_task.h"
 #include "include/wrapper/cef_helpers.h"
@@ -64,6 +65,13 @@ struct AdblockService::State {
         }
       }
       BuiltEngine engine = store->LoadOrBuildEngine(chosen, resources);
+      if (!engine.engine) {
+        // Normal until the lists have been downloaded once.
+        LogDebug() << "Ad blocking: no engine yet for " << key;
+      } else {
+        LogDebug() << "Ad blocking: engine for " << key << " ready with "
+                   << engine.list_ids.size() << " list(s)";
+      }
       if (engine.engine) {
         auto active = std::make_shared<ActiveAdblockEngine>();
         active->engine = std::move(engine.engine);

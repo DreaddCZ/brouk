@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "cef/function_task.h"
+#include "core/log.h"
 #include "core/settings_file.h"
 #include "include/base/cef_logging.h"
 #include "include/cef_task.h"
@@ -82,7 +83,7 @@ void SettingsWatcher::Watch(const std::filesystem::path& directory,
                   FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OVERLAPPED, nullptr));
   Handle event(CreateEventW(nullptr, TRUE, FALSE, nullptr));
   if (!folder.valid() || !event.valid()) {
-    LOG(WARNING) << "Settings files are not watched (error " << GetLastError()
+    LogWarning() << "Settings files are not watched (error " << GetLastError()
                  << ")";
     return;
   }
@@ -97,7 +98,7 @@ void SettingsWatcher::Watch(const std::filesystem::path& directory,
             FILE_NOTIFY_CHANGE_FILE_NAME | FILE_NOTIFY_CHANGE_LAST_WRITE |
                 FILE_NOTIFY_CHANGE_SIZE,
             nullptr, &overlapped, nullptr)) {
-      LOG(WARNING) << "Settings files are no longer watched (error "
+      LogWarning() << "Settings files are no longer watched (error "
                    << GetLastError() << ")";
       return;
     }

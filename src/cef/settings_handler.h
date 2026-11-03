@@ -40,6 +40,8 @@ class SettingsPageDelegate {
   virtual void RevealSettingsFolder() = 0;
   // Clear browsing data (013), on the history page.
   virtual void OpenClearBrowsingData() = 0;
+  // Shows Brouk's log (025) in Finder or File Explorer.
+  virtual void RevealLog() = 0;
   // Ad blocking (007): null before the browser is ready; the system
   // language (for the regional list).
   virtual AdblockService* Adblock() = 0;

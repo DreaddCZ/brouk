@@ -1,5 +1,6 @@
 #include "core/debug_logging.h"
 
+#include <array>
 #include <cstdio>
 
 namespace brouk {
@@ -39,15 +40,15 @@ std::string FormatUtcTime(std::chrono::system_clock::time_point time) {
   const sys_days day = floor<days>(time);
   const year_month_day date(day);
   const hh_mm_ss<seconds> clock(floor<seconds>(time - day));
-  char text[32] = {};
-  std::snprintf(text, sizeof(text), "%04d-%02u-%02uT%02d:%02d:%02dZ",
+  std::array<char, 32> text = {};
+  std::snprintf(text.data(), text.size(), "%04d-%02u-%02uT%02d:%02d:%02dZ",
                 static_cast<int>(date.year()),
                 static_cast<unsigned>(date.month()),
                 static_cast<unsigned>(date.day()),
                 static_cast<int>(clock.hours().count()),
                 static_cast<int>(clock.minutes().count()),
                 static_cast<int>(clock.seconds().count()));
-  return text;
+  return text.data();
 }
 
 std::optional<std::chrono::system_clock::time_point> ParseUtcTime(

@@ -20,7 +20,7 @@ namespace brouk {
 class RotatingLogFile {
  public:
   struct Limits {
-    std::uintmax_t max_bytes = 5 * 1024 * 1024;
+    std::uintmax_t max_bytes = std::uintmax_t{5} * 1024 * 1024;
     int max_files = 3;  // Including the current one.
   };
 

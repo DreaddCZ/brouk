@@ -36,6 +36,7 @@
 #include "brouk/app_info.h"
 #include "brouk/build_info.h"
 #include "cef/adblock_service.h"
+#include "cef/app_logging.h"
 #include "cef/autofill_manager.h"
 #include "cef/bookmarks_page_handler.h"
 #include "cef/browser_app.h"
@@ -60,6 +61,7 @@
 #include "core/crypto.h"
 #include "core/download_paths.h"
 #include "core/help.h"
+#include "core/log.h"
 #include "core/password_generator.h"
 #include "core/password_profile.h"
 #include "core/profile_export.h"
@@ -138,6 +140,7 @@
                                          profile:(std::string_view)profile
                                            value:(brouk::SettingValue)value;
 - (void)revealSettingsFolder;
+- (void)revealLog;
 // Task manager (020): Brouk's own page windows by name ("settings"…).
 - (NSDictionary<NSString*, BRInternalPageWindowController*>*)pageWindows;
 - (IBAction)clearBrowsingData:(nullable id)sender;
@@ -914,6 +917,7 @@ class AppSettingsPage : public SettingsPageDelegate {
                : std::optional<Error>(Error{kClosing});
   }
   void RevealSettingsFolder() override { [app_ revealSettingsFolder]; }
+  void RevealLog() override { [app_ revealLog]; }
   AdblockService* Adblock() override { return [app_ adblockService]; }
   AutofillManager* Autofill() override { return [app_ autofillManager]; }
   void SaveAutofillFile(std::string json, TextSaveDone done) override {
@@ -1020,6 +1024,8 @@ class AppSettingsPage : public SettingsPageDelegate {
   NSMutableArray<BRBrowserWindowController*>* _windows;
   // Profiles (005); loaded at launch, before CEF starts.
   std::unique_ptr<brouk::ProfileRegistry> _profiles;
+  // Debug logging (025) following the settings; from cefContextInitialized.
+  std::unique_ptr<brouk::DebugLoggingSwitch> _debugLogging;
   // History databases (013); from cefContextInitialized to shutdown.
   std::unique_ptr<brouk::HistoryService> _history;
   // Ad and tracker blocking (007), same lifetime; reconfigured only when
@@ -1127,6 +1133,8 @@ class AppSettingsPage : public SettingsPageDelegate {
 - (void)cefContextInitialized {
   CEF_REQUIRE_UI_THREAD();
   _profilesLoaded = YES;
+  brouk::NameLogThreadsByCef();
+  _debugLogging = std::make_unique<brouk::DebugLoggingSwitch>(*_profiles);
   std::filesystem::path profilesDir =
       std::filesystem::path(brouk::mac::AppDataDirectory().UTF8String) /
       "profiles";
@@ -1274,14 +1282,14 @@ class AppSettingsPage : public SettingsPageDelegate {
       "session.yaml";
   brouk::Result<brouk::Session> loaded = brouk::LoadSession(_sessionPath);
   if (!loaded) {
-    NSLog(@"Session: %s", loaded.error().message.c_str());
+    brouk::LogWarning() << "Session: " << loaded.error().message;
   }
   brouk::Session last = loaded ? loaded.value() : brouk::Session{};
   brouk::Session running = last;
   running.clean_exit = false;
   if (std::optional<brouk::Error> error =
           brouk::SaveSession(_sessionPath, running)) {
-    NSLog(@"Session: %s", error->message.c_str());
+    brouk::LogWarning() << "Session: " << error->message;
   }
   return last;
 }
@@ -1332,7 +1340,7 @@ class AppSettingsPage : public SettingsPageDelegate {
   }
   if (std::optional<brouk::Error> error =
           brouk::SaveSession(_sessionPath, session)) {
-    NSLog(@"Session: %s", error->message.c_str());
+    brouk::LogWarning() << "Session: " << error->message;
   }
 }
 
@@ -1393,8 +1401,8 @@ class AppSettingsPage : public SettingsPageDelegate {
     if (named) {
       profile = named->id;
     } else {
-      NSLog(@"No profile called \"%s\"; opening the default profile.",
-            request.profile->c_str());
+      brouk::LogWarning() << "No profile called \"" << *request.profile
+                          << "\"; opening the default profile.";
     }
   }
   BRBrowserWindowController* target = controller ?: [self openWindow];
@@ -1429,7 +1437,7 @@ class AppSettingsPage : public SettingsPageDelegate {
 // settings page exists they go to the log.
 - (void)reportProfileProblems {
   for (const std::string& problem : _profiles->problems()) {
-    NSLog(@"Settings: %s", problem.c_str());
+    brouk::LogWarning() << "Settings: " << problem;
   }
 }
 
@@ -2022,7 +2030,8 @@ class AppSettingsPage : public SettingsPageDelegate {
   for (const brouk::ProfileInfo& profile : _profiles->profiles()) {
     brouk::ToolsHost::Rules rules = [self requestRulesForProfile:profile.id];
     for (const std::string& problem : rules.problems) {
-      NSLog(@"Request rules of %s: %s", profile.name.c_str(), problem.c_str());
+      brouk::LogWarning() << "Request rules of " << profile.name << ": "
+                          << problem;
     }
     for (BRBrowserWindowController* controller in _windows) {
       [controller requestRulesChanged:rules.set forProfile:profile.id];
@@ -2044,6 +2053,12 @@ class AppSettingsPage : public SettingsPageDelegate {
         std::make_unique<brouk::DevToolsPreferences>(path.UTF8String);
   }
   return _devToolsPreferences.get();
+}
+
+- (void)startLoggingWith:(CefSettings&)settings {
+  brouk::StartAppLogging(
+      std::filesystem::path(brouk::mac::AppDataDirectory().UTF8String) / "logs",
+      *_profiles, settings);
 }
 
 - (int)remoteDebuggingPortSetting {
@@ -2069,6 +2084,9 @@ class AppSettingsPage : public SettingsPageDelegate {
 // shortcuts and spell checking (search and downloads are read when used).
 - (void)applySettings {
   const brouk::Settings& global = _profiles->global_settings();
+  if (_debugLogging) {
+    _debugLogging->Apply();
+  }
   // Conflicts are reported with the other settings problems (registry).
   std::vector<std::string> ignored;
   brouk::mac::SetShortcuts(brouk::ResolveShortcuts(global, ignored));
@@ -2149,7 +2167,7 @@ class AppSettingsPage : public SettingsPageDelegate {
   CefRefPtr<CefPreferenceManager> prefs =
       CefPreferenceManager::GetGlobalPreferenceManager();
   if (!prefs || !prefs->CanSetPreference("dns_over_https.mode")) {
-    NSLog(@"Secure DNS cannot be set in this CEF build.");
+    brouk::LogWarning() << "Secure DNS cannot be set in this CEF build.";
     return;
   }
   CefRefPtr<CefValue> mode = CefValue::Create();
@@ -2159,7 +2177,7 @@ class AppSettingsPage : public SettingsPageDelegate {
   CefString error;
   prefs->SetPreference("dns_over_https.templates", templates, error);
   if (!prefs->SetPreference("dns_over_https.mode", mode, error)) {
-    NSLog(@"Secure DNS not applied: %s", error.ToString().c_str());
+    brouk::LogWarning() << "Secure DNS not applied: " << error.ToString();
   }
 }
 
@@ -2203,6 +2221,18 @@ class AppSettingsPage : public SettingsPageDelegate {
   }
   [NSWorkspace.sharedWorkspace
       activateFileViewerSelectingURLs:@[ [NSURL fileURLWithPath:file] ]];
+}
+
+- (void)revealLog {
+  NSString* logs =
+      [brouk::mac::AppDataDirectory() stringByAppendingPathComponent:@"logs"];
+  NSString* file = [logs stringByAppendingPathComponent:@"brouk.log"];
+  // The log exists from the start (StartAppLogging); else its folder.
+  NSURL* url = [NSURL
+      fileURLWithPath:[NSFileManager.defaultManager fileExistsAtPath:file]
+                          ? file
+                          : logs];
+  [NSWorkspace.sharedWorkspace activateFileViewerSelectingURLs:@[ url ]];
 }
 
 // Presents `panel` as a sheet of the settings window if it is open.
