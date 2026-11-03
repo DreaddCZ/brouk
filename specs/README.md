@@ -34,7 +34,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 007 | [Ad and tracker blocking](007-adblock.md) | done — routing hosts after 010 | P1 |
 | 008 | [Password manager](008-password-manager.md) | done | P1 |
 | 009 | [Form autofill](009-autofill.md) | in-progress — entries, custom fields, filling, saving without duplicates, validation, Settings → Autofill with duplicates and JSON export/import in review | P1 |
-| 010 | [Link routing and window picker](010-link-routing.md) | in-progress — rules, picker with window thumbnails, wrappers (built-in, own, opaque with "Checking link"), default browser, Settings → Links in review; real Outlook/Teams links to check | P1 |
+| 010 | [Link routing and window picker](010-link-routing.md) | done | P1 |
 | 011 | [Bookmark manager](011-bookmarks.md) | done | P1 |
 | 012 | [Web platform basics](012-web-platform-basics.md) | in-progress | P1 |
 | 013 | [History](013-history.md) | done — history in profile export is 022 | P1 |
@@ -65,7 +65,7 @@ Build order. Each milestone ends with a build the user tests on their Macs.
 | **M5 – Developer tools** | Dock, per-tab toggle, own tools, request rules, API export, remote debugging. | 006 |
 | **W1–W4 – Windows** | The Windows app in four stages: browse the web, everyday browser, work features, release. | 024 |
 | **Next – Tab dragging** | Reorder profile groups; drag tabs and groups to other windows or new windows, macOS and Windows. | 026 |
-| **Later** | In an order to be agreed: | 010, 007, 008, 009, 011, 013, 014, 017 (after checking company computers), 018 and 019 (at the start of phase 2, before the first beta testers), 021 (later phase), 025 last |
+| **Later** | In an order to be agreed: | 007, 008, 009, 011, 013, 014, 017 (after checking company computers), 018 and 019 (at the start of phase 2, before the first beta testers), 021 (later phase), 025 last |
 
 2026-10-22 (user's decision): the rest of 012 (folder upload and file drop, pinch zoom, Picture-in-Picture, permissions in settings) is postponed; profiles (005) come next, on top of the configuration foundation from 004 that they need (settings files, typed settings, live reload). The settings page of 004 follows later.
 

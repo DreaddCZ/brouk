@@ -1,6 +1,6 @@
 # 010 – Link routing and window picker
 
-- **Status:** in-progress
+- **Status:** done
 - **Priority:** P1
 - **Depends on:** 001, 003, 005
 
@@ -92,31 +92,31 @@ The browser keeps a live model of all its windows and tabs, including which disp
 
 ## Acceptance criteria
 
-- [ ] With a rule `companya.atlassian.net` → A, opening `https://companya.atlassian.net/browse/X-1` from another app opens it in profile A without a prompt.
-- [ ] With a rule `portal.azure.com` → A, B, C, opening a matching link shows the picker with exactly A, B and C; a profile can be chosen with the keyboard alone.
-- [ ] When several rules match, the most specific one is used (path prefix over host over subdomain wildcard).
-- [ ] Redirects and navigation within a tab never change the tab's profile; a sign-in redirect to another domain completes in the original profile.
-- [ ] Cmd-click and "open in new tab" are routed by the rules.
-- [ ] A URL typed into a new tab is routed; a URL typed into an existing tab stays in that tab's profile.
-- [ ] Popups opened by page scripts stay in the opener's profile, whatever the rules say.
-- [ ] A link from another app that matches no rule opens in the default profile's group of the most recently used window on the current screen.
-- [ ] A link from inside the browser that matches no rule stays in the current profile.
-- [ ] The destination window follows the rules above (default profile → most recent window on the current screen; other profiles: one window → there; several → user chooses; none → new group in the frontmost window).
-- [ ] Routing rules can be added, edited and deleted in settings.
-- [ ] A profile's edit form in the profile manager lists the links that open in it; adding, changing or removing a pattern there changes the rules accordingly, and an invalid pattern is shown and nothing is saved.
+- [x] With a rule `companya.atlassian.net` → A, opening `https://companya.atlassian.net/browse/X-1` from another app opens it in profile A without a prompt.
+- [x] With a rule `portal.azure.com` → A, B, C, opening a matching link shows the picker with exactly A, B and C; a profile can be chosen with the keyboard alone.
+- [x] When several rules match, the most specific one is used (path prefix over host over subdomain wildcard).
+- [x] Redirects and navigation within a tab never change the tab's profile; a sign-in redirect to another domain completes in the original profile.
+- [x] Cmd-click and "open in new tab" are routed by the rules.
+- [x] A URL typed into a new tab is routed; a URL typed into an existing tab stays in that tab's profile.
+- [x] Popups opened by page scripts stay in the opener's profile, whatever the rules say.
+- [x] A link from another app that matches no rule opens in the default profile's group of the most recently used window on the current screen.
+- [x] A link from inside the browser that matches no rule stays in the current profile.
+- [x] The destination window follows the rules above (default profile → most recent window on the current screen; other profiles: one window → there; several → user chooses; none → new group in the frontmost window).
+- [x] Routing rules can be added, edited and deleted in settings.
+- [x] A profile's edit form in the profile manager lists the links that open in it; adding, changing or removing a pattern there changes the rules accordingly, and an invalid pattern is shown and nothing is saved.
 
 **Link wrappers**
-- [ ] A Safe Links link from Outlook or Teams to `https://companya.atlassian.net/browse/X-1`, with a rule `companya.atlassian.net` → A, opens in profile A without a prompt. The wrapper URL is loaded first in that tab, and the tab ends on the Jira page.
-- [ ] The same works for Proofpoint URL Defense v1, v2 and v3, Barracuda, Cisco and Google redirect links, and for wrappers inside wrappers.
-- [ ] A Mimecast link is resolved in the neutral context and opens in the profile the rules give for the final URL. That context keeps no cookies, and no data from it reaches any profile.
-- [ ] An opaque wrapper that shows its own page (e.g. a warning) shows it in the "Checking link" window. After the user continues, the final URL is routed.
-- [ ] The picker shows the real URL with "via <wrapper>". "Always open links matching …" changes the rule that matches the real URL, never one for the wrapper's host.
-- [ ] A wrapper host added in settings, with a parameter name or as opaque, is unwrapped the same way.
-- [ ] The picker shows the URL and where the link came from. In the window step, each window shows a thumbnail of its active tab, the active tab's favicon and title, and its profile groups with tab counts. "New window" is always the last entry.
-- [ ] Choosing "New window" opens the link in a new window, in the chosen profile.
-- [ ] Every picker step works with the keyboard alone (number keys, arrows plus Enter); Esc in the first step cancels without opening the link.
-- [ ] Checking "Always open links matching … in this profile" changes the matched rule to that profile only; the next matching link opens without the picker.
-- [ ] With the default setting, choosing a window on another Space switches to that Space; with "Move the window here", the window comes to the current Space.
+- [x] A Safe Links link from Outlook or Teams to `https://companya.atlassian.net/browse/X-1`, with a rule `companya.atlassian.net` → A, opens in profile A without a prompt. The wrapper URL is loaded first in that tab, and the tab ends on the Jira page.
+- [x] The same works for Proofpoint URL Defense v1, v2 and v3, Barracuda, Cisco and Google redirect links, and for wrappers inside wrappers.
+- [x] A Mimecast link is resolved in the neutral context and opens in the profile the rules give for the final URL. That context keeps no cookies, and no data from it reaches any profile.
+- [x] An opaque wrapper that shows its own page (e.g. a warning) shows it in the "Checking link" window. After the user continues, the final URL is routed.
+- [x] The picker shows the real URL with "via <wrapper>". "Always open links matching …" changes the rule that matches the real URL, never one for the wrapper's host.
+- [x] A wrapper host added in settings, with a parameter name or as opaque, is unwrapped the same way.
+- [x] The picker shows the URL and where the link came from. In the window step, each window shows a thumbnail of its active tab, the active tab's favicon and title, and its profile groups with tab counts. "New window" is always the last entry.
+- [x] Choosing "New window" opens the link in a new window, in the chosen profile.
+- [x] Every picker step works with the keyboard alone (number keys, arrows plus Enter); Esc in the first step cancels without opening the link.
+- [x] Checking "Always open links matching … in this profile" changes the matched rule to that profile only; the next matching link opens without the picker.
+- [x] With the default setting, choosing a window on another Space switches to that Space; with "Move the window here", the window comes to the current Space.
 
 ## Out of scope
 
@@ -175,3 +175,4 @@ None.
 - 2026-10-26 (user's testing, user's decision): Azure portal links name the tenant in the fragment (`https://portal.azure.com/#@tenant.onmicrosoft.com/…`), and such a pattern was rejected. Link routing patterns may now end in a fragment prefix: `portal.azure.com/#@tenant.onmicrosoft.com/*` matches that tenant's links only, so each tenant can open in its own profile. The fragment is compared as a prefix and with case, like the path, and comes right after the path in specificity. Azure links without a tenant (`portal.azure.com/#home`) do not match it. Chrome has nothing comparable. Other patterns (request rules, history, ad blocking allowlist, link wrappers) still reject fragments: requests never carry one.
 - 2026-10-26 (user's testing): links from the Teams desktop app opened in the default profile. Teams now wraps them in its Safe Links page on `teams.public.onecdn.static.microsoft` (same path `/evergreen-assets/safelinks/…` and `url` parameter as on `statics.teams.cdn.office.net`), which was not known as a wrapper, so the wrapper page itself was routed (no rule → default profile) and forwarded to the real page there. Both hosts are now built-in. Outlook's Safe Links links from the user's mail decode correctly. To explain such cases, each routed link writes one line to the macOS log ("Link routing: …", process `brouk`): source, the link and the URL it was routed by (host, path start and parameter names only, never values), the wrapper and the decision.
 - 2026-10-26 (settings page): "Links that open in this profile" is also in Settings → Profiles, under each profile's tab, and works as in the profile manager (same browser code, `src/cef/profile_links.cc`): a link is saved when its field is left, nothing is saved while one is not a valid pattern, and a link shared with other profiles says so. Settings → Links shows the change at once.
+- 2026-11-03 (user's decision): tested by the user with real links from the work chat and mail apps (Safe Links wrappers included); routing works well. Spec done.

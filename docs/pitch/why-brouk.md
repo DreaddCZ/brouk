@@ -163,7 +163,7 @@ Dev tools are switched **per tab** with an always-visible toggle — rules never
 | Passwords (built-in manager and Bitwarden) | ✅ in use |
 | Form autofill (Czech and EU company details) | 🔧 built, in testing |
 | Downloads (one list for all profiles) | ✅ in use |
-| Link routing (rules, picker, Safe Links and other wrappers) | 🔧 built, in testing |
+| Link routing (rules, picker, Safe Links and other wrappers) | ✅ in use |
 | Built-in help, with "?" links from every page | ✅ in use |
 | Task manager (pause, unload, end tabs; graph) | ✅ in use |
 | Signed releases with automatic updates (beta) | ✅ in use |
