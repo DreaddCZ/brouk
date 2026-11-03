@@ -30,7 +30,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 003 | [Browser UI](003-browser-ui.md) | done — bookmark suggestions follow with 011 | P1 |
 | 004 | [Configuration system](004-configuration.md) | in-progress | P1 |
 | 005 | [Profiles](005-profiles.md) | done — history in export with 022 | P1 |
-| 006 | [Developer tools](006-developer-tools.md) | in-progress | P1 |
+| 006 | [Developer tools](006-developer-tools.md) | done | P1 |
 | 007 | [Ad and tracker blocking](007-adblock.md) | done — routing hosts after 010 | P1 |
 | 008 | [Password manager](008-password-manager.md) | done | P1 |
 | 009 | [Form autofill](009-autofill.md) | in-progress — entries, custom fields, filling, saving without duplicates, validation, Settings → Autofill with duplicates and JSON export/import in review | P1 |

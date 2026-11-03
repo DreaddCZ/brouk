@@ -1,6 +1,6 @@
 # 006 – Developer tools
 
-- **Status:** in-progress
+- **Status:** done
 - **Priority:** P1
 - **Depends on:** 001, 003, 004, 005, 010
 
@@ -54,54 +54,54 @@ Built as HTML/TypeScript pages (001) on top of the Chrome DevTools Protocol and 
 ## Acceptance criteria
 
 Dock and DevTools
-- [ ] The dock can be placed at the bottom, right or left, or undocked into a separate window, and resized; the last position and size are used the next time it opens.
-- [ ] Each tab keeps its own dock state; switching tabs shows the newly selected tab's dock, or none if its dev tools are off.
-- [ ] In a window with tabs of several profiles, each tab's dock and tools work only with that tab's profile.
-- [ ] Elements, Console, Sources, Network, Performance, Memory and Application panels work.
-- [ ] Device/responsive emulation works.
-- [ ] Internal HTML pages of the browser can be inspected.
-- [ ] Dock shortcuts can be remapped.
+- [x] The dock can be placed at the bottom, right or left, or undocked into a separate window, and resized; the last position and size are used the next time it opens.
+- [x] Each tab keeps its own dock state; switching tabs shows the newly selected tab's dock, or none if its dev tools are off.
+- [x] In a window with tabs of several profiles, each tab's dock and tools work only with that tab's profile.
+- [x] Elements, Console, Sources, Network, Performance, Memory and Application panels work.
+- [x] Device/responsive emulation works.
+- [x] Internal HTML pages of the browser can be inspected.
+- [x] Dock shortcuts can be remapped.
 
 Dev tools toggle
-- [ ] The toggle is always displayed next to the address bar, on its right by default; a setting moves it to the left.
-- [ ] A new tab not opened from another tab has dev tools off; a tab opened from another tab (link, popup, "open in new tab") has the same dev tools state as its opener.
-- [ ] Switching the toggle on or off affects only the current tab; other tabs, also of the same profile and window, keep their state.
-- [ ] The toggle shows the state of the current tab and updates when switching tabs.
-- [ ] Turning it on opens the dock; turning it off, or closing the dock or its undocked window, closes the dock and turns the toggle off.
-- [ ] The shortcuts, the command palette and right-click "Inspect" turn dev tools on for the current tab; "Inspect" selects the clicked element in Elements.
-- [ ] Dev tools stay on in a tab across navigations until switched off.
+- [x] The toggle is always displayed next to the address bar, on its right by default; a setting moves it to the left.
+- [x] A new tab not opened from another tab has dev tools off; a tab opened from another tab (link, popup, "open in new tab") has the same dev tools state as its opener.
+- [x] Switching the toggle on or off affects only the current tab; other tabs, also of the same profile and window, keep their state.
+- [x] The toggle shows the state of the current tab and updates when switching tabs.
+- [x] Turning it on opens the dock; turning it off, or closing the dock or its undocked window, closes the dock and turns the toggle off.
+- [x] The shortcuts, the command palette and right-click "Inspect" turn dev tools on for the current tab; "Inspect" selects the clicked element in Elements.
+- [x] Dev tools stay on in a tab across navigations until switched off.
 
 Site data
-- [ ] Cookies and local/session storage of the current site can be viewed, edited, added and deleted; IndexedDB databases, cache storage and service workers can be deleted.
-- [ ] "Clear site data", after confirmation, removes all data of the current site in the current profile only; other sites and the same site in other profiles keep their data.
+- [x] Cookies and local/session storage of the current site can be viewed, edited, added and deleted; IndexedDB databases, cache storage and service workers can be deleted.
+- [x] "Clear site data", after confirmation, removes all data of the current site in the current profile only; other sites and the same site in other profiles keep their data.
 
 Tokens
-- [ ] JWTs from request/response headers, cookies and storage of the current tab are listed and decoded; a pasted JWT is decoded too.
-- [ ] Expiry and issue times are shown as local time and relative time; expired tokens are marked.
-- [ ] The view states that signatures are not verified; non-JWT tokens are shown as not decodable.
+- [x] JWTs from request/response headers, cookies and storage of the current tab are listed and decoded; a pasted JWT is decoded too.
+- [x] Expiry and issue times are shown as local time and relative time; expired tokens are marked.
+- [x] The view states that signatures are not verified; non-JWT tokens are shown as not decodable.
 
 Requests and export
-- [ ] The Requests tool lists the tab's requests and can filter them by type, method, status and text.
-- [ ] Selected requests export to a Postman Collection v2.1 JSON file that imports without errors into current Postman and Bruno, keeping method, URL, query parameters, headers and body.
-- [ ] In the exported collection, `Authorization`, `Cookie` and configured secret headers are `{{variables}}`; the collection file contains no secret values.
-- [ ] The user can choose to also export an environment file with the secret values and base URLs.
+- [x] The Requests tool lists the tab's requests and can filter them by type, method, status and text.
+- [x] Selected requests export to a Postman Collection v2.1 JSON file that imports without errors into current Postman and Bruno, keeping method, URL, query parameters, headers and body.
+- [x] In the exported collection, `Authorization`, `Cookie` and configured secret headers are `{{variables}}`; the collection file contains no secret values.
+- [x] The user can choose to also export an environment file with the secret values and base URLs.
 
 Request rules
-- [ ] A rule can add, replace or remove a request header, add, replace or remove a response header, redirect, or block, for URLs matching its pattern (010 syntax).
-- [ ] Rules belong to a profile, are stored in its settings (004), and never apply to tabs of other profiles.
-- [ ] Rules apply only to tabs with dev tools on; with the same rule, a tab with dev tools off loads the page unchanged.
-- [ ] Rules can be switched on and off individually, and all rules of a profile can be paused at once.
-- [ ] When a rule affected the current tab, the dev tools toggle shows an indicator.
+- [x] A rule can add, replace or remove a request header, add, replace or remove a response header, redirect, or block, for URLs matching its pattern (010 syntax).
+- [x] Rules belong to a profile, are stored in its settings (004), and never apply to tabs of other profiles.
+- [x] Rules apply only to tabs with dev tools on; with the same rule, a tab with dev tools off loads the page unchanged.
+- [x] Rules can be switched on and off individually, and all rules of a profile can be paused at once.
+- [x] When a rule affected the current tab, the dev tools toggle shows an indicator.
 
 JSON viewer
-- [ ] A tab opening a JSON document shows it as a collapsible tree with search, raw/pretty switch, and copy of value and path.
-- [ ] A JSON document of 10 MB opens without freezing the window.
-- [ ] The JSON viewer can be turned off in settings.
+- [x] A tab opening a JSON document shows it as a collapsible tree with search, raw/pretty switch, and copy of value and path.
+- [x] A JSON document of 10 MB opens without freezing the window.
+- [x] The JSON viewer can be turned off in settings.
 
 Remote debugging
-- [ ] Remote debugging is off by default and can be enabled by a setting (after restart) or by the command-line flag.
-- [ ] When enabled, it accepts connections only from localhost.
-- [ ] While it is enabled, every window shows an indicator with the port and the all-profiles warning.
+- [x] Remote debugging is off by default and can be enabled by a setting (after restart) or by the command-line flag.
+- [x] When enabled, it accepts connections only from localhost.
+- [x] While it is enabled, every window shows an indicator with the port and the all-profiles warning.
 
 ## Out of scope
 
@@ -157,3 +157,4 @@ None.
 - 2026-10-23 (implementation): Site data lists service workers one by one (scope, script, state; Delete unregisters), from the ServiceWorker protocol events of the tab's session, which the dock follows from when it opens (`src/core/service_workers.cc`). If none is known but the site stores service worker data, that data can still be deleted as before.
 - 2026-10-23: manual test checklist for the whole spec: `docs/testing/006-developer-tools.md`. The user tests 006 once, when all of it is done, not per pull request.
 - 2026-10-23 (003 shortcuts): the dev tools shortcuts are remappable as `shortcuts.devtools`, `shortcuts.devtools_console` and `shortcuts.devtools_inspect` (settings page, Shortcuts section).
+- 2026-11-03: the user tested the whole checklist; everything works. Spec set to `done`.
