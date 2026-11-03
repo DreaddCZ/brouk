@@ -50,7 +50,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 023 | [Open-source licences (credits)](023-credits.md) | done | P1 |
 | 024 | [Windows app](024-windows-app.md) | in-progress — first beta released (0.3.1: W1–W3, installer and automatic updates, not code-signed); left: screen readers, padlock popup, zoom indicator, quit crash #45 | P2 |
 | 025 | [Logging](025-logging.md) | ready | P2 |
-| 026 | [Dragging tabs and profile groups](026-tab-dragging.md) | in-progress | P1 |
+| 026 | [Dragging tabs and profile groups](026-tab-dragging.md) | done | P1 |
 
 ## Roadmap
 
@@ -64,7 +64,7 @@ Build order. Each milestone ends with a build the user tests on their Macs.
 | **M4 – Full browser UI** | Tab overflow, pinned tabs, command palette, remappable shortcuts, themes, address bar suggestions from history. | 003, history storage needed by 003 (013) |
 | **M5 – Developer tools** | Dock, per-tab toggle, own tools, request rules, API export, remote debugging. | 006 |
 | **W1–W4 – Windows** | The Windows app in four stages: browse the web, everyday browser, work features, release. | 024 |
-| **Next – Tab dragging** | Reorder profile groups; drag tabs and groups to other windows or new windows, macOS and Windows. Built on both; waiting for the user's testing. | 026 |
+| **Next – Tab dragging** | Reorder profile groups; drag tabs and groups to other windows or new windows, macOS and Windows. | 026 |
 | **Later** | In an order to be agreed: | 010, 007, 008, 009, 011, 013, 014, 017 (after checking company computers), 018 and 019 (at the start of phase 2, before the first beta testers), 021 (later phase), 025 last |
 
 2026-10-22 (user's decision): the rest of 012 (folder upload and file drop, pinch zoom, Picture-in-Picture, permissions in settings) is postponed; profiles (005) come next, on top of the configuration foundation from 004 that they need (settings files, typed settings, live reload). The settings page of 004 follows later.

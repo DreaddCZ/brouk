@@ -159,7 +159,7 @@ Dev tools are switched **per tab** with an always-visible toggle — rules never
 | Area | Status |
 |---|---|
 | Browsing, tabs, profiles side by side, session restore | ✅ in use |
-| Dragging tabs and profile groups between windows | 🔧 built, in testing |
+| Dragging tabs and profile groups between windows | ✅ in use |
 | History, bookmarks, ad blocking | ✅ in use |
 | Developer tools | ✅ in use |
 | Passwords (built-in manager and Bitwarden) | ✅ in use |

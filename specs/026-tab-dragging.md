@@ -1,6 +1,6 @@
 # 026 – Dragging tabs and profile groups
 
-- **Status:** in-progress
+- **Status:** done
 - **Priority:** P1
 - **Depends on:** 003 (browser UI), 005 (profiles), 024 (Windows app)
 
@@ -40,18 +40,18 @@ Everything works as in Chrome, on macOS and Windows, with Brouk's profile groups
 
 Each criterion holds on macOS and on Windows.
 
-- [ ] Dragging a group's label before or after another group moves all its tabs there, in their order; pinned tabs stay pinned at the start of the group; the collapsed state is kept.
-- [ ] No group can be placed after the default profile's group, and the default group's label cannot be dragged within its window.
-- [ ] A tab dragged out of the strip and dropped outside any tab strip opens in a new window at the drop place; the page is not reloaded (a playing video keeps playing, typed form text and the back/forward history stay).
-- [ ] A tab dropped on another window's tab strip joins that window at the drop place, in its own profile's group (created before the default group if missing), and becomes the active tab there.
-- [ ] A tab dropped inside another profile's group of the target window asks to move it to that profile, as within a window.
-- [ ] Pinned, muted, paused, zoom and dev tools state of a moved tab are kept.
-- [ ] Dragging the only tab of a window moves the window; dropping it on another window's tab strip moves the tab there and closes the empty window.
-- [ ] A group's label dragged out of the strip moves all the group's tabs to a new window, or merges them into the target window's group of the same profile at the drop place.
-- [ ] The source window closes when no tabs are left in it.
-- [ ] The tab menu's "Move Tab to Another Window" and the group menu's "Move Group to New Window" / window list do the same as dragging.
-- [ ] Group order and moved tabs are kept when the session is restored (013).
-- [ ] Help describes dragging tabs and groups (016).
+- [x] Dragging a group's label before or after another group moves all its tabs there, in their order; pinned tabs stay pinned at the start of the group; the collapsed state is kept.
+- [x] No group can be placed after the default profile's group, and the default group's label cannot be dragged within its window.
+- [x] A tab dragged out of the strip and dropped outside any tab strip opens in a new window at the drop place; the page is not reloaded (a playing video keeps playing, typed form text and the back/forward history stay).
+- [x] A tab dropped on another window's tab strip joins that window at the drop place, in its own profile's group (created before the default group if missing), and becomes the active tab there.
+- [x] A tab dropped inside another profile's group of the target window asks to move it to that profile, as within a window.
+- [x] Pinned, muted, paused, zoom and dev tools state of a moved tab are kept.
+- [x] Dragging the only tab of a window moves the window; dropping it on another window's tab strip moves the tab there and closes the empty window.
+- [x] A group's label dragged out of the strip moves all the group's tabs to a new window, or merges them into the target window's group of the same profile at the drop place.
+- [x] The source window closes when no tabs are left in it.
+- [x] The tab menu's "Move Tab to Another Window" and the group menu's "Move Group to New Window" / window list do the same as dragging.
+- [x] Group order and moved tabs are kept when the session is restored (013).
+- [x] Help describes dragging tabs and groups (016).
 
 ## Out of scope
 
@@ -78,3 +78,4 @@ None.
 - Internal pages (history, bookmarks, downloads, passwords) act on the window holding their tab at the time, found by the tab's id, so they keep working after the tab moves (found while implementing; before, they kept the window they were opened in).
 - macOS: Tab → Move Tab to New Window has a configurable shortcut `shortcuts.move_tab_new_window` (unset by default, as in Chrome). Windows has no menu bar, so the action is in the tab menu only.
 - Testing: the core's group moves and moved-tab inserts have unit tests; dragging gestures are tested by hand (`docs/testing/026-tab-dragging.md`), as posted mouse events do not reach a separate test copy of Brouk on macOS.
+- 2026-11-03 (user's decision): tested by the user on macOS and Windows; spec done.
