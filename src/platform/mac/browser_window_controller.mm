@@ -30,6 +30,7 @@
 #import "platform/mac/site_info_popover.h"
 
 #include "cef/site_info.h"
+#import "platform/mac/tab_drag_session.h"
 #import "platform/mac/tab_strip_view.h"
 #import "platform/mac/window_screen.h"
 
@@ -131,6 +132,9 @@ NSButton* ToolbarButton(NSString* symbol,
 - (void)run:(id)sender {
   _block();
 }
+@end
+
+@implementation BRMovedTab
 @end
 
 @interface BRBrowserWindowController () <BRTabDelegate,
@@ -2028,6 +2032,64 @@ NSButton* ToolbarButton(NSString* symbol,
   [_owner showTaskManagerAtTab:tabId];
 }
 
+- (void)tabStripDidMoveGroup:(NSString*)profileId toIndex:(NSUInteger)index {
+  [self moveGroup:profileId toIndex:index];
+}
+
+- (void)tabStripDidDragOutTabs:(const std::vector<brouk::TabId>&)tabIds
+                       profile:(NSString*)profileId
+                         group:(BOOL)group
+                         image:(NSImage*)image
+                          grab:(NSPoint)grab {
+  [BRTabDragSession dragTabs:tabIds
+                     profile:profileId
+                       group:group
+                        from:self
+                     windows:[_owner browserWindowControllers]
+                       image:image
+                        grab:grab];
+}
+
+- (NSArray<BRWindowChoice*>*)tabStripOtherWindows {
+  NSMutableArray<BRWindowChoice*>* choices = [NSMutableArray array];
+  for (BRBrowserWindowController* controller in
+       [_owner browserWindowControllers]) {
+    if (controller == self || controller.isPopup) {
+      continue;
+    }
+    BRTab* tab = [controller activeTab];
+    if (!tab) {
+      continue;
+    }
+    BRWindowChoice* choice = [[BRWindowChoice alloc] init];
+    choice.windowId = controller.windowId;
+    NSString* title = tab.title.length ? tab.title : tab.url;
+    NSUInteger others = controller.orderedTabs.count - 1;
+    choice.title =
+        others == 0
+            ? (title.length ? title : @"New Tab")
+            : [NSString stringWithFormat:@"%@ and %lu more", title,
+                                         static_cast<unsigned long>(others)];
+    [choices addObject:choice];
+  }
+  return choices;
+}
+
+- (void)tabStripDidMoveTabs:(const std::vector<brouk::TabId>&)tabIds
+                   toWindow:(std::int64_t)windowId {
+  BRBrowserWindowController* target = nil;
+  for (BRBrowserWindowController* controller in
+       [_owner browserWindowControllers]) {
+    if (windowId != 0 && controller.windowId == windowId) {
+      target = controller;
+    }
+  }
+  if (windowId != 0 && !target) {
+    return;  // The window closed while the menu was open.
+  }
+  [self moveTabs:tabIds toWindow:target];
+}
+
 #pragma mark - Task manager (020)
 
 - (NSArray<BRTab*>*)orderedTabs {
@@ -2180,6 +2242,234 @@ NSButton* ToolbarButton(NSString* symbol,
                   [strongSelf openTabWithURL:url profile:targetId activate:YES];
                   [strongSelf closeTab:strongTab];
                 }];
+}
+
+#pragma mark - Moving tabs between windows (026)
+
+- (std::vector<brouk::TabId>)tabIdsInProfile:(const brouk::ProfileId&)profile {
+  std::vector<brouk::TabId> ids;
+  for (const brouk::TabStripModel::Group& group : _model->groups()) {
+    if (group.profile == profile) {
+      for (std::size_t i = group.start; i < group.start + group.count; ++i) {
+        ids.push_back(_model->id_at(i));
+      }
+    }
+  }
+  return ids;
+}
+
+- (NSArray<BRMovedTab*>*)detachTabs:(const std::vector<brouk::TabId>&)tabIds {
+  NSMutableArray<BRMovedTab*>* moved = [NSMutableArray array];
+  BRTab* active = [self activeTab];
+  for (brouk::TabId tabId : tabIds) {
+    BRTab* tab = _tabs[@(tabId)];
+    if (!tab || tab.isClosing) {
+      continue;
+    }
+    if (tab == _fullscreenTab) {
+      [tab exitFullscreen];
+    }
+    if (tab == _passwordPromptTab) {
+      _passwordPromptTab = nil;
+    }
+    BRMovedTab* entry = [[BRMovedTab alloc] init];
+    entry.tab = tab;
+    entry.pinned = _model->IsPinned(tabId);
+    entry.wasActive = tab == active;
+    auto from = _openedFromProfile.find(tabId);
+    if (from != _openedFromProfile.end()) {
+      entry.openedFromProfile = @(from->second.c_str());
+      _openedFromProfile.erase(from);
+    }
+    _model->RemoveTab(tabId);
+    [_tabs removeObjectForKey:@(tabId)];
+    [tab.tabView removeFromSuperview];
+    [moved addObject:entry];
+  }
+  if (moved.count > 0) {
+    [self closeSuggestions];
+    [self modelDidChange];
+    if (active && ![self ownsTab:active]) {
+      [self focusActiveTab];
+    }
+  }
+  return moved;
+}
+
+// The tab's place inside its profile group.
+- (NSUInteger)positionInGroup:(brouk::TabId)tabId {
+  std::optional<std::size_t> index = _model->IndexOf(tabId);
+  const brouk::ProfileId* profile = _model->ProfileOf(tabId);
+  if (!index || !profile) {
+    return 0;
+  }
+  for (const brouk::TabStripModel::Group& group : _model->groups()) {
+    if (group.profile == *profile) {
+      return *index - group.start;
+    }
+  }
+  return 0;
+}
+
+- (void)attachTabs:(NSArray<BRMovedTab*>*)tabs
+          position:(NSUInteger)position
+        groupIndex:(NSUInteger)groupIndex
+          activate:(BOOL)activate {
+  if (tabs.count == 0) {
+    return;
+  }
+  BRMovedTab* chosen = tabs.firstObject;
+  for (BRMovedTab* entry in tabs) {
+    if (entry.wasActive) {
+      chosen = entry;
+    }
+  }
+  // Each tab goes right after the one moved before it on its side of the
+  // pinned tabs, so the tabs keep their order.
+  std::optional<brouk::TabId> lastPinned;
+  std::optional<brouk::TabId> lastUnpinned;
+  for (BRMovedTab* entry in tabs) {
+    BRTab* tab = entry.tab;
+    tab.delegate = self;
+    _tabs[@(tab.tabId)] = tab;
+    tab.tabView.frame = _contentArea.bounds;
+    tab.tabView.hidden = YES;
+    [_contentArea addSubview:tab.tabView];
+    if (entry.openedFromProfile) {
+      _openedFromProfile[tab.tabId] = entry.openedFromProfile.UTF8String;
+    }
+    std::optional<brouk::TabId>& previous =
+        entry.pinned ? lastPinned : lastUnpinned;
+    NSUInteger at = previous ? [self positionInGroup:*previous] + 1 : position;
+    _model->InsertMovedTab(tab.tabId, tab.profileId, at, entry.pinned,
+                           groupIndex, activate && entry == chosen);
+    previous = tab.tabId;
+  }
+  [self modelDidChange];
+  for (BRMovedTab* entry in tabs) {
+    [entry.tab screenChanged];
+  }
+  if (activate) {
+    [self focusActiveTab];
+  }
+}
+
+- (void)closeIfEmpty {
+  if (self.liveTabCount == 0) {
+    [self.window close];
+  }
+}
+
+- (void)moveTabs:(const std::vector<brouk::TabId>&)tabIds
+        toWindow:(nullable BRBrowserWindowController*)target {
+  if (target) {
+    [self moveTabs:tabIds
+          toWindow:target
+          position:NSUIntegerMax / 2
+        groupIndex:NSUIntegerMax / 2];
+  } else {
+    [self moveTabs:tabIds
+        newWindowFrame:NSOffsetRect(self.window.frame, 30, -30)];
+  }
+}
+
+- (void)moveTabs:(const std::vector<brouk::TabId>&)tabIds
+        toWindow:(BRBrowserWindowController*)target
+        position:(NSUInteger)position
+      groupIndex:(NSUInteger)groupIndex {
+  if (target == self || tabIds.empty()) {
+    return;
+  }
+  NSArray<BRMovedTab*>* moved = [self detachTabs:tabIds];
+  if (moved.count == 0) {
+    return;
+  }
+  [target attachTabs:moved
+            position:position
+          groupIndex:groupIndex
+            activate:YES];
+  [target.window makeKeyAndOrderFront:nil];
+  [self closeIfEmpty];
+}
+
+- (void)moveTabs:(const std::vector<brouk::TabId>&)tabIds
+    newWindowFrame:(NSRect)frame {
+  // A window's only tabs stay where they are: moving them to a new window
+  // would only replace the window.
+  if (tabIds.empty() || tabIds.size() >= _model->count()) {
+    return;
+  }
+  NSArray<BRMovedTab*>* moved = [self detachTabs:tabIds];
+  if (moved.count == 0) {
+    return;
+  }
+  BRBrowserWindowController* target =
+      [_owner windowForMovedTabsWithFrame:frame];
+  [target attachTabs:moved position:0 groupIndex:0 activate:YES];
+  [target showWindow:nil];
+  [target.window makeKeyAndOrderFront:nil];
+  [self closeIfEmpty];
+}
+
+- (void)moveGroup:(NSString*)profileId toIndex:(NSUInteger)index {
+  _model->MoveGroup(profileId.UTF8String, index);
+  [self modelDidChange];  // Also puts the dragged views back.
+}
+
+- (void)moveTab:(brouk::TabId)tabId toPosition:(NSUInteger)position {
+  const brouk::ProfileId* profile = _model->ProfileOf(tabId);
+  if (profile) {
+    for (const brouk::TabStripModel::Group& group : _model->groups()) {
+      if (group.profile == *profile) {
+        _model->MoveTab(tabId, group.start + position);
+      }
+    }
+  }
+  [self modelDidChange];
+}
+
+- (void)askToMoveTab:(brouk::TabId)tabId toProfile:(NSString*)profileId {
+  [self moveTab:_tabs[@(tabId)] toProfile:profileId.UTF8String];
+}
+
+- (nullable BRTabDropPlace*)tabDropPlaceAt:(NSPoint)screenPoint
+                                   profile:(NSString*)profileId
+                                 excluding:
+                                     (const std::vector<brouk::TabId>&)excluded
+                                     group:(BOOL)group {
+  if (_isPopup || _tabStrip.hidden) {
+    return nil;
+  }
+  NSPoint inWindow = [self.window convertPointFromScreen:screenPoint];
+  NSPoint point = [_tabStrip convertPoint:inWindow fromView:nil];
+  // A little above and below the strip still counts, so tabs attach as
+  // easily as they detach.
+  NSRect area = NSInsetRect(_tabStrip.bounds, 0, -12);
+  if (!NSPointInRect(point, area)) {
+    [_tabStrip showDropMarkAtX:NAN];
+    return nil;
+  }
+  BRTabDropPlace* place = [_tabStrip dropPlaceForProfile:profileId
+                                                 atPoint:point
+                                               excluding:excluded
+                                                   group:group];
+  [_tabStrip showDropMarkAtX:place.markX];
+  return place;
+}
+
+- (void)hideTabDropMark {
+  [_tabStrip showDropMarkAtX:NAN];
+}
+
+- (void)setFadedTabs:(const std::vector<brouk::TabId>&)tabIds {
+  [_tabStrip setFadedTabs:tabIds];
+}
+
+- (IBAction)moveTabToNewWindow:(id)sender {
+  BRTab* tab = [self activeTab];
+  if (tab) {
+    [self moveTabs:std::vector<brouk::TabId>{tab.tabId} toWindow:nil];
+  }
 }
 
 #pragma mark - BRAddressFieldDelegate
@@ -3533,6 +3823,9 @@ static std::int64_t Now() {
   }
   if (action == @selector(closeTabsToTheRight:)) {
     return [self activeTabCanClose:brouk::TabStripModel::CloseScope::kRight];
+  }
+  if (action == @selector(moveTabToNewWindow:)) {
+    return tab != nil && !_isPopup && _model->count() > 1;
   }
   if (action == @selector(newTabToTheRight:) ||
       action == @selector(duplicateTab:) ||

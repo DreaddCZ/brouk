@@ -1,6 +1,7 @@
 #include "platform/win/browser_window.h"
 
 #include <commctrl.h>
+#include <dwmapi.h>
 #include <windowsx.h>
 
 #include <algorithm>
@@ -118,6 +119,9 @@ enum MenuCommand : UINT {
   kFirstClosedCommand = 3000,
   kFirstRecentPageCommand = 4000,
   kFirstBookmarkCommand = 5000,
+  // "Move to another window" (026): a new window, then the windows.
+  kFirstMoveTabCommand = 6000,
+  kFirstMoveGroupCommand = 6500,
 };
 
 // Glyphs of the "Segoe MDL2 Assets" icon font, on Windows 10 and 11.
@@ -554,17 +558,7 @@ void BrowserWindow::Paint() {
     HBITMAP bitmap = CreateCompatibleBitmap(dc, width, height);
     HGDIOBJ previous = SelectObject(buffer, bitmap);
     if (kind_ == Kind::kNormal) {
-      TabStrip::PaintState state;
-      state.theme = &theme_;
-      state.tab = [this](TabId id) -> const Tab* { return FindTab(id); };
-      state.active = model_.active_id();
-      state.hover = hover_;
-      state.pressed = pressed_;
-      state.window_active = active_;
-      state.maximized = IsZoomed(window_) != FALSE;
-      state.dark = theme_.dark;
-      state.spinner_step = spinner_step_;
-      strip_.Paint(buffer, state);
+      PaintStrip(buffer);
     }
     PaintToolbar(buffer);
     BitBlt(dc, 0, 0, width, height, buffer, 0, 0, SRCCOPY);
@@ -577,6 +571,21 @@ void BrowserWindow::Paint() {
   SetDCBrushColor(dc, theme_.toolbar);
   FillRect(dc, &content, static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
   EndPaint(window_, &paint);
+}
+
+void BrowserWindow::PaintStrip(HDC dc) {
+  TabStrip::PaintState state;
+  state.theme = &theme_;
+  state.tab = [this](TabId id) -> const Tab* { return FindTab(id); };
+  state.active = model_.active_id();
+  state.hover = hover_;
+  state.pressed = pressed_;
+  state.window_active = active_;
+  state.maximized = IsZoomed(window_) != FALSE;
+  state.dark = theme_.dark;
+  state.spinner_step = spinner_step_;
+  state.drop_mark = drop_mark_;
+  strip_.Paint(dc, state);
 }
 
 void BrowserWindow::PaintToolbar(HDC dc) {
@@ -2407,6 +2416,13 @@ void BrowserWindow::ShowTabMenu(TabId id, POINT screen_point) {
       tab->paused() || (tab->has_browser() && !tab->internal()));
   add(kShowInTaskManagerCommand, L"Show in task manager", true);
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+  // Chrome's "Move tab to another window" (026).
+  HMENU move = CreatePopupMenu();
+  std::vector<BrowserWindow*> targets;
+  AppendMoveMenu(move, kFirstMoveTabCommand, true, targets);
+  AppendMenuW(menu, MF_POPUP | (is_normal() ? 0 : MF_GRAYED),
+              reinterpret_cast<UINT_PTR>(move), L"Move tab to another window");
+  AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
   add(kCloseTabCommand, L"Close\tCtrl+W", true);
   add(kCloseOtherTabsCommand, L"Close other tabs", others);
   add(kCloseTabsLeftCommand, L"Close tabs to the left", left);
@@ -2414,10 +2430,14 @@ void BrowserWindow::ShowTabMenu(TabId id, POINT screen_point) {
   const UINT command = static_cast<UINT>(TrackPopupMenuEx(
       menu, TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD | TPM_NONOTIFY,
       screen_point.x, screen_point.y, window_, nullptr));
-  DestroyMenu(menu);
+  DestroyMenu(menu);  // With its submenu.
   // The tab may have closed while the menu was open.
   tab = FindTab(id);
   if (!tab || !command) {
+    return;
+  }
+  if (command >= kFirstMoveTabCommand && command < kFirstMoveGroupCommand) {
+    MoveTabsByMenu({id}, command, kFirstMoveTabCommand, targets);
     return;
   }
   auto close_all = [this](const std::vector<TabId>& ids) {
@@ -2962,7 +2982,7 @@ void BrowserWindow::OpenInternalPage(const std::string& url) {
       active ? ProfileOfTab(active->id()) : model_.default_profile();
   const TabId id = NextTabId();
   std::unique_ptr<CefMessageRouterBrowserSide::Handler> handler =
-      owner_.InternalPageHandler(*page, *this, id);
+      owner_.InternalPageHandler(*page, id);
   if (!handler) {
     return;  // Not on Windows yet.
   }
@@ -3130,7 +3150,7 @@ void BrowserWindow::Restore(const SessionWindow& saved) {
     if (IsInternalPageUrl(saved_tab.url)) {
       // Pages with their own window (help, settings) do not come back.
       const std::optional<std::string> page = InternalPageOf(saved_tab.url);
-      handler = page ? owner_.InternalPageHandler(*page, *this, id) : nullptr;
+      handler = page ? owner_.InternalPageHandler(*page, id) : nullptr;
       if (!handler) {
         continue;
       }
@@ -3212,7 +3232,7 @@ void BrowserWindow::OpenTab(const std::string& url,
         return;
       }
       const TabId id = NextTabId();
-      if (auto handler = owner_.InternalPageHandler(*page, *this, id)) {
+      if (auto handler = owner_.InternalPageHandler(*page, id)) {
         auto tab = std::make_unique<Tab>(*this, id, window_, profile);
         tab->SetBounds(ContentBounds());
         Tab* created = tab.get();
@@ -3332,7 +3352,7 @@ void BrowserWindow::RestoreClosedTab(const ClosedTab& closed, bool activate) {
   }
   std::unique_ptr<CefMessageRouterBrowserSide::Handler> handler;
   if (const std::optional<std::string> page = InternalPageOf(closed.url)) {
-    handler = owner_.InternalPageHandler(*page, *this, id);
+    handler = owner_.InternalPageHandler(*page, id);
   }
   if (handler) {
     created->CreateInternalPage(closed.url, std::move(handler),
@@ -4222,6 +4242,462 @@ void BrowserWindow::MoveTabToProfile(TabId id, const ProfileId& profile) {
   });
 }
 
+// Moving tabs between windows (026).
+
+std::vector<TabId> BrowserWindow::TabIdsInProfile(
+    const ProfileId& profile) const {
+  std::vector<TabId> ids;
+  for (const TabStripModel::Group& group : model_.groups()) {
+    if (group.profile == profile) {
+      for (std::size_t i = group.start; i < group.start + group.count; ++i) {
+        ids.push_back(model_.id_at(i));
+      }
+    }
+  }
+  return ids;
+}
+
+std::size_t BrowserWindow::PositionInGroup(TabId id) const {
+  const std::optional<std::size_t> index = model_.IndexOf(id);
+  const ProfileId* profile = model_.ProfileOf(id);
+  if (!index || !profile) {
+    return 0;
+  }
+  for (const TabStripModel::Group& group : model_.groups()) {
+    if (group.profile == *profile) {
+      return *index - group.start;
+    }
+  }
+  return 0;
+}
+
+std::vector<BrowserWindow::MovedTab> BrowserWindow::DetachTabs(
+    const std::vector<TabId>& ids) {
+  std::vector<MovedTab> moved;
+  const std::optional<TabId> active = model_.active_id();
+  for (TabId id : ids) {
+    auto it = tabs_.find(id);
+    if (it == tabs_.end() || it->second->closing()) {
+      continue;
+    }
+    Tab& tab = *it->second;
+    if (fullscreen_tab_ == id) {
+      tab.ExitFullscreen();
+      OnTabFullscreenChanged(tab, false);
+    }
+    if (password_prompt_tab_ == id) {
+      password_prompt_tab_ = 0;
+    }
+    if (password_list_tab_ == id) {
+      ClosePasswordList();
+    }
+    MovedTab entry;
+    entry.pinned = model_.IsPinned(id);
+    entry.was_active = active == id;
+    if (auto from = opened_from_.find(id); from != opened_from_.end()) {
+      entry.opened_from = from->second;
+      opened_from_.erase(from);
+    }
+    model_.RemoveTab(id);
+    tab.SetVisible(false);
+    entry.tab = std::move(it->second);
+    tabs_.erase(it);
+    moved.push_back(std::move(entry));
+  }
+  const bool active_moved = std::ranges::any_of(
+      moved, [](const MovedTab& entry) { return entry.was_active; });
+  if (active_moved && password_prompt_) {
+    ClosePasswordPrompt();
+  }
+  if (!moved.empty() && !tabs_.empty()) {
+    ModelChanged();
+    if (active_moved) {
+      FocusActiveTab();
+    }
+  }
+  return moved;
+}
+
+void BrowserWindow::AttachTabs(std::vector<MovedTab> tabs,
+                               std::size_t position,
+                               std::size_t group_index) {
+  if (tabs.empty()) {
+    return;
+  }
+  TabId chosen = tabs.front().tab->id();
+  for (const MovedTab& entry : tabs) {
+    if (entry.was_active) {
+      chosen = entry.tab->id();
+    }
+  }
+  // Each tab goes right after the one moved before it on its side of the
+  // pinned tabs, so the tabs keep their order.
+  std::optional<TabId> last_pinned;
+  std::optional<TabId> last_unpinned;
+  for (MovedTab& entry : tabs) {
+    Tab& tab = *entry.tab;
+    const TabId id = tab.id();
+    tab.MoveToWindow(*this, window_);
+    tab.SetBounds(ContentBounds());
+    if (entry.opened_from) {
+      opened_from_[id] = *entry.opened_from;
+    }
+    std::optional<TabId>& previous = entry.pinned ? last_pinned : last_unpinned;
+    const std::size_t at = previous ? PositionInGroup(*previous) + 1 : position;
+    tabs_[id] = std::move(entry.tab);
+    model_.InsertMovedTab(id, tabs_[id]->profile(), at, entry.pinned,
+                          group_index, id == chosen);
+    previous = id;
+  }
+  ModelChanged();
+  FocusActiveTab();
+}
+
+void BrowserWindow::CloseIfEmpty() {
+  if (tabs_.empty() && !closing_) {
+    closing_ = true;
+    PostMessageW(window_, WM_CLOSE, 0, 0);
+  }
+}
+
+void BrowserWindow::MoveTabsTo(const std::vector<TabId>& ids,
+                               BrowserWindow& target,
+                               std::size_t position,
+                               std::size_t group_index) {
+  if (&target == this || ids.empty() || target.closing()) {
+    return;
+  }
+  std::vector<MovedTab> moved = DetachTabs(ids);
+  if (moved.empty()) {
+    return;
+  }
+  target.AttachTabs(std::move(moved), position, group_index);
+  target.Activate();
+  CloseIfEmpty();
+}
+
+void BrowserWindow::MoveTabsToNewWindow(const std::vector<TabId>& ids,
+                                        const RECT& frame) {
+  // A window's only tabs stay where they are: moving them to a new window
+  // would only replace the window.
+  if (ids.empty() || ids.size() >= model_.count()) {
+    return;
+  }
+  BrowserWindow* target = owner_.OpenWindowForMovedTabs(frame);
+  if (!target) {
+    return;
+  }
+  target->AttachTabs(DetachTabs(ids), 0, 0);
+  target->Show();
+  target->Activate();
+  CloseIfEmpty();
+}
+
+void BrowserWindow::AppendMoveMenu(HMENU menu,
+                                   UINT new_window_command,
+                                   bool new_window_item,
+                                   std::vector<BrowserWindow*>& targets) {
+  if (new_window_item) {
+    AppendMenuW(menu, MF_STRING | (model_.count() > 1 ? 0 : MF_GRAYED),
+                new_window_command, L"New window");
+  }
+  for (BrowserWindow* window : owner_.NormalWindows()) {
+    if (window == this) {
+      continue;
+    }
+    // Named by the active tab, with how many more it has (Chrome).
+    std::wstring title = window->ActiveTabTitle();
+    if (title.size() > 60) {
+      title = title.substr(0, 57) + L"…";
+    }
+    if (const std::size_t more = window->model_.count(); more > 1) {
+      title += L" and " + std::to_wstring(more - 1) + L" more";
+    }
+    if (targets.empty() && new_window_item) {
+      AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    }
+    AppendMenuW(menu, MF_STRING,
+                new_window_command + 1 + static_cast<UINT>(targets.size()),
+                title.c_str());
+    targets.push_back(window);
+  }
+}
+
+void BrowserWindow::MoveTabsByMenu(const std::vector<TabId>& ids,
+                                   UINT command,
+                                   UINT new_window_command,
+                                   const std::vector<BrowserWindow*>& targets) {
+  if (command == new_window_command) {
+    RECT frame = {};
+    GetWindowRect(window_, &frame);
+    OffsetRect(&frame, Scale(30), Scale(30));
+    MoveTabsToNewWindow(ids, frame);
+    return;
+  }
+  const std::size_t index = command - new_window_command - 1;
+  if (index < targets.size() && owner_.IsOpenWindow(targets[index])) {
+    MoveTabsTo(ids, *targets[index]);
+  }
+}
+
+void BrowserWindow::ShowGroupMenu(const ProfileId& profile,
+                                  POINT screen_point) {
+  const std::vector<TabId> ids = TabIdsInProfile(profile);
+  if (ids.empty()) {
+    return;
+  }
+  HMENU menu = CreatePopupMenu();
+  HMENU move = CreatePopupMenu();
+  std::vector<BrowserWindow*> targets;
+  AppendMoveMenu(move, kFirstMoveGroupCommand, false, targets);
+  // Chrome's group menu: "Move group to new window".
+  AppendMenuW(menu, MF_STRING | (ids.size() < model_.count() ? 0 : MF_GRAYED),
+              kFirstMoveGroupCommand, L"Move group to new window");
+  AppendMenuW(menu, MF_POPUP | (targets.empty() ? MF_GRAYED : 0),
+              reinterpret_cast<UINT_PTR>(move),
+              L"Move group to another window");
+  const UINT command = static_cast<UINT>(TrackPopupMenuEx(
+      menu, TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD | TPM_NONOTIFY,
+      screen_point.x, screen_point.y, window_, nullptr));
+  DestroyMenu(menu);  // With its submenu.
+  if (command) {
+    MoveTabsByMenu(TabIdsInProfile(profile), command, kFirstMoveGroupCommand,
+                   targets);
+  }
+}
+
+HBITMAP BrowserWindow::SnapshotStrip(const RECT& part) {
+  const RECT strip = StripBounds();
+  HDC dc = GetDC(window_);
+  HDC buffer = CreateCompatibleDC(dc);
+  HBITMAP whole = CreateCompatibleBitmap(dc, strip.right, strip.bottom);
+  HGDIOBJ previous = SelectObject(buffer, whole);
+  PaintStrip(buffer);
+  const int width = part.right - part.left;
+  const int height = part.bottom - part.top;
+  HDC cut = CreateCompatibleDC(dc);
+  HBITMAP image = CreateCompatibleBitmap(dc, width, height);
+  HGDIOBJ previous_cut = SelectObject(cut, image);
+  BitBlt(cut, 0, 0, width, height, buffer, part.left, part.top, SRCCOPY);
+  SelectObject(cut, previous_cut);
+  DeleteDC(cut);
+  SelectObject(buffer, previous);
+  DeleteObject(whole);
+  DeleteDC(buffer);
+  ReleaseDC(window_, dc);
+  return image;
+}
+
+void BrowserWindow::StartDragOut(std::vector<TabId> ids,
+                                 const ProfileId& profile,
+                                 bool group,
+                                 const RECT& part,
+                                 POINT point) {
+  if (ids.empty() || kind_ != Kind::kNormal) {
+    return;
+  }
+  DragOut drag;
+  drag.move_window = ids.size() >= model_.count();
+  drag.ids = std::move(ids);
+  drag.profile = profile;
+  drag.group = group;
+  POINT screen = point;
+  ClientToScreen(window_, &screen);
+  if (drag.move_window) {
+    if (IsZoomed(window_)) {
+      // A maximised window is restored under the mouse first (Chrome).
+      ShowWindow(window_, SW_RESTORE);
+      RECT restored = {};
+      GetWindowRect(window_, &restored);
+      const int width = restored.right - restored.left;
+      SetWindowPos(window_, nullptr, screen.x - width / 2, screen.y - point.y,
+                   0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+    GetWindowRect(window_, &drag.start_frame);
+    drag.grab = {screen.x - drag.start_frame.left,
+                 screen.y - drag.start_frame.top};
+  } else {
+    const SIZE size = {part.right - part.left, part.bottom - part.top};
+    drag.grab = {point.x - part.left, point.y - part.top};
+    drag.image = std::make_unique<TabDragImage>(
+        SnapshotStrip(part), size,
+        POINT{screen.x - drag.grab.x, screen.y - drag.grab.y});
+  }
+  drag_tab_.reset();
+  drag_group_.reset();
+  pressed_ = {};
+  dragging_ = false;
+  drag_out_ = std::move(drag);
+  // Escape reaches the window, not the page, while dragging.
+  SetFocus(window_);
+  if (GetCapture() != window_) {
+    SetCapture(window_);
+  }
+  InvalidateStrip();
+}
+
+BrowserWindow* BrowserWindow::WindowAt(POINT screen, bool skip_self) const {
+  const HWND image =
+      drag_out_ && drag_out_->image ? drag_out_->image->hwnd() : nullptr;
+  for (HWND window = GetTopWindow(nullptr); window;
+       window = GetWindow(window, GW_HWNDNEXT)) {
+    if (window == image || (skip_self && window == window_) ||
+        !IsWindowVisible(window) || IsIconic(window) ||
+        (GetWindowLongPtrW(window, GWL_EXSTYLE) & WS_EX_TRANSPARENT) != 0) {
+      continue;
+    }
+    // Windows of suspended apps are "visible" but hidden by the system.
+    BOOL cloaked = FALSE;
+    if (SUCCEEDED(DwmGetWindowAttribute(window, DWMWA_CLOAKED, &cloaked,
+                                        sizeof(cloaked))) &&
+        cloaked) {
+      continue;
+    }
+    RECT frame = {};
+    if (FAILED(DwmGetWindowAttribute(window, DWMWA_EXTENDED_FRAME_BOUNDS,
+                                     &frame, sizeof(frame)))) {
+      GetWindowRect(window, &frame);
+    }
+    if (!PtInRect(&frame, screen)) {
+      continue;
+    }
+    for (BrowserWindow* browser : owner_.NormalWindows()) {
+      if (browser->hwnd() == window) {
+        return browser;
+      }
+    }
+    return nullptr;  // Another window is in front.
+  }
+  return nullptr;
+}
+
+std::optional<TabStrip::DropPlace> BrowserWindow::DragOver(
+    POINT screen,
+    const ProfileId& profile,
+    const std::vector<TabId>& excluded,
+    bool group) {
+  POINT point = screen;
+  ScreenToClient(window_, &point);
+  if (kind_ != Kind::kNormal || fullscreen_ || !strip_.InDropArea(point)) {
+    HideDropMark();
+    return std::nullopt;
+  }
+  const TabStrip::DropPlace place =
+      strip_.DropPlaceAt(point.x, profile, model_, excluded, group);
+  if (drop_mark_ != place.mark_x) {
+    drop_mark_ = place.mark_x;
+    InvalidateStrip();
+  }
+  return place;
+}
+
+void BrowserWindow::HideDropMark() {
+  if (drop_mark_) {
+    drop_mark_.reset();
+    InvalidateStrip();
+  }
+}
+
+void BrowserWindow::ContinueDragOut(POINT screen) {
+  if (!drag_out_) {
+    return;
+  }
+  DragOut& drag = *drag_out_;
+  if (drag.move_window) {
+    SetWindowPos(window_, nullptr, screen.x - drag.grab.x,
+                 screen.y - drag.grab.y, 0, 0,
+                 SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+  } else if (drag.image) {
+    drag.image->MoveTo({screen.x - drag.grab.x, screen.y - drag.grab.y});
+  }
+  // The front window under the mouse decides; its strip takes the tabs,
+  // the rest of it does not.
+  BrowserWindow* over = WindowAt(screen, drag.move_window);
+  std::optional<TabStrip::DropPlace> place;
+  if (over) {
+    place = over->DragOver(screen, drag.profile,
+                           over == this ? drag.ids : std::vector<TabId>(),
+                           drag.group);
+  }
+  if (drag.target && drag.target != over && owner_.IsOpenWindow(drag.target)) {
+    drag.target->HideDropMark();
+  }
+  drag.target = place ? over : nullptr;
+  if (place) {
+    drag.place = *place;
+  }
+}
+
+void BrowserWindow::EndDragOut(bool drop) {
+  if (!drag_out_) {
+    return;
+  }
+  // Taken first: releasing the mouse comes back here (WM_CAPTURECHANGED).
+  DragOut drag = std::move(*drag_out_);
+  drag_out_.reset();
+  if (GetCapture() == window_) {
+    ReleaseCapture();
+  }
+  drag.image.reset();
+  BrowserWindow* target =
+      drag.target && owner_.IsOpenWindow(drag.target) ? drag.target : nullptr;
+  if (target) {
+    target->HideDropMark();
+  }
+  InvalidateStrip();
+  if (!drop) {
+    if (drag.move_window) {
+      SetWindowPos(window_, nullptr, drag.start_frame.left,
+                   drag.start_frame.top, 0, 0,
+                   SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+    FocusActiveTab();
+    return;
+  }
+  if (!target) {
+    // Dropped outside any strip: a moved window stays where it is, other
+    // tabs open in a new window under the mouse, of this window's size.
+    if (!drag.move_window) {
+      POINT screen = {};
+      GetCursorPos(&screen);
+      WINDOWPLACEMENT placement = {};
+      placement.length = sizeof(placement);
+      GetWindowPlacement(window_, &placement);
+      const RECT& normal = placement.rcNormalPosition;
+      const int left = screen.x - Scale(150);
+      const int top = screen.y - Scale(kStripHeight) / 2;
+      MoveTabsToNewWindow(drag.ids,
+                          {left, top, left + normal.right - normal.left,
+                           top + normal.bottom - normal.top});
+    } else {
+      FocusActiveTab();
+    }
+    return;
+  }
+  const TabStrip::DropPlace& place = drag.place;
+  if (target == this) {
+    if (drag.group) {
+      model_.MoveGroup(drag.profile, place.group_index);
+      ModelChanged();
+    } else if (place.other_profile) {
+      MoveTabToProfile(drag.ids.front(), *place.other_profile);
+    } else {
+      for (const TabStripModel::Group& group : model_.groups()) {
+        if (group.profile == drag.profile) {
+          model_.MoveTab(drag.ids.front(), group.start + place.position);
+        }
+      }
+      ModelChanged();
+    }
+    FocusActiveTab();
+    return;
+  }
+  MoveTabsTo(drag.ids, *target, place.position, place.group_index);
+  if (!drag.group && place.other_profile && drag.ids.size() == 1) {
+    target->MoveTabToProfile(drag.ids.front(), *place.other_profile);
+  }
+}
+
 void BrowserWindow::OnMouse(UINT message, POINT point) {
   TabStrip::Hit hit = strip_.HitTest(point);
   // A tab dragged over another profile's group: that group's label is
@@ -4235,12 +4711,53 @@ void BrowserWindow::OnMouse(UINT message, POINT point) {
         TRACKMOUSEEVENT track = {sizeof(track), TME_LEAVE, window_, 0};
         tracking_mouse_ = TrackMouseEvent(&track) != FALSE;
       }
+      POINT screen = point;
+      ClientToScreen(window_, &screen);
+      if (drag_out_) {
+        ContinueDragOut(screen);
+        break;
+      }
+      const int threshold =
+          GetSystemMetricsForDpi(SM_CXDRAG, GetDpiForWindow(window_));
+      const bool moved_far = std::abs(point.x - drag_start_.x) > threshold ||
+                             std::abs(point.y - drag_start_.y) > threshold;
+      if (drag_tab_ && (dragging_ || moved_far) &&
+          (model_.count() == 1 || !strip_.InDropArea(point))) {
+        // Out of the strip, or the window's only tab: the tab leaves the
+        // strip (026); the only tab takes its window along (Chrome).
+        if (const std::optional<RECT> rect = strip_.TabRect(*drag_tab_)) {
+          const ProfileId* profile = model_.ProfileOf(*drag_tab_);
+          StartDragOut({*drag_tab_}, profile ? *profile : ProfileId(), false,
+                       *rect, point);
+          ContinueDragOut(screen);
+          break;
+        }
+      }
+      if (drag_group_ && (dragging_ || moved_far)) {
+        const ProfileId profile = *drag_group_;
+        const std::vector<TabId> ids = TabIdsInProfile(profile);
+        const std::optional<RECT> label = strip_.GroupLabelRect(profile);
+        if (!ids.empty() && label &&
+            (ids.size() >= model_.count() || !strip_.InDropArea(point))) {
+          StartDragOut(ids, profile, true, *label, point);
+          ContinueDragOut(screen);
+          break;
+        }
+        dragging_ = true;
+        // Within the strip the group moves as the mouse passes the middle
+        // of another group; the default profile's stays last.
+        if (!strip_.IsLastGroup(profile)) {
+          const TabStrip::DropPlace place =
+              strip_.DropPlaceAt(point.x, profile, model_, ids, true);
+          if (model_.MoveGroup(profile, place.group_index)) {
+            ModelChanged();
+          }
+        }
+      }
       if (drag_tab_) {
         // A tab moves once the mouse has moved far enough (the system's
         // drag threshold).
-        if (!dragging_ &&
-            std::abs(point.x - drag_start_.x) >
-                GetSystemMetricsForDpi(SM_CXDRAG, GetDpiForWindow(window_))) {
+        if (!dragging_ && std::abs(point.x - drag_start_.x) > threshold) {
           dragging_ = true;
         }
         if (dragging_) {
@@ -4277,17 +4794,27 @@ void BrowserWindow::OnMouse(UINT message, POINT point) {
                  hit.part == TabStrip::Part::kTabAudio ||
                  hit.part == TabStrip::Part::kNewTab ||
                  hit.part == TabStrip::Part::kGroupLabel) {
+        if (hit.part == TabStrip::Part::kGroupLabel) {
+          drag_group_ = hit.profile;  // Dragging the label moves the group.
+          drag_start_ = point;
+        }
         pressed_ = hit;
         SetCapture(window_);
         InvalidateStrip();
       }
       break;
     case WM_LBUTTONUP: {
+      if (drag_out_) {
+        EndDragOut(true);
+        break;
+      }
       const TabStrip::Hit pressed = pressed_;
       const std::optional<TabId> dropped = drag_tab_;
       const std::optional<ProfileId> target = DropTarget(point);
+      const bool group_dragged = drag_group_ && dragging_;
       pressed_ = {};
       drag_tab_.reset();
+      drag_group_.reset();
       dragging_ = false;
       if (GetCapture() == window_) {
         ReleaseCapture();
@@ -4303,7 +4830,8 @@ void BrowserWindow::OnMouse(UINT message, POINT point) {
         }
       } else if (pressed == hit && hit.part == TabStrip::Part::kNewTab) {
         OpenTab(std::string(), true, hit.profile);
-      } else if (pressed == hit && hit.part == TabStrip::Part::kGroupLabel) {
+      } else if (pressed == hit && hit.part == TabStrip::Part::kGroupLabel &&
+                 !group_dragged) {
         ToggleGroup(hit.profile);
       }
       InvalidateStrip();
@@ -4316,6 +4844,10 @@ void BrowserWindow::OnMouse(UINT message, POINT point) {
         POINT screen = point;
         ClientToScreen(window_, &screen);
         ShowTabMenu(hit.tab, screen);
+      } else if (hit.part == TabStrip::Part::kGroupLabel) {
+        POINT screen = point;
+        ClientToScreen(window_, &screen);
+        ShowGroupMenu(hit.profile, screen);
       }
       break;
     case WM_MBUTTONUP:
@@ -4460,9 +4992,17 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
       }
       break;
     case WM_CAPTURECHANGED:
+      EndDragOut(false);
       drag_tab_.reset();
+      drag_group_.reset();
       dragging_ = false;
       return 0;
+    case WM_KEYDOWN:
+      if (drag_out_ && wparam == VK_ESCAPE) {
+        EndDragOut(false);
+        return 0;
+      }
+      break;
     case WM_ERASEBKGND:
       return 1;  // Painted in WM_PAINT.
     case WM_PAINT:

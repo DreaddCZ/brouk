@@ -40,6 +40,7 @@
 #include "platform/win/sign_in_dialog.h"
 #include "platform/win/suggestions_popup.h"
 #include "platform/win/tab.h"
+#include "platform/win/tab_drag_image.h"
 #include "platform/win/tab_panel.h"
 #include "platform/win/tab_strip.h"
 #include "platform/win/theme.h"
@@ -77,13 +78,14 @@ class BrowserWindowOwner {
   // The request context of internal pages (in memory only); only it can
   // load brouk:// pages.
   virtual CefRefPtr<CefRequestContext> InternalContext() = 0;
-  // The bridge handler of an internal page shown in tab `tab` of `window`
-  // (the licences, 023; history, 013), or null for pages that do not open
-  // in a tab (yet).
+  // The bridge handler of an internal page shown in tab `tab` (the
+  // licences, 023; history, 013), or null for pages that do not open in a
+  // tab (yet). It acts on whichever window holds the tab (tabs move, 026).
   virtual std::unique_ptr<CefMessageRouterBrowserSide::Handler>
-  InternalPageHandler(const std::string& page,
-                      BrowserWindow& window,
-                      TabId tab) = 0;
+  InternalPageHandler(const std::string& page, TabId tab) = 0;
+  // A new, hidden browser window at `frame` (screen pixels) for tabs moved
+  // out of another window (026); the caller adds them and shows it.
+  virtual BrowserWindow* OpenWindowForMovedTabs(const RECT& frame) = 0;
   // History (013): null before CEF is ready. A profile's history changed;
   // its most recent pages for the menu (null until read, which starts
   // reading them).
@@ -304,6 +306,17 @@ class BrowserWindow final : public TabHost,
   std::int64_t window_id() const { return window_id_; }
   // A closed tab back at its place in its profile group (013).
   void RestoreClosedTab(const ClosedTab& closed, bool activate);
+
+  // Moving tabs between windows (026), keeping their pages: `ids` to
+  // `target` at a drop place in its strip (the end of their group:
+  // kEnd), or to a new window at `frame` (screen pixels). This window
+  // closes when no tabs are left in it.
+  static constexpr std::size_t kEnd = SIZE_MAX / 2;
+  void MoveTabsTo(const std::vector<TabId>& ids,
+                  BrowserWindow& target,
+                  std::size_t position = kEnd,
+                  std::size_t group_index = kEnd);
+  void MoveTabsToNewWindow(const std::vector<TabId>& ids, const RECT& frame);
 
   // Session restore (015). The window as the session saves it (nullopt for
   // popups and closing windows), and bringing a saved one back before
@@ -533,6 +546,65 @@ class BrowserWindow final : public TabHost,
   void MoveTabToProfile(TabId id, const ProfileId& profile);
   // The profile group a dragged tab is over, if not its own.
   std::optional<ProfileId> DropTarget(POINT point) const;
+
+  // Moving tabs between windows (026). A tab taken out of a window with
+  // what the window knew of it.
+  struct MovedTab {
+    std::unique_ptr<Tab> tab;
+    bool pinned = false;
+    bool was_active = false;
+    std::optional<ProfileId> opened_from;  // For internal pages.
+  };
+  std::vector<MovedTab> DetachTabs(const std::vector<TabId>& ids);
+  // Adds tabs at `position` in their profile's group (created as the
+  // `group_index`-th group if missing), in their order.
+  void AttachTabs(std::vector<MovedTab> tabs,
+                  std::size_t position,
+                  std::size_t group_index);
+  void CloseIfEmpty();
+  std::vector<TabId> TabIdsInProfile(const ProfileId& profile) const;
+  // A tab's place inside its profile group.
+  std::size_t PositionInGroup(TabId id) const;
+  // "Move tab to another window" and the group label's menu: "New window"
+  // (if `new_window_item`), then the other browser windows, named by their
+  // active tab, collected in `targets`.
+  void AppendMoveMenu(HMENU menu,
+                      UINT new_window_command,
+                      bool new_window_item,
+                      std::vector<BrowserWindow*>& targets);
+  void ShowGroupMenu(const ProfileId& profile, POINT screen_point);
+  // Moves `ids` to the chosen window of a move menu: a new window next to
+  // this one, or a window of `targets`.
+  void MoveTabsByMenu(const std::vector<TabId>& ids,
+                      UINT command,
+                      UINT new_window_command,
+                      const std::vector<BrowserWindow*>& targets);
+
+  // Dragging tabs or a group out of the strip (026), as in Chrome: their
+  // image follows the mouse, or the window itself when they are all its
+  // tabs. Dropped on a browser window's strip they go there, elsewhere
+  // into a new window. Escape cancels.
+  void StartDragOut(std::vector<TabId> ids,
+                    const ProfileId& profile,
+                    bool group,
+                    const RECT& part,
+                    POINT point);
+  void ContinueDragOut(POINT screen);
+  void EndDragOut(bool drop);
+  // The front browser window at `screen` (null: none, or another app's
+  // window is in front), skipping this one when it is being moved.
+  BrowserWindow* WindowAt(POINT screen, bool skip_self) const;
+  // Tabs dragged over this window: the drop place at `screen` with the
+  // insertion mark shown, or nullopt when not over the strip.
+  std::optional<TabStrip::DropPlace> DragOver(
+      POINT screen,
+      const ProfileId& profile,
+      const std::vector<TabId>& excluded,
+      bool group);
+  void HideDropMark();
+  // A picture of part of the strip (client pixels), for the drag image.
+  HBITMAP SnapshotStrip(const RECT& part);
+  void PaintStrip(HDC dc);
   RECT StripBounds() const;
   RECT ToolbarBounds() const;
   RECT ContentBounds() const;
@@ -658,10 +730,27 @@ class BrowserWindow final : public TabHost,
 
   TabStrip::Hit hover_;
   TabStrip::Hit pressed_;
-  // A tab being dragged to another place in the strip.
+  // A tab being dragged to another place in the strip, or a group by its
+  // label (026).
   std::optional<TabId> drag_tab_;
+  std::optional<ProfileId> drag_group_;
   POINT drag_start_ = {};
   bool dragging_ = false;
+  // Tabs or a group dragged out of the strip (026).
+  struct DragOut {
+    std::vector<TabId> ids;
+    ProfileId profile;
+    bool group = false;
+    bool move_window = false;  // All the window's tabs: the window moves.
+    POINT grab = {};  // The mouse from the image's (or window's) corner.
+    RECT start_frame = {};
+    std::unique_ptr<TabDragImage> image;
+    BrowserWindow* target = nullptr;
+    TabStrip::DropPlace place;
+  };
+  std::optional<DragOut> drag_out_;
+  // Where tabs dragged over this window would go.
+  std::optional<int> drop_mark_;
   bool tracking_mouse_ = false;
   bool active_ = true;
   // Where the keyboard focus was when the window was deactivated (the

@@ -44,6 +44,7 @@ Many client accounts in one window · full control over every page · nothing yo
 
 - A **profile** is a fully separate browser: own cookies, logins, storage, history and passwords
 - Tabs of several profiles share **one window** — each profile is a coloured, collapsible tab group
+- Put the groups in any order, and drag a tab or a whole group into another window or a new one — the page keeps running
 - `Client A` (blue) · `Client B` (green) · `Internal` (grey), right next to each other
 - Logging into Azure in Client A never touches Client B
 - No Google or Microsoft account needed for a profile — it is local only
@@ -158,6 +159,7 @@ Dev tools are switched **per tab** with an always-visible toggle — rules never
 | Area | Status |
 |---|---|
 | Browsing, tabs, profiles side by side, session restore | ✅ in use |
+| Dragging tabs and profile groups between windows | ✅ in use |
 | History, bookmarks, ad blocking | ✅ in use |
 | Developer tools | ✅ in use |
 | Passwords (built-in manager and Bitwarden) | ✅ in use |

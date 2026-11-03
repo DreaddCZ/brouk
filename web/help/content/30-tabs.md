@@ -3,10 +3,21 @@
 - Tabs are grouped by profile ([Profiles side by side](#profiles-groups)).
 - **Pinned tabs:** right-click a tab → **Pin**. A pinned tab sits at the start of its profile's group, shows a pin badge, keeps its close button and stays wider than other tabs when space is short.
 - **When tabs don't fit,** they shrink to their icon; then other groups collapse to make room for the one you are using. Click a collapsed group's label to go back to it. If one group alone still doesn't fit, a **+N** menu next to its **+** lists the hidden tabs.
-- **Tab menu** (right-click a tab): New Tab to the Right, Reload, Duplicate, Pin/Unpin, Mute/Unmute, Close Tab, Close Other Tabs, Close Tabs to the Left/Right. The "Close…" commands act only within the tab's profile group and keep pinned tabs.
+- **Tab menu** (right-click a tab): New Tab to the Right, Reload, Duplicate, Pin/Unpin, Mute/Unmute, Move Tab to Another Window, Close Tab, Close Other Tabs, Close Tabs to the Left/Right. The "Close…" commands act only within the tab's profile group and keep pinned tabs.
 - A speaker icon on a tab playing sound mutes it.
 - **Reopen a closed tab** with <kbd>⇧⌘T</kbd> ([History menu](#history-menu)); on Windows <kbd>Ctrl+Shift+T</kbd>, or "⋮" → Recently closed.
 - Duplicating or reopening a tab brings back its page, not its back/forward list.
+
+### Moving tabs and groups {#tabs-dragging}
+
+As in Chrome, tabs move freely between windows; the page moves with them and is not reloaded, so videos keep playing and typed text stays.
+
+- **Reorder profile groups:** drag a group's label left or right. The default profile's group always stays last.
+- **Tab to a new window:** drag the tab up or down out of the tab strip and drop it anywhere outside a tab strip. The tab menu's **Move Tab to Another Window** → New Window does the same (macOS: also Tab → Move Tab to New Window).
+- **Tab to another window:** drop it on that window's tab strip, where the mark shows, or choose the window in **Move Tab to Another Window**. It joins its own profile's group there, which is created if that window has none. Dropped inside another profile's group, Brouk asks to [move it to that profile](#profiles-groups).
+- **A window's only tab** drags the whole window; dropped on another window's tab strip, the tab joins it and the empty window closes.
+- **A whole group:** drag its label out of the strip, or right-click the label → **Move Group to New Window** or **Move Group to Another Window**. In another window its tabs join that window's group of the same profile.
+- A moved tab keeps pinned, muted, paused, zoom and developer tools; <kbd>Esc</kbd> while dragging cancels. A window left without tabs closes.
 
 ### Address bar {#address-bar}
 

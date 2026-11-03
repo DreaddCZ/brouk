@@ -264,6 +264,7 @@ TEST(SettingsTest, FileFormat) {
             "  select_last_tab: \"cmd+9\"\n"
             "  new_tab_right: \"\"\n"
             "  duplicate_tab: \"\"\n"
+            "  move_tab_new_window: \"\"\n"
             "  pin_tab: \"\"\n"
             "  mute_tab: \"\"\n"
             "  close_other_tabs: \"\"\n"

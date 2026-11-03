@@ -77,6 +77,29 @@ std::size_t TabStripModel::InsertInGroup(TabId id,
   return InsertAt(index, {id, profile, std::nullopt}, activate);
 }
 
+std::size_t TabStripModel::InsertMovedTab(TabId id,
+                                          const ProfileId& profile,
+                                          std::size_t position,
+                                          bool pinned,
+                                          std::size_t group_index,
+                                          bool activate) {
+  if (profile != default_profile_ &&
+      std::ranges::find(group_order_, profile) == group_order_.end()) {
+    group_index = std::min(group_index, group_order_.size());
+    group_order_.insert(
+        group_order_.begin() + static_cast<std::ptrdiff_t>(group_index),
+        profile);
+  }
+  std::size_t start = GroupStart(profile);
+  std::size_t pinned_end = PinnedEnd(profile);
+  std::size_t index =
+      pinned ? std::clamp(start + position, start, pinned_end)
+             : std::clamp(start + position, pinned_end, GroupEnd(profile));
+  Entry entry{id, profile, std::nullopt};
+  entry.pinned = pinned;
+  return InsertAt(index, std::move(entry), activate);
+}
+
 std::size_t TabStripModel::InsertAt(std::size_t index,
                                     Entry entry,
                                     bool activate) {
@@ -245,6 +268,26 @@ bool TabStripModel::MoveTab(TabId id, std::size_t to_index) {
   // Moving a tab is a user action that breaks Chrome's opener relation.
   tabs_[*from].opener.reset();
   Relocate(*from, to_index);
+  return true;
+}
+
+bool TabStripModel::MoveGroup(std::string_view profile, std::size_t to_index) {
+  auto it = std::ranges::find(group_order_, profile);
+  if (it == group_order_.end()) {
+    return false;  // The default profile's group, or no such group.
+  }
+  auto from = static_cast<std::size_t>(std::distance(group_order_.begin(), it));
+  to_index = std::min(to_index, group_order_.size() - 1);
+  if (from == to_index) {
+    return false;
+  }
+  ProfileId moved = std::move(*it);
+  group_order_.erase(it);
+  group_order_.insert(
+      group_order_.begin() + static_cast<std::ptrdiff_t>(to_index),
+      std::move(moved));
+  ForgetOpeners();
+  ArrangeGroups();
   return true;
 }
 

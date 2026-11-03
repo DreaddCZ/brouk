@@ -85,6 +85,8 @@ add_executable(brouk_app
   site_info_popover.mm
   tab_dialog_view.h
   tab_dialog_view.mm
+  tab_drag_session.h
+  tab_drag_session.mm
   tab_strip_view.h
   tab_strip_view.mm
   update_controller.h

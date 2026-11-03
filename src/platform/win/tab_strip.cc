@@ -362,6 +362,101 @@ std::optional<ProfileId> TabStrip::GroupAt(POINT point) const {
   return std::nullopt;
 }
 
+TabStrip::DropPlace TabStrip::DropPlaceAt(int x,
+                                          const ProfileId& profile,
+                                          const TabStripModel& model,
+                                          const std::vector<TabId>& excluded,
+                                          bool group) const {
+  DropPlace place;
+  const auto is_excluded = [&excluded](TabId id) {
+    return std::ranges::find(excluded, id) != excluded.end();
+  };
+  const GroupGeometry* own = nullptr;
+  const GroupGeometry* under = nullptr;
+  const GroupGeometry* next = nullptr;
+  for (std::size_t g = 0; g < groups_.size(); ++g) {
+    const GroupGeometry& geometry = groups_[g];
+    if (x >= geometry.label.left && x <= geometry.plus.right) {
+      under = &geometry;
+    }
+    if (geometry.profile == profile) {
+      own = &geometry;
+      continue;
+    }
+    // Before the first other group whose middle is right of the mouse, at
+    // the latest before the default profile's (always the last).
+    const bool is_default = g + 1 == groups_.size();
+    const int middle = (geometry.label.left + geometry.plus.right) / 2;
+    if (!is_default && middle < x) {
+      ++place.group_index;
+    } else if (!next) {
+      next = &geometry;
+    }
+  }
+  const int gap_x = next ? next->label.left - Scale(kGroupGap) / 2 : x;
+  std::optional<TabStripModel::Group> model_group;
+  for (const TabStripModel::Group& candidate : model.groups()) {
+    if (candidate.profile == profile && candidate.count > 0) {
+      model_group = candidate;
+    }
+  }
+  const bool own_dragged =
+      model_group && is_excluded(model.id_at(model_group->start));
+  if (!group && under && under->profile != profile) {
+    place.other_profile = under->profile;
+    place.mark_x = (under->label.left + under->label.right) / 2;
+    return place;
+  }
+  if (!own || (group && own_dragged)) {
+    place.mark_x = gap_x;
+    return place;
+  }
+  place.mark_x = own->label.right + Scale(kLabelGap) / 2;
+  if (!model_group) {
+    return place;  // The default profile's group without tabs.
+  }
+  if (own->collapsed || own->auto_collapsed) {
+    place.position = model_group->count;
+    return place;
+  }
+  // After the last shown tab left of the mouse (hidden tabs keep their
+  // place).
+  std::size_t counted = 0;
+  for (std::size_t i = model_group->start;
+       i < model_group->start + model_group->count; ++i) {
+    const TabId id = model.id_at(i);
+    if (is_excluded(id)) {
+      continue;
+    }
+    ++counted;
+    if (const std::optional<RECT> rect = TabRect(id);
+        rect && (rect->left + rect->right) / 2 < x) {
+      place.position = counted;
+      place.mark_x = rect->right;
+    }
+  }
+  return place;
+}
+
+bool TabStrip::InDropArea(POINT point) const {
+  RECT area = bounds_;
+  InflateRect(&area, 0, DetachDistance());
+  return Contains(area, point);
+}
+
+std::optional<RECT> TabStrip::GroupLabelRect(const ProfileId& profile) const {
+  for (const GroupGeometry& group : groups_) {
+    if (group.profile == profile) {
+      return group.label;
+    }
+  }
+  return std::nullopt;
+}
+
+bool TabStrip::IsLastGroup(const ProfileId& profile) const {
+  return !groups_.empty() && groups_.back().profile == profile;
+}
+
 std::optional<RECT> TabStrip::TabRect(TabId tab) const {
   for (const TabGeometry& geometry : tabs_) {
     if (geometry.id == tab) {
@@ -589,6 +684,13 @@ void TabStrip::Paint(HDC dc, const PaintState& state) const {
 
   for (const GroupGeometry& group : groups_) {
     PaintGroup(dc, group, state);
+  }
+  if (state.drop_mark) {
+    const int x = *state.drop_mark;
+    Fill(dc,
+         {x - Scale(1), bounds_.top + Scale(kTabTopMargin) + Scale(2),
+          x + Scale(1), bounds_.bottom - Scale(2)},
+         GetSysColor(COLOR_HIGHLIGHT));
   }
 
   if (caption_buttons_) {

@@ -74,6 +74,19 @@ class TabStripModel {
                             std::size_t position,
                             bool activate);
 
+  // Inserts a tab moved here from another window (026), keeping its pinned
+  // state: at `position` in `profile`'s group, clamped among the group's
+  // pinned tabs for a pinned tab and after them for others. If the window
+  // has no group of `profile` yet, it is created as the `group_index`-th
+  // group (0: first), always before the default profile's group. Returns
+  // its index.
+  std::size_t InsertMovedTab(TabId id,
+                             const ProfileId& profile,
+                             std::size_t position,
+                             bool pinned,
+                             std::size_t group_index,
+                             bool activate);
+
   // Removes a tab. If it was active, picks the next active tab: another tab
   // opened by the same opener, then the opener, then the tab to the right,
   // then the one to the left; tabs in collapsed groups only if there is no
@@ -96,6 +109,12 @@ class TabStripModel {
   // another profile reopens it there instead, see 005), and pinned tabs
   // among the pinned ones, others after them.
   bool MoveTab(TabId id, std::size_t to_index);
+
+  // Moves `profile`'s group with all its tabs so it becomes the
+  // `to_index`-th group (dragging its label, 026). The default profile's
+  // group stays last: it does not move, and no group goes after it.
+  // Returns whether the order changed.
+  bool MoveGroup(std::string_view profile, std::size_t to_index);
 
   // Pins a tab (it moves to the end of its group's pinned tabs) or unpins it
   // (it moves to the first place after them), as Chrome does. Returns

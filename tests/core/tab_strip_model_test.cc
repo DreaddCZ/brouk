@@ -448,5 +448,89 @@ TEST(TabStripModelPinnedTest, InsertInGroupAtAPosition) {
   EXPECT_EQ(model.groups().size(), 3U);
 }
 
+std::vector<ProfileId> GroupOrder(const TabStripModel& model) {
+  std::vector<ProfileId> profiles;
+  for (const TabStripModel::Group& group : model.groups()) {
+    profiles.push_back(group.profile);
+  }
+  return profiles;
+}
+
+TEST(TabStripModelDragTest, MoveGroupMovesAllItsTabsAndKeepsDefaultLast) {
+  TabStripModel model(kMain);
+  model.AppendTab(1, kWork, true);
+  model.AppendTab(2, kWork, false);
+  model.AppendTab(3, kHome, false);
+  model.AppendTab(4, false);
+  model.SetPinned(2, true);
+  model.SetGroupCollapsed(kHome, true);
+  EXPECT_TRUE(model.MoveGroup(kHome, 0));
+  EXPECT_EQ(GroupOrder(model), (std::vector<ProfileId>{kHome, kWork, kMain}));
+  EXPECT_EQ(Order(model), (std::vector<TabId>{3, 2, 1, 4}));
+  EXPECT_TRUE(model.IsPinned(2));
+  EXPECT_TRUE(model.groups()[0].collapsed);
+  EXPECT_EQ(model.active_id(), 1);
+  // Never after the default profile's group, which itself does not move.
+  EXPECT_TRUE(model.MoveGroup(kHome, 99));
+  EXPECT_EQ(GroupOrder(model), (std::vector<ProfileId>{kWork, kHome, kMain}));
+  EXPECT_FALSE(model.MoveGroup(kHome, 5));
+  EXPECT_FALSE(model.MoveGroup(kMain, 0));
+  EXPECT_FALSE(model.MoveGroup("p-none", 0));
+  EXPECT_EQ(Order(model), (std::vector<TabId>{2, 1, 3, 4}));
+}
+
+TEST(TabStripModelDragTest, MovedGroupKeepsItsOrderWhenTabsAreAdded) {
+  TabStripModel model(kMain);
+  model.AppendTab(1, kWork, true);
+  model.AppendTab(2, kHome, false);
+  model.MoveGroup(kHome, 0);
+  model.AppendTab(3, kWork, false);
+  model.AppendTab(4, kHome, false);
+  EXPECT_EQ(Order(model), (std::vector<TabId>{2, 4, 1, 3}));
+}
+
+TEST(TabStripModelDragTest, MovedTabKeepsPinnedAndGoesWhereDropped) {
+  TabStripModel model(kMain);
+  model.AppendTab(1, kWork, true);
+  model.AppendTab(2, kWork, false);
+  model.AppendTab(3, kWork, false);
+  model.SetPinned(1, true);
+  // Work: 1 (pinned), 2, 3. An unpinned tab never goes among pinned ones.
+  model.InsertMovedTab(10, kWork, 0, false, 0, false);
+  EXPECT_EQ(Order(model), (std::vector<TabId>{1, 10, 2, 3}));
+  // A pinned tab stays among the pinned ones.
+  model.InsertMovedTab(11, kWork, 9, true, 0, false);
+  EXPECT_EQ(Order(model), (std::vector<TabId>{1, 11, 10, 2, 3}));
+  EXPECT_TRUE(model.IsPinned(11));
+  model.InsertMovedTab(12, kWork, 3, false, 0, true);
+  EXPECT_EQ(Order(model), (std::vector<TabId>{1, 11, 10, 12, 2, 3}));
+  EXPECT_EQ(model.active_id(), 12);
+}
+
+TEST(TabStripModelDragTest, MovedTabCreatesItsGroupWhereDropped) {
+  TabStripModel model(kMain);
+  model.AppendTab(1, kWork, true);
+  model.AppendTab(2, true);
+  model.InsertMovedTab(3, kHome, 0, false, 0, false);
+  EXPECT_EQ(GroupOrder(model), (std::vector<ProfileId>{kHome, kWork, kMain}));
+  // A group index past the end still places it before the default group.
+  TabStripModel other(kMain);
+  other.AppendTab(1, true);
+  other.InsertMovedTab(2, kWork, 0, false, 7, true);
+  EXPECT_EQ(GroupOrder(other), (std::vector<ProfileId>{kWork, kMain}));
+  EXPECT_EQ(Order(other), (std::vector<TabId>{2, 1}));
+  // Into the default profile's group, which always exists.
+  other.InsertMovedTab(3, kMain, 0, false, 0, false);
+  EXPECT_EQ(Order(other), (std::vector<TabId>{2, 3, 1}));
+}
+
+TEST(TabStripModelDragTest, MovedTabIntoAnEmptyWindow) {
+  TabStripModel model(kMain);
+  model.InsertMovedTab(1, kWork, 0, true, 0, false);
+  EXPECT_EQ(model.active_id(), 1);
+  EXPECT_TRUE(model.IsPinned(1));
+  EXPECT_EQ(GroupOrder(model), (std::vector<ProfileId>{kWork, kMain}));
+}
+
 }  // namespace
 }  // namespace brouk

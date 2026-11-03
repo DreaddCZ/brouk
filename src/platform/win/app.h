@@ -127,7 +127,6 @@ class App final : public BrowserWindowOwner,
   CefRefPtr<CefRequestContext> InternalContext() override;
   std::unique_ptr<CefMessageRouterBrowserSide::Handler> InternalPageHandler(
       const std::string& page,
-      BrowserWindow& window,
       TabId tab) override;
   HistoryService* History() override;
   FaviconCache* Favicons() override;
@@ -166,6 +165,9 @@ class App final : public BrowserWindowOwner,
   void RestartToUpdate() override;
   void OpenWindow(const std::string& url, const ProfileId& profile) override;
   BrowserWindow* OpenPopupWindow(int width, int height) override;
+  BrowserWindow* OpenWindowForMovedTabs(const RECT& frame) override;
+  // The window holding tab `tab`, or null.
+  BrowserWindow* WindowWithTab(TabId tab);
   bool IsOpenWindow(const BrowserWindow* window) const override;
   void OnWindowDestroyed(BrowserWindow* window) override;
   const std::vector<ProfileInfo>& ProfileList() override;
