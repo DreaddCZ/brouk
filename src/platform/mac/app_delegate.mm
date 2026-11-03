@@ -31,6 +31,7 @@
 #import "platform/mac/profile_colors.h"
 #import "platform/mac/settings_watcher.h"
 #import "platform/mac/update_controller.h"
+#import "platform/mac/window_screen.h"
 
 #include "brouk/app_info.h"
 #include "brouk/build_info.h"
@@ -1596,6 +1597,17 @@ class AppSettingsPage : public SettingsPageDelegate {
 
 - (void)openNewWindow {
   [self newWindow:nil];
+}
+
+- (BRBrowserWindowController*)windowForMovedTabsWithFrame:(NSRect)frame {
+  BRBrowserWindowController* controller =
+      [[BRBrowserWindowController alloc] initWithOwner:self];
+  controller.settingsProblemCount = _profiles->problems().size();
+  [self applyDevToolsSettingsTo:controller];
+  [_windows addObject:controller];
+  [controller.window setFrame:frame display:NO];
+  brouk::mac::FitWindowToItsScreen(controller.window);
+  return controller;
 }
 
 #pragma mark - Link routing (010)
@@ -4182,6 +4194,10 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
           title:@"Duplicate Tab"
          action:@selector(duplicateTab:)
        shortcut:@"duplicate_tab"];
+  [self addItem:tab
+          title:@"Move Tab to New Window"
+         action:@selector(moveTabToNewWindow:)
+       shortcut:@"move_tab_new_window"];
   [self addItem:tab
           title:@"Pin Tab"
          action:@selector(togglePinTab:)

@@ -5,6 +5,7 @@
 #import <Cocoa/Cocoa.h>
 
 #include <string>
+#include <vector>
 
 #import "platform/mac/bookmark_store.h"
 #import "platform/mac/command_palette_panel.h"
@@ -27,6 +28,17 @@ NS_ASSUME_NONNULL_BEGIN
 
 @class BRBrowserWindowController;
 @class BRTab;
+
+// A tab taken out of one window to go into another (026). It keeps its
+// browser, page and state; only its window changes.
+@interface BRMovedTab : NSObject
+@property(nonatomic, strong) BRTab* tab;
+@property(nonatomic) BOOL pinned;
+// It was the active tab of the window it came from.
+@property(nonatomic) BOOL wasActive;
+// Internal pages: the profile of the tab they were opened from.
+@property(nonatomic, copy, nullable) NSString* openedFromProfile;
+@end
 
 // Implemented by the app delegate: app-wide bookkeeping of windows and
 // browsers (needed to quit CEF only after every browser has closed).
@@ -77,6 +89,9 @@ NS_ASSUME_NONNULL_BEGIN
 // the page asked for.
 - (BRBrowserWindowController*)openPopupWindowWithContentSize:(NSSize)size;
 - (void)openNewWindow;
+// An empty browser window for tabs moved out of another window (026), not
+// shown yet: the caller adds the tabs, then shows it.
+- (BRBrowserWindowController*)windowForMovedTabsWithFrame:(NSRect)frame;
 // Settings (004) tabs and the address bar follow.
 - (brouk::TabClientDelegate::SearchEngine)searchEngine;
 - (BOOL)askWhereToSaveDownloads;
@@ -218,6 +233,28 @@ NS_ASSUME_NONNULL_BEGIN
 // one brings the window to the front and switches to the tab.
 - (NSArray<BRPaletteEntry*>*)paletteTabEntries;
 - (void)closeTabsInProfile:(const brouk::ProfileId&)profile;
+
+// Moving tabs between windows (026).
+// Takes tabs out of this window without closing them (in strip order;
+// unknown or closing tabs are skipped). The caller adds them to another
+// window, then calls closeIfEmpty.
+- (NSArray<BRMovedTab*>*)detachTabs:(const std::vector<brouk::TabId>&)tabIds;
+// Adds tabs of one profile taken from another window at `position` in that
+// profile's group (pinned ones among the pinned tabs); a missing group is
+// created as the `groupIndex`-th group, before the default profile's. With
+// `activate`, the tab that was active (else the first) becomes active.
+- (void)attachTabs:(NSArray<BRMovedTab*>*)tabs
+          position:(NSUInteger)position
+        groupIndex:(NSUInteger)groupIndex
+          activate:(BOOL)activate;
+// Closes the window when no tab is left in it (as closing its last tab).
+- (void)closeIfEmpty;
+// The tabs of `profile`'s group, left to right.
+- (std::vector<brouk::TabId>)tabIdsInProfile:(const brouk::ProfileId&)profile;
+// Moves tabs to the end of their group in `target`, or to a new window
+// (nil) next to this one, and shows them there.
+- (void)moveTabs:(const std::vector<brouk::TabId>&)tabIds
+        toWindow:(nullable BRBrowserWindowController*)target;
 
 // Starts closing every tab (pages may ask to stay via beforeunload); the
 // window closes when the last tab is gone.
