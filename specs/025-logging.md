@@ -1,6 +1,6 @@
 # 025 – Logging
 
-- **Status:** ready
+- **Status:** in-progress
 - **Priority:** P2
 - **Depends on:** 004 (configuration), 016 (help); 019 (release builds) for logs from colleagues' copies
 

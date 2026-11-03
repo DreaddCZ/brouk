@@ -49,7 +49,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 022 | [History in profile export](022-history-export.md) | ready | P3 |
 | 023 | [Open-source licences (credits)](023-credits.md) | done | P1 |
 | 024 | [Windows app](024-windows-app.md) | in-progress — first beta released (0.3.1: W1–W3, installer and automatic updates, not code-signed); left: screen readers, padlock popup, zoom indicator, quit crash #45 | P2 |
-| 025 | [Logging](025-logging.md) | ready | P2 |
+| 025 | [Logging](025-logging.md) | in-progress | P2 |
 | 026 | [Dragging tabs and profile groups](026-tab-dragging.md) | done | P1 |
 
 ## Roadmap

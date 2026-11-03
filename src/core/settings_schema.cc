@@ -130,7 +130,7 @@ constexpr std::array<std::string_view, 5> kTaskRefreshLabels = {
     "Every half second", "Every second", "Every 2 seconds", "Every 5 seconds",
     "Every 10 seconds"};
 
-constexpr std::array<SettingDef, 58> kSettings = {{
+constexpr std::array<SettingDef, 61> kSettings = {{
     // Global.
     {.key = "appearance.theme",
      .scope = SettingScope::kGlobal,
@@ -520,6 +520,34 @@ constexpr std::array<SettingDef, 58> kSettings = {{
      .section = "Updates",
      .label = "Updates",
      .description = kUpdateModeDescription},
+    // Logging (025): the end time is written when debug logging is
+    // switched on (core/debug_logging.h).
+    {.key = "logging.debug",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kBool,
+     .default_value = "false",
+     .section = "Advanced",
+     .label = "Debug logging",
+     .description = "Adds details to Brouk's log, to send with a bug report; "
+                    "never passwords, form contents or full addresses. "
+                    "Turns itself off after the time below."},
+    {.key = "logging.debug_hours",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kInteger,
+     .default_value = "24",
+     .min_value = 1,
+     .max_value = 720,
+     .section = "Advanced",
+     .label = "Turn debug logging off after (hours)"},
+    {.key = "logging.debug_until",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kString,
+     .default_value = "",
+     .max_length = 32,
+     .advanced = true,
+     .section = "Advanced",
+     .label = "Debug logging ends",
+     .description = "UTC time; written when debug logging is switched on."},
     {.key = "task_manager.refresh_interval",
      .scope = SettingScope::kGlobal,
      .type = SettingDef::Type::kChoice,

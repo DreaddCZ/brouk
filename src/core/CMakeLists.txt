@@ -48,6 +48,8 @@ set(BROUK_CORE_SOURCES
   crash_error_code.h
   crypto.cc
   crypto.h
+  debug_logging.cc
+  debug_logging.h
   devtools_frontend.h
   devtools_tools.cc
   devtools_tools.h
@@ -79,6 +81,10 @@ set(BROUK_CORE_SOURCES
   link_routing_rules.h
   link_unwrap.cc
   link_unwrap.h
+  log.cc
+  log.h
+  log_file.cc
+  log_file.h
   page_events.cc
   page_events.h
   password_checkup.cc
