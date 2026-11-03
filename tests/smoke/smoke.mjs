@@ -288,7 +288,13 @@ function checkLog() {
         log(`(debug.log not copied: ${error.message})`);
       }
     }
-    check(besideApp === null, 'no debug.log is written next to brouk.exe');
+    // CEF's crash reporting, which only this test switches on (the
+    // workflow's crash_reporter.cfg; the installer leaves it out), logs one
+    // line per process before Chromium has its log settings.
+    const other = (besideApp ?? '')
+      .split(/\r?\n/)
+      .filter((line) => line && !/:crash_reporting\.cc:\d+\] Crash reporting enabled for process: /.test(line));
+    check(other.length === 0, 'no debug.log is written next to brouk.exe (but for the crash reporter that only this test enables)');
   }
 }
 
