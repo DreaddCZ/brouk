@@ -922,6 +922,11 @@ class AppSettingsPage : public SettingsPageDelegate {
     return app ? [app setProfileSetting:key profile:id value:std::move(value)]
                : std::optional<Error>(Error{kClosing});
   }
+  CefRefPtr<CefRequestContext> ProfileRequestContext(
+      std::string_view id) override {
+    BRAppDelegate* app = app_;
+    return app ? [app requestContextForProfile:std::string(id)] : nullptr;
+  }
   void RevealSettingsFolder() override { [app_ revealSettingsFolder]; }
   void RevealLog() override { [app_ revealLog]; }
   AdblockService* Adblock() override { return [app_ adblockService]; }

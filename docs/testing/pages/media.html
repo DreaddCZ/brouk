@@ -1,0 +1,49 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Media test</title>
+<style>body { font: 15px -apple-system, sans-serif; margin: 2em; } button { font-size: 15px; margin: .3em; } video { width: 320px; background: #000; }</style>
+<h1>Picture-in-Picture, pinch zoom and files (spec 012)</h1>
+<p>The video is drawn on this page (no network needed). "Picture-in-Picture"
+opens it in a floating window that stays on top of other apps.</p>
+<video id="video" muted playsinline controls></video><br>
+<button onclick="pip()">Picture-in-Picture</button>
+<span id="pip-state"></span>
+<h2>Files</h2>
+<p><label>Files: <input type="file" id="files" multiple></label></p>
+<p><label>Folder: <input type="file" id="folder" webkitdirectory></label></p>
+<div id="drop" style="border: 2px dashed #888; padding: 2em; max-width: 30em">Drop files here</div>
+<pre id="chosen"></pre>
+<script>
+  // A moving clock on a canvas, played as the video's stream.
+  const canvas = document.createElement('canvas');
+  canvas.width = 320; canvas.height = 180;
+  const g = canvas.getContext('2d');
+  function draw() {
+    g.fillStyle = '#246'; g.fillRect(0, 0, 320, 180);
+    g.fillStyle = '#fff'; g.font = '40px sans-serif';
+    g.fillText(new Date().toLocaleTimeString(), 40, 105);
+    requestAnimationFrame(draw);
+  }
+  draw();
+  const video = document.getElementById('video');
+  video.srcObject = canvas.captureStream(30);
+  video.play();
+  const state = document.getElementById('pip-state');
+  async function pip() {
+    try {
+      if (document.pictureInPictureElement) await document.exitPictureInPicture();
+      else await video.requestPictureInPicture();
+    } catch (e) { state.textContent = e.name + ': ' + e.message; }
+  }
+  video.addEventListener('enterpictureinpicture', () => state.textContent = 'in Picture-in-Picture');
+  video.addEventListener('leavepictureinpicture', () => state.textContent = 'left Picture-in-Picture');
+  const chosen = document.getElementById('chosen');
+  function list(files) {
+    chosen.textContent = Array.from(files, f => (f.webkitRelativePath || f.name) + ' (' + f.size + ' bytes)').join('\n');
+  }
+  document.getElementById('files').onchange = e => list(e.target.files);
+  document.getElementById('folder').onchange = e => list(e.target.files);
+  const drop = document.getElementById('drop');
+  drop.ondragover = e => e.preventDefault();
+  drop.ondrop = e => { e.preventDefault(); list(e.dataTransfer.files); };
+</script>

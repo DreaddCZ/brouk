@@ -13,6 +13,7 @@
 #include "core/profile_registry.h"
 #include "core/result.h"
 #include "core/settings.h"
+#include "include/cef_request_context.h"
 #include "include/wrapper/cef_message_router.h"
 
 namespace brouk {
@@ -36,6 +37,10 @@ class SettingsPageDelegate {
   virtual std::optional<Error> SetProfileSetting(std::string_view id,
                                                  std::string_view key,
                                                  SettingValue value) = 0;
+  // The profile's request context, for its site permissions (012); null
+  // before the browser is ready.
+  virtual CefRefPtr<CefRequestContext> ProfileRequestContext(
+      std::string_view id) = 0;
   // Shows the settings files in Finder (for advanced settings).
   virtual void RevealSettingsFolder() = 0;
   // Clear browsing data (013), on the history page.
