@@ -1,0 +1,60 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Tab environment test</title>
+<style>
+  body { font: 15px -apple-system, "Segoe UI", sans-serif; margin: 2em; }
+  td { padding: 2px 12px 2px 0; font-family: ui-monospace, Menlo, Consolas, monospace; }
+  @media (prefers-color-scheme: dark) { body { background: #222; color: #eee; } }
+  #motion { display: inline-block; width: 20px; height: 20px; background: #36c; }
+  @media (prefers-reduced-motion: no-preference) { #motion { animation: spin 2s linear infinite; } }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+<h1>Tab environment and Utilities (spec 027)</h1>
+<p>What this page sees. It updates every second; the language and user agent
+sent to servers need a reload. Colours follow the colour scheme; the square
+spins unless reduced motion is on.</p>
+<table id="facts"></table>
+<p><button id="locate">Where am I?</button> <span id="where"></span> <span id="motion"></span></p>
+<h2>Text to decode (select it, right-click, Decode With)</h2>
+<ul>
+  <li>Base64: <code>xb1sdcWlb3XEjWvDvSBrxa/FiA==</code></li>
+  <li>URL encoding: <code>a%20b%26c%3Dd%2F%C3%A9</code></li>
+  <li>Unix time: <code>1730000000</code></li>
+  <li>HTML entities: <code>&amp;lt;a href=&amp;quot;x&amp;quot;&amp;gt;&amp;amp;&amp;lt;/a&amp;gt;</code></li>
+</ul>
+<script>
+  function update() {
+    const rows = [
+      ['Time zone', Intl.DateTimeFormat().resolvedOptions().timeZone],
+      ['getTimezoneOffset()', String(new Date().getTimezoneOffset())],
+      ['Local time', new Date().toLocaleString()],
+      ['navigator.language', navigator.language],
+      ['navigator.languages', JSON.stringify(navigator.languages)],
+      ['Intl locale', Intl.DateTimeFormat().resolvedOptions().locale],
+      ['navigator.userAgent', navigator.userAgent],
+      ['navigator.platform', navigator.platform],
+      ['userAgentData', navigator.userAgentData ? JSON.stringify(navigator.userAgentData.brands.map((b) => b.brand)) + ' mobile=' + navigator.userAgentData.mobile + ' ' + navigator.userAgentData.platform : '(none)'],
+      ['prefers-color-scheme: dark', String(matchMedia('(prefers-color-scheme: dark)').matches)],
+      ['prefers-reduced-motion', String(matchMedia('(prefers-reduced-motion: reduce)').matches)],
+    ];
+    const table = document.getElementById('facts');
+    table.replaceChildren(...rows.map(([name, value]) => {
+      const tr = document.createElement('tr');
+      for (const text of [name, value]) {
+        const td = document.createElement('td');
+        td.textContent = text;
+        tr.append(td);
+      }
+      return tr;
+    }));
+  }
+  update();
+  setInterval(update, 1000);
+  document.getElementById('locate').onclick = () => {
+    const where = document.getElementById('where');
+    where.textContent = '…';
+    navigator.geolocation.getCurrentPosition(
+      (p) => { where.textContent = p.coords.latitude.toFixed(4) + ', ' + p.coords.longitude.toFixed(4) + ' (±' + Math.round(p.coords.accuracy) + ' m)'; },
+      (e) => { where.textContent = 'error ' + e.code + ': ' + e.message; });
+  };
+</script>
