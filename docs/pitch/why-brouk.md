@@ -163,7 +163,7 @@ Dev tools are switched **per tab** with an always-visible toggle — rules never
 | History, bookmarks, ad blocking | ✅ in use |
 | Developer tools | ✅ in use |
 | Passwords (built-in manager and Bitwarden) | ✅ in use |
-| Form autofill (Czech and EU company details) | 🔧 built, in testing |
+| Form autofill (Czech and EU company details) | ✅ in use |
 | Downloads (one list for all profiles) | ✅ in use |
 | Link routing (rules, picker, Safe Links and other wrappers) | ✅ in use |
 | Built-in help, with "?" links from every page | ✅ in use |

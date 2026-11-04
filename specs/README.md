@@ -26,17 +26,17 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | ID | Title | Status | Priority |
 |---|---|---|---|
 | 001 | [Technology stack](001-technology-stack.md) | in-progress | P1 |
-| 002 | [Platform support](002-platform-support.md) | ready (macOS) | P1 |
+| 002 | [Platform support](002-platform-support.md) | done | P1 |
 | 003 | [Browser UI](003-browser-ui.md) | done — bookmark suggestions follow with 011 | P1 |
 | 004 | [Configuration system](004-configuration.md) | done | P1 |
 | 005 | [Profiles](005-profiles.md) | done — history in export with 022 | P1 |
 | 006 | [Developer tools](006-developer-tools.md) | done | P1 |
 | 007 | [Ad and tracker blocking](007-adblock.md) | done — routing hosts after 010 | P1 |
 | 008 | [Password manager](008-password-manager.md) | done | P1 |
-| 009 | [Form autofill](009-autofill.md) | in-progress — entries, custom fields, filling, saving without duplicates, validation, Settings → Autofill with duplicates and JSON export/import in review | P1 |
+| 009 | [Form autofill](009-autofill.md) | done | P1 |
 | 010 | [Link routing and window picker](010-link-routing.md) | done | P1 |
 | 011 | [Bookmark manager](011-bookmarks.md) | done | P1 |
-| 012 | [Web platform basics](012-web-platform-basics.md) | in-progress — postponed items built, in review | P1 |
+| 012 | [Web platform basics](012-web-platform-basics.md) | in-progress — postponed items merged, waiting for testing | P1 |
 | 013 | [History](013-history.md) | done — history in profile export is 022 | P1 |
 | 014 | [Downloads](014-downloads.md) | done | P2 |
 | 015 | [Session restore](015-session-restore.md) | done | P1 |
@@ -46,9 +46,9 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 019 | [Release pipeline and automatic updates](019-release-pipeline.md) | done — in use since 0.1.0 | P2 |
 | 020 | [Task manager](020-task-manager.md) | done | P2 |
 | 021 | [File viewers for text formats](021-file-viewers.md) | idea | P3 |
-| 022 | [History in profile export](022-history-export.md) | in-progress — built, in review | P3 |
+| 022 | [History in profile export](022-history-export.md) | in-progress — merged, waiting for testing | P3 |
 | 023 | [Open-source licences (credits)](023-credits.md) | done | P1 |
-| 024 | [Windows app](024-windows-app.md) | in-progress — first beta released (0.3.1: W1–W3, installer and automatic updates, not code-signed); left: screen readers, quit crash #45 (padlock popup and zoom indicator in review) | P2 |
+| 024 | [Windows app](024-windows-app.md) | in-progress — first beta released (0.3.1: W1–W3, installer and automatic updates, not code-signed); left: screen readers, quit crash #45 | P2 |
 | 025 | [Logging](025-logging.md) | done | P2 |
 | 026 | [Dragging tabs and profile groups](026-tab-dragging.md) | done | P1 |
 | 027 | [Utilities for testers in developer tools](027-tester-utilities.md) | ready | P2 |

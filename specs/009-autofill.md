@@ -1,6 +1,6 @@
 # 009 – Form autofill
 
-- **Status:** in-progress
+- **Status:** done
 - **Priority:** P1
 - **Depends on:** 001, 004, 005
 
@@ -108,27 +108,27 @@ Saved data is reviewed and edited in **Settings → Autofill** (`brouk://setting
 ## Acceptance criteria
 
 **Entries and filling**
-- [ ] Entries (contact, address, IČO, DIČ, VAT ID, IBAN, BIC) and custom fields can be added, edited and deleted; deleting can be undone.
-- [ ] On a typical contact, shipping or invoicing form, in English or Czech, choosing an entry fills all recognised fields; "Clear filled fields" empties them again.
-- [ ] A custom field is suggested on a form field whose label matches its label words; any value can be filled from the right-click Autofill menu.
-- [ ] An entry saved while in one profile is offered in every profile.
+- [x] Entries (contact, address, IČO, DIČ, VAT ID, IBAN, BIC) and custom fields can be added, edited and deleted; deleting can be undone.
+- [x] On a typical contact, shipping or invoicing form, in English or Czech, choosing an entry fills all recognised fields; "Clear filled fields" empties them again.
+- [x] A custom field is suggested on a form field whose label matches its label words; any value can be filled from the right-click Autofill menu.
+- [x] An entry saved while in one profile is offered in every profile.
 
 **Saving without duplicates**
-- [ ] Submitting a form whose values equal an existing entry, apart from spacing, case, accents, punctuation, phone format or postal code spacing, offers nothing.
-- [ ] Submitting values that match an entry and add a field offers "Add to <label>".
-- [ ] Submitting values with the same email or phone as an entry, or a name and street at most 2 typing differences away, offers "Update <label>" with the differences shown.
-- [ ] Clearly different values offer "Save as new entry".
-- [ ] "Find duplicates" groups similar saved entries, and merging keeps the value chosen for each field.
+- [x] Submitting a form whose values equal an existing entry, apart from spacing, case, accents, punctuation, phone format or postal code spacing, offers nothing.
+- [x] Submitting values that match an entry and add a field offers "Add to <label>".
+- [x] Submitting values with the same email or phone as an entry, or a name and street at most 2 typing differences away, offers "Update <label>" with the differences shown.
+- [x] Clearly different values offer "Save as new entry".
+- [x] "Find duplicates" groups similar saved entries, and merging keeps the value chosen for each field.
 
 **Validation, settings and storage**
-- [ ] An invalid IČO, DIČ, VAT ID or IBAN is marked, both in the editor and in the save prompt.
-- [ ] Autofill can be turned off entirely, per kind (entries, custom fields), and offering to save can be turned off.
-- [ ] Settings → Autofill can be opened from settings, from any autofill drop-down, from the right-click menu and from the save prompt.
-- [ ] It lists all entries, with last used, times used and warnings, and all custom fields; it can be searched and sorted.
-- [ ] Every value can be edited there; several entries can be deleted at once, with undo.
-- [ ] Each entry shows where and when it was saved.
-- [ ] Autofill data can be exported to a JSON file and imported again; the import skips or merges duplicates and shows a summary.
-- [ ] The autofill database file alone, without the Keychain, does not reveal the stored values.
+- [x] An invalid IČO, DIČ, VAT ID or IBAN is marked, both in the editor and in the save prompt.
+- [x] Autofill can be turned off entirely, per kind (entries, custom fields), and offering to save can be turned off.
+- [x] Settings → Autofill can be opened from settings, from any autofill drop-down, from the right-click menu and from the save prompt.
+- [x] It lists all entries, with last used, times used and warnings, and all custom fields; it can be searched and sorted.
+- [x] Every value can be edited there; several entries can be deleted at once, with undo.
+- [x] Each entry shows where and when it was saved.
+- [x] Autofill data can be exported to a JSON file and imported again; the import skips or merges duplicates and shows a summary.
+- [x] The autofill database file alone, without the Keychain, does not reveal the stored values.
 
 ## Out of scope
 
@@ -172,3 +172,4 @@ None.
   - Import of the JSON file: entries equal to a saved one are skipped, entries adding fields to one are merged into it, all others are added (similar ones can then be merged with Find duplicates).
   - The phone country is the setting `autofill.phone_country` (two letters) or the Mac's region; a national trunk 0 is dropped for countries that use one.
   - Settings → Autofill is a section of the settings page (`brouk://settings/#global:autofill` scrolls to it).
+- 2026-11-04 (user's testing): all acceptance criteria verified; spec done.

@@ -1,6 +1,6 @@
 # 002 – Platform support
 
-- **Status:** ready (macOS; Windows is specified in 024; mobile not in scope yet)
+- **Status:** done (macOS and Windows; Windows details in 024; mobile not in scope yet)
 - **Priority:** P1
 - **Depends on:** 001
 
@@ -24,7 +24,7 @@ Code and architecture should keep platform-specific parts isolated so Windows ca
 
 - [x] macOS: runs natively on Apple Silicon (arm64) and Intel (x86_64) as two separate builds, on macOS 15 and later (deployment target 15.0). Phase 2 (sharing with colleagues, see 001): each build signed and notarized so it opens without security warnings.
 - [x] Phase 2: each macOS build updates itself from its own update feed; an Intel install never receives an Apple Silicon build and vice versa.
-- [ ] Windows (when Windows work starts — not tied to release phase 2): builds and runs on Windows 10/11 x64 using the same feature set.
+- [x] Windows (when Windows work starts — not tied to release phase 2): builds and runs on Windows 10/11 x64 using the same feature set.
 - [x] Platform-specific code is kept in clearly separated modules.
 - [x] User data (profiles, settings) uses each OS's standard app data location.
 
@@ -61,3 +61,4 @@ None for macOS. Deferred until they become relevant (they do not block macOS wor
 - 2026-10-29: Windows work starts; the Windows app is specified in 024 (stages W1–W4, data in `%LOCALAPPDATA%\Brouk\`, tested in a Windows 11 x64 virtual machine on the Intel Mac).
 - 2026-11-04 (user's decision): with the Windows app built (024), every feature is done for both macOS and Windows, except code signing (Windows releases stay unsigned).
 - 2026-11-04 (review of the acceptance criteria): all met except Windows with the same feature set, which waits for 024 (left: screen readers, quit crash #45).
+- 2026-11-04 (user's decision): marked done — Brouk builds and runs on Windows 10/11 x64 with the same features (0.3.1 onwards); the remaining Windows items (screen readers, quit crash #45) are tracked in 024.
