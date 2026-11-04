@@ -434,6 +434,18 @@ bool TabClient::OnContextMenuCommand(CefRefPtr<CefBrowser> browser,
       // Elements (006).
       delegate_->InspectElement(params->GetXCoord(), params->GetYCoord());
       break;
+    case MenuCommand::kDecodeBase64:
+    case MenuCommand::kDecodeUrl:
+    case MenuCommand::kDecodeUnixTime:
+    case MenuCommand::kDecodeHtml: {
+      // The selection into the dev tools' Utilities (027); a page's text,
+      // only shown there.
+      constexpr std::size_t kMaxText = std::size_t{256} * 1024;
+      delegate_->ShowUtility(
+          UtilityForDecodeCommand(*command),
+          params->GetSelectionText().ToString().substr(0, kMaxText));
+      break;
+    }
     default:
       return false;
   }

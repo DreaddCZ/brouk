@@ -11,6 +11,7 @@
 #include "core/request_log.h"
 #include "core/request_rules.h"
 #include "core/service_workers.h"
+#include "core/tab_environment.h"
 #include "include/cef_browser.h"
 #include "include/cef_devtools_message_observer.h"
 #include "include/cef_registration.h"
@@ -54,6 +55,18 @@ class DevToolsChannel : public CefDevToolsMessageObserver {
   // `affected` is called when a rule changed a request.
   void SetRules(RequestRuleSet rules, std::function<void()> affected);
 
+  // The tab's environment overrides (027): replaces them all. `done` gets
+  // an error message, empty when everything was applied. `changed` (set
+  // once by the dock) is called after every change.
+  void SetEnvironment(TabEnvironment environment,
+                      std::function<void(std::string error)> done);
+  const TabEnvironment& environment() const { return environment_; }
+  void OnEnvironmentChanged(std::function<void()> changed) {
+    environment_changed_ = std::move(changed);
+  }
+  // Reloads the tab (Tab environment's Reload).
+  void ReloadTab();
+
   // CefDevToolsMessageObserver:
   bool OnDevToolsMessage(CefRefPtr<CefBrowser> browser,
                          const void* message,
@@ -61,6 +74,9 @@ class DevToolsChannel : public CefDevToolsMessageObserver {
 
  private:
   void SendNow(int id, const std::string& json);
+  // Sends at once without waiting for an answer (while closing).
+  void SendAndForget(const std::string& method,
+                     const CefRefPtr<CefDictionaryValue>& params);
   // Response header rules (006): Brouk loads the request itself and answers
   // the paused request with the changed headers.
   void LoadForResponseRules(const std::string& id,
@@ -91,6 +107,9 @@ class DevToolsChannel : public CefDevToolsMessageObserver {
 
   void HandleNetworkEvent(std::string_view message);
   void HandleServiceWorkerEvent(std::string_view message);
+
+  TabEnvironment environment_;
+  std::function<void()> environment_changed_;
 
   ServiceWorkerList service_workers_;
   bool watching_workers_ = false;

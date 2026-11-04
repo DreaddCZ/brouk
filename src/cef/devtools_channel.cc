@@ -5,14 +5,17 @@
 #include <charconv>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include <vector>
 
 #include "cef/json_util.h"
 #include "cef/own_request_loader.h"
+#include "cef/tab_environment_commands.h"
 #include "include/base/cef_callback.h"
 #include "include/cef_parser.h"
 #include "include/wrapper/cef_closure_task.h"
@@ -38,14 +41,17 @@ DevToolsChannel::DevToolsChannel(CefRefPtr<CefBrowser> tab)
 void DevToolsChannel::Close() {
   CEF_REQUIRE_UI_THREAD();
   if (tab_ && fetch_enabled_) {
-    // Never leave the tab intercepted: its requests would hang. Sent at
-    // once, as nothing waits for the answer.
-    CefRefPtr<CefDictionaryValue> message = CefDictionaryValue::Create();
-    message->SetInt("id", next_id_++);
-    message->SetString("method", "Fetch.disable");
-    std::string json = ToJson(message);
-    tab_->GetHost()->SendDevToolsMessage(json.data(), json.size());
+    // Never leave the tab intercepted: its requests would hang.
+    SendAndForget("Fetch.disable", nullptr);
   }
+  if (tab_ && !environment_.empty()) {
+    // Dev tools off ends the tab's environment overrides (027).
+    for (const auto& [method, params] : TabEnvironmentCommands({})) {
+      SendAndForget(method, params);
+    }
+  }
+  environment_ = {};
+  environment_changed_ = nullptr;
   fetch_enabled_ = false;
   rules_affected_ = nullptr;
   registration_ = nullptr;
@@ -96,6 +102,65 @@ void DevToolsChannel::SendNow(int id, const std::string& json) {
     Done failed = std::move(it->second);
     pending_.erase(it);
     failed(nullptr, "The command could not be sent.");
+  }
+}
+
+void DevToolsChannel::SendAndForget(
+    const std::string& method,
+    const CefRefPtr<CefDictionaryValue>& params) {
+  CefRefPtr<CefDictionaryValue> message = CefDictionaryValue::Create();
+  message->SetInt("id", next_id_++);
+  message->SetString("method", method);
+  if (params) {
+    message->SetDictionary("params", params->Copy(false));
+  }
+  std::string json = ToJson(message);
+  tab_->GetHost()->SendDevToolsMessage(json.data(), json.size());
+}
+
+void DevToolsChannel::SetEnvironment(
+    TabEnvironment environment,
+    std::function<void(std::string error)> done) {
+  CEF_REQUIRE_UI_THREAD();
+  if (!tab_) {
+    done("The tab has closed.");
+    return;
+  }
+  // Every override is sent each time, the ones switched off as "clear".
+  std::vector<TabEnvironmentCommand> commands =
+      TabEnvironmentCommands(environment);
+  environment_ = std::move(environment);
+  if (environment_changed_) {
+    environment_changed_();
+  }
+  struct Progress {
+    std::size_t left;
+    std::string error;
+    std::function<void(std::string)> done;
+  };
+  auto progress = std::make_shared<Progress>(
+      Progress{commands.size(), std::string(), std::move(done)});
+  for (const auto& [method, params] : commands) {
+    Send(method, params,
+         [progress, what = TabEnvironmentCommandName(method)](
+             const CefRefPtr<CefDictionaryValue>& result,
+             const std::string& error) {
+           if (!result && progress->error.empty()) {
+             progress->error = what;
+             progress->error += ": ";
+             progress->error += error;
+           }
+           if (--progress->left == 0) {
+             progress->done(progress->error);
+           }
+         });
+  }
+}
+
+void DevToolsChannel::ReloadTab() {
+  CEF_REQUIRE_UI_THREAD();
+  if (tab_) {
+    tab_->Reload();
   }
 }
 
