@@ -48,6 +48,8 @@ set(BROUK_CORE_SOURCES
   crash_error_code.h
   crypto.cc
   crypto.h
+  debug_logging.cc
+  debug_logging.h
   devtools_frontend.h
   devtools_tools.cc
   devtools_tools.h
@@ -59,6 +61,7 @@ set(BROUK_CORE_SOURCES
   download_record.h
   external_protocol.cc
   external_protocol.h
+  file_lock.h
   help.cc
   help.h
   history_query.cc
@@ -79,6 +82,10 @@ set(BROUK_CORE_SOURCES
   link_routing_rules.h
   link_unwrap.cc
   link_unwrap.h
+  log.cc
+  log.h
+  log_file.cc
+  log_file.h
   page_events.cc
   page_events.h
   password_checkup.cc
@@ -166,11 +173,11 @@ set(BROUK_CORE_SOURCES
   zoom.h
 )
 
-# Starting programs is the one part that needs each system's own API.
+# Starting programs and locking files need each system's own API.
 if(WIN32)
-  list(APPEND BROUK_CORE_SOURCES process_runner_win.cc)
+  list(APPEND BROUK_CORE_SOURCES file_lock_win.cc process_runner_win.cc)
 else()
-  list(APPEND BROUK_CORE_SOURCES process_runner_posix.cc)
+  list(APPEND BROUK_CORE_SOURCES file_lock_posix.cc process_runner_posix.cc)
 endif()
 
 # Built twice with different sanitizers (see BroukCompilerOptions.cmake):

@@ -1,4 +1,5 @@
 #include "core/bitwarden_source.h"
+#include "core/log.h"
 
 #include <utility>
 
@@ -82,6 +83,8 @@ std::optional<Error> BitwardenSource::Load() {
   if (!logins) {
     return Failed(logins.error());
   }
+  LogDebug() << "Bitwarden: read " << logins.value().size()
+             << " login(s) from the vault";
   vault_.Replace(std::move(logins).value());
   return std::nullopt;
 }
@@ -106,8 +109,10 @@ std::optional<Error> BitwardenSource::Unlock(std::string_view master_password,
   Lock(false);
   Result<std::string> session = cli_->Unlock(master_password);
   if (!session) {
+    LogDebug() << "Bitwarden: unlocking failed: " << session.error().message;
     return session.error();
   }
+  LogDebug() << "Bitwarden: unlocked with the master password";
   session_ = std::move(session).value();
   last_use_ = now;
   if (std::optional<Error> error = Load()) {
@@ -137,6 +142,10 @@ std::optional<Error> BitwardenSource::UseSession(std::string session,
 void BitwardenSource::Lock(bool end_session) {
   vault_.Clear();
   bool had_session = !session_.empty();
+  if (had_session) {
+    LogDebug() << "Bitwarden: locked"
+               << (end_session ? ", session ended" : ", session kept");
+  }
   Wipe(session_);
   session_.clear();
   if (end_session && had_session && cli_) {

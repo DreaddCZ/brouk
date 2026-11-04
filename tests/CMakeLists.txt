@@ -39,14 +39,16 @@ add_executable(brouk_core_tests
   core/context_menu_test.cc
   core/crash_error_code_test.cc
   core/crypto_test.cc
+  core/debug_logging_test.cc
   core/devtools_tools_test.cc
   core/dialog_spam_guard_test.cc
   core/download_paths_test.cc
   core/download_record_test.cc
   core/external_protocol_test.cc
+  core/file_lock_test.cc
+  core/help_test.cc
   core/history_query_test.cc
   core/history_sql_test.cc
-  core/help_test.cc
   core/history_store_test.cc
   core/internal_pages_test.cc
   core/json_test.cc
@@ -54,6 +56,7 @@ add_executable(brouk_core_tests
   core/link_router_test.cc
   core/link_routing_rules_test.cc
   core/link_unwrap_test.cc
+  core/log_test.cc
   core/page_events_test.cc
   core/password_checkup_test.cc
   core/password_csv_test.cc

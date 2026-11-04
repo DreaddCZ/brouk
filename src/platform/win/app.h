@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "cef/adblock_service.h"
+#include "cef/app_logging.h"
 #include "cef/autofill_manager.h"
 #include "cef/download_service.h"
 #include "cef/history_page_handler.h"
@@ -95,6 +96,9 @@ class App final : public BrowserWindowOwner,
   // devtools.remote_debugging (006), read once before CEF starts: the port,
   // or 0 for none.
   int RemoteDebuggingPort() const;
+  // Starts Brouk's log (025) and sets Chromium's log in `settings`, before
+  // CefInitialize.
+  void StartLogging(CefSettings& settings);
   // Ad blocking (007): a site on or off a profile's allowlist (the shield,
   // the blocked page), and a rule added to My filters (`done` after).
   void SetAdblockSite(const std::string& host,
@@ -208,6 +212,7 @@ class App final : public BrowserWindowOwner,
                                          std::string_view key,
                                          SettingValue value) override;
   void RevealSettingsFolder() override;
+  void RevealLog() override;
   void OpenClearBrowsingData() override;
   AdblockService* Adblock() override;
   std::string Language() override;
@@ -295,6 +300,8 @@ class App final : public BrowserWindowOwner,
                                   ImportDone done);
 
   ProfileRegistry profiles_;
+  // Debug logging (025) following the settings; from OnContextInitialized.
+  std::unique_ptr<DebugLoggingSwitch> debug_logging_;
   // One per profile, made when its first tab opens.
   std::map<ProfileId, CefRefPtr<CefRequestContext>> contexts_;
   CefRefPtr<CefRequestContext> internal_context_;

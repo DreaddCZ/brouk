@@ -1,4 +1,5 @@
 #include "core/session.h"
+#include "core/log.h"
 
 #include <algorithm>
 #include <charconv>
@@ -208,7 +209,15 @@ Result<Session> LoadSession(const std::filesystem::path& path) {
     return Error{"The saved session could not be read: " +
                  root.error().message};
   }
-  return SessionFromYaml(root.value());
+  Session session = SessionFromYaml(root.value());
+  std::size_t tabs = 0;
+  for (const SessionWindow& window : session.windows) {
+    tabs += window.tabs.size();
+  }
+  LogDebug() << "Session: read " << session.windows.size() << " window(s) with "
+             << tabs << " tab(s)"
+             << (session.clean_exit ? "" : "; the last run did not quit");
+  return session;
 }
 
 std::optional<Error> SaveSession(const std::filesystem::path& path,

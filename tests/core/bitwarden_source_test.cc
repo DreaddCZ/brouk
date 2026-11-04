@@ -2,10 +2,14 @@
 
 #include <gtest/gtest.h>
 
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <map>
 
 #include "core/crypto.h"
 #include "core/json.h"
+#include "core/log.h"
 
 namespace brouk {
 namespace {
@@ -171,6 +175,42 @@ TEST(BitwardenSourceTest, UnlockFindAndLock) {
   ASSERT_TRUE(stale);
   EXPECT_EQ(stale->message, kBitwardenLockedError);
   EXPECT_FALSE(f.source.unlocked());
+}
+
+// 025: with debug logging on, unlocking, reading and searching the vault
+// and logging a URL leave none of the secrets in the log.
+TEST(BitwardenSourceTest, TheDebugLogHoldsNoSecrets) {
+  const std::filesystem::path dir =
+      std::filesystem::temp_directory_path() / "brouk-bitwarden-log-test";
+  std::error_code error;
+  std::filesystem::remove_all(dir, error);
+  SetLogToStderr(false);
+  ASSERT_FALSE(StartLogFile(dir));
+  SetDebugLogging(true);
+  {
+    Fixture f;
+    f.bw.master_password = "M4ster-secret";
+    EXPECT_TRUE(f.source.Unlock("wrong-guess", 0));
+    ASSERT_FALSE(f.source.Unlock("M4ster-secret", 0));
+    EXPECT_EQ(f.source.Find("https://www.example.com/", 1).exact.size(), 1U);
+    LogDebug() << "Page: "
+               << UrlForLog(
+                      "https://www.example.com/login?pw=Qu3ry-secret#t0ken");
+    f.source.Lock(true);
+  }
+  SetDebugLogging(false);
+  StopLogFile();
+  SetLogToStderr(true);
+  std::ifstream file(dir / "brouk.log", std::ios::binary);
+  const std::string log{std::istreambuf_iterator<char>(file),
+                        std::istreambuf_iterator<char>()};
+  file.close();
+  EXPECT_NE(log.find("Bitwarden: unlocked"), std::string::npos) << log;
+  for (const char* secret : {"M4ster-secret", "wrong-guess", "session-1",
+                             "pw-a", "Qu3ry-secret", "t0ken"}) {
+    EXPECT_EQ(log.find(secret), std::string::npos) << secret;
+  }
+  std::filesystem::remove_all(dir, error);
 }
 
 TEST(BitwardenSourceTest, IdleAfterTheLockTime) {

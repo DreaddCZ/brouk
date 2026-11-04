@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "core/log.h"
 #include "include/cef_task.h"
 #include "include/wrapper/cef_helpers.h"
 
@@ -64,7 +65,7 @@ struct HistoryService::State {
       Result<std::unique_ptr<HistoryStore>> store =
           HistoryStore::Open(database_path(profile));
       if (!store) {
-        LOG(ERROR) << "History of profile " << profile << ": "
+        LogError() << "History of profile " << profile << ": "
                    << store.error().message;
         return nullptr;
       }
@@ -160,7 +161,7 @@ void HistoryService::RecordVisit(const ProfileId& profile,
     if (HistoryStore* store = state.Store(profile)) {
       if (std::optional<Error> error =
               store->RecordVisit(url, title, time, transition)) {
-        LOG(ERROR) << error->message;
+        LogError() << error->message;
       }
     }
   });

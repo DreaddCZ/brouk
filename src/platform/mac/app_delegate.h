@@ -4,6 +4,7 @@
 #import <Cocoa/Cocoa.h>
 
 #include "core/launch_args.h"
+#include "include/cef_app.h"
 #include "include/cef_application_mac.h"
 
 NS_ASSUME_NONNULL_BEGIN
@@ -14,6 +15,9 @@ NS_ASSUME_NONNULL_BEGIN
 
 @interface BRAppDelegate : NSObject <NSApplicationDelegate>
 
+// Starts Brouk's log (025) and sets Chromium's log in `settings`, before
+// CefInitialize.
+- (void)startLoggingWith:(CefSettings&)settings;
 // The remote debugging port the settings ask for (0: off); main() passes it
 // to CefInitialize (006).
 - (int)remoteDebuggingPortSetting;

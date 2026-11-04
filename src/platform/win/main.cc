@@ -110,9 +110,8 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance,
   // Chromium's data lives in its own folder (see data_paths.h).
   CefString(&settings.root_cache_path) =
       brouk::win::WebDataRootDirectory().wstring();
-#if defined(NDEBUG)
-  settings.log_severity = LOGSEVERITY_WARNING;
-#endif
+  // Brouk's log, and Chromium's while debug logging is on (025).
+  app.StartLogging(settings);
   // Remote debugging (006): from the setting, unless the command line asks
   // for a port itself (--remote-debugging-port), as on macOS.
   if (const int port = app.RemoteDebuggingPort(); port > 0) {

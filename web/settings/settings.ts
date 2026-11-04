@@ -173,6 +173,19 @@ function renderGroups(container: HTMLElement, scopeProfile: string | null, items
         );
         group.append(row);
       }
+      if (section.title === 'Advanced' && scopeProfile === null) {
+        // Brouk's log (025), to attach to a bug report.
+        const row = element('div', { className: 'setting' });
+        const title = element('span', { className: 'title', text: 'Log' });
+        title.append(helpButton('logging', 'Log'));
+        row.append(
+          title,
+          button('Show log', () => {
+            api.showLog().catch((error: unknown) => showError(errorText(error)));
+          }),
+        );
+        group.append(row);
+      }
       return group;
     }),
   );

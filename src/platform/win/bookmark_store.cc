@@ -5,6 +5,7 @@
 
 #include "cef/function_task.h"
 #include "core/bookmark_file.h"
+#include "core/log.h"
 #include "include/base/cef_logging.h"
 #include "include/cef_task.h"
 #include "include/wrapper/cef_helpers.h"
@@ -22,7 +23,7 @@ BookmarkStore::BookmarkStore(std::filesystem::path path)
     : path_(std::move(path)) {
   LoadedBookmarks loaded = LoadBookmarks(path_);
   if (loaded.problem) {
-    LOG(WARNING) << "Bookmarks: " << *loaded.problem;
+    LogWarning() << "Bookmarks: " << *loaded.problem;
   }
   model_ = std::move(loaded.model);
 }
@@ -106,7 +107,7 @@ void BookmarkStore::SaveNow() {
   }
   save_pending_ = false;
   if (std::optional<Error> error = SaveBookmarks(path_, model_)) {
-    LOG(ERROR) << "Bookmarks not saved: " << error->message;
+    LogError() << "Bookmarks not saved: " << error->message;
   }
 }
 

@@ -36,6 +36,7 @@
 #include "core/bookmark_profile.h"
 #include "core/crypto.h"
 #include "core/help.h"
+#include "core/log.h"
 #include "core/password_generator.h"
 #include "core/password_profile.h"
 #include "core/password_store.h"
@@ -526,6 +527,8 @@ App::App()
 
 void App::OnContextInitialized() {
   CEF_REQUIRE_UI_THREAD();
+  NameLogThreadsByCef();
+  debug_logging_ = std::make_unique<DebugLoggingSwitch>(profiles_);
   SetHelpLinkOpeners({
       .open_help = [this](const std::string& anchor) { OpenHelp(anchor); },
       .open_web_link = [this](const std::string& url) { OpenWebLink(url); },
@@ -668,7 +671,7 @@ void App::OpenLaunchRequest(const LaunchRequest& request, BrowserWindow* into) {
     if (named) {
       profile = named->id;
     } else {
-      LOG(WARNING) << "No profile called \"" << *request.profile
+      LogWarning() << "No profile called \"" << *request.profile
                    << "\"; opening the default profile.";
     }
   }
@@ -704,7 +707,7 @@ void App::OpenLaunchRequest(const LaunchRequest& request, BrowserWindow* into) {
   auto window =
       std::make_unique<BrowserWindow>(*this, BrowserWindow::Kind::kNormal);
   if (!window->Create()) {
-    LOG(ERROR) << "Could not create a browser window (error " << GetLastError()
+    LogError() << "Could not create a browser window (error " << GetLastError()
                << ")";
     if (windows_.empty()) {
       CefQuitMessageLoop();  // Nothing to show: quit instead of hanging.
@@ -723,7 +726,7 @@ Session App::StartSession() {
   session_path_ = AppDataDirectory() / "session.yaml";
   Result<Session> loaded = LoadSession(session_path_);
   if (!loaded) {
-    LOG(WARNING) << "Session: " << loaded.error().message;
+    LogWarning() << "Session: " << loaded.error().message;
   }
   const Session last = loaded ? loaded.value() : Session{};
   Session running = last;
@@ -739,7 +742,7 @@ void App::RestoreSession(const Session& session) {
     auto window =
         std::make_unique<BrowserWindow>(*this, BrowserWindow::Kind::kNormal);
     if (!window->Create()) {
-      LOG(ERROR) << "Could not create a browser window (error "
+      LogError() << "Could not create a browser window (error "
                  << GetLastError() << ")";
       continue;
     }
@@ -807,7 +810,7 @@ void App::ReopenClosed(std::optional<std::int64_t> entry_id) {
     auto window =
         std::make_unique<BrowserWindow>(*this, BrowserWindow::Kind::kNormal);
     if (!window->Create()) {
-      LOG(ERROR) << "Could not create a browser window (error "
+      LogError() << "Could not create a browser window (error "
                  << GetLastError() << ")";
       return;
     }
@@ -860,7 +863,7 @@ void App::SaveSessionFile(const Session& session) {
     return;
   }
   if (std::optional<Error> error = SaveSession(session_path_, session)) {
-    LOG(WARNING) << "Session: " << error->message;
+    LogWarning() << "Session: " << error->message;
   }
 }
 
@@ -1705,7 +1708,7 @@ void App::OpenWindow(const std::string& url, const ProfileId& profile) {
   auto window =
       std::make_unique<BrowserWindow>(*this, BrowserWindow::Kind::kNormal);
   if (!window->Create()) {
-    LOG(ERROR) << "Could not create a browser window (error " << GetLastError()
+    LogError() << "Could not create a browser window (error " << GetLastError()
                << ")";
     if (windows_.empty()) {
       CefQuitMessageLoop();  // Nothing to show: quit instead of hanging.
@@ -1723,7 +1726,7 @@ BrowserWindow* App::OpenWindowForMovedTabs(const RECT& frame) {
   auto window =
       std::make_unique<BrowserWindow>(*this, BrowserWindow::Kind::kNormal);
   if (!window->Create()) {
-    LOG(ERROR) << "Could not create a browser window (error " << GetLastError()
+    LogError() << "Could not create a browser window (error " << GetLastError()
                << ")";
     return nullptr;
   }
@@ -2548,6 +2551,10 @@ void App::InspectPage(CefRefPtr<CefBrowser> page,
       std::move(hooks)));
 }
 
+void App::StartLogging(CefSettings& settings) {
+  StartAppLogging(AppDataDirectory() / L"logs", profiles_, settings);
+}
+
 int App::RemoteDebuggingPort() const {
   const Settings& global = profiles_.global_settings();
   return global.GetBool("devtools.remote_debugging")
@@ -2562,7 +2569,7 @@ void App::SettingsFilesChanged() {
   }
   profiles_.Load();
   for (const std::string& problem : profiles_.problems()) {
-    LOG(WARNING) << "Settings: " << problem;
+    LogWarning() << "Settings: " << problem;
   }
   ApplySettings();
   ProfilesChanged();
@@ -2574,6 +2581,9 @@ void App::SettingsFilesChanged() {
 void App::ApplySettings() {
   CEF_REQUIRE_UI_THREAD();
   const Settings& global = profiles_.global_settings();
+  if (debug_logging_) {
+    debug_logging_->Apply();
+  }
   const std::string& theme = global.GetString("appearance.theme");
   // A choice the settings schema has validated.
   const ThemeChoice choice = theme == "light"  ? ThemeChoice::kLight
@@ -2720,6 +2730,20 @@ void App::RevealSettingsFolder() {
   }
   // File Explorer with the file selected. Our own path, not a program.
   PIDLIST_ABSOLUTE item = ILCreateFromPathW(file.c_str());
+  if (item) {
+    SHOpenFolderAndSelectItems(item, 0, nullptr, 0);
+    ILFree(item);
+  }
+}
+
+void App::RevealLog() {
+  const std::filesystem::path logs = AppDataDirectory() / L"logs";
+  const std::filesystem::path file = logs / L"brouk.log";
+  std::error_code error;
+  // The log exists from the start (StartAppLogging); else its folder.
+  // File Explorer with it selected. Our own path, not a program.
+  PIDLIST_ABSOLUTE item = ILCreateFromPathW(
+      (std::filesystem::exists(file, error) ? file : logs).c_str());
   if (item) {
     SHOpenFolderAndSelectItems(item, 0, nullptr, 0);
     ILFree(item);

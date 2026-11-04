@@ -47,6 +47,11 @@ function knownIssue(ok, what, issue) {
   return ok;
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Debug logging (025) is on for the whole run, so the log can be checked for
+// secrets at the end; every settings.yaml the test writes keeps it.
+const kLoggingYaml = 'logging:\n  debug: true\n';
+// Typed or loaded during the run; never in Brouk's log.
+const kSecrets = ['S3cret-smoke!', 'T0ken-smoke'];
 
 // A test that hangs fails instead of waiting (019: at most 5 minutes).
 setTimeout(() => {
@@ -55,6 +60,7 @@ setTimeout(() => {
 }, kTotalLimitMs).unref();
 
 let brouk = null;
+let firstPid = null; // The first start's browser process (025: Chromium's log).
 let server = null;
 let dataDir = null;
 // The CI runner's screen on Windows, where no one can look: Brouk's own
@@ -232,14 +238,77 @@ function logWindowsOf(pid) {
   log(`(windows left: ${windowsOf(pid).join(', ')})`);
 }
 
+// Logging (025): Brouk's log has the run's debug messages and none of the
+// secrets; Chromium's own log is written next to it while debug logging is
+// on, not next to the executable.
+function checkLog() {
+  let text = '';
+  try {
+    text = readFileSync(join(dataDir, 'logs', 'brouk.log'), 'utf8');
+  } catch (error) {
+    log(`(no brouk.log: ${error.message})`);
+  }
+  check(text.includes('Logging: debug logging switched on'), 'logs/brouk.log tells that debug logging is on');
+  check(/ DEBUG \[[^\]]+\] /.test(text), 'with debug logging on, logs/brouk.log has debug messages');
+  if (kWindows) {
+    check(text.includes('Passwords: save offered on '), 'the log tells that saving the password was offered');
+  }
+  for (const secret of kSecrets) {
+    check(!text.includes(secret), `the log does not contain "${secret}"`);
+  }
+  let chromium = false;
+  try {
+    chromium = readdirSync(join(dataDir, 'logs')).includes('chromium.log');
+  } catch {
+    chromium = false;
+  }
+  check(chromium, "Chromium's own log is in logs/ while debug logging is on");
+  if (brouk && brouk.pid !== firstPid) {
+    // The second starts that hand over links must not have emptied it.
+    let previous = '';
+    try {
+      previous = readFileSync(join(dataDir, 'logs', 'chromium.1.log'), 'utf8');
+    } catch (error) {
+      log(`(no chromium.1.log: ${error.message})`);
+    }
+    check(previous.includes(`[${firstPid}:`), "after the restart, chromium.1.log keeps the first run's Chromium log");
+  }
+  if (kWindows) {
+    let besideApp = '';
+    try {
+      besideApp = readFileSync(join(appPath, 'debug.log'), 'utf8');
+    } catch {
+      besideApp = null;
+    }
+    if (besideApp !== null) {
+      log(`(debug.log next to brouk.exe:\n${besideApp.slice(0, 2000)})`);
+      try {
+        copyFileSync(join(appPath, 'debug.log'), join(outDir, 'debug.log'));
+      } catch (error) {
+        log(`(debug.log not copied: ${error.message})`);
+      }
+    }
+    // CEF's crash reporting, which only this test switches on (the
+    // workflow's crash_reporter.cfg; the installer leaves it out), logs one
+    // line per process before Chromium has its log settings.
+    const other = (besideApp ?? '')
+      .split(/\r?\n/)
+      .filter((line) => line && !/crash_reporting\.cc:\d+\] Crash reporting enabled for process: /.test(line));
+    check(other.length === 0, 'no debug.log is written next to brouk.exe (but for the crash reporter that only this test enables)');
+  }
+}
+
 function finish(code) {
   if (code !== 0) desktopScreenshot('desktop');
-  // Chromium's own log, next to the executable on Windows.
-  if (code !== 0 && kWindows) {
-    try {
-      copyFileSync(join(appPath, 'debug.log'), join(outDir, 'debug.log'));
-    } catch (error) {
-      log(`(no debug.log: ${error.message})`);
+  // Brouk's and Chromium's logs (025), for reading after a failure.
+  if (dataDir) {
+    mkdirSync(join(outDir, 'logs'), { recursive: true });
+    for (const name of ['brouk.log', 'chromium.log', 'chromium.1.log']) {
+      try {
+        copyFileSync(join(dataDir, 'logs', name), join(outDir, 'logs', name));
+      } catch (error) {
+        log(`(no ${name}: ${error.message})`);
+      }
     }
   }
   if (brouk && brouk.exitCode === null) brouk.kill('SIGKILL');
@@ -395,7 +464,8 @@ function crashReports() {
 // Windows, passwords (008): signing in on the test page offers to save the
 // login (the prompt under the key icon, with its Save button).
 async function savePasswordFromLogin({ executable, port, pagesBase }) {
-  const loginUrl = `${pagesBase}/008/login.html`;
+  // The query string is a secret too: logs show addresses without it.
+  const loginUrl = `${pagesBase}/008/login.html?smoke-token=T0ken-smoke`;
   spawn(executable, [loginUrl], { env: { ...process.env, BROUK_DEV_DATA_DIR: dataDir }, stdio: 'ignore' });
   let login;
   for (let i = 0; i < 30 && !login; i++) {
@@ -651,6 +721,7 @@ async function main() {
   const pagesBase = `http://127.0.0.1:${server.address().port}`;
 
   dataDir = mkdtempSync(join(tmpdir(), 'brouk-smoke-'));
+  writeFileSync(join(dataDir, 'settings.yaml'), kLoggingYaml);
   const port = 9400 + Math.floor(Math.random() * 500);
   // A blank tab for the web pages, and the licences page (023): URLs with
   // --profile open as typed, without link routing.
@@ -668,6 +739,7 @@ async function main() {
   writeFileSync(appLog, '');
   brouk.stdout.on('data', (chunk) => appendFileSync(appLog, chunk));
   brouk.stderr.on('data', (chunk) => appendFileSync(appLog, chunk));
+  firstPid = brouk.pid;
   log(`Started Brouk (pid ${brouk.pid}), data in ${dataDir}`);
 
   let target = null;
@@ -936,7 +1008,7 @@ async function main() {
       const before = await dark();
       const wanted = before ? 'light' : 'dark';
       const settingsFile = join(dataDir, 'settings.yaml');
-      writeFileSync(settingsFile, `appearance:\n  theme: ${wanted}\n`);
+      writeFileSync(settingsFile, `appearance:\n  theme: ${wanted}\n${kLoggingYaml}`);
       let read = await theme();
       for (let i = 0; i < 25 && read !== wanted; i++) {
         await sleep(200);
@@ -950,7 +1022,7 @@ async function main() {
       }
       check(now === !before, `the pages' colour scheme follows appearance.theme (dark: ${before} → ${now})`);
       desktopScreenshot('theme');
-      writeFileSync(settingsFile, 'appearance:\n  theme: system\n');
+      writeFileSync(settingsFile, `appearance:\n  theme: system\n${kLoggingYaml}`);
       await sleep(1000);
       settingsPage.close();
     }
@@ -962,7 +1034,10 @@ async function main() {
   if (kWindows) {
     const folder = join(dataDir, 'downloaded');
     mkdirSync(folder, { recursive: true });
-    writeFileSync(join(dataDir, 'settings.yaml'), `appearance:\n  theme: system\ndownloads:\n  folder: '${folder}'\n`);
+    writeFileSync(
+      join(dataDir, 'settings.yaml'),
+      `appearance:\n  theme: system\ndownloads:\n  folder: '${folder}'\n${kLoggingYaml}`,
+    );
     await sleep(1500); // Live reload.
     await cdp.send('Page.navigate', { url: `${pagesBase}/downloads.html` });
     await waitForTitle(cdp, 'Downloads test');
@@ -1427,6 +1502,7 @@ async function main() {
   const newReports = crashReports().filter((name) => !reportsBefore.has(name));
   check(newReports.length === 0, `no new crash report of Brouk ${newReports.join(', ')}`);
   log(`Smoke tests took ${Math.round((Date.now() - started) / 1000)} s.`);
+  checkLog();
   finish(failures.length === 0 ? 0 : 1);
 }
 

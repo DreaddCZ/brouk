@@ -6,6 +6,7 @@
 #include <utility>
 
 #include "core/link_unwrap.h"
+#include "core/log.h"
 #include "include/base/cef_logging.h"
 #include "include/wrapper/cef_helpers.h"
 #include "platform/win/browser_window.h"
@@ -47,7 +48,7 @@ void LinkRoutingController::Reload() {
   problems_.clear();
   config_ = LoadLinkRouting(path_, problems_);
   for (const std::string& problem : problems_) {
-    LOG(WARNING) << "Link routing: " << problem;
+    LogWarning() << "Link routing: " << problem;
   }
 }
 
@@ -223,9 +224,9 @@ void LinkRoutingController::Route(Request request) {
   ShowPicker(std::move(request), decision);
 }
 
-// One line in Brouk's log per routed link, so a link that opens in an
-// unexpected profile can be explained. Never query values: LinkForLog
-// leaves them out.
+// One line in Brouk's log per routed link while debug logging is on
+// (025), so a link that opens in an unexpected profile can be explained.
+// Never query values: LinkForLog leaves them out.
 void LinkRoutingController::LogRouting(const Request& request,
                                        const ProfileDecision& decision) {
   std::string profiles;
@@ -235,7 +236,7 @@ void LinkRoutingController::LogRouting(const Request& request,
   const std::string rule = decision.rule_pattern
                                ? "rule " + *decision.rule_pattern
                                : std::string("no rule");
-  LOG(INFO) << "Link routing: " << WideToUtf8(request.source_name) << ": "
+  LogInfo() << "Link routing: " << WideToUtf8(request.source_name) << ": "
             << LinkForLog(request.url) << ", via "
             << (request.wrapper.empty() ? "no wrapper" : request.wrapper)
             << ", routed by " << LinkForLog(request.real_url.value_or(""))
@@ -367,7 +368,7 @@ void LinkRoutingController::PickerDone(
       LinkRoutingConfig config = config_;
       if (NarrowRoutingRule(config, *pattern, result.profile)) {
         if (std::optional<Error> error = SetConfig(config)) {
-          LOG(WARNING) << "Link routing: " << error->message;
+          LogWarning() << "Link routing: " << error->message;
         }
       }
     }

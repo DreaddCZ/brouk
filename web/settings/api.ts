@@ -165,6 +165,11 @@ export class SettingsApi {
     await send('settings.clearBrowsingData', {}, this.#transport);
   }
 
+  /** Shows Brouk's log in Finder or File Explorer (025). */
+  async showLog(): Promise<void> {
+    await send('settings.showLog', {}, this.#transport);
+  }
+
   async openFolder(): Promise<void> {
     await send('settings.openFolder', {}, this.#transport);
   }
