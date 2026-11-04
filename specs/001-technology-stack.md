@@ -1,6 +1,6 @@
 # 001 – Technology stack
 
-- **Status:** in-progress
+- **Status:** done
 - **Priority:** P1
 - **Depends on:** none (every other spec depends on this one)
 
@@ -63,9 +63,9 @@ Applies from phase 2 (see above).
 
 Chromium ships a new stable release every ~4 weeks plus security fixes in between, and CEF follows with new builds. Staying current means:
 
-1. **Automated CEF bump (CI):** a GitHub Actions workflow detects new CEF stable builds, updates the pinned CEF version, builds, runs tests, signs and notarizes the app — on macOS once for Apple Silicon and once for Intel (see 002). API breaks are fixed in a pull request (Claude Code can do this).
+1. **CEF updates:** the weekly `security` workflow (`scripts/check_cef`) reports when a newer CEF stable build is due under the policy in `docs/cef-updates.md`. The update is made in a branch with `scripts/update_cef` (version and checksums; API changes fixed by Claude Code), built and tested by CI on Linux, macOS and Windows, and merged by pull request. Releases are then built, signed and notarized on the user's Intel Mac with `scripts/release`, for Apple Silicon and Intel (see 002, 019); Windows releases are built in CI.
 2. **Automatic delivery to the user:** an in-app updater — Sparkle on macOS, WinSparkle on Windows — checks a signed update feed and installs new versions in the background.
-3. **Release cadence:** every CEF patch release (mostly Chromium security fixes, no API change) is built and shipped automatically. Each major release (new Chromium version, ~every 4 weeks) is shipped as soon as its update PR — with any fixes for CEF API changes — is merged. No batching.
+3. **Release cadence:** every CEF patch release (mostly Chromium security fixes, no API change) is shipped within 7 days. Each major release (new Chromium version, ~every 4 weeks) is shipped as soon as its update PR — with any fixes for CEF API changes — is merged. No batching.
 4. **Update feed hosting:** decided at the start of phase 2. Preferred option (not final): a separate public "releases" repo holding only signed builds and the update feed (GitHub Releases, free); the source repo stays private. Alternatives: making the source repo public, or cloud storage (S3, Cloudflare R2).
 5. **Evaluate** the CEF repository's new installer library (automatic CEF version management with background updates) before choosing the final updater; check its maturity first.
 
@@ -76,8 +76,8 @@ Chromium ships a new stable release every ~4 weeks plus security fixes in betwee
 - [x] A "hello world" build (CEF, Alloy style) runs on macOS and opens a web page.
 - [x] Phase 1: one documented command builds the app locally on a Mac, for Apple Silicon and for Intel.
 - [x] Phase 1: GitHub Actions builds the core and runs its tests on Linux for every push/pull request.
-- [ ] Phase 2: CI builds, signs and notarizes the macOS app.
-- [ ] Phase 2: a new CEF stable release is picked up by CI without manual steps other than merging the update PR.
+- [x] Phase 2: macOS releases are built, signed and notarized by one command (`scripts/release`) on the user's Mac; CI builds and tests the macOS app for every pull request.
+- [x] Phase 2: a due CEF stable release is reported by CI (weekly `security` workflow); the update is one command (`scripts/update_cef`) and a pull request built and tested by CI on all platforms.
 - [x] Phase 2: an installed app updates itself to a newer published version without user involvement beyond (optionally) a restart.
 
 ## Out of scope
@@ -126,3 +126,4 @@ None. (Update feed hosting was decided on 2026-10-26, see Notes.)
 - 2026-10-28 (user's decision): pushes build only on `main`. Branches are pushed right before their pull request is opened, so a build of the branch push repeated the pull request's build (which tests the branch merged with `main`). The build after each merge to `main` stays: two pull requests that each passed can still break `main` together. Every workflow can also be started by hand ("Run workflow").
 - 2026-10-28 (CEF update): moved to CEF 156.0.14 (Chromium 156.0.8078.48), 6 days after its release (`docs/cef-updates.md`). Its API changes need no code change: a new permission request type (ambient login) gets the generic prompt for other permissions, and the new keychain name settings are left empty, which keeps the keychain item used so far.
 - 2026-11-04 (review of the acceptance criteria): met — the CEF build, one build command per Mac architecture (`scripts/build`, `scripts/package_mac --all`), Linux CI, and automatic updates (019). Not met as written: "CI builds, signs and notarizes the macOS app" — releases are built, signed and notarized on the user's Intel Mac by `scripts/release` (decided in 019; Windows releases are built in CI); and "a new CEF stable release is picked up by CI without manual steps other than merging the update PR" — the weekly `security` workflow reports an overdue CEF update (`scripts/check_cef`), but the update itself is made with `scripts/update_cef` in a branch (`docs/cef-updates.md`). Both criteria wait for the user's decision: change them to the current process, or automate.
+- 2026-11-04 (user's decision): the two phase-2 criteria and the update process are reworded to match how it is done now (releases built, signed and notarized on the user's Mac with `scripts/release`; CEF updates reported by CI and made with `scripts/update_cef` in a pull request) instead of full CI automation. All criteria met; spec done.
