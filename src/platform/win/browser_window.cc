@@ -57,6 +57,11 @@ constexpr UINT_PTR kSpinnerTimer = 1;
 constexpr UINT kSpinnerInterval = 80;  // Milliseconds per step.
 constexpr UINT_PTR kFullscreenHintTimer = 2;
 constexpr UINT kFullscreenHintTime = 3000;  // Milliseconds.
+// After Ctrl+mouse wheel: when to read the tab's zoom again. Chromium
+// zooms once the page has not used the wheel event, and CEF reports no
+// zoom changes.
+constexpr UINT_PTR kZoomCheckTimer = 3;
+constexpr UINT kZoomCheckDelay = 150;  // Milliseconds.
 
 enum ControlId : int {
   kBackId = 1,
@@ -69,6 +74,7 @@ enum ControlId : int {
   kDownloadsId,
   kStarId,
   kKeyId,
+  kSiteId,
   kShieldId,
   kDevToolsId,
 };
@@ -181,6 +187,33 @@ bool RegisterWindowClass() {
   return registered;
 }
 
+// UI thread. Sees the mouse messages of Brouk's UI thread, also those for
+// Chromium's page windows: Ctrl+mouse wheel over a browser window makes
+// that window read its tab's zoom again shortly after (the "125 %"
+// indicator).
+LRESULT CALLBACK ZoomWheelHook(int code, WPARAM wparam, LPARAM lparam) {
+  if (code == HC_ACTION && wparam == WM_MOUSEWHEEL &&
+      (GetKeyState(VK_CONTROL) & 0x8000) != 0) {
+    const auto* mouse = reinterpret_cast<const MOUSEHOOKSTRUCT*>(lparam);
+    const HWND root = mouse ? GetAncestor(mouse->hwnd, GA_ROOT) : nullptr;
+    std::array<wchar_t, 64> name = {};
+    if (root &&
+        GetClassNameW(root, name.data(), static_cast<int>(name.size())) &&
+        std::wstring_view(name.data()) == kWindowClass) {
+      // Restarted by every notch, so a fast scroll reads it once.
+      SetTimer(root, kZoomCheckTimer, kZoomCheckDelay, nullptr);
+    }
+  }
+  return CallNextHookEx(nullptr, code, wparam, lparam);
+}
+
+// UI thread. Installed once, for the life of the process.
+void InstallZoomWheelHook() {
+  static const HHOOK hook = SetWindowsHookExW(WH_MOUSE, &ZoomWheelHook, nullptr,
+                                              GetCurrentThreadId());
+  (void)hook;
+}
+
 // Whether `window` itself is shown (IsWindowVisible also needs its
 // parents to be).
 bool HasVisibleStyle(HWND window) {
@@ -221,6 +254,7 @@ bool BrowserWindow::Create(int content_width, int content_height) {
   if (!RegisterWindowClass()) {
     return false;
   }
+  InstallZoomWheelHook();
   strip_.SetTabLookup([this](TabId id) -> const Tab* { return FindTab(id); });
   const int dpi = static_cast<int>(GetDpiForSystem());
   int width = MulDiv(1200, dpi, 96);
@@ -340,6 +374,13 @@ void BrowserWindow::CreateControls() {
       0, WC_BUTTONW, kKeyGlyph, WS_CHILD | BS_OWNERDRAW, 0, 0, 0, 0, window_,
       reinterpret_cast<HMENU>(static_cast<INT_PTR>(kKeyId)), instance, nullptr);
   SetAccessibleName(key_, L"Saved passwords");
+  site_ =
+      CreateWindowExW(0, WC_BUTTONW, SiteInfoPopup::Glyph(SecurityLevel::kNone),
+                      WS_CHILD | BS_OWNERDRAW, 0, 0, 0, 0, window_,
+                      reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSiteId)),
+                      instance, nullptr);
+  SetAccessibleName(
+      site_, SiteInfoPopup::AccessibleName(SecurityLevel::kNone).c_str());
   if (kind_ == Kind::kNormal) {
     // One tool over the tab strip; its text follows the hovered part.
     tooltip_ = CreateWindowExW(WS_EX_TOPMOST, TOOLTIPS_CLASSW, nullptr,
@@ -509,6 +550,16 @@ void BrowserWindow::Layout() {
                     field_top + field_height};
   const int padding = Scale(kAddressPadding);
   const int edit_height = text_height_ + Scale(2);
+  // The site icon at the left end, as Chrome's.
+  int edit_left = static_cast<int>(address_field_.left) + padding;
+  if (HasVisibleStyle(site_)) {
+    const int width = Scale(30);
+    SetWindowPos(site_, nullptr, address_field_.left + Scale(4),
+                 field_top + Scale(4), width, field_height - Scale(8),
+                 SWP_NOZORDER | SWP_NOACTIVATE);
+    edit_left =
+        static_cast<int>(address_field_.left) + Scale(4) + width + Scale(2);
+  }
   // The indicators at the right end of the address bar, right to left.
   int indicator_right = static_cast<int>(address_field_.right) - Scale(4);
   for (const auto& [indicator, width] :
@@ -524,11 +575,10 @@ void BrowserWindow::Layout() {
   }
   const int edit_right = std::min(
       static_cast<int>(address_field_.right) - padding, indicator_right);
-  SetWindowPos(
-      address_, nullptr, address_field_.left + padding,
-      field_top + (field_height - edit_height) / 2,
-      std::max(0, edit_right - static_cast<int>(address_field_.left) - padding),
-      edit_height, SWP_NOZORDER | SWP_NOACTIVATE);
+  SetWindowPos(address_, nullptr, edit_left,
+               field_top + (field_height - edit_height) / 2,
+               std::max(0, edit_right - edit_left), edit_height,
+               SWP_NOZORDER | SWP_NOACTIVATE);
   if (bookmarks_bar_) {
     bookmarks_bar_->SetBounds(BookmarksBarBounds());
   }
@@ -2296,6 +2346,8 @@ void BrowserWindow::SetFullscreen(bool fullscreen) {
   if (fullscreen) {
     ShowWindow(zoom_, SW_HIDE);
     ShowWindow(popups_, SW_HIDE);
+    ShowWindow(site_, SW_HIDE);
+    site_info_popup_.Close();
   }
   UpdateIndicators();
   UpdateBookmarksBar();
@@ -2538,6 +2590,28 @@ void BrowserWindow::ShowBlockedPopups() {
 
 void BrowserWindow::DrawIndicator(const DRAWITEMSTRUCT& item) {
   const bool pressed = (item.itemState & ODS_SELECTED) != 0;
+  if (item.hwndItem == site_) {
+    // The site's security: lock, warning (red for certificate errors) or
+    // "i", as on macOS.
+    SetDCBrushColor(item.hDC, pressed ? theme_.hover : theme_.field);
+    FillRect(item.hDC, &item.rcItem,
+             static_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
+    const Tab* tab = ActiveTab();
+    const CefRefPtr<CefBrowser> browser = tab ? tab->browser() : nullptr;
+    const bool danger =
+        browser && GetSiteInfo(browser).level == SecurityLevel::kDangerous;
+    const std::wstring glyph = WindowText(item.hwndItem);
+    HGDIOBJ previous = SelectObject(item.hDC, icon_font_);
+    SetBkMode(item.hDC, TRANSPARENT);
+    SetTextColor(item.hDC, danger ? (theme_.dark ? RGB(0xFF, 0x7B, 0x72)
+                                                 : RGB(0xC4, 0x2B, 0x1C))
+                                  : theme_.text_dim);
+    RECT area = item.rcItem;
+    DrawTextW(item.hDC, glyph.c_str(), -1, &area,
+              DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    SelectObject(item.hDC, previous);
+    return;
+  }
   if (item.hwndItem == star_ || item.hwndItem == key_) {
     // Just the glyph: the star filled on a bookmarked page, the key while a
     // password waits to be saved, in the accent colour.
@@ -2585,9 +2659,43 @@ void BrowserWindow::DrawIndicator(const DRAWITEMSTRUCT& item) {
   SelectObject(item.hDC, previous);
 }
 
+void BrowserWindow::UpdateSiteIcon() {
+  const Tab* tab = ActiveTab();
+  const CefRefPtr<CefBrowser> browser = tab ? tab->browser() : nullptr;
+  const SecurityLevel level =
+      browser ? GetSiteInfo(browser).level : SecurityLevel::kNone;
+  const wchar_t* glyph = SiteInfoPopup::Glyph(level);
+  if (WindowText(site_) != glyph) {
+    SetWindowTextW(site_, glyph);
+  }
+  // The colour (red for certificate errors) may change with the same glyph.
+  SetAccessibleName(site_, SiteInfoPopup::AccessibleName(level).c_str());
+  InvalidateRect(site_, nullptr, FALSE);
+}
+
+void BrowserWindow::ShowSiteInfo() {
+  Tab* tab = ActiveTab();
+  const CefRefPtr<CefBrowser> browser = tab ? tab->browser() : nullptr;
+  if (site_info_popup_.JustClosed() || !browser) {
+    return;
+  }
+  RECT anchor = {};
+  GetWindowRect(site_, &anchor);
+  site_info_popup_.Show(window_, anchor, browser, theme_, text_font_,
+                        icon_font_);
+}
+
+void BrowserWindow::SiteInfoReload() {
+  if (Tab* tab = ActiveTab()) {
+    tab->Reload();
+  }
+}
+
 void BrowserWindow::UpdateIndicators() {
   UpdateShield();
   UpdateDevToolsToggle();
+  UpdateSiteIcon();
+  const bool site_shown = !fullscreen_ && ActiveTab() != nullptr;
   Tab* tab = ActiveTab();
   const double level = tab ? tab->ZoomLevel() : 0.0;
   const bool shown = !fullscreen_ && IsZoomIndicatorShown(level);
@@ -2637,11 +2745,12 @@ void BrowserWindow::UpdateIndicators() {
     SetAccessibleName(key_, name);
     InvalidateRect(key_, nullptr, FALSE);
   }
-  if (shown != HasVisibleStyle(zoom_) ||
+  if (shown != HasVisibleStyle(zoom_) || site_shown != HasVisibleStyle(site_) ||
       popups_shown != HasVisibleStyle(popups_) ||
       star_shown != HasVisibleStyle(star_) ||
       key_shown != HasVisibleStyle(key_)) {
     ShowWindow(zoom_, shown ? SW_SHOWNA : SW_HIDE);
+    ShowWindow(site_, site_shown ? SW_SHOWNA : SW_HIDE);
     ShowWindow(popups_, popups_shown ? SW_SHOWNA : SW_HIDE);
     ShowWindow(star_, star_shown ? SW_SHOWNA : SW_HIDE);
     ShowWindow(key_, key_shown ? SW_SHOWNA : SW_HIDE);
@@ -5059,6 +5168,11 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
         InvalidateStrip();
         return 0;
       }
+      if (wparam == kZoomCheckTimer) {
+        KillTimer(window_, kZoomCheckTimer);
+        UpdateIndicators();
+        return 0;
+      }
       break;
     case WM_SETTINGCHANGE:
       // Light or dark app mode changed.
@@ -5083,7 +5197,8 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
     case WM_DRAWITEM:
       if (const auto* item = reinterpret_cast<const DRAWITEMSTRUCT*>(lparam);
           item->hwndItem == zoom_ || item->hwndItem == popups_ ||
-          item->hwndItem == star_ || item->hwndItem == key_) {
+          item->hwndItem == star_ || item->hwndItem == key_ ||
+          item->hwndItem == site_) {
         DrawIndicator(*item);
       } else if (item->hwndItem == downloads_) {
         DrawDownloadsButton(*item);
@@ -5136,6 +5251,9 @@ LRESULT BrowserWindow::HandleMessage(UINT message,
             return 0;
           case kKeyId:
             tab->PasswordKeyIconClicked();
+            return 0;
+          case kSiteId:
+            ShowSiteInfo();
             return 0;
           case kShieldId:
             ShowAdblockPopup();
