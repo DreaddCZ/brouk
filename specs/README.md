@@ -95,6 +95,8 @@ Build order. Each milestone ends with a build the user tests on their Macs.
 
 2026-10-25 (user's decision): file viewers for text formats (021) are recorded at a high level for a later phase.
 
+2026-11-04 (user's decision): every feature is done for both macOS and Windows, except code signing.
+
 2026-10-29 (user's decision): the Windows app (024) starts now, in stages W1–W4; the user tests in a Windows 11 x64 virtual machine on the Intel Mac.
 
 2026-11-03 (user's decision): logging (025) is ready and goes near the end of the roadmap.

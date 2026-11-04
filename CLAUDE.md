@@ -6,7 +6,7 @@ Guidance for Claude Code when working in this repository.
 
 A custom web browser built on Chromium via CEF (Chromium Embedded Framework). Goals:
 
-- **Multiplatform** – macOS first, then Windows, mobile later (see `specs/002-platform-support.md`).
+- **Multiplatform** – macOS and Windows, with every feature on both; mobile later (see `specs/002-platform-support.md`).
 - **Lightweight** – low memory and CPU footprint, fast startup, no bloat.
 - **Fully configurable** – behaviour, UI and shortcuts adjustable by the user.
 - **Focused on work** – features that help with productive, professional use.
@@ -40,6 +40,7 @@ All features and requirements live in [`specs/`](specs/README.md).
 ## Decisions
 
 - **App name: Brouk** (Czech for "beetle" — a nod to bug hunting). App bundle `Brouk.app`, executable `brouk`, bundle ID `io.github.dreaddcz.brouk` (reverse-DNS of the GitHub account, as no domain is owned; change if one is bought), data folder `~/Library/Application Support/Brouk/`. Keep these in **one place** (CMake variables `APP_NAME`, `APP_EXECUTABLE_NAME`, `APP_BUNDLE_ID`, `APP_DATA_DIR_NAME`, passed to code via a generated header); never hard-code them elsewhere.
+- **Both platforms (decided 2026-11-04):** every feature is built for macOS and Windows in the same spec and tested on both; the only difference allowed is code signing (Windows releases stay unsigned, 024). A spec that names only macOS covers Windows too, with each OS's counterpart (Keychain → Credential Manager, Finder → File Explorer, Homebrew → winget).
 - **Base technology: CEF** with prebuilt binaries, Chrome bootstrap and **Alloy style** browsers for web content. Not a Chromium fork. Details and reasoning: `specs/001-technology-stack.md`.
 - **Profiles:** local only (no online account sign-in); tabs of several profiles can share a window, one tab group per profile per window; links are routed to profiles by URL rules. Details: `specs/005-profiles.md`, `specs/010-link-routing.md`.
 - Profiles, developer tools (beyond the stock DevTools frontend), password manager and autofill are **our own implementations**, not Chrome's.
@@ -48,7 +49,7 @@ All features and requirements live in [`specs/`](specs/README.md).
 - **Languages:** C++20 for the core, Objective-C++ (AppKit) for the macOS UI, C++20 on the Win32 API for the Windows UI (no WinUI, WPF, MFC or Qt), TypeScript for the HTML pages. Swift only for a macOS API not reachable from Objective-C. No Rust, except Brave's `adblock-rust` built as a library for ad blocking (007). Details: `specs/001-technology-stack.md`.
 - **Configuration:** YAML files, global and per profile (on macOS in `~/Library/Application Support/Brouk/`), live reload, machine-written (comments not preserved). Details: `specs/004-configuration.md`.
 - **Build:** CMake + Ninja, pinned CEF version downloaded by script, `tsc` for TypeScript, GoogleTest and Node's test runner for tests.
-- **Phases:** phase 1 (now) — personal use, builds made locally on the user's Macs, CI (free, as the repo is public) builds and tests on Linux, on macOS (the whole app, Apple Silicon) and on Windows (portable code only; no Windows app yet) for every pull request and push to `main`; branches are built only through their pull request. Phase 2 — colleagues: releases built, signed with Developer ID, notarized and smoke-tested on the user's Intel Mac, published in the public releases repo `DreaddCZ/brouk-releases`, automatic updates with Sparkle (019). Details: `specs/001-technology-stack.md`. "Phase 1/2" always means these release phases; platforms are rolled out separately (002).
+- **Phases:** phase 1 (now) — personal use, builds made locally on the user's Macs, CI (free, as the repo is public) builds and tests on Linux, on macOS (the whole app, Apple Silicon) and on Windows (the whole app, x64) for every pull request and push to `main`; branches are built only through their pull request. Phase 2 — colleagues: releases built, signed with Developer ID, notarized and smoke-tested on the user's Intel Mac, published in the public releases repo `DreaddCZ/brouk-releases`, automatic updates with Sparkle (019). Details: `specs/001-technology-stack.md`. "Phase 1/2" always means these release phases; platforms are rolled out separately (002).
 - **Help:** `brouk://help` in its own window, written in Markdown (`web/help/content/`) and converted at build time with markdown-it; pages link to sections with a "?" icon button. Details: `specs/016-help.md`.
 - From phase 2, the app **updates itself automatically** (Sparkle, stable and beta channels) from a separate public releases repo, which stays separate because installed copies read their update feed from it. Details: `specs/019-release-pipeline.md`.
 - **Open source:** the source is public in `DreaddCZ/brouk` under the Apache License 2.0 (decided 2026-10-28). Anyone may use it, for personal or work use. Others contribute by pull request after the user agrees to the change in an issue (`CONTRIBUTING.md`); the user reviews and merges every pull request. Security reports go through GitHub's private vulnerability reporting (`SECURITY.md`). The old private repo `DreaddCZ/web-browser` is archived and never made public.
@@ -82,7 +83,7 @@ src/core/             portable C++: window/tab model, profiles, config, routing,
 src/cef/              CEF integration (browser/request handlers, request contexts) — portable
 src/renderer/         code running in CEF renderer processes (injected scripts, V8 bindings)
 src/platform/mac/     Objective-C++ / AppKit UI and macOS integration
-src/platform/win/     C++/Win32 UI and Windows integration (later)
+src/platform/win/     C++/Win32 UI and Windows integration
 web/                  TypeScript sources of internal HTML pages (settings, profile manager, dev tools…)
 tests/                GoogleTest tests (mirrors src/), TypeScript tests next to web/ sources
 third_party/          vendored or fetched third-party code (never edited by hand)

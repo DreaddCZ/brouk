@@ -59,3 +59,4 @@ None for macOS. Deferred until they become relevant (they do not block macOS wor
 - 2026-10-28 (user's decision, see 001): the Windows app's native UI is C++ on the Win32 API, in `src/platform/win/`, like the macOS UI in `src/platform/mac/` on AppKit. Its internal pages are the same HTML/TypeScript pages as on macOS.
 - 2026-10-28 (user's decisions, see 001): on Windows, updates come from WinSparkle with a per-user installer; releases are built in CI. Secrets go to Windows Credential Manager, and Windows Hello replaces Touch ID.
 - 2026-10-29: Windows work starts; the Windows app is specified in 024 (stages W1–W4, data in `%LOCALAPPDATA%\Brouk\`, tested in a Windows 11 x64 virtual machine on the Intel Mac).
+- 2026-11-04 (user's decision): with the Windows app built (024), every feature is done for both macOS and Windows, except code signing (Windows releases stay unsigned).

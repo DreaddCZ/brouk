@@ -37,7 +37,7 @@ Reach a client's internal sites over the client's VPN **from one profile only**,
 - The user's clients mostly use **FortiClient, OpenVPN and Cisco**, so Fortinet and Cisco (both through OpenConnect) and OpenVPN come first.
 
 - Each tool runs as a **helper process** started by Brouk. It opens a proxy on `127.0.0.1` at a port Brouk chooses, and the profile's request context is pointed at that proxy.
-- Like the Bitwarden CLI (008), the tools are **installed by the user** (for example with Homebrew). Brouk does not bundle them. Brouk finds them automatically, the path can be set in settings, and when a tool is missing Brouk shows how to install it.
+- Like the Bitwarden CLI (008), the tools are **installed by the user** (for example with Homebrew on macOS, winget on Windows). Brouk does not bundle them. Brouk finds them automatically, the path can be set in settings, and when a tool is missing Brouk shows how to install it.
 
 ### Connecting and disconnecting
 
@@ -67,7 +67,7 @@ Reach a client's internal sites over the client's VPN **from one profile only**,
 
 ### Credentials and login
 
-- Passwords, private keys and other secrets of a connection are stored only in the macOS Keychain (as for 008), never in YAML files or helper command lines.
+- Passwords, private keys and other secrets of a connection are stored only in the OS credential store — the macOS Keychain or Windows Credential Manager (as for 008), never in YAML files or helper command lines.
 - When the VPN asks for something interactive (password, one-time code, "approve on your phone", choosing a group), Brouk shows a native dialog anchored to the profile's window and passes the answer to the helper.
 - A connection can be linked to a TOTP entry of the built-in password manager (008), so the one-time code is filled in automatically.
 - **Single sign-on** logins (SAML, for example Fortinet or Cisco with Microsoft Entra ID) open in a **Brouk window in the VPN profile**, so the user signs in with the profile's existing session (for example the client's Microsoft account already signed in there).
@@ -84,7 +84,7 @@ Reach a client's internal sites over the client's VPN **from one profile only**,
 - [ ] A connection already used by one profile cannot be chosen for another profile.
 - [ ] With a VPN profile connected, the OS routing table, DNS settings and network interfaces are unchanged, and no admin password is asked for.
 - [ ] Sites opened in a VPN profile are reached through the tunnel (the "what is my IP" check shows the VPN's address); at the same time, sites opened in another profile, in the same window, show the normal address.
-- [ ] Other apps on the Mac (for example `curl` in Terminal) are not affected by the connection.
+- [ ] Other apps on the computer (for example `curl` in Terminal or PowerShell) are not affected by the connection.
 - [ ] An internal host name that only the VPN's DNS knows opens in the VPN profile and does not resolve in other profiles.
 - [ ] A WireGuard connection can be imported from a `.conf` file and connected.
 - [ ] A Fortinet SSL VPN connection and a Cisco AnyConnect connection can each be set up and connected, including a password and a one-time code asked for in a native dialog.
@@ -107,18 +107,18 @@ Reach a client's internal sites over the client's VPN **from one profile only**,
 ## Out of scope
 
 - VPN for the whole Mac or for other apps.
-- Native macOS VPN types through a network extension (IKEv2, IPsec, L2TP) and vendor client apps (Cisco Secure Client, GlobalProtect app, FortiClient).
+- Native OS VPN types (a macOS network extension, Windows' built-in VPN: IKEv2, IPsec, L2TP, SSTP) and vendor client apps (Cisco Secure Client, GlobalProtect app, FortiClient).
 - Bundling the VPN tools inside Brouk (may be revisited in phase 2).
 - Device posture or host checks the VPN server requires beyond what the tool supports (for example Cisco's host scan or GlobalProtect's HIP report, where `openconnect` cannot answer them).
 - Non-web traffic started from a page, such as an RDP or SSH client opened by a link.
 - Several VPN connections in one profile at the same time.
-- Windows (later, with 002) and mobile.
+- Mobile.
 
 ## Configuration
 
 Global (`settings.yaml`):
 
-- VPN connections: name, type, server or imported config, username, protocol (OpenConnect), routing (all traffic / listed hosts and IP ranges), start (on first use / at Brouk start), stop (when no tabs use it / after N minutes idle / at quit), TOTP entry (optional). Secrets in the Keychain. Imported config files are kept in `vpn/<connection-id>/`, readable by the user only.
+- VPN connections: name, type, server or imported config, username, protocol (OpenConnect), routing (all traffic / listed hosts and IP ranges), start (on first use / at Brouk start), stop (when no tabs use it / after N minutes idle / at quit), TOTP entry (optional). Secrets in the OS credential store. Imported config files are kept in `vpn/<connection-id>/`, readable by the user only.
 - Paths of the tools (`wireproxy`, `openconnect`, `ocproxy`, `ssh`, container runtime), found automatically by default.
 
 Per profile (`profiles/<id>/settings.yaml`):
@@ -143,4 +143,9 @@ Per profile (`profiles/<id>/settings.yaml`):
 - 2026-10-24 (user's answers): clients mostly use FortiClient, OpenVPN and Cisco, so these come first. The local proxy port on `127.0.0.1` is acceptable: other programs of the same user could use the tunnel while it is up (Chromium cannot authenticate to a SOCKS5 proxy), mitigated by a random port and stopping when unused. Single sign-on happens in a Brouk window of the VPN profile. OpenVPN, and how colleagues without admin rights get the tools, is left for investigation.
 - FortiClient: `openconnect --protocol=fortinet` covers FortiGate **SSL VPN** only. If a client's FortiGate offers only IPsec (IKE), it is not supported; check which one each client uses. `openfortivpn` is not an option, as it needs `pppd` with root.
 - 2026-10-24 (user's decision): one profile, one VPN; a connection is never shared by two profiles. The spec goes to the later part of the roadmap, after the user has checked what is possible on company computers (open question 1).
+- 2026-11-04 (user's decision): the feature is built for macOS and Windows alike (as every feature since the Windows app, 024). Windows is no longer out of scope; secrets go to Windows Credential Manager. To check: which tools run on Windows in user space (`openconnect` has Windows builds; `ocproxy` and `wireproxy` on Windows are not verified).
+- 2026-11-04 (research, to be confirmed per client):
+  - **FortiGate:** FortiOS 7.6.3 removed SSL VPN tunnel mode (earlier 7.6 releases already on small models); FortiClient now connects with IPsec IKEv2, also over TCP 443, with SAML possible from 7.6.1. `openconnect --protocol=fortinet` only covers SSL VPN, so it serves FortiGates up to 7.4. No user-space IKEv2 client with a local proxy was found: strongSwan needs root and an interface and does not do IKE over TCP or SAML. Options: an own IKEv2/ESP client with a user-space network stack (large, security-sensitive), a small Linux VM started by Brouk running strongSwan/openconnect/OpenVPN with a SOCKS server (macOS: Virtualization framework, no admin; Windows: Hyper-V or WSL2, may need admin), or not supported. `openconnect`'s SAML support for Fortinet is not confirmed (merge request 551 open).
+  - **Azure VPN Gateway (Point-to-Site):** with certificate authentication and the OpenVPN tunnel type, a stock OpenVPN client works (Microsoft: not 2.6 yet). With Microsoft Entra ID, Microsoft requires its Azure VPN Client; stock OpenVPN cannot send the token, which is larger than its password limits (the community client OpenP2S patches OpenVPN for this; licence and upkeep not checked). Brouk could sign in to Entra in a window of the VPN profile and hand the token to an OpenVPN helper able to take it (OpenVPN 3 core as a separate process, or the VM). IKEv2 and SSTP gateways have the same problem as FortiGate IPsec.
+  - The user checks per client: FortiOS version, SSL VPN or IPsec, SAML or password + FortiToken; Azure: Entra ID or certificate, tunnel type (OpenVPN, IKEv2, SSTP); and whether colleagues may run a VM.
 - Help text for this feature will be needed (rule 7 in `CLAUDE.md`).
