@@ -1,6 +1,6 @@
 # 022 – History in profile export
 
-- **Status:** ready
+- **Status:** in-progress
 - **Priority:** P3
 - **Depends on:** 005, 013
 
@@ -44,3 +44,4 @@ None.
 ## Notes
 
 - 2026-10-26 (user's decision): split off from 005 and 013, where it had been postponed since 2026-10-23, so 013 can be marked done.
+- 2026-11-04 (implementation): the choice is made on the profile manager page: **Export…** opens a small form under the profile with "Include history" (off by default) and "The last N days" (30) or "The last N visited pages" (500); its **Export…** then goes on as before (export password, save dialog). Limits: 1–3650 days, 1–20,000 pages; the browser checks them again. The section (`core/history_profile.h`) lists pages newest first with their visits (time in seconds since 1970, how it started); "last N pages" takes every visit of those pages. On import the visits are added in one transaction, oldest kept only within "Keep history for" (013); addresses that are never recorded (brouk://, data:) and invalid entries are skipped and listed, at most 20 lines. Export files may now be up to 64 MB (16 MB before), as history makes them bigger. A file with history imported by an older Brouk lists "history" as not imported (as before).

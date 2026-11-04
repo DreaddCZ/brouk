@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import type { Profile } from './api.js';
-import { colorLabel, nameProblem, tabsLabel } from './logic.js';
+import { colorLabel, historyChoice, nameProblem, tabsLabel } from './logic.js';
 
 const profiles: Profile[] = [
   { id: 'default', name: 'Main', color: 'blue', isDefault: true, openTabs: 1, links: [] },
@@ -24,4 +24,15 @@ test('labels', () => {
   assert.equal(tabsLabel(0), 'No open tabs');
   assert.equal(tabsLabel(1), '1 open tab');
   assert.equal(tabsLabel(4), '4 open tabs');
+});
+
+test('historyChoice: none, a limit, or a problem', () => {
+  assert.deepEqual(historyChoice(false, 'days', 'x'), { choice: null });
+  assert.deepEqual(historyChoice(true, 'days', ' 30 '), { choice: { kind: 'days', count: 30 } });
+  assert.deepEqual(historyChoice(true, 'pages', '500'), { choice: { kind: 'pages', count: 500 } });
+  for (const bad of ['', '0', '-1', '1.5', '1e3', 'many', '3651']) {
+    assert.ok('problem' in historyChoice(true, 'days', bad), bad);
+  }
+  assert.ok('problem' in historyChoice(true, 'pages', '20001'));
+  assert.deepEqual(historyChoice(true, 'pages', '20000'), { choice: { kind: 'pages', count: 20000 } });
 });

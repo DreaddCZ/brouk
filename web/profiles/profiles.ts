@@ -8,12 +8,14 @@ import { cefTransport } from '../shared/bridge.js';
 import { button, byId, element, errorText } from '../shared/dom.js';
 import { helpButton, wireHelpButtons } from '../shared/help.js';
 import { ProfilesApi, type ImportResult, type LinkProblem, type Profile, type ProfilesState } from './api.js';
-import { colorLabel, nameProblem, tabsLabel } from './logic.js';
+import { colorLabel, historyChoice, nameProblem, tabsLabel } from './logic.js';
 
 const api = new ProfilesApi(cefTransport());
 let state: ProfilesState = { profiles: [], colors: [], showAtStartup: false, linksReady: false };
 /** The profile being edited, 'new' for the new-profile form, or null. */
 let editing: string | null = null;
+/** The profile whose export choices are shown, or null. */
+let exporting: string | null = null;
 /**
  * Links the browser did not accept, kept while the form is shown again
  * (also for a profile just created, whose form then opens for editing).
@@ -58,6 +60,86 @@ async function run<T>(action: () => Promise<T>): Promise<T | null> {
   } finally {
     await refresh();
   }
+}
+
+/**
+ * What goes into a profile's export (022): history or not, and how much.
+ * Exporting then asks where to save, and for the passwords' export password.
+ */
+function exportForm(profile: Profile): HTMLFormElement {
+  const form = element('form', { className: 'edit export' });
+  form.setAttribute('aria-label', `Export ${profile.name}`);
+  form.append(
+    element('p', {
+      className: 'hint',
+      text: 'The file contains the profile\'s name, colour, settings and bookmarks, and its passwords if you choose an export password. It never contains sign-ins, cookies or cache.',
+    }),
+  );
+  const include = element('input');
+  include.type = 'checkbox';
+  include.id = `history-${profile.id}`;
+  const includeLabel = element('label', { className: 'check', text: ' Include history' });
+  includeLabel.prepend(include);
+  const choices = element('fieldset', { className: 'history' });
+  choices.append(element('legend', { text: 'How much history' }));
+  const kinds: { kind: 'days' | 'pages'; before: string; after: string; value: string }[] = [
+    { kind: 'days', before: 'The last', after: 'days', value: '30' },
+    { kind: 'pages', before: 'The last', after: 'visited pages', value: '500' },
+  ];
+  const counts = new Map<'days' | 'pages', HTMLInputElement>();
+  const radios: HTMLInputElement[] = [];
+  for (const { kind, before, after, value } of kinds) {
+    const row = element('label', { className: 'check' });
+    const radio = element('input');
+    radio.type = 'radio';
+    radio.name = `history-kind-${profile.id}`;
+    radio.value = kind;
+    radio.checked = kind === 'days';
+    const count = element('input');
+    count.type = 'number';
+    count.min = '1';
+    count.value = value;
+    count.className = 'count';
+    count.setAttribute('aria-label', `Number of ${after}`);
+    count.addEventListener('focus', () => {
+      radio.checked = true;
+    });
+    row.append(radio, ` ${before} `, count, ` ${after}`);
+    choices.append(row);
+    counts.set(kind, count);
+    radios.push(radio);
+  }
+  const update = (): void => {
+    choices.disabled = !include.checked;
+  };
+  include.addEventListener('change', update);
+  update();
+  choices.append(
+    element('p', { className: 'hint', text: 'Visits older than "Keep history for" in the settings are removed after the import.' }),
+  );
+  const problem = element('p', { className: 'problem' });
+  problem.setAttribute('aria-live', 'polite');
+  const save = element('button', { className: 'primary', text: 'Export…' });
+  save.type = 'submit';
+  const cancel = button('Cancel', () => {
+    exporting = null;
+    render();
+  });
+  const buttons = element('div', { className: 'buttons' });
+  buttons.append(cancel, save);
+  form.append(includeLabel, choices, problem, buttons);
+  form.addEventListener('submit', (event) => {
+    event.preventDefault();
+    const kind = radios.find((r) => r.checked)?.value === 'pages' ? 'pages' : 'days';
+    const result = historyChoice(include.checked, kind, counts.get(kind)?.value ?? '');
+    if ('problem' in result) {
+      problem.textContent = result.problem;
+      return;
+    }
+    exporting = null;
+    void run(() => api.exportProfile(profile.id, result.choice));
+  });
+  return form;
 }
 
 /** The form for a new profile (profile === null) or for editing one. */
@@ -256,7 +338,11 @@ function profileItem(profile: Profile): HTMLLIElement {
     render();
   });
   edit.setAttribute('aria-label', `Rename, recolour or edit the links of ${profile.name}`);
-  const exportButton = button('Export…', () => void run(() => api.exportProfile(profile.id)));
+  const exportButton = button('Export…', () => {
+    exporting = exporting === profile.id ? null : profile.id;
+    render();
+  });
+  exportButton.setAttribute('aria-expanded', String(exporting === profile.id));
   exportButton.setAttribute('aria-label', `Export ${profile.name} to a file`);
   actions.append(open, edit, exportButton);
   if (!profile.isDefault) {
@@ -273,6 +359,9 @@ function profileItem(profile: Profile): HTMLLIElement {
   actions.append(remove);
   card.append(dot, who, actions);
   item.append(card);
+  if (exporting === profile.id) {
+    item.append(exportForm(profile));
+  }
   return item;
 }
 

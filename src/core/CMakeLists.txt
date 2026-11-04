@@ -64,6 +64,8 @@ set(BROUK_CORE_SOURCES
   file_lock.h
   help.cc
   help.h
+  history_profile.cc
+  history_profile.h
   history_query.cc
   history_query.h
   history_sql.cc

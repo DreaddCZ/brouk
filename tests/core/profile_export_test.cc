@@ -55,14 +55,32 @@ TEST(ProfileExportTest, ReportsWhatIsNotImported) {
       "  profile:\n"
       "    name: Home\n"
       "    color: magenta\n"
-      "history: []\n");
+      "downloads: []\n");
   ASSERT_TRUE(imported);
   ASSERT_EQ(imported.value().problems.size(), 2u);
   EXPECT_NE(imported.value().problems[0].find("profile.color"),
             std::string::npos);
-  EXPECT_NE(imported.value().problems[1].find("history"), std::string::npos);
+  EXPECT_NE(imported.value().problems[1].find("downloads"), std::string::npos);
   EXPECT_EQ(imported.value().settings.GetString("profile.name"), "Home");
   EXPECT_EQ(imported.value().settings.GetString("profile.color"), "blue");
+}
+
+// History (022): written only when chosen, read back as its own section.
+TEST(ProfileExportTest, KeepsTheHistorySection) {
+  Settings settings(SettingScope::kProfile);
+  EXPECT_EQ(ExportProfile(settings, "2026-11-04T10:00:00Z").find("\nhistory:"),
+            std::string::npos);
+  YamlNode history;
+  history.kind = YamlNode::Kind::kSequence;
+  YamlNode page = YamlNode::Map();
+  page.GetOrAdd("url") = YamlNode::Scalar("https://example.com/", false);
+  history.items.push_back(page);
+  Result<ImportedProfile> imported = ParseProfileExport(ExportProfile(
+      settings, "2026-11-04T10:00:00Z", YamlNode(), YamlNode(), history));
+  ASSERT_TRUE(imported);
+  EXPECT_TRUE(imported.value().problems.empty());
+  ASSERT_TRUE(imported.value().history);
+  ASSERT_EQ(imported.value().history->items.size(), 1u);
 }
 
 }  // namespace

@@ -629,6 +629,29 @@ std::vector<HistoryVisit> HistoryStore::Visits(std::int64_t before,
   return visits;
 }
 
+void HistoryStore::ForEachVisitNewestFirst(
+    const std::function<bool(const HistoryVisit&)>& visit) {
+  ForEachVisit(std::nullopt, 0,
+               [&visit](const HistoryVisit& row, std::int64_t /*page_visits*/) {
+                 return visit(row);
+               });
+}
+
+std::optional<Error> HistoryStore::RecordVisits(
+    std::span<const HistoryVisit> visits) {
+  if (std::optional<Error> error = db_->Execute("BEGIN")) {
+    return error;
+  }
+  for (const HistoryVisit& visit : visits) {
+    if (std::optional<Error> error =
+            RecordVisit(visit.url, visit.title, visit.time, visit.transition)) {
+      db_->Execute("ROLLBACK");
+      return error;
+    }
+  }
+  return db_->Execute("COMMIT");
+}
+
 void HistoryStore::ForEachVisit(
     std::optional<std::string_view> host,
     std::int64_t before,

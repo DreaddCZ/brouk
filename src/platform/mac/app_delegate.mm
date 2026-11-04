@@ -61,6 +61,7 @@
 #include "core/crypto.h"
 #include "core/download_paths.h"
 #include "core/help.h"
+#include "core/history_profile.h"
 #include "core/log.h"
 #include "core/password_generator.h"
 #include "core/password_profile.h"
@@ -123,6 +124,9 @@
 - (std::optional<brouk::Error>)openProfile:(const brouk::ProfileId&)profile;
 - (void)deleteProfile:(const brouk::ProfileId&)profile
                  done:(brouk::ProfileManagerDelegate::DeleteDone)done;
+- (void)exportProfile:(const brouk::ProfileId&)profile
+              history:(std::optional<brouk::HistoryExportLimit>)history
+                 done:(brouk::ProfileManagerDelegate::ExportDone)done;
 - (void)exportProfile:(const brouk::ProfileId&)profile
                  done:(brouk::ProfileManagerDelegate::ExportDone)done;
 - (void)exportProfile:(const brouk::ProfileId&)profile
@@ -225,13 +229,15 @@ class AppProfileManager : public ProfileManagerDelegate {
     }
     [app deleteProfile:id done:std::move(done)];
   }
-  void ExportProfile(const ProfileId& id, ExportDone done) override {
+  void ExportProfile(const ProfileId& id,
+                     std::optional<HistoryExportLimit> history,
+                     ExportDone done) override {
     BRAppDelegate* app = app_;
     if (!app) {
       done(false, Error{kClosing});
       return;
     }
-    [app exportProfile:id done:std::move(done)];
+    [app exportProfile:id history:history done:std::move(done)];
   }
   void ImportProfile(ImportDone done) override {
     BRAppDelegate* app = app_;
@@ -1028,6 +1034,8 @@ class AppSettingsPage : public SettingsPageDelegate {
   std::unique_ptr<brouk::DebugLoggingSwitch> _debugLogging;
   // History databases (013); from cefContextInitialized to shutdown.
   std::unique_ptr<brouk::HistoryService> _history;
+  // The history section of the export being made (022); null without one.
+  brouk::YamlNode _exportHistory;
   // Ad and tracker blocking (007), same lifetime; reconfigured only when
   // the lists or the profiles' categories change.
   std::unique_ptr<brouk::AdblockService> _adblock;
@@ -3391,6 +3399,38 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
 // settings only (see core/profile_export.h).
 // Export (005): the profile's built-in passwords go in encrypted with an
 // export password the user chooses (008), or are left out.
+// Export (005): the history first if chosen (022), then the passwords
+// (008), then the file.
+- (void)exportProfile:(const brouk::ProfileId&)profile
+              history:(std::optional<brouk::HistoryExportLimit>)history
+                 done:(brouk::ProfileManagerDelegate::ExportDone)done {
+  _exportHistory = brouk::YamlNode();
+  if (!history || !_history) {
+    [self exportProfile:profile done:std::move(done)];
+    return;
+  }
+  auto node = std::make_shared<brouk::YamlNode>();
+  const brouk::HistoryExportLimit limit = *history;
+  const auto now = static_cast<std::int64_t>(NSDate.date.timeIntervalSince1970);
+  auto answer = std::make_shared<brouk::ProfileManagerDelegate::ExportDone>(
+      std::move(done));
+  __weak BRAppDelegate* weakSelf = self;
+  brouk::ProfileId target = profile;
+  _history->Run(
+      profile,
+      [node, limit, now](brouk::HistoryStore& store) {
+        *node = brouk::ExportProfileHistory(store, limit, now);
+      },
+      [weakSelf, target, node, answer] {
+        BRAppDelegate* strongSelf = weakSelf;
+        if (!strongSelf) {
+          return;
+        }
+        strongSelf->_exportHistory = std::move(*node);
+        [strongSelf exportProfile:target done:std::move(*answer)];
+      });
+}
+
 - (void)exportProfile:(const brouk::ProfileId&)profile
                  done:(brouk::ProfileManagerDelegate::ExportDone)done {
   if (!_passwords || [self profileUsesBitwarden:profile]) {
@@ -3503,13 +3543,16 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
                                                .c_str())];
   NSSavePanel* panel = [NSSavePanel savePanel];
   panel.title = [NSString stringWithFormat:@"Export “%@”", name];
-  panel.message =
-      passwords.kind == brouk::YamlNode::Kind::kMap
-          ? @"The file contains the profile's name, colour, settings, "
-            @"bookmarks and its passwords (encrypted). It contains no "
-            @"sign-ins, cookies or cache."
-          : @"The file contains the profile's name, colour, settings and "
-            @"bookmarks. It contains no sign-ins, cookies or cache.";
+  const bool withHistory =
+      _exportHistory.kind == brouk::YamlNode::Kind::kSequence;
+  panel.message = [NSString
+      stringWithFormat:@"The file contains the profile's name, colour, "
+                       @"settings, bookmarks%@%@ It contains no sign-ins, "
+                       @"cookies or cache.",
+                       withHistory ? @", history" : @"",
+                       passwords.kind == brouk::YamlNode::Kind::kMap
+                           ? @" and its passwords (encrypted)."
+                           : @"."];
   panel.nameFieldStringValue = fileName;
   UTType* type = [UTType
       typeWithFilenameExtension:@(std::string(brouk::kProfileExportExtension)
@@ -3526,7 +3569,9 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
   // With its linked bookmarks (011).
   std::string text = brouk::ExportProfile(
       *settings, exportedAt,
-      brouk::ExportProfileBookmarks([_bookmarks model], profile), passwords);
+      brouk::ExportProfileBookmarks([_bookmarks model], profile), passwords,
+      _exportHistory);
+  _exportHistory = brouk::YamlNode();
   __block brouk::ProfileManagerDelegate::ExportDone answer = std::move(done);
   void (^completion)(NSModalResponse) = ^(NSModalResponse response) {
     if (response != NSModalResponseOK || !panel.URL) {
@@ -3575,7 +3620,7 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
     // limit too).
     NSNumber* size = nil;
     [panel.URL getResourceValue:&size forKey:NSURLFileSizeKey error:nil];
-    if (size.unsignedLongLongValue > 16 * 1024 * 1024) {
+    if (size.unsignedLongLongValue > brouk::kMaxProfileExportBytes) {
       answer(brouk::Error{"This file is not a Brouk profile export."});
       return;
     }
@@ -3609,17 +3654,46 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
       }];
     }
     [strongSelf profilesChangedInApp];
-    if (parsed.value().passwords && strongSelf->_passwords) {
-      [strongSelf importPasswords:*parsed.value().passwords
-                        toProfile:created.value()
-                          message:@"Type the export password chosen when the "
-                                  @"profile was exported."
-                         problems:problems
-                             done:std::move(answer)];
+    // Then the passwords, which may ask for the export password.
+    const brouk::ProfileId newProfile = created.value();
+    std::optional<brouk::YamlNode> passwords = parsed.value().passwords;
+    brouk::ProfileManagerDelegate::ImportDone importDone = answer;
+    auto finish = [weakSelf, newProfile, passwords,
+                   importDone](std::vector<std::string> found) {
+      BRAppDelegate* app = weakSelf;
+      if (app && passwords && app->_passwords) {
+        [app importPasswords:*passwords
+                   toProfile:newProfile
+                     message:@"Type the export password chosen when the "
+                             @"profile was exported."
+                    problems:std::move(found)
+                        done:importDone];
+        return;
+      }
+      importDone(brouk::ProfileManagerDelegate::ImportResult{newProfile,
+                                                             std::move(found)});
+    };
+    if (parsed.value().history && strongSelf->_history) {
+      // The history (022), on the history thread; the retention limit (013)
+      // applies.
+      auto state =
+          std::make_shared<std::vector<std::string>>(std::move(problems));
+      const brouk::YamlNode section = *parsed.value().history;
+      const std::optional<std::int64_t> keepSince = brouk::HistoryKeepSince(
+          strongSelf->_profiles->global_settings().GetString("history.keep"),
+          static_cast<std::int64_t>(NSDate.date.timeIntervalSince1970));
+      strongSelf->_history->Run(
+          newProfile,
+          [state, section, keepSince](brouk::HistoryStore& store) {
+            brouk::ProfileHistoryImport imported =
+                brouk::ImportProfileHistory(store, section, keepSince);
+            state->insert(state->end(), imported.problems.begin(),
+                          imported.problems.end());
+          },
+          [state, finish] { finish(std::move(*state)); });
       return;
     }
-    answer(
-        brouk::ProfileManagerDelegate::ImportResult{created.value(), problems});
+    finish(std::move(problems));
   };
   NSWindow* parent = _profileManager.window;
   if (parent.visible) {
