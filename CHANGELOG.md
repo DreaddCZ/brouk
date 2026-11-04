@@ -2,6 +2,20 @@
 
 What changed in each release of Brouk. Written by `scripts/release` (spec 019).
 
+## 0.4.0 (beta) – 2026-11-04
+
+### New
+
+- Drag tabs and profile groups between windows on macOS and Windows. Drop one on another window's tab strip, or outside any window to open it in a new one.
+- Drag group labels to reorder profile groups.
+- Tab and group menus now have "Move … to Another Window", and on macOS the Tab menu has "Move Tab to New Window". Moved tabs keep their page state without reloading.
+- Brouk now keeps a log of warnings on macOS and Windows, with size-limited log files.
+- A new debug logging setting records more detail for 24 hours, including Chromium's own log, to help track down problems.
+
+### Changed
+
+- VoiceOver can now read tabs and group labels and reach their menus.
+
 ## 0.3.3 (beta) – 2026-11-02
 
 ### New
