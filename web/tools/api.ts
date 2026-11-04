@@ -5,6 +5,7 @@
 import { BridgeError, isRecord, send, type Transport } from '../shared/bridge.js';
 import { parseDetails, parseSummary, type RequestDetails, type RequestSummary } from './requests_logic.js';
 import { parseRule, type Rule } from './rules_logic.js';
+import { environmentMessage, parseEnvironmentState, type EnvironmentState, type TabEnvironment } from './environment_logic.js';
 
 export interface SaveFile {
   readonly name: string;
@@ -103,6 +104,28 @@ export class ToolsApi {
     const answer = await send('tools.save', { ...main, ...(extra ? { extra } : {}) }, this.#transport);
     if (!isRecord(answer) || typeof answer['saved'] !== 'boolean') throw invalid();
     return answer['saved'];
+  }
+
+  /** The tab's environment overrides (027) and the user agent presets. */
+  async environment(): Promise<EnvironmentState> {
+    return parseEnvironmentState(await send('tools.environment', {}, this.#transport));
+  }
+
+  /** Replaces the tab's overrides; rejects with what the browser did not accept. */
+  async setEnvironment(environment: TabEnvironment): Promise<void> {
+    await send('tools.setEnvironment', environmentMessage(environment), this.#transport);
+  }
+
+  /** Reloads the dock's tab. */
+  async reloadTab(): Promise<void> {
+    await send('tools.reloadTab', {}, this.#transport);
+  }
+
+  /** Text the page sent with "Decode with…" (once), and to which utility. */
+  async takeUtilityInput(): Promise<{ utility: string; text: string } | null> {
+    const answer = await send('tools.takeUtilityInput', {}, this.#transport);
+    if (!isRecord(answer) || typeof answer['utility'] !== 'string' || typeof answer['text'] !== 'string') return null;
+    return answer['utility'] === '' ? null : { utility: answer['utility'], text: answer['text'] };
   }
 
   /** Runs a protocol command on the tab; resolves with its result object. */
