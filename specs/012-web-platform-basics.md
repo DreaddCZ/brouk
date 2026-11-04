@@ -92,3 +92,4 @@ None. Behaviour not described here follows Chrome; ask the user when unsure.
 - 2026-10-22 (user's decision): the remaining items are postponed until after profiles (005): folder upload and dropping files onto pages, pinch zoom, Picture-in-Picture, and permissions in settings (needs the settings page, 004). Still to be checked by the user: notifications, spell checking, file chooser, client certificates, common sites.
 - 2026-10-22: downloads are now specified in 014 (ready); the interim behaviour in item 18 stays until 014 is implemented.
 - 2026-11-02 (implementation): item 5's login dialog is Brouk's own since 008's sign-in dialog work (see 008's notes): Chromium's built-in dialog is turned off with `--disable-chrome-login-prompt`, so `TabClient::GetAuthCredentials` shows Brouk's dialog for sites and proxies.
+- 2026-11-04 (user's testing): various common web sites look and work as expected.

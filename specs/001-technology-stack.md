@@ -73,12 +73,12 @@ Chromium ships a new stable release every ~4 weeks plus security fixes in betwee
 
 - [x] The base technology is chosen and recorded in this spec and in `CLAUDE.md`.
 - [x] Implementation language(s), UI toolkit and build system are recorded in this spec and in `CLAUDE.md`.
-- [ ] A "hello world" build (CEF, Alloy style) runs on macOS and opens a web page.
-- [ ] Phase 1: one documented command builds the app locally on a Mac, for Apple Silicon and for Intel.
-- [ ] Phase 1: GitHub Actions builds the core and runs its tests on Linux for every push/pull request.
+- [x] A "hello world" build (CEF, Alloy style) runs on macOS and opens a web page.
+- [x] Phase 1: one documented command builds the app locally on a Mac, for Apple Silicon and for Intel.
+- [x] Phase 1: GitHub Actions builds the core and runs its tests on Linux for every push/pull request.
 - [ ] Phase 2: CI builds, signs and notarizes the macOS app.
 - [ ] Phase 2: a new CEF stable release is picked up by CI without manual steps other than merging the update PR.
-- [ ] Phase 2: an installed app updates itself to a newer published version without user involvement beyond (optionally) a restart.
+- [x] Phase 2: an installed app updates itself to a newer published version without user involvement beyond (optionally) a restart.
 
 ## Out of scope
 
@@ -125,3 +125,4 @@ None. (Update feed hosting was decided on 2026-10-26, see Notes.)
 - 2026-10-28 (user's decision): CI skips the linux, macos and windows builds for changes to specs and docs only, such as the spec of a future feature (`scripts/ci_changes.mjs`, tested). The skipped jobs count as passed for the required checks. Anything unclear builds: a failed check, a new branch, a manual run.
 - 2026-10-28 (user's decision): pushes build only on `main`. Branches are pushed right before their pull request is opened, so a build of the branch push repeated the pull request's build (which tests the branch merged with `main`). The build after each merge to `main` stays: two pull requests that each passed can still break `main` together. Every workflow can also be started by hand ("Run workflow").
 - 2026-10-28 (CEF update): moved to CEF 156.0.14 (Chromium 156.0.8078.48), 6 days after its release (`docs/cef-updates.md`). Its API changes need no code change: a new permission request type (ambient login) gets the generic prompt for other permissions, and the new keychain name settings are left empty, which keeps the keychain item used so far.
+- 2026-11-04 (review of the acceptance criteria): met — the CEF build, one build command per Mac architecture (`scripts/build`, `scripts/package_mac --all`), Linux CI, and automatic updates (019). Not met as written: "CI builds, signs and notarizes the macOS app" — releases are built, signed and notarized on the user's Intel Mac by `scripts/release` (decided in 019; Windows releases are built in CI); and "a new CEF stable release is picked up by CI without manual steps other than merging the update PR" — the weekly `security` workflow reports an overdue CEF update (`scripts/check_cef`), but the update itself is made with `scripts/update_cef` in a branch (`docs/cef-updates.md`). Both criteria wait for the user's decision: change them to the current process, or automate.

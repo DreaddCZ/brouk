@@ -1,6 +1,6 @@
 # 004 – Configuration system
 
-- **Status:** in-progress
+- **Status:** done
 - **Priority:** P1
 - **Depends on:** 001
 
@@ -21,13 +21,13 @@ Make the browser "fully configurable": every behaviour and UI option is adjustab
 
 ## Acceptance criteria
 
-- [ ] Every setting in the UI is also in the config file, and vice versa for non-advanced settings.
-- [ ] Config files are YAML.
-- [ ] Editing the config file while the browser runs applies the change without a restart, except for settings marked as requiring a restart.
-- [ ] Settings that require a restart are marked in the settings UI, and changing one tells the user a restart is needed.
-- [ ] An invalid config value produces a clear error message and falls back to the default.
-- [ ] Settings can be exported to a file and imported on another machine.
-- [ ] Each profile has its own settings; global settings apply to all profiles.
+- [x] Every setting in the UI is also in the config file, and vice versa for non-advanced settings.
+- [x] Config files are YAML.
+- [x] Editing the config file while the browser runs applies the change without a restart, except for settings marked as requiring a restart.
+- [x] Settings that require a restart are marked in the settings UI, and changing one tells the user a restart is needed.
+- [x] An invalid config value produces a clear error message and falls back to the default.
+- [x] Settings can be exported to a file and imported on another machine.
+- [x] Each profile has its own settings; global settings apply to all profiles.
 
 ## Out of scope
 
@@ -54,4 +54,4 @@ None. (Windows location: `%LOCALAPPDATA%\Brouk\`, as Chrome; decided 2026-10-29 
 - 2026-10-22 (implementation): the settings page is its own window (Brouk > Settings…, Cmd+,), the internal page `brouk://settings`. It is built from the settings list in `src/core/settings_schema.cc`: every setting not marked advanced appears automatically, grouped in sections, with "For all profiles" (global file) and "For one profile" (profile picker, the profile's file) kept apart. Settings needing a restart are labelled ("Needs a restart"; after a change "Restart Brouk to apply"); none need one yet. Invalid values typed on the page are refused with the reason under the setting; invalid values in the files are listed at the top of the page, and a yellow warning in every window's address bar leads there. "Show in Finder" opens the settings files (advanced settings), "Export Settings…/Import Settings…" move the global settings as a `.brouk-settings` file (profiles have their own export, 005).
 - 2026-10-22 (implementation): first settings on the page: theme (system/light/dark), search engine (Google, Bing, DuckDuckGo, Startpage, Ecosia or a custom URL with %s), download folder, ask where to save each download, spell checking, default profile, show the profile manager at startup, and each profile's name and colour. A default zoom level (012 configuration) is not offered yet: CEF has no API for Chromium's default zoom.
 - 2026-10-26 (settings page layout, user's choice): the page lists its topics on the left (the settings' sections, then "Settings files") and shows one topic on the right, as Chrome's settings do; the window opens 980 × 720. A topic shows its settings for all profiles first and then, under "For each profile", the same topic's per-profile settings with a tab per profile (e.g. Ad blocking: the shared lists, then each profile's kinds of lists). The profile's name and colour are in the Profiles topic. The command palette and links still open the page at a setting: its topic and profile tab are chosen. Narrow windows put the topics above the settings.
-
+- 2026-11-04 (review of the acceptance criteria): all met — settings page and files from one schema (`core/settings_schema.cc`), YAML, live reload on macOS and Windows, restart-required settings marked ("Restart Brouk to apply"), unusable values ignored and listed at the top of the settings page with the address bar's warning, Export/Import Settings…, global and per-profile files. Spec set to `done`.
