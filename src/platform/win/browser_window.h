@@ -38,6 +38,7 @@
 #include "platform/win/password_drop_down.h"
 #include "platform/win/password_prompt.h"
 #include "platform/win/sign_in_dialog.h"
+#include "platform/win/site_info_popup.h"
 #include "platform/win/suggestions_popup.h"
 #include "platform/win/tab.h"
 #include "platform/win/tab_drag_image.h"
@@ -207,7 +208,8 @@ class BrowserWindowOwner {
 class BrowserWindow final : public TabHost,
                             public BookmarksBar::Delegate,
                             public DownloadsPopup::Delegate,
-                            public AdblockPopup::Delegate {
+                            public AdblockPopup::Delegate,
+                            public SiteInfoPopup::Delegate {
  public:
   enum class Kind { kNormal, kPopup };
 
@@ -419,6 +421,8 @@ class BrowserWindow final : public TabHost,
   void PopupStartElementPicker() override;
   void PopupOpenAdblockSettings() override;
   void PopupOpenAdblockHelp() override;
+  // SiteInfoPopup::Delegate:
+  void SiteInfoReload() override;
   AutofillManager* TabAutofill() override;
   void ShowTabAutofillPrompt(Tab& tab,
                              const AutofillPrompt& prompt,
@@ -513,6 +517,10 @@ class BrowserWindow final : public TabHost,
   void DrawDevToolsToggle(const DRAWITEMSTRUCT& item);
   void DrawShieldButton(const DRAWITEMSTRUCT& item);
   void ShowAdblockPopup();
+  // The site icon at the left of the address bar (012): its glyph follows
+  // the page's security, clicking it shows the site information.
+  void UpdateSiteIcon();
+  void ShowSiteInfo();
   bool AdblockSiteEnabled(const Tab* tab) const;
   // Passwords (008): the key icon's place, for the list and the prompt;
   // closing the drop-down (it answers -1) and the prompt.
@@ -683,6 +691,8 @@ class BrowserWindow final : public TabHost,
   HWND menu_ = nullptr;
   HWND downloads_ = nullptr;
   HWND star_ = nullptr;  // In the address bar (011).
+  HWND site_ = nullptr;  // The address bar's site icon (012).
+  SiteInfoPopup site_info_popup_{*this};
   std::unique_ptr<BookmarkDialog> bookmark_dialog_;
   // Passwords (008): the key icon in the address bar, the drop-down of a
   // login field or the key icon (one per window, for the tab named), and
