@@ -39,6 +39,35 @@ std::optional<std::string> StringField(const CefRefPtr<CefDictionaryValue>& d,
   return value;
 }
 
+// The export's history choice (022): absent or null for none, else
+// {kind: "days" | "pages", count}. Nullopt when it is invalid.
+std::optional<std::optional<HistoryExportLimit>> HistoryField(
+    const CefRefPtr<CefDictionaryValue>& d) {
+  if (!d->HasKey("history") || d->GetType("history") == VTYPE_NULL) {
+    return std::optional<HistoryExportLimit>();
+  }
+  if (d->GetType("history") != VTYPE_DICTIONARY) {
+    return std::nullopt;
+  }
+  CefRefPtr<CefDictionaryValue> history = d->GetDictionary("history");
+  if (history->GetType("kind") != VTYPE_STRING ||
+      history->GetType("count") != VTYPE_INT) {
+    return std::nullopt;
+  }
+  const std::string kind = history->GetString("kind");
+  const int count = history->GetInt("count");
+  HistoryExportLimit limit;
+  if (kind == "days" && count >= 1 && count <= kHistoryExportMaxDays) {
+    limit.kind = HistoryExportLimit::Kind::kDays;
+  } else if (kind == "pages" && count >= 1 && count <= kHistoryExportMaxPages) {
+    limit.kind = HistoryExportLimit::Kind::kPages;
+  } else {
+    return std::nullopt;
+  }
+  limit.count = count;
+  return std::optional<HistoryExportLimit>(limit);
+}
+
 std::optional<ProfileId> IdField(const CefRefPtr<CefDictionaryValue>& d) {
   std::optional<std::string> id = StringField(d, "id");
   if (!id || !IsValidProfileId(*id)) {
@@ -220,12 +249,14 @@ bool ProfileManagerHandler::OnQuery(CefRefPtr<CefBrowser> /*browser*/,
     }
   } else if (*type == "profiles.export") {
     std::optional<ProfileId> id = IdField(message);
-    if (!id) {
+    std::optional<std::optional<HistoryExportLimit>> history =
+        HistoryField(message);
+    if (!id || !history) {
       callback->Failure(kBadRequest, "Invalid request.");
       return true;
     }
     delegate.ExportProfile(
-        *id, [callback](bool saved, std::optional<Error> error) {
+        *id, *history, [callback](bool saved, std::optional<Error> error) {
           if (error) {
             callback->Failure(kFailed, error->message);
             return;

@@ -1,6 +1,7 @@
 #ifndef BROUK_CORE_PROFILE_EXPORT_H_
 #define BROUK_CORE_PROFILE_EXPORT_H_
 
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -25,6 +26,8 @@ namespace brouk {
 //     - ...              bookmark_profile.h)
 //   passwords:           built-in passwords, encrypted with the export
 //     ...                password (008, see password_profile.h)
+//   history:             visits, if the user chose to include them (022,
+//     - ...              see history_profile.h)
 //
 // Never contains cookies, sign-ins, sessions or cache. Later versions add
 // sections (bookmarks after 011, encrypted passwords after 008, history
@@ -32,15 +35,20 @@ namespace brouk {
 // read a file correctly, and such files are refused.
 inline constexpr std::string_view kProfileExportExtension = "brouk-profile";
 inline constexpr int kProfileExportVersion = 1;
+// The largest export file Brouk reads (the history makes them big).
+inline constexpr std::uintmax_t kMaxProfileExportBytes =
+    std::uintmax_t{64} * 1024 * 1024;
 
 // `exported_at` is an ISO 8601 time, for the user's information.
-// `bookmarks` is the bookmarks section (ExportProfileBookmarks) and
-// `passwords` the passwords section (ExportProfilePasswords); each is left
-// out when it is empty.
+// `bookmarks` is the bookmarks section (ExportProfileBookmarks),
+// `passwords` the passwords section (ExportProfilePasswords) and `history`
+// the history section (ExportProfileHistory); each is left out when it is
+// null. An empty history (chosen, but no visits) is kept.
 std::string ExportProfile(const Settings& profile_settings,
                           std::string_view exported_at,
                           const YamlNode& bookmarks = YamlNode(),
-                          const YamlNode& passwords = YamlNode());
+                          const YamlNode& passwords = YamlNode(),
+                          const YamlNode& history = YamlNode());
 
 struct ImportedProfile {
   Settings settings;
@@ -48,6 +56,8 @@ struct ImportedProfile {
   std::optional<YamlNode> bookmarks;
   // The encrypted passwords section, if any (ImportProfilePasswords).
   std::optional<YamlNode> passwords;
+  // The history section, if any (ImportProfileHistory).
+  std::optional<YamlNode> history;
   // Things in the file that were not imported (invalid values, sections
   // this version cannot read), for the user.
   std::vector<std::string> problems;

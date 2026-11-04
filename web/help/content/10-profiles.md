@@ -30,13 +30,14 @@ The **Profiles** menu opens a new tab in any profile; hold <kbd>⌥</kbd> for a 
 
 ### Export and import {#profiles-export}
 
-**Export…** in the profile manager saves a profile to one `.brouk-profile` file, to move it to another Mac:
+**Export…** in the profile manager saves a profile to one `.brouk-profile` file, to move it to another computer:
 
 - included: name, colour, settings, the bookmarks linked to it, and its saved passwords;
 - passwords are encrypted with an **export password** you choose; the file can't be imported without it (or import it without the passwords);
-- not included: cookies, sign-ins and cache — sign in to sites again after importing.
+- **history**, if you tick **Include history**: the visits of the last *N* days, or every visit of the last *N* visited pages, so address bar suggestions and the history page work right away on the other computer;
+- not included: cookies, sign-ins and cache — sign in to sites again after importing — and the downloads list, site icons and the Clean up keep list.
 
-**Import…** adds the profile as a new one. If its name is taken, " 2" is added.
+**Import…** adds the profile as a new one. If its name is taken, " 2" is added. Imported history is the new profile's history; visits older than "Keep history for" (Settings → History) are removed.
 
 ### Starting a profile directly {#profiles-command-line}
 

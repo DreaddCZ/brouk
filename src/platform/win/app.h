@@ -197,7 +197,9 @@ class App final : public BrowserWindowOwner,
   std::optional<Error> SetShowAtStartup(bool show) override;
   std::optional<Error> OpenProfile(const ProfileId& id) override;
   void DeleteProfile(const ProfileId& id, DeleteDone done) override;
-  void ExportProfile(const ProfileId& id, ExportDone done) override;
+  void ExportProfile(const ProfileId& id,
+                     std::optional<HistoryExportLimit> history,
+                     ExportDone done) override;
   void ImportProfile(ImportDone done) override;
   // Also SettingsPageDelegate's: link routing comes with W3.
   const LinkRoutingConfig* LinkRouting() override;
@@ -283,6 +285,8 @@ class App final : public BrowserWindowOwner,
   void UpdateAdblockPolicies();
   // Profile export (005) with `passwords` (the encrypted section, or none):
   // asks where to save and writes the file.
+  // The export after its history (022) is read: passwords, then the file.
+  void ExportProfileWithPasswords(const ProfileId& id, ExportDone done);
   void WriteProfileExport(const ProfileId& id,
                           const YamlNode& passwords,
                           ExportDone done);
@@ -341,6 +345,8 @@ class App final : public BrowserWindowOwner,
   // History (013): one database per profile, on its own thread; each
   // profile's latest pages for the History menu, read after each visit.
   std::unique_ptr<HistoryService> history_;
+  // The history section of the export being made (022); null without one.
+  YamlNode export_history_;
   std::unique_ptr<FaviconCache> favicons_;
   std::map<ProfileId, std::vector<HistoryMatch>> recent_pages_;
   // Hidden helper browsers still open (clearing data), and developer tools'

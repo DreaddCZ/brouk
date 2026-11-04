@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "core/history_profile.h"
 #include "core/link_routing_rules.h"
 #include "core/profile_registry.h"
 #include "core/result.h"
@@ -48,8 +49,11 @@ class ProfileManagerDelegate {
   virtual std::optional<Error> OpenProfile(const ProfileId& id) = 0;
   // Asks the user first (natively), then deletes; `done` is called once.
   virtual void DeleteProfile(const ProfileId& id, DeleteDone done) = 0;
-  // Asks where to save (natively) and writes the export file.
-  virtual void ExportProfile(const ProfileId& id, ExportDone done) = 0;
+  // Asks where to save (natively) and writes the export file, with the
+  // profile's history if `history` says how much (022).
+  virtual void ExportProfile(const ProfileId& id,
+                             std::optional<HistoryExportLimit> history,
+                             ExportDone done) = 0;
   // Asks for a file (natively) and imports it as a new profile.
   virtual void ImportProfile(ImportDone done) = 0;
   // Link routing (010), for each profile's links: null before the browser

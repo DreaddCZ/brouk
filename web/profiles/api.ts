@@ -3,6 +3,7 @@
  * checked before the page uses it.
  */
 import { BridgeError, isRecord, send, type Transport } from '../shared/bridge.js';
+import type { HistoryChoice } from './logic.js';
 
 /** A pattern whose links open in the profile (010). */
 export interface ProfileLink {
@@ -175,11 +176,16 @@ export class ProfilesApi {
   }
 
   /**
-   * Asks where to save (natively) and exports the profile. Resolves with
-   * false if the user cancelled.
+   * Asks where to save (natively) and exports the profile, with its
+   * history if `history` says how much (022). Resolves with false if the
+   * user cancelled.
    */
-  async exportProfile(id: string): Promise<boolean> {
-    const answer = await send('profiles.export', { id }, this.#transport);
+  async exportProfile(id: string, history: HistoryChoice | null = null): Promise<boolean> {
+    const answer = await send(
+      'profiles.export',
+      { id, history: history === null ? null : { kind: history.kind, count: history.count } },
+      this.#transport,
+    );
     if (!isRecord(answer) || typeof answer['saved'] !== 'boolean') {
       throw invalid();
     }

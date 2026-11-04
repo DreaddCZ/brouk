@@ -41,3 +41,34 @@ export function tabsLabel(count: number): string {
   }
   return count === 1 ? '1 open tab' : `${count} open tabs`;
 }
+
+/** How much history goes into a profile export (022). */
+export interface HistoryChoice {
+  readonly kind: 'days' | 'pages';
+  readonly count: number;
+}
+
+/** The browser's limits for the export's history. */
+export const kHistoryMaxDays = 3650;
+export const kHistoryMaxPages = 20000;
+
+/**
+ * The export's history choice from the form: null when history is not
+ * included, else the limit, or a problem to show.
+ */
+export function historyChoice(
+  include: boolean,
+  kind: 'days' | 'pages',
+  countText: string,
+): { choice: HistoryChoice | null } | { problem: string } {
+  if (!include) {
+    return { choice: null };
+  }
+  const max = kind === 'days' ? kHistoryMaxDays : kHistoryMaxPages;
+  const trimmed = countText.trim();
+  const count = Number(trimmed);
+  if (!/^[0-9]+$/.test(trimmed) || !Number.isSafeInteger(count) || count < 1 || count > max) {
+    return { problem: `Enter a number of ${kind} from 1 to ${max}.` };
+  }
+  return { choice: { kind, count } };
+}

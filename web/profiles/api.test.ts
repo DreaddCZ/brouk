@@ -92,9 +92,14 @@ test('import and export answers', async () => {
   assert.deepEqual(parseImportResult({ id: null, problems: [] }), { id: null, problems: [] });
   assert.throws(() => parseImportResult({ id: 3, problems: [] }), BridgeError);
   assert.throws(() => parseImportResult({ id: null, problems: [1] }), BridgeError);
-  const api = new ProfilesApi(async (request) =>
-    request.includes('profiles.export') ? '{"saved":true}' : '{"id":null,"problems":[]}',
-  );
+  const sent: string[] = [];
+  const api = new ProfilesApi(async (request) => {
+    sent.push(request);
+    return request.includes('profiles.export') ? '{"saved":true}' : '{"id":null,"problems":[]}';
+  });
   assert.equal(await api.exportProfile('p-1'), true);
+  assert.equal(await api.exportProfile('p-1', { kind: 'pages', count: 500 }), true);
+  assert.ok(sent[0]?.includes('"history":null'));
+  assert.ok(sent[1]?.includes('"history":{"kind":"pages","count":500}'));
   assert.deepEqual(await api.importProfile(), { id: null, problems: [] });
 });

@@ -45,3 +45,10 @@ fieldset.links .hint { color: var(--muted); font-size: 12px; margin: 0; }
   border: 1px solid var(--line); background: var(--bg); color: var(--text); }
 .link-row input[aria-invalid=true] { border-color: var(--danger); }
 fieldset.links > button { justify-self: start; }
+form.export .hint, fieldset.history .hint { color: var(--muted); font-size: 12px; margin: 0; }
+form.export label.check { display: flex; align-items: center; gap: 6px; }
+fieldset.history { border: 0; padding: 0 0 0 22px; margin: 0; display: grid; gap: 6px; }
+fieldset.history legend { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+fieldset.history[disabled] { opacity: 0.55; }
+fieldset.history input.count { width: 6em; font: inherit; padding: 4px 6px; border-radius: 7px;
+  border: 1px solid var(--line); background: var(--bg); color: var(--text); }

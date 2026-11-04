@@ -178,6 +178,13 @@ class HistoryStore {
   // ones. Replaces the previous list; icons no longer needed are removed.
   void SetKeptIconPages(std::span<const std::string> urls);
 
+  // Profile export (022): every visit, newest first, until `visit`
+  // returns false; and adding many visits at once (one transaction), as
+  // RecordVisit each.
+  void ForEachVisitNewestFirst(
+      const std::function<bool(const HistoryVisit&)>& visit);
+  std::optional<Error> RecordVisits(std::span<const HistoryVisit> visits);
+
   // For tests and the history page later.
   std::optional<HistoryMatch> FindPage(std::string_view url);
 

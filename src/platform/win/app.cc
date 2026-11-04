@@ -36,6 +36,7 @@
 #include "core/bookmark_profile.h"
 #include "core/crypto.h"
 #include "core/help.h"
+#include "core/history_profile.h"
 #include "core/log.h"
 #include "core/password_generator.h"
 #include "core/password_profile.h"
@@ -81,7 +82,6 @@ constexpr std::string_view kUpdatePublicKey;
 #endif
 
 // Profile export files are small (005); bigger files are not ones.
-constexpr std::uintmax_t kMaxProfileExportBytes = 16 * 1024 * 1024;
 // Settings exports too (as on macOS).
 constexpr std::uintmax_t kMaxSettingsExportBytes = 1024 * 1024;
 // Bookmark files from other browsers can be large; more is not one.
@@ -2086,12 +2086,38 @@ void App::DeleteProfile(const ProfileId& id, DeleteDone done) {
               }));
 }
 
-void App::ExportProfile(const ProfileId& id, ExportDone done) {
-  const ProfileInfo* info = profiles_.Find(id);
-  if (!info) {
+void App::ExportProfile(const ProfileId& id,
+                        std::optional<HistoryExportLimit> history,
+                        ExportDone done) {
+  if (!profiles_.Find(id)) {
     done(false, Error{"There is no such profile."});
     return;
   }
+  export_history_ = YamlNode();
+  if (!history || !history_) {
+    ExportProfileWithPasswords(id, std::move(done));
+    return;
+  }
+  // The history (022), read on the history thread.
+  auto node = std::make_shared<YamlNode>();
+  const HistoryExportLimit limit = *history;
+  const std::int64_t now = NowSeconds();
+  history_->Run(
+      id,
+      [node, limit, now](HistoryStore& store) {
+        *node = ExportProfileHistory(store, limit, now);
+      },
+      [this, id, node, done] {
+        if (quitting_) {
+          done(false, std::nullopt);
+          return;
+        }
+        export_history_ = std::move(*node);
+        ExportProfileWithPasswords(id, done);
+      });
+}
+
+void App::ExportProfileWithPasswords(const ProfileId& id, ExportDone done) {
   if (!passwords_) {
     WriteProfileExport(id, YamlNode(), std::move(done));
     return;
@@ -2175,21 +2201,23 @@ void App::WriteProfileExport(const ProfileId& id,
                                    std::chrono::system_clock::now()));
   const YamlNode bookmarks =
       bookmarks_ ? ExportProfileBookmarks(bookmarks_->model(), id) : YamlNode();
-  std::string text =
-      brouk::ExportProfile(*settings, exported_at, bookmarks, passwords);
+  std::string text = brouk::ExportProfile(*settings, exported_at, bookmarks,
+                                          passwords, export_history_);
+  const bool with_history = export_history_.kind == YamlNode::Kind::kSequence;
+  export_history_ = YamlNode();
   FileDialogOptions options;
   options.title = L"Export \u201C" + Utf8ToWide(info->name) + L"\u201D";
   options.type_name = L"Brouk profile";
   options.extension = Utf8ToWide(kProfileExportExtension);
   options.file_name = SafeFileName(Utf8ToWide(info->name));
-  options.note =
-      passwords.kind == YamlNode::Kind::kMap
-          ? L"The file contains the profile's name, colour, settings, "
-            L"bookmarks and its passwords (encrypted). It contains no "
-            L"sign-ins, cookies or cache."
-          : L"The file contains the profile's name, colour, settings and the "
-            L"bookmarks linked to it. It contains no sign-ins, cookies or "
-            L"cache.";
+  options.note = std::wstring(
+                     L"The file contains the profile's name, colour, settings, "
+                     L"bookmarks") +
+                 (with_history ? L", history" : L"") +
+                 (passwords.kind == YamlNode::Kind::kMap
+                      ? L" and its passwords (encrypted)."
+                      : L".") +
+                 L" It contains no sign-ins, cookies or cache.";
   // Asked from a task: the dialog runs its own message loop, which must not
   // run inside the page's request.
   HWND owner = DialogOwner();
@@ -2318,15 +2346,42 @@ void App::ImportProfile(ImportDone done) {
                           imported.problems.end());
         }
         ProfilesChanged();
-        if (parsed.value().passwords && passwords_) {
-          ImportProfilePasswordsInto(
-              created.value(), *parsed.value().passwords,
-              L"Type the export password chosen when the profile was "
-              L"exported.",
-              std::move(problems), done);
+        // Then the passwords, which may ask for the export password.
+        const ProfileId profile = created.value();
+        std::optional<YamlNode> passwords = parsed.value().passwords;
+        auto finish = [this, profile, passwords,
+                       done](std::vector<std::string> problems) {
+          if (passwords && passwords_ && !quitting_) {
+            ImportProfilePasswordsInto(
+                profile, *passwords,
+                L"Type the export password chosen when the profile was "
+                L"exported.",
+                std::move(problems), done);
+            return;
+          }
+          done(ImportResult{profile, std::move(problems)});
+        };
+        if (parsed.value().history && history_) {
+          // The history (022), on the history thread; the retention limit
+          // (013) applies.
+          auto state =
+              std::make_shared<std::vector<std::string>>(std::move(problems));
+          const YamlNode section = *parsed.value().history;
+          const std::optional<std::int64_t> keep_since = HistoryKeepSince(
+              profiles_.global_settings().GetString("history.keep"),
+              NowSeconds());
+          history_->Run(
+              profile,
+              [state, section, keep_since](HistoryStore& store) {
+                ProfileHistoryImport imported =
+                    ImportProfileHistory(store, section, keep_since);
+                state->insert(state->end(), imported.problems.begin(),
+                              imported.problems.end());
+              },
+              [state, finish] { finish(std::move(*state)); });
           return;
         }
-        done(ImportResult{created.value(), problems});
+        finish(std::move(problems));
       }));
 }
 
