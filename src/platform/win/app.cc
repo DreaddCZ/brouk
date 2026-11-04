@@ -2776,6 +2776,10 @@ std::optional<Error> App::SetProfileSetting(std::string_view id,
   return error;
 }
 
+CefRefPtr<CefRequestContext> App::ProfileRequestContext(std::string_view id) {
+  return RequestContext(ProfileId(id));
+}
+
 void App::RevealSettingsFolder() {
   const std::filesystem::path file = AppDataDirectory() / L"settings.yaml";
   std::error_code error;

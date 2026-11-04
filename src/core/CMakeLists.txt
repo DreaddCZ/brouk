@@ -141,6 +141,8 @@ set(BROUK_CORE_SOURCES
   settings_schema.h
   shortcuts.cc
   shortcuts.h
+  site_permission_names.cc
+  site_permission_names.h
   sqlite_db.cc
   sqlite_db.h
   tab_strip_layout.cc

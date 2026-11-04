@@ -13,6 +13,7 @@ import { parseSettingTarget, sections, shortcutFromKey, topicOfSection, topics, 
 import { startAdblockPanel } from './adblock_panel.js';
 import { startAutofillPanel } from './autofill_panel.js';
 import { showProfileLinks, startLinksPanel } from './links_panel.js';
+import { showSitePermissions, startPermissionsPanel } from './permissions_panel.js';
 
 const api = new SettingsApi(cefTransport());
 let state: SettingsState | null = null;
@@ -21,6 +22,8 @@ let profileId: string | null = null;
 let topicTitle: string | null = null;
 /** The topic that only holds the settings files' buttons. */
 const kFilesTopic = 'Settings files';
+/** The topic with each profile's site permissions (012), not settings. */
+const kPermissionsTopic = 'Site permissions';
 /** Problems from the last change, by "<scope>:<key>". */
 const problems = new Map<string, string>();
 const restartNeeded = new Set<string>();
@@ -128,6 +131,7 @@ function control(scopeProfile: string | null, item: SettingItem, inputId: string
 function topicHelpAnchor(topic: string): string {
   if (topic === kFilesTopic) return 'settings-files';
   if (topic === 'Links') return 'link-routing';
+  if (topic === kPermissionsTopic) return 'permissions';
   if (topic === 'Shortcuts') return 'keyboard-shortcuts';
   return settingsSectionAnchor(topic);
 }
@@ -256,7 +260,7 @@ function render(): void {
   }
 
   const all: Topic[] = topics(state.global, state.profile.items);
-  const titles = [...all.map((t) => t.title), kFilesTopic];
+  const titles = [...all.map((t) => t.title), kPermissionsTopic, kFilesTopic];
   const current = topicTitle !== null && titles.includes(topicTitle) ? topicTitle : (titles[0] ?? kFilesTopic);
   const topic = all.find((t) => t.title === current);
   renderSidebar(titles, current);
@@ -268,12 +272,13 @@ function render(): void {
 
   const perProfile = topic?.profile ?? [];
   const profileBox = byId('topic-profile');
-  profileBox.hidden = perProfile.length === 0;
+  profileBox.hidden = perProfile.length === 0 && current !== kPermissionsTopic;
   // The heading only separates the two parts when both are there.
   byId('topic-profile-title').hidden = (topic?.global.length ?? 0) === 0;
   renderProfileTabs(state.profile.id);
   renderGroups(byId('profile-settings-groups'), state.profile.id, perProfile);
   showProfileLinks(current === 'Profiles' ? state.profile.id : null);
+  showSitePermissions(current === kPermissionsTopic ? state.profile.id : null);
 }
 
 async function refresh(): Promise<void> {
@@ -347,6 +352,7 @@ function start(): void {
   startAdblockPanel();
   startAutofillPanel();
   startLinksPanel();
+  startPermissionsPanel();
 }
 
 start();

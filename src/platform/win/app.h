@@ -213,6 +213,8 @@ class App final : public BrowserWindowOwner,
   std::optional<Error> SetProfileSetting(std::string_view id,
                                          std::string_view key,
                                          SettingValue value) override;
+  CefRefPtr<CefRequestContext> ProfileRequestContext(
+      std::string_view id) override;
   void RevealSettingsFolder() override;
   void RevealLog() override;
   void OpenClearBrowsingData() override;

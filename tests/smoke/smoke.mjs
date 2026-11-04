@@ -864,6 +864,26 @@ async function main() {
     desktopScreenshot('fullscreen-left');
   }
 
+  // Picture-in-Picture (012): the video opens in its floating window
+  // (Chromium's own; a screenshot of it on Windows) and closes again.
+  {
+    await cdp.send('Page.navigate', { url: `${pagesBase}/media.html` });
+    await waitForTitle(cdp, 'Media test');
+    const { result } = await cdp.send('Runtime.evaluate', {
+      expression:
+        "document.getElementById('video').requestPictureInPicture().then(() => 'opened', (e) => e.name + ': ' + e.message)",
+      userGesture: true,
+      awaitPromise: true,
+    });
+    check(result.value === 'opened', `a video opens in Picture-in-Picture (${result.value})`);
+    await sleep(1000);
+    desktopScreenshot('picture-in-picture');
+    await cdp.send('Runtime.evaluate', {
+      expression: 'document.pictureInPictureElement && document.exitPictureInPicture()',
+      awaitPromise: true,
+    });
+  }
+
   // Windows app (024): the page's blocked popup shows the "Pop-ups blocked"
   // indicator in the address bar; an HTTP sign-in shows Brouk's sign-in
   // dialog (008), which is then cancelled. Screenshots of both for a look.

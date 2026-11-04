@@ -36,7 +36,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 009 | [Form autofill](009-autofill.md) | in-progress — entries, custom fields, filling, saving without duplicates, validation, Settings → Autofill with duplicates and JSON export/import in review | P1 |
 | 010 | [Link routing and window picker](010-link-routing.md) | done | P1 |
 | 011 | [Bookmark manager](011-bookmarks.md) | done | P1 |
-| 012 | [Web platform basics](012-web-platform-basics.md) | in-progress | P1 |
+| 012 | [Web platform basics](012-web-platform-basics.md) | in-progress — postponed items built, in review | P1 |
 | 013 | [History](013-history.md) | done — history in profile export is 022 | P1 |
 | 014 | [Downloads](014-downloads.md) | done | P2 |
 | 015 | [Session restore](015-session-restore.md) | done | P1 |

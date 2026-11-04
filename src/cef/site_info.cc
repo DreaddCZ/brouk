@@ -63,13 +63,17 @@ SiteInfo GetSiteInfo(const CefRefPtr<CefBrowser>& browser) {
 std::vector<SitePermission> GetSitePermissions(
     const CefRefPtr<CefBrowser>& browser,
     const std::string& origin) {
+  return GetSitePermissions(browser->GetHost()->GetRequestContext(), origin);
+}
+
+std::vector<SitePermission> GetSitePermissions(
+    const CefRefPtr<CefRequestContext>& context,
+    const std::string& origin) {
   CEF_REQUIRE_UI_THREAD();
   std::vector<SitePermission> result;
-  if (origin.empty()) {
+  if (origin.empty() || !context) {
     return result;
   }
-  CefRefPtr<CefRequestContext> context =
-      browser->GetHost()->GetRequestContext();
   for (PermissionKind kind : SiteSettingKinds()) {
     std::optional<cef_content_setting_types_t> type = ContentSettingFor(kind);
     if (!type) {
@@ -95,9 +99,17 @@ void SetSitePermission(const CefRefPtr<CefBrowser>& browser,
                        const std::string& origin,
                        PermissionKind kind,
                        PermissionSetting setting) {
+  SetSitePermission(browser->GetHost()->GetRequestContext(), origin, kind,
+                    setting);
+}
+
+void SetSitePermission(const CefRefPtr<CefRequestContext>& context,
+                       const std::string& origin,
+                       PermissionKind kind,
+                       PermissionSetting setting) {
   CEF_REQUIRE_UI_THREAD();
   std::optional<cef_content_setting_types_t> type = ContentSettingFor(kind);
-  if (!type || origin.empty()) {
+  if (!type || origin.empty() || !context) {
     return;
   }
   cef_content_setting_values_t value = CEF_CONTENT_SETTING_VALUE_DEFAULT;
@@ -106,14 +118,18 @@ void SetSitePermission(const CefRefPtr<CefBrowser>& browser,
   } else if (setting == PermissionSetting::kBlock) {
     value = CEF_CONTENT_SETTING_VALUE_BLOCK;
   }
-  browser->GetHost()->GetRequestContext()->SetContentSetting(origin, origin,
-                                                             *type, value);
+  context->SetContentSetting(origin, origin, *type, value);
 }
 
 void ResetSitePermissions(const CefRefPtr<CefBrowser>& browser,
                           const std::string& origin) {
+  ResetSitePermissions(browser->GetHost()->GetRequestContext(), origin);
+}
+
+void ResetSitePermissions(const CefRefPtr<CefRequestContext>& context,
+                          const std::string& origin) {
   for (PermissionKind kind : SiteSettingKinds()) {
-    SetSitePermission(browser, origin, kind, PermissionSetting::kAsk);
+    SetSitePermission(context, origin, kind, PermissionSetting::kAsk);
   }
 }
 

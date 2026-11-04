@@ -103,6 +103,17 @@
       aria-labelledby="topic-profile-title"></div>
     <div id="profile-settings" role="tabpanel">
       <div id="profile-settings-groups"></div>
+      <section id="site-permissions" class="group site-permissions" aria-labelledby="site-permissions-title" hidden>
+        <h3 id="site-permissions-title">Sites with permissions</h3>
+        <p class="hint">What you allowed or blocked when a site asked, in this profile. "Ask" removes
+          a decision, so the site asks again. The site information button left of the address shows
+          the same for the open site.</p>
+        <p id="site-permissions-error" class="error" role="alert" hidden></p>
+        <input type="search" id="site-permissions-search" placeholder="Search sites" aria-label="Search sites"
+          spellcheck="false">
+        <div id="site-permissions-list"></div>
+        <p id="site-permissions-empty" class="hint" hidden></p>
+      </section>
       <section id="profile-links" class="group profile-links" aria-labelledby="profile-links-title" hidden>
         <h3 id="profile-links-title">Links that open in this profile<button type="button" class="help-button" data-help="link-routing-patterns">?</button></h3>
         <p class="hint">Links from other apps, new tabs opened from pages and addresses typed into a

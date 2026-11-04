@@ -8,6 +8,7 @@
 #include "core/permissions.h"
 #include "core/security_state.h"
 #include "include/cef_browser.h"
+#include "include/cef_request_context.h"
 
 namespace brouk {
 
@@ -36,13 +37,25 @@ std::vector<SitePermission> GetSitePermissions(
     const CefRefPtr<CefBrowser>& browser,
     const std::string& origin);
 
+// The same in a profile's request context (settings, 012).
+std::vector<SitePermission> GetSitePermissions(
+    const CefRefPtr<CefRequestContext>& context,
+    const std::string& origin);
+
 void SetSitePermission(const CefRefPtr<CefBrowser>& browser,
+                       const std::string& origin,
+                       PermissionKind kind,
+                       PermissionSetting setting);
+
+void SetSitePermission(const CefRefPtr<CefRequestContext>& context,
                        const std::string& origin,
                        PermissionKind kind,
                        PermissionSetting setting);
 
 // Back to "Ask" for every permission of the site.
 void ResetSitePermissions(const CefRefPtr<CefBrowser>& browser,
+                          const std::string& origin);
+void ResetSitePermissions(const CefRefPtr<CefRequestContext>& context,
                           const std::string& origin);
 
 }  // namespace brouk
