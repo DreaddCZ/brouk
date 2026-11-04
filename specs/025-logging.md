@@ -1,6 +1,6 @@
 # 025 – Logging
 
-- **Status:** in-progress
+- **Status:** done
 - **Priority:** P2
 - **Depends on:** 004 (configuration), 016 (help); 019 (release builds) for logs from colleagues' copies
 
@@ -20,13 +20,13 @@ When something goes wrong (a crash, a page that does not load, passwords that ar
 
 ## Acceptance criteria
 
-- [ ] Without debug logging, a warning or error from any part of Brouk is written to `logs/brouk.log` with time, level, thread and source.
-- [ ] Turning debug logging on in Settings takes effect without a restart and adds the detailed messages; turning it off stops them.
-- [ ] Debug logging turns itself off after the configured time, also across restarts.
-- [ ] The log rotates: at most 3 files of at most 5 MB each.
-- [ ] With debug logging on, Chromium's own log is written to `logs/`; with it off, it is not.
-- [ ] A test signs in with a known password, saves it, fills it, unlocks a test Bitwarden vault and loads a URL with a query string, with debug logging on; the log contains none of the secret values or query strings.
-- [ ] Settings has "Show log", and help documents the log (016).
+- [x] Without debug logging, a warning or error from any part of Brouk is written to `logs/brouk.log` with time, level, thread and source.
+- [x] Turning debug logging on in Settings takes effect without a restart and adds the detailed messages; turning it off stops them.
+- [x] Debug logging turns itself off after the configured time, also across restarts.
+- [x] The log rotates: at most 3 files of at most 5 MB each.
+- [x] With debug logging on, Chromium's own log is written to `logs/`; with it off, it is not.
+- [x] A test signs in with a known password, saves it, fills it, unlocks a test Bitwarden vault and loads a URL with a query string, with debug logging on; the log contains none of the secret values or query strings.
+- [x] Settings has "Show log", and help documents the log (016).
 
 ## Out of scope
 
