@@ -39,13 +39,27 @@ enum class MenuCommand {
   kPaste,
   kPasteAndMatchStyle,
   kSelectAll,
+  // Selection → Decode with (027): opens the dev tools' Utilities.
+  kDecodeBase64,
+  kDecodeUrl,
+  kDecodeUnixTime,
+  kDecodeHtml,
 };
+
+// The last command, for mapping menu ids.
+inline constexpr MenuCommand kLastMenuCommand = MenuCommand::kDecodeHtml;
+
+// The utility (027, its id on the tools page) a Decode command opens, or
+// nullptr for other commands.
+const char* UtilityForDecodeCommand(MenuCommand command);
 
 struct MenuItem {
   MenuCommand command = MenuCommand::kSeparator;
   std::string label;
   bool enabled = true;
   int index = 0;  // For kSpellingSuggestion.
+  // Items with the same non-empty `submenu` form one submenu of that name.
+  std::string submenu;
 };
 
 // What was right-clicked, from Chromium's context menu parameters.

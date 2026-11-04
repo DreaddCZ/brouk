@@ -84,6 +84,7 @@ add_executable(brouk_core_tests
   core/settings_test.cc
   core/shortcuts_test.cc
   core/site_permission_names_test.cc
+  core/tab_environment_test.cc
   core/tab_strip_layout_test.cc
   core/tab_strip_model_test.cc
   core/task_list_test.cc

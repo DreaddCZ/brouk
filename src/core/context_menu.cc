@@ -15,11 +15,21 @@ constexpr std::size_t kMaxSelectionChars = 50;
 class MenuBuilder {
  public:
   void Add(MenuCommand command, std::string label, bool enabled = true) {
-    items_.push_back({command, std::move(label), enabled, 0});
+    items_.push_back({command, std::move(label), enabled, 0, std::string()});
+  }
+  // Selection → Decode with (027).
+  void AddDecodeWith() {
+    for (const auto& [command, label] :
+         {std::pair{MenuCommand::kDecodeBase64, "Base64"},
+          std::pair{MenuCommand::kDecodeUrl, "URL Encoding"},
+          std::pair{MenuCommand::kDecodeUnixTime, "Unix Time"},
+          std::pair{MenuCommand::kDecodeHtml, "HTML Entities"}}) {
+      items_.push_back({command, label, true, 0, "Decode With"});
+    }
   }
   void AddSuggestion(int index, std::string label) {
-    items_.push_back(
-        {MenuCommand::kSpellingSuggestion, std::move(label), true, index});
+    items_.push_back({MenuCommand::kSpellingSuggestion, std::move(label), true,
+                      index, std::string()});
   }
   // Separators only between non-empty sections.
   void Separator() {
@@ -93,6 +103,21 @@ std::string SearchSelectionLabel(std::string_view engine_name,
   return "Search " + std::string(engine_name) + " for “" + collapsed + "”";
 }
 
+const char* UtilityForDecodeCommand(MenuCommand command) {
+  switch (command) {
+    case MenuCommand::kDecodeBase64:
+      return "base64";
+    case MenuCommand::kDecodeUrl:
+      return "url-encoding";
+    case MenuCommand::kDecodeUnixTime:
+      return "unix-time";
+    case MenuCommand::kDecodeHtml:
+      return "html";
+    default:
+      return nullptr;
+  }
+}
+
 std::vector<MenuItem> BuildContextMenu(const ContextMenuContext& context) {
   MenuBuilder menu;
   bool has_selection = !context.selection_text.empty();
@@ -114,6 +139,7 @@ std::vector<MenuItem> BuildContextMenu(const ContextMenuContext& context) {
       menu.Add(MenuCommand::kSearchForSelection,
                SearchSelectionLabel(context.search_engine_name,
                                     context.selection_text));
+      menu.AddDecodeWith();
       menu.Separator();
     }
     menu.Add(MenuCommand::kUndo, "Undo", context.can_undo);
@@ -147,6 +173,7 @@ std::vector<MenuItem> BuildContextMenu(const ContextMenuContext& context) {
       menu.Add(MenuCommand::kSearchForSelection,
                SearchSelectionLabel(context.search_engine_name,
                                     context.selection_text));
+      menu.AddDecodeWith();
       menu.Add(MenuCommand::kPrint, "Print…");
       menu.Separator();
     }
