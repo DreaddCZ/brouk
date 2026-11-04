@@ -10,7 +10,7 @@ Testers of web apps keep converting small values by hand or in random web sites:
 
 ## Description
 
-A new tab **Utilities** in the dev tools dock (006), next to Site data, Tokens, Requests and Rules. It is part of the tools page (`brouk://tools/#utilities`) and, like the other tools, works for the current tab. The converters need nothing from the tab, so they also work on internal pages and with no page loaded; only Tab environment (below) acts on the tab.
+A new tab **Utilities** in the dev tools dock (006), next to Site data, Tokens, Requests and Rules. It is part of the tools page (`brouk://tools/#utilities`) and, like the other tools, works for the current tab. The converters need nothing from the tab, so they also work with no page loaded; only Tab environment (below) acts on the tab. Brouk's own internal pages have no dock (their DevTools opens in a window of its own, 006), so Utilities are not offered there.
 
 The utilities live only in the dock; there is no separate window. **Utilities** in the menu (macOS: View › Developer; Windows: the app menu's More tools) and the command palette (003), which has an entry per utility ("Base64", "Unix time", "URL encoding"…), turn on the current tab's dev tools if they are off (as the dev tools shortcuts do, 006) and show the Utilities tab at that utility.
 
@@ -57,7 +57,7 @@ Rules:
 
 ## Acceptance criteria
 
-- [ ] The dev tools dock has a **Utilities** tab; it works with any tab, also an internal page or an empty tab.
+- [ ] The dev tools dock has a **Utilities** tab; it works with any web page and with an empty tab (internal pages have no dock, 006).
 - [ ] The menu item Utilities and the command palette entries turn on the current tab's dev tools if needed and show the Utilities tab (at the chosen utility).
 - [ ] Each utility in the list converts as the input changes, in both directions where it has two, with Copy and Swap.
 - [ ] Base64: `Žluťoučký kůň` encodes to `xb1sdcWlb3XEjWvDvSBrxa/FiA==` and back; URL-safe input decodes; invalid input shows the position of the problem; binary output is shown as hex; a dropped file gives its Base64 and data URL.
@@ -115,5 +115,5 @@ None.
 - An invalid time zone is rejected by the page (`Intl`), as the protocol accepts unknown names silently.
 - Regular expressions run in a worker that is stopped after 2 seconds, so a runaway pattern (catastrophic backtracking) cannot freeze the dock.
 - Cron: `L`, `W`, `#` and `H` (Quartz/Jenkins extensions) are reported as not supported rather than as invalid.
-- Open (asked in the pull request): Brouk's own internal pages open Chromium's DevTools in a window of their own (006), without our dock, so Utilities do not open there yet; the menu, palette and "Decode with" do nothing on an internal page. The converters work on any web page and on an empty tab.
+- 2026-11-04 (user's decision, criterion reworded with approval): Brouk's own internal pages open Chromium's DevTools in a window of their own (006), without our dock, so Utilities are not offered there; the menu, palette and "Decode with" do nothing on an internal page. The converters work on any web page and on an empty tab.
 - HTML entities decode numeric entities and the named ones of HTML 4 plus `&apos;` (a table in `web/tools/util_html.ts`). HTML5's ~2,000 rarer names would need parsing HTML in the privileged tools page (blocked by the project's opengrep rule) or a large table; unknown names stay as they are.
