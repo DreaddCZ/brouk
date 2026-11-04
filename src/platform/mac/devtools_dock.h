@@ -67,6 +67,9 @@ NS_ASSUME_NONNULL_BEGIN
 // Shows a DevTools panel ("console") or starts picking an element.
 - (void)showPanel:(NSString*)panel;
 - (void)enterInspectElementMode;
+// The Utilities tab at `utility` ("" for the last one) with `text` as its
+// input (027: menu, command palette, "Decode With").
+- (void)showUtility:(NSString*)utility text:(nullable NSString*)text;
 // The profile's request rules, applied to the tab while the dock is open.
 - (void)setRequestRules:(const brouk::RequestRuleSet&)rules;
 // Closes DevTools; the delegate hears devToolsDockDidClose: when done.

@@ -25,6 +25,7 @@
 #include "core/adblock_lists.h"
 #include "core/adblock_policy.h"
 #include "core/address_input.h"
+#include "core/devtools_tools.h"
 #include "core/internal_pages.h"
 #include "core/profile_colors.h"
 #include "core/profile_id.h"
@@ -120,6 +121,7 @@ enum MenuCommand : UINT {
   kPasswordsCommand,
   kAutofillSettingsCommand,
   kDevToolsCommand,
+  kUtilitiesCommand,
   kFirstBlockedPopupCommand = 1000,
   kFirstProfileCommand = 2000,
   kFirstClosedCommand = 3000,
@@ -1059,6 +1061,23 @@ std::vector<PaletteEntry> BrowserWindow::PaletteActions() {
   add("Settings", [this] { owner_.OpenSettings(std::string()); });
   add("Manage profiles", [this] { owner_.OpenProfileManager(); });
   add("Open-source licences", [this] { OpenInternalPage("brouk://credits/"); });
+  // The dev tools' Utilities (027), each on its own.
+  add("Utilities", [this] {
+    if (Tab* tab = ActiveTab()) {
+      tab->ShowDevToolsUtility(std::string(), std::nullopt);
+    }
+  });
+  for (const DevToolsUtility& utility : DevToolsUtilities()) {
+    entries.push_back({.kind = PaletteItem::Kind::kAction,
+                       .title = std::string(utility.title),
+                       .detail = "Utilities",
+                       .shortcut = {},
+                       .run = [this, id = std::string(utility.id)] {
+                         if (Tab* tab = ActiveTab()) {
+                           tab->ShowDevToolsUtility(id, std::nullopt);
+                         }
+                       }});
+  }
   add("Exit", [this] { owner_.CloseAllWindows(); });
   return entries;
 }
@@ -2854,6 +2873,7 @@ void BrowserWindow::ShowAppMenu() {
   AppendMenuW(menu, MF_STRING, kTaskManagerCommand, L"Task manager\tShift+Esc");
   AppendMenuW(menu, MF_STRING, kDevToolsCommand,
               L"Developer tools\tCtrl+Shift+I");
+  AppendMenuW(menu, MF_STRING, kUtilitiesCommand, L"Utilities");
   AppendMenuW(menu, MF_STRING, kCommandPaletteCommand,
               L"Command palette\u2026\tCtrl+K");
   // Bookmarks (011), as Chrome's submenu: the actions, then the bar's
@@ -3020,6 +3040,12 @@ void BrowserWindow::ShowAppMenu() {
     case kDevToolsCommand:
       if (Tab* tab = ActiveTab()) {
         tab->SetDevToolsOn(!tab->devtools_on());
+      }
+      break;
+    case kUtilitiesCommand:
+      // The dev tools' Utilities (027), at the one shown last.
+      if (Tab* tab = ActiveTab()) {
+        tab->ShowDevToolsUtility(std::string(), std::nullopt);
       }
       break;
     case kAutofillSettingsCommand:

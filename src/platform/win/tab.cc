@@ -1218,6 +1218,21 @@ void Tab::InspectElementAt(POINT point) {
   host_->OnTabDevToolsChanged(*this);
 }
 
+void Tab::ShowUtility(const std::string& utility, const std::string& text) {
+  ShowDevToolsUtility(utility, text);
+}
+
+void Tab::ShowDevToolsUtility(const std::string& utility,
+                              std::optional<std::string> text) {
+  if (internal()) {
+    return;
+  }
+  SetDevToolsOn(true);
+  if (dock_) {
+    dock_->ShowUtility(utility, std::move(text));
+  }
+}
+
 void Tab::ShowDevToolsConsole() {
   SetDevToolsOn(true);
   if (dock_) {

@@ -323,6 +323,8 @@ class Tab final : public TabClientDelegate,
   void CopyImageToClipboard(const std::vector<std::uint8_t>& png) override;
   SearchEngine CurrentSearchEngine() override;
   void InspectElement(int x, int y) override;
+  void ShowUtility(const std::string& utility,
+                   const std::string& text) override;
   bool AskWhereToSaveDownloads() override;
   DownloadTarget ReserveDownloadPath(const std::string& suggested) override;
   void ReleaseDownloadPath(const std::string& path) override;
@@ -340,6 +342,10 @@ class Tab final : public TabClientDelegate,
   void SetDevToolsOn(bool on);
   void InspectElementAt(POINT point);
   void ShowDevToolsConsole();
+  // The dev tools' Utilities at `utility` (027: menu and command palette),
+  // turning the dev tools on. Brouk's own pages have no Utilities.
+  void ShowDevToolsUtility(const std::string& utility,
+                           std::optional<std::string> text);
   void StartDevToolsElementPicker();
   void SetDockPlace(const std::string& position, int size);
   void RequestRulesChanged(const RequestRuleSet& rules);

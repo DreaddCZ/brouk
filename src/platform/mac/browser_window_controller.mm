@@ -37,6 +37,7 @@
 #include "cef/search_suggest_request.h"
 #include "core/address_input.h"
 #include "core/address_suggestions.h"
+#include "core/devtools_tools.h"
 #include "core/internal_pages.h"
 #include "core/settings_schema.h"
 #include "core/shortcuts.h"
@@ -1736,6 +1737,12 @@ NSButton* ToolbarButton(NSString* symbol,
   [self updateToolbar];
 }
 
+// View > Developer > Utilities (027).
+- (IBAction)showDevToolsUtilities:(id)sender {
+  [[self activeTab] showDevToolsUtility:@"" text:nil];
+  [self updateToolbar];
+}
+
 - (brouk::TabClientDelegate::SearchEngine)searchEngine {
   id<BRBrowserWindowOwner> owner = _owner;
   return owner ? [owner searchEngine]
@@ -2875,6 +2882,7 @@ NSButton* ToolbarButton(NSString* symbol,
     [entries addObjectsFromArray:[controller paletteTabEntries]];
   }
   [entries addObjectsFromArray:[self paletteActionEntries]];
+  [entries addObjectsFromArray:[self paletteUtilityEntries]];
   [entries addObjectsFromArray:[self paletteBookmarkEntries]];
   [entries addObjectsFromArray:[self paletteSettingEntries]];
   [entries addObjectsFromArray:[self paletteHelpEntries]];
@@ -2948,6 +2956,29 @@ NSButton* ToolbarButton(NSString* symbol,
     }
     entry.run = ^{
       [NSApp sendAction:selector to:nil from:item];
+    };
+    [entries addObject:entry];
+  }
+  return entries;
+}
+
+// The dev tools' Utilities (027), each on its own.
+- (NSArray<BRPaletteEntry*>*)paletteUtilityEntries {
+  NSMutableArray<BRPaletteEntry*>* entries = [NSMutableArray array];
+  NSImage* icon = [NSImage imageWithSystemSymbolName:@"wrench.and.screwdriver"
+                            accessibilityDescription:nil];
+  __weak BRBrowserWindowController* weakSelf = self;
+  for (const brouk::DevToolsUtility& utility : brouk::DevToolsUtilities()) {
+    BRPaletteEntry* entry = [[BRPaletteEntry alloc] init];
+    entry.kind = brouk::PaletteItem::Kind::kAction;
+    entry.title = @(std::string(utility.title).c_str());
+    entry.detail = @"Utilities";
+    entry.image = icon;
+    NSString* utilityId = @(std::string(utility.id).c_str());
+    entry.run = ^{
+      BRBrowserWindowController* strongSelf = weakSelf;
+      [[strongSelf activeTab] showDevToolsUtility:utilityId text:nil];
+      [strongSelf updateToolbar];
     };
     [entries addObject:entry];
   }

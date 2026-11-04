@@ -14,6 +14,7 @@
 #include "cef/devtools_tools_handler.h"
 #include "cef/internal_page_client.h"
 #include "core/devtools_frontend.h"
+#include "core/tab_environment.h"
 #include "include/wrapper/cef_helpers.h"
 #import "platform/mac/devtools_window.h"
 #import "platform/mac/menu_shortcuts.h"
@@ -34,6 +35,7 @@
             done:(brouk::ToolsHost::Done)done;
 - (brouk::ToolsHost::Rules)requestRulesFromDelegate;
 - (std::optional<brouk::Error>)storeRequestRules:(brouk::RequestRuleSet)rules;
+- (std::optional<brouk::ToolsHost::UtilityInput>)takeUtilityInput;
 @end
 
 namespace brouk {
@@ -115,6 +117,10 @@ class DockToolsHost : public ToolsHost {
     }
     return [dock storeRequestRules:std::move(rules)];
   }
+  std::optional<UtilityInput> TakeUtilityInput() override {
+    BRDevToolsDock* dock = dock_;
+    return dock ? [dock takeUtilityInput] : std::nullopt;
+  }
   std::string SecretHeaderNames() override {
     BRDevToolsDock* dock = dock_;
     return dock ? std::string(dock.secretHeaderNames.UTF8String)
@@ -137,7 +143,7 @@ struct DockTool {
 const DockTool kDockTools[] = {
     {@"devtools", @"DevTools"}, {@"site-data", @"Site data"},
     {@"requests", @"Requests"}, {@"tokens", @"Tokens"},
-    {@"rules", @"Rules"},
+    {@"rules", @"Rules"},       {@"utilities", @"Utilities"},
 };
 
 constexpr CGFloat kHeaderHeight = 28;
@@ -209,6 +215,10 @@ NSButton* HeaderButton(NSString* symbol,
   NSView* _toolsContent;
   NSSegmentedControl* _tabs;
   NSString* _pendingTool;
+  // The tab environment's bar (027): what is changed, Reload and Reset.
+  NSView* _environmentBar;
+  NSTextField* _environmentLabel;
+  std::optional<brouk::ToolsHost::UtilityInput> _utilityInput;
   BOOL _closing;
   BOOL _frontendCreating;
   BOOL _ownTools;
@@ -238,6 +248,9 @@ NSButton* HeaderButton(NSString* symbol,
       // Dev tools on: record the tab's requests (006).
       _channel->StartRecording();
       _channel->WatchServiceWorkers();
+      __weak BRDevToolsDock* weakSelf = self;
+      _channel->OnEnvironmentChanged(
+          [weakSelf] { [weakSelf updateEnvironmentBar]; });
     }
     _toolsHost = std::make_unique<brouk::DockToolsHost>(self);
     _frontendCreating = YES;
@@ -320,6 +333,41 @@ NSButton* HeaderButton(NSString* symbol,
     buttons[item[0]] = button;
   }
   _positionButtons = buttons;
+
+  // Between the tabs and the position buttons: the tab environment's bar.
+  CGFloat barLeft = NSMaxX(_tabs.frame) + 12;
+  _environmentBar = [[NSView alloc]
+      initWithFrame:NSMakeRect(barLeft, 0, x - 8 - barLeft, kHeaderHeight)];
+  _environmentBar.autoresizingMask = NSViewWidthSizable;
+  _environmentBar.hidden = YES;
+  NSButton* reset = [NSButton buttonWithTitle:@"Reset"
+                                       target:self
+                                       action:@selector(resetEnvironment:)];
+  NSButton* reload = [NSButton buttonWithTitle:@"Reload"
+                                        target:self
+                                        action:@selector(reloadTab:)];
+  CGFloat right = _environmentBar.frame.size.width;
+  for (NSButton* button in @[ reset, reload ]) {
+    button.controlSize = NSControlSizeSmall;
+    button.font = [NSFont systemFontOfSize:11];
+    button.bezelStyle = NSBezelStyleRecessed;
+    [button sizeToFit];
+    right -= button.frame.size.width;
+    button.frame = NSMakeRect(right, 4, button.frame.size.width, 20);
+    button.autoresizingMask = NSViewMinXMargin;
+    right -= 4;
+    [_environmentBar addSubview:button];
+  }
+  reset.toolTip = @"Show this tab the computer's real settings again";
+  reload.toolTip = @"Reload the tab";
+  _environmentLabel = [NSTextField labelWithString:@""];
+  _environmentLabel.font = [NSFont systemFontOfSize:11];
+  _environmentLabel.textColor = NSColor.systemOrangeColor;
+  _environmentLabel.lineBreakMode = NSLineBreakByTruncatingTail;
+  _environmentLabel.frame = NSMakeRect(0, 6, right - 4, 16);
+  _environmentLabel.autoresizingMask = NSViewWidthSizable;
+  [_environmentBar addSubview:_environmentLabel];
+  [header addSubview:_environmentBar];
   [_view addSubview:header];
 
   _content =
@@ -441,6 +489,48 @@ NSButton* HeaderButton(NSString* symbol,
 
 #pragma mark - Our own tools
 
+- (void)updateEnvironmentBar {
+  std::string summary =
+      _channel ? brouk::TabEnvironmentSummary(_channel->environment()) : "";
+  _environmentBar.hidden = summary.empty();
+  NSString* text =
+      [@"This tab uses: " stringByAppendingString:@(summary.c_str()) ?: @""];
+  _environmentLabel.stringValue = text;
+  _environmentLabel.toolTip = text;
+}
+
+- (void)resetEnvironment:(id)sender {
+  if (_channel) {
+    _channel->SetEnvironment({}, [](const std::string&) {});
+  }
+}
+
+- (void)reloadTab:(id)sender {
+  if (_channel) {
+    _channel->ReloadTab();
+  }
+}
+
+- (void)showUtility:(NSString*)utility text:(nullable NSString*)text {
+  if (text) {
+    _utilityInput = brouk::ToolsHost::UtilityInput{
+        std::string(utility.UTF8String), std::string(text.UTF8String ?: "")};
+  }
+  [self showTool:utility.length == 0
+                     ? @"utilities"
+                     : [@"utilities/" stringByAppendingString:utility]];
+  if (_tools && _utilityInput) {
+    // The same fragment does not navigate: tell the page to look again.
+    _tools->GetMainFrame()->ExecuteJavaScript(
+        "window.dispatchEvent(new HashChangeEvent('hashchange'))",
+        "brouk://tools/", 0);
+  }
+}
+
+- (std::optional<brouk::ToolsHost::UtilityInput>)takeUtilityInput {
+  return std::exchange(_utilityInput, std::nullopt);
+}
+
 - (void)toolClicked:(NSSegmentedControl*)sender {
   NSInteger index = sender.selectedSegment;
   if (index < 0 || index >= static_cast<NSInteger>(std::size(kDockTools))) {
@@ -450,6 +540,13 @@ NSButton* HeaderButton(NSString* symbol,
 }
 
 - (void)showTool:(NSString*)tool {
+  // "utilities/base64": the Utilities tab, at Base64.
+  NSString* base = [tool componentsSeparatedByString:@"/"].firstObject;
+  for (NSUInteger i = 0; i < std::size(kDockTools); ++i) {
+    if ([kDockTools[i].id isEqualToString:base]) {
+      _tabs.selectedSegment = static_cast<NSInteger>(i);
+    }
+  }
   BOOL devtools = [tool isEqualToString:@"devtools"];
   _content.hidden = !devtools;
   _toolsContent.hidden = devtools;
