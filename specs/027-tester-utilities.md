@@ -6,11 +6,11 @@
 
 ## Goal
 
-Testers of web apps keep converting small values by hand or in random web sites: decoding a Base64 string from a header, reading a Unix timestamp from an API response, URL-encoding a parameter, unescaping HTML. Pasting tokens, IDs and customer data into third-party sites leaks them. Brouk should have these converters at hand, in the dev tools, working offline, so values never leave the computer.
+Testers of web apps keep converting small values by hand or in random web sites: decoding a Base64 string from a header, reading a Unix timestamp from an API response, URL-encoding a parameter, unescaping HTML. Pasting tokens, IDs and customer data into third-party sites leaks them. Brouk should have these converters at hand, in the dev tools, working offline, so values never leave the computer. Testers also need to see how a site behaves for a user elsewhere — another time zone, language or location — without changing the whole computer's settings.
 
 ## Description
 
-A new tab **Utilities** in the dev tools dock (006), next to Site data, Tokens, Requests and Rules. It is part of the tools page (`brouk://tools/#utilities`) and, like the other tools, works for the current tab; unlike them it needs nothing from the tab (no protocol access), so it also works on internal pages and with no page loaded.
+A new tab **Utilities** in the dev tools dock (006), next to Site data, Tokens, Requests and Rules. It is part of the tools page (`brouk://tools/#utilities`) and, like the other tools, works for the current tab. The converters need nothing from the tab, so they also work on internal pages and with no page loaded; only Tab environment (below) acts on the tab.
 
 The utilities live only in the dock; there is no separate window. **Utilities** in the menu (macOS: View › Developer; Windows: the app menu's More tools) and the command palette (003), which has an entry per utility ("Base64", "Unix time", "URL encoding"…), turn on the current tab's dev tools if they are off (as the dev tools shortcuts do, 006) and show the Utilities tab at that utility.
 
@@ -31,11 +31,28 @@ The tab lists the utilities on the left; the chosen one is shown on the right. E
 11. **Cron expressions** — a cron expression explained in words ("At 08:30, Monday to Friday") with its next 5 run times in local time; standard 5-field cron and 6 fields with seconds first (as in Spring and Quartz), plus `@daily` and similar shortcuts. Invalid fields are pointed out.
 12. **Colours** — a colour as hex (`#rgb`, `#rrggbb`, with alpha), `rgb()`/`rgba()`, `hsl()`/`hsla()` or a CSS colour name is shown in all of these forms, with a preview swatch and a colour picker.
 
+### Tab environment
+
+Unlike the converters, **Tab environment** changes how the browser presents itself to the **current tab**, to test how a site behaves elsewhere. It is the last entry of the list; each override can be switched on and off on its own:
+
+- **Time zone** — any IANA time zone (searchable, e.g. `Asia/Tokyo`); dates, `Date` and `Intl` in the page use it.
+- **Language** — one or more languages in order (e.g. `de-DE, de, en`): sent as the `Accept-Language` header, returned by `navigator.language` / `navigator.languages`, and used as the default locale of `Intl` and date formatting — so both server-side and in-page language detection see it.
+- **Location** — latitude, longitude and accuracy, or a preset city (as Chrome's DevTools Sensors offer: Berlin, London, Moscow, Mumbai, San Francisco, Shanghai, São Paulo, Tokyo, plus Prague), or **Location unavailable**. The site still needs its location permission (012); the override only replaces the position it gets.
+- **User agent** — a preset (Chrome on Windows / macOS / Android / iPhone, Safari, Firefox, Edge) or custom text; client hints are adjusted to match.
+- **Colour scheme and motion** — `prefers-color-scheme` light or dark, and `prefers-reduced-motion`, independent of the system setting.
+
+Rules:
+
+- Overrides apply only to the current tab, only while its dev tools are on. They stay across reloads and navigations in that tab; tabs and popups opened from it are not affected.
+- Turning the tab's dev tools off (or closing the tab) ends all overrides; the page then sees the real values again (after a reload where the page has already read them).
+- While any override is on, the dock shows a bar above its tabs — "This tab uses: time zone Asia/Tokyo, language de-DE" — with **Reset** and **Reload**, so changed behaviour is never invisible, like request rules (006). A change that the page has already read offers **Reload to apply**.
+- The overrides chosen are remembered as the Tab environment's options (so the same test can be repeated), but they are applied to a tab only when switched on there.
+
 ### Shared behaviour
 
 - **From the page:** selected text can be sent to a utility from the page's right-click menu (**Decode with › Base64 / URL / Unix time / HTML entities**, shown whenever text is selected); the tab's dev tools turn on if they are off, and the utility opens in the dock with the text as input.
 - Utilities remember their last choice of options (e.g. URL-safe, time zone), **not** their input or output: values may be tokens or personal data and are gone when the dock closes.
-- Everything runs inside the tools page; nothing is sent over the network or written to disk.
+- The converters run inside the tools page; nothing is sent over the network or written to disk.
 - Keyboard: every control can be reached with the keyboard; the utility list can be filtered by typing.
 
 ## Acceptance criteria
@@ -57,6 +74,11 @@ The tab lists the utilities on the left; the chosen one is shown on the right. E
 - [ ] Colours: `#3366cc`, `rgb(51, 102, 204)` and `hsl(220, 60%, 50%)` are recognised as the same colour and shown in every form with a swatch; `#3366cc80` is shown with 50 % alpha in every form; `rebeccapurple` is recognised.
 - [ ] Selected text on a page can be sent to Base64, URL, Unix time and HTML entities from the right-click menu, also with dev tools off (they turn on).
 - [ ] Closing and reopening the dock keeps the utilities' options but not their inputs; no request leaves the browser while using them (checked with a network log).
+- [ ] Tab environment, time zone `Asia/Tokyo`: `new Date().getTimezoneOffset()` is `-540` and `Intl.DateTimeFormat().resolvedOptions().timeZone` is `Asia/Tokyo` in the tab; another tab of the same window still shows the real time zone.
+- [ ] Tab environment, language `de-DE, de`: the server receives `Accept-Language: de-DE,de;q=0.9`, `navigator.languages` is `["de-DE", "de"]`, and a site that picks its language from the browser shows German after a reload.
+- [ ] Tab environment, location Tokyo: after the site is allowed the location, `getCurrentPosition` returns Tokyo's coordinates; "Location unavailable" makes it fail with `POSITION_UNAVAILABLE`.
+- [ ] Tab environment, user agent and colour scheme: `navigator.userAgent` and the `User-Agent` header show the chosen preset; `matchMedia('(prefers-color-scheme: dark)').matches` follows the choice.
+- [ ] Overrides survive a reload and a navigation in the tab; turning the tab's dev tools off ends them all (after a reload the page sees the real values); while any is on, the dock shows the bar listing them, with Reset.
 - [ ] Works the same on macOS and Windows.
 
 ## Out of scope
@@ -67,6 +89,7 @@ The tab lists the utilities on the left; the chosen one is shown on the right. E
 - MD5 (decided 2026-11-04: not included; the browser's built-in crypto has no MD5).
 - Random test data and Lorem ipsum: a separate feature with many possibilities (028).
 - Saving or sharing inputs and results.
+- Screen size, touch and device emulation, and network throttling: Chromium DevTools' device mode and Network panel already do them.
 
 ## Configuration
 
@@ -81,5 +104,7 @@ None.
 - 2026-11-04: requested by the user (Base64, Unix time, URL/HTML encoding and similar tools for web app testers, as a new tab in dev tools). Chrome has nothing comparable built in; the closest are online converter sites and DevTools' console (`atob`, `encodeURIComponent`), which this replaces with a UI.
 - Implementation hint: all utilities are plain TypeScript in the tools page (`web/tools/`), with unit-tested logic (Node's test runner); hashes use the Web Crypto API (`crypto.subtle`); no new libraries.
 - 2026-11-04 (decided with the user, spec set to `ready`): the utilities can be opened from the menu and the command palette; no MD5; "Decode with…" is in the right-click menu always; the first version adds a regular expression tester, a cron explainer and a colour converter; random test data and Lorem ipsum become their own feature (028); the order of the list stays as written.
+- 2026-11-04 (user's request): Tab environment added — change the current tab's time zone, language, location and similar while its dev tools are on, to test how a site behaves elsewhere. Chosen while writing: user agent and colour scheme / reduced motion included as "and similar"; location presets as in Chrome's DevTools Sensors panel plus Prague; overrides not inherited by tabs opened from the tab (as in Chrome's DevTools, which emulates per tab). Chromium's own DevTools has some of these spread over the Sensors, Rendering and Network conditions panels; Tab environment gathers them, adds `Accept-Language`, and shows that they are on.
+- Implementation hint (to verify against CEF 154 and the protocol): Chrome DevTools Protocol on the tab's own session — `Emulation.setTimezoneOverride`, `Emulation.setLocaleOverride`, `Emulation.setGeolocationOverride`, `Network.setUserAgentOverride` (with `acceptLanguage` and `userAgentMetadata`), `Emulation.setEmulatedMedia`; these methods must be added to the tools page's allowed list (`src/core/devtools_tools.cc`). Overrides are set again after a renderer crash or a cross-process navigation if the protocol does not keep them. Check whether workers and service workers of the page see the overrides; record differences in these notes.
 - 2026-11-04 (user's decision): the utilities stay only in the dev tools dock, as a tab next to Site data and Requests, with no separate window; the menu, the command palette and "Decode with…" turn on the tab's dev tools when they are off.
 - Choices made while writing (Chrome has nothing comparable): cron accepts 5 fields and 6 fields with seconds first (Spring/Quartz style); regular expressions use JavaScript syntax.
