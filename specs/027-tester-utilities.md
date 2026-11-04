@@ -12,7 +12,7 @@ Testers of web apps keep converting small values by hand or in random web sites:
 
 A new tab **Utilities** in the dev tools dock (006), next to Site data, Tokens, Requests and Rules. It is part of the tools page (`brouk://tools/#utilities`) and, like the other tools, works for the current tab; unlike them it needs nothing from the tab (no protocol access), so it also works on internal pages and with no page loaded.
 
-The utilities also open **on their own**, without dev tools for any tab: **Utilities** in the menu (macOS: View › Developer; Windows: the app menu's More tools) opens them in a window of their own (like Settings and Help), and the command palette (003) has an entry per utility ("Base64", "Unix time", "URL encoding"…) that opens that window at the utility.
+The utilities live only in the dock; there is no separate window. **Utilities** in the menu (macOS: View › Developer; Windows: the app menu's More tools) and the command palette (003), which has an entry per utility ("Base64", "Unix time", "URL encoding"…), turn on the current tab's dev tools if they are off (as the dev tools shortcuts do, 006) and show the Utilities tab at that utility.
 
 The tab lists the utilities on the left; the chosen one is shown on the right. Each utility has an **input** and an **output** field, converts **as you type** (no Convert button), shows a clear message for input it cannot convert (e.g. "Not valid Base64: unexpected character at position 17") instead of a wrong result, and has **Copy** for the output and **Swap** (output becomes input, direction reversed) where a utility works both ways. Text is handled as UTF-8.
 
@@ -33,7 +33,7 @@ The tab lists the utilities on the left; the chosen one is shown on the right. E
 
 ### Shared behaviour
 
-- **From the page:** selected text can be sent to a utility from the page's right-click menu (**Decode with › Base64 / URL / Unix time / HTML entities**, shown whenever text is selected); the utility opens with the text as input — in the dock when the tab's dev tools are on, otherwise in the Utilities window.
+- **From the page:** selected text can be sent to a utility from the page's right-click menu (**Decode with › Base64 / URL / Unix time / HTML entities**, shown whenever text is selected); the tab's dev tools turn on if they are off, and the utility opens in the dock with the text as input.
 - Utilities remember their last choice of options (e.g. URL-safe, time zone), **not** their input or output: values may be tokens or personal data and are gone when the dock closes.
 - Everything runs inside the tools page; nothing is sent over the network or written to disk.
 - Keyboard: every control can be reached with the keyboard; the utility list can be filtered by typing.
@@ -41,7 +41,7 @@ The tab lists the utilities on the left; the chosen one is shown on the right. E
 ## Acceptance criteria
 
 - [ ] The dev tools dock has a **Utilities** tab; it works with any tab, also an internal page or an empty tab.
-- [ ] The menu item Utilities opens the utilities in their own window, without dev tools; a command palette entry opens that window at its utility.
+- [ ] The menu item Utilities and the command palette entries turn on the current tab's dev tools if needed and show the Utilities tab (at the chosen utility).
 - [ ] Each utility in the list converts as the input changes, in both directions where it has two, with Copy and Swap.
 - [ ] Base64: `Žluťoučký kůň` encodes to `xb1sdcWlb3XEjWvDvSBrxa/FiA==` and back; URL-safe input decodes; invalid input shows the position of the problem; binary output is shown as hex; a dropped file gives its Base64 and data URL.
 - [ ] Unix time: `1730000000` and `1730000000000` both show 2024-10-27 03:33:20 UTC, with local time, ISO 8601 and relative time; a date gives the timestamp back; Now works; another time zone can be chosen.
@@ -55,7 +55,7 @@ The tab lists the utilities on the left; the chosen one is shown on the right. E
 - [ ] Regular expressions: `(?<y>\d{4})-(\d{2})` with `g` on `2024-10 and 2025-01` highlights two matches and lists both groups (`y` named); a replacement `$2/$<y>` gives `10/2024 and 01/2025`; an invalid pattern shows the browser's error.
 - [ ] Cron: `30 8 * * 1-5` is explained as at 08:30, Monday to Friday, with the next 5 run times; `0 */15 * * * *` (6 fields) runs every 15 minutes; `@daily` works; `61 * * * *` points out the minute field.
 - [ ] Colours: `#3366cc`, `rgb(51, 102, 204)` and `hsl(220, 60%, 50%)` are recognised as the same colour and shown in every form with a swatch; `#3366cc80` is shown with 50 % alpha in every form; `rebeccapurple` is recognised.
-- [ ] Selected text on a page can be sent to Base64, URL, Unix time and HTML entities from the right-click menu, also with dev tools off (then the Utilities window opens).
+- [ ] Selected text on a page can be sent to Base64, URL, Unix time and HTML entities from the right-click menu, also with dev tools off (they turn on).
 - [ ] Closing and reopening the dock keeps the utilities' options but not their inputs; no request leaves the browser while using them (checked with a network log).
 - [ ] Works the same on macOS and Windows.
 
@@ -80,5 +80,6 @@ None.
 
 - 2026-11-04: requested by the user (Base64, Unix time, URL/HTML encoding and similar tools for web app testers, as a new tab in dev tools). Chrome has nothing comparable built in; the closest are online converter sites and DevTools' console (`atob`, `encodeURIComponent`), which this replaces with a UI.
 - Implementation hint: all utilities are plain TypeScript in the tools page (`web/tools/`), with unit-tested logic (Node's test runner); hashes use the Web Crypto API (`crypto.subtle`); no new libraries.
-- 2026-11-04 (decided with the user, spec set to `ready`): the utilities also open without dev tools, in a window of their own from the menu and the command palette; no MD5; "Decode with…" is in the right-click menu always (with dev tools off it opens the Utilities window); the first version adds a regular expression tester, a cron explainer and a colour converter; random test data and Lorem ipsum become their own feature (028); the order of the list stays as written.
-- Choices made while writing (Chrome has nothing comparable): the Utilities window is a separate window like Settings and Help, not a tab; cron accepts 5 fields and 6 fields with seconds first (Spring/Quartz style); regular expressions use JavaScript syntax.
+- 2026-11-04 (decided with the user, spec set to `ready`): the utilities can be opened from the menu and the command palette; no MD5; "Decode with…" is in the right-click menu always; the first version adds a regular expression tester, a cron explainer and a colour converter; random test data and Lorem ipsum become their own feature (028); the order of the list stays as written.
+- 2026-11-04 (user's decision): the utilities stay only in the dev tools dock, as a tab next to Site data and Requests, with no separate window; the menu, the command palette and "Decode with…" turn on the tab's dev tools when they are off.
+- Choices made while writing (Chrome has nothing comparable): cron accepts 5 fields and 6 fields with seconds first (Spring/Quartz style); regular expressions use JavaScript syntax.
