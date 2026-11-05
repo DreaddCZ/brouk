@@ -7,7 +7,7 @@
 import { button, element, errorText } from '../shared/dom.js';
 import type { SecurityAnswer, ToolsApi } from './api.js';
 import {
-  findingsMarkdown, kSeverities, runSecurityChecks, severityName, summary, type CheckResult, type Finding,
+  findingsMarkdown, kSeverities, markdownFileName, runSecurityChecks, severityName, summary, type CheckResult, type Finding,
   type PageElements, type SecurityInput,
 } from './security_logic.js';
 import { parseCookies, parseStorageItems, siteOrigin } from './site_data_logic.js';
@@ -156,6 +156,20 @@ export class SecurityTool {
     };
   }
 
+  /** Saves the findings as a .md file where the user chooses. */
+  async #download(checked: Checked): Promise<void> {
+    try {
+      await this.#api.save({
+        name: markdownFileName(checked.answer.url, checked.at),
+        content: findingsMarkdown(checked.result, checked.answer.url, this.#hidden, checked.at),
+      }, null);
+      this.#error = null;
+    } catch (error) {
+      this.#error = errorText(error);
+      this.render();
+    }
+  }
+
   async #setHidden(id: string, hide: boolean): Promise<void> {
     const next = new Set(this.#hidden);
     if (hide) next.add(id);
@@ -185,7 +199,7 @@ export class SecurityTool {
           setTimeout(() => { copy.textContent = 'Copy as Markdown'; }, 1500);
         });
       });
-      bar.append(copy);
+      bar.append(copy, button('Download as Markdown', () => void this.#download(checked)));
     }
     parts.push(bar);
     parts.push(element('p', { className: 'note security-intro',

@@ -723,3 +723,9 @@ export function findingsMarkdown(result: CheckResult, url: string, hidden: Reado
   if (result.notes.length > 0) lines.push(...result.notes.map((n) => `_${n}_`), '');
   return lines.join('\n');
 }
+
+/** "security-check-app.example.com-2026-11-05.md". */
+export function markdownFileName(url: string, checkedAt: Date): string {
+  const host = (hostOf(url) ?? 'page').replace(/[^a-z0-9.-]/g, '-');
+  return `security-check-${host}-${checkedAt.toISOString().slice(0, 10)}.md`;
+}

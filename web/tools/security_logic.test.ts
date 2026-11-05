@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  findingsMarkdown, headerValues, isSessionCookie, parsePolicy, prefixProblem, runSecurityChecks, shorten, summary,
+  findingsMarkdown, headerValues, markdownFileName, isSessionCookie, parsePolicy, prefixProblem, runSecurityChecks, shorten, summary,
   type CheckedResponse, type HeaderList, type SecurityInput,
 } from './security_logic.js';
 import type { Cookie } from './site_data_logic.js';
@@ -264,4 +264,11 @@ test('helpers', () => {
   assert.deepEqual(policy.get('script-src'), ['https://x']);
   assert.equal(shorten('short'), 'short');
   assert.equal(shorten('abcdefghijklmnop'), 'abcdefgh…');
+});
+
+test('Markdown file name', () => {
+  const at = new Date(Date.UTC(2026, 10, 5, 12));
+  assert.equal(markdownFileName('https://app.example.com/x?y', at), 'security-check-app.example.com-2026-11-05.md');
+  assert.equal(markdownFileName('http://127.0.0.1:8794/bad', at), 'security-check-127.0.0.1-2026-11-05.md');
+  assert.ok(/^security-check-[a-z0-9.-]+-2026-11-05\.md$/.test(markdownFileName('http://[::1]:8000/', at)));
 });
