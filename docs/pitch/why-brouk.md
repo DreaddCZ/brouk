@@ -174,9 +174,9 @@ Dev tools are switched **per tab** with an always-visible toggle — rules never
 | Built-in help, with "?" links from every page | ✅ in use |
 | Task manager (pause, unload, end tabs; graph) | ✅ in use |
 | Log for bug reports, with debug logging that switches itself off | ✅ in use |
-| Signed releases with automatic updates (beta) | ✅ in use |
+| Signed releases with automatic updates (stable since 0.5.0, beta channel too) | ✅ in use |
 | Open source (Apache 2.0), with a page of third-party licences | ✅ in use |
-| Windows app (the everyday browser and the work features: passwords with Windows Hello, Bitwarden, autofill, ad blocking, developer tools, link routing with the picker, default browser, per-user installer and automatic updates; first beta 0.3.1 out, not code-signed; screen readers next) | 🔧 being built |
+| Windows app (the everyday browser and the work features: passwords with Windows Hello, Bitwarden, autofill, ad blocking, developer tools, link routing with the picker, default browser, per-user installer and automatic updates; stable 0.5.0 out, not code-signed; screen readers next) | 🔧 being built |
 | VPN per profile | 🔍 being investigated |
 
 <!-- Update this slide before each presentation. -->
