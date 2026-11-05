@@ -1,6 +1,6 @@
 # 029 – Security check in developer tools
 
-- **Status:** draft
+- **Status:** ready
 - **Priority:** P2
 - **Depends on:** 006 (developer tools dock, Requests, Site data)
 
@@ -21,7 +21,7 @@ Findings are listed by severity (**High**, **Medium**, **Low**, **Info**), each 
 - **Copy as Markdown** copies the findings (with the page's URL and the time of the check) for a bug report. Cookie values and secrets found in URLs are shortened (`eyJhbGci…`) so a report never carries a working token.
 - A finding can be **hidden** for the site ("known, accepted"): remembered per profile and site, counted as "3 hidden" and shown again with **Show hidden**, where each can be unhidden.
 
-### Checks (first version, proposed)
+### Checks (first version)
 
 **Cookies** (the site's cookies, as in Site data):
 
@@ -73,12 +73,11 @@ Findings are listed by severity (**High**, **Medium**, **Low**, **Info**), each 
 
 ## Configuration
 
-Proposed: the list of session cookie names and of secret query parameter names (with the defaults above), as with the secret headers of request export (006).
+The list of session cookie names and of secret query parameter names (with the defaults above), as with the secret headers of request export (006).
 
 ## Open questions
 
-1. Is the proposed list of checks right for the first version? Anything to add (e.g. specific to the frameworks you test) or drop?
-2. Severity levels: follow OWASP ZAP's ratings for the same issues (proposed), or our own?
+None.
 
 ## Notes
 
@@ -87,3 +86,4 @@ Proposed: the list of session cookie names and of secret query parameter names (
 - 2026-11-05: requested by the user — a dev tools tab that checks the page for missing or wrongly set cookies and security headers (such as an unset CSP), like OWASP tools do, but a minimal security test, not a full scan.
 - Comparable: OWASP ZAP's passive scan rules (cookie flags, CSP, HSTS, X-Content-Type-Options, anti-clickjacking, server version leaks, CORS), Lighthouse's Best practices (CSP effective against XSS, HSTS, COOP, clickjacking), securityheaders.com and Mozilla Observatory (headers only, on the public site). Chrome's DevTools has nothing like this: its Issues panel reports some cookie problems (SameSite, third-party cookies) and its Security panel the connection.
 - Implementation hint: the data is already at hand — Requests records the tab's response headers (`src/core/request_log.h`, `response_headers`), Site data reads cookies with their flags, and storage is read for Tokens. The checks are pure functions over that data, in portable C++ or in the tools page's TypeScript, unit-tested with fixed inputs.
+- 2026-11-05 (decided with the user, spec set to `ready`): the list of checks above is the first version; more can be added later. Severities follow OWASP ZAP's passive scan rules for the same issue (its risk rating); a check ZAP has no rule for gets the rating of its closest ZAP rule, recorded here when implemented. The severities written in the checks above (e.g. Low for missing `SameSite`) are examples and give way to ZAP's.
