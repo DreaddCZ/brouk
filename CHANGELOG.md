@@ -2,6 +2,24 @@
 
 What changed in each release of Brouk. Written by `scripts/release` (spec 019).
 
+## 0.5.0 – 2026-11-05
+
+### New
+
+- Developer tools now have a Security check tab that lists security findings for the current page, with links to OWASP guidance. You can hide findings and download them as a Markdown file.
+- Developer tools now have a Utilities tab with tools for testers, including regex, cron and colour helpers, plus a "decode with" menu.
+- You can set a time zone, language and location for a single tab, and an environment bar shows them.
+- Settings has a new Site permissions topic, where you can see, change or reset the stored decisions for each site, per profile.
+- On Windows, you can now open the site information popup, and the zoom indicator updates live.
+
+### Changed
+
+- Profile exports can now include history, limited by number of days or pages.
+
+### Fixed
+
+- Fixed a crash when quitting with restored tabs that had not yet been opened.
+
 ## 0.4.0 (beta) – 2026-11-04
 
 ### New
