@@ -66,7 +66,12 @@ int main(int argc, char* argv[]) {
     __weak BRAppDelegate* weak_delegate = delegate;
     brouk::BrowserApp::Callbacks callbacks;
     callbacks.on_context_initialized = [weak_delegate] {
-      [weak_delegate cefContextInitialized];
+      // Called from inside CefInitialize, outside the run loop's pools:
+      // without its own pool, what the start-up autoreleases (restored
+      // tabs among it) would be freed only after CefShutdown.
+      @autoreleasepool {
+        [weak_delegate cefContextInitialized];
+      }
     };
     callbacks.json_viewer_enabled = [weak_delegate] {
       BRAppDelegate* app = weak_delegate;
