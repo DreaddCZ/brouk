@@ -127,6 +127,8 @@ class BrowserWindowOwner {
   virtual void SetDockSize(int size) = 0;
   virtual bool DevToolsToggleOnLeft() = 0;
   virtual std::string SecretHeaderNames() = 0;
+  virtual ToolsHost::SecurityCheckConfig SecurityCheck(
+      const ProfileId& profile) = 0;
   virtual ToolsHost::Rules RequestRules(const ProfileId& profile) = 0;
   virtual std::optional<Error> SetRequestRules(const ProfileId& profile,
                                                RequestRuleSet rules) = 0;
@@ -394,6 +396,8 @@ class BrowserWindow final : public TabHost,
   void SetTabDockPosition(const std::string& position) override;
   void SetTabDockSize(int size) override;
   std::string TabSecretHeaderNames() override;
+  ToolsHost::SecurityCheckConfig TabSecurityCheck(
+      const ProfileId& profile) override;
   ToolsHost::Rules TabRequestRules(const ProfileId& profile) override;
   std::optional<Error> SetTabRequestRules(const ProfileId& profile,
                                           RequestRuleSet rules) override;

@@ -1629,6 +1629,7 @@ class TabInternalPageBridge : public InternalPageDelegate {
                       delegate:self];
   _dock.position = _dockPosition;
   _dock.secretHeaderNames = [_delegate secretHeaderNames] ?: @"";
+  _dock.securityCheck = [_delegate securityCheckForProfile:_profileId];
   [_dock setRequestRules:[_delegate requestRulesForProfile:_profileId].set];
   [self placeDock];
 }

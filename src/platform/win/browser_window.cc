@@ -1933,6 +1933,11 @@ std::string BrowserWindow::TabSecretHeaderNames() {
   return owner_.SecretHeaderNames();
 }
 
+ToolsHost::SecurityCheckConfig BrowserWindow::TabSecurityCheck(
+    const ProfileId& profile) {
+  return owner_.SecurityCheck(profile);
+}
+
 ToolsHost::Rules BrowserWindow::TabRequestRules(const ProfileId& profile) {
   return owner_.RequestRules(profile);
 }

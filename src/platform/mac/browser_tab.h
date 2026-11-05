@@ -75,6 +75,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (brouk::DevToolsPreferences*)devToolsPreferences;
 - (id<BRBrowserCounter>)browserCounter;
 - (NSString*)secretHeaderNames;
+// The security check's settings and the profile's folder (029).
+- (brouk::ToolsHost::SecurityCheckConfig)securityCheckForProfile:
+    (const brouk::ProfileId&)profile;
 // Request rules of a profile (006).
 - (brouk::ToolsHost::Rules)requestRulesForProfile:
     (const brouk::ProfileId&)profile;

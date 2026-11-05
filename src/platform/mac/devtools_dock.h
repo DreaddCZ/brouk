@@ -59,6 +59,8 @@ NS_ASSUME_NONNULL_BEGIN
 @property(nonatomic, readonly) NSView* view;
 // Header names whose values are secrets in exports (a setting, 006).
 @property(nonatomic, copy) NSString* secretHeaderNames;
+// The security check's settings and the tab profile's folder (029).
+@property(nonatomic) brouk::ToolsHost::SecurityCheckConfig securityCheck;
 // The current position, to highlight its button.
 @property(nonatomic, copy) NSString* position;
 
