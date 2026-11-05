@@ -84,6 +84,8 @@ add_library(brouk_cef STATIC
   site_info.h
   site_permissions_settings.cc
   site_permissions_settings.h
+  tab_environment_commands.cc
+  tab_environment_commands.h
   static_page_handler.h
   tab_client.cc
   tab_client.h

@@ -1,6 +1,6 @@
 # 027 – Utilities for testers in developer tools
 
-- **Status:** ready
+- **Status:** in-progress
 - **Priority:** P2
 - **Depends on:** 006 (developer tools dock and the tools page)
 
@@ -10,7 +10,7 @@ Testers of web apps keep converting small values by hand or in random web sites:
 
 ## Description
 
-A new tab **Utilities** in the dev tools dock (006), next to Site data, Tokens, Requests and Rules. It is part of the tools page (`brouk://tools/#utilities`) and, like the other tools, works for the current tab. The converters need nothing from the tab, so they also work on internal pages and with no page loaded; only Tab environment (below) acts on the tab.
+A new tab **Utilities** in the dev tools dock (006), next to Site data, Tokens, Requests and Rules. It is part of the tools page (`brouk://tools/#utilities`) and, like the other tools, works for the current tab. The converters need nothing from the tab, so they also work with no page loaded; only Tab environment (below) acts on the tab. Brouk's own internal pages have no dock (their DevTools opens in a window of its own, 006), so Utilities are not offered there.
 
 The utilities live only in the dock; there is no separate window. **Utilities** in the menu (macOS: View › Developer; Windows: the app menu's More tools) and the command palette (003), which has an entry per utility ("Base64", "Unix time", "URL encoding"…), turn on the current tab's dev tools if they are off (as the dev tools shortcuts do, 006) and show the Utilities tab at that utility.
 
@@ -57,7 +57,7 @@ Rules:
 
 ## Acceptance criteria
 
-- [ ] The dev tools dock has a **Utilities** tab; it works with any tab, also an internal page or an empty tab.
+- [ ] The dev tools dock has a **Utilities** tab; it works with any web page and with an empty tab (internal pages have no dock, 006).
 - [ ] The menu item Utilities and the command palette entries turn on the current tab's dev tools if needed and show the Utilities tab (at the chosen utility).
 - [ ] Each utility in the list converts as the input changes, in both directions where it has two, with Copy and Swap.
 - [ ] Base64: `Žluťoučký kůň` encodes to `xb1sdcWlb3XEjWvDvSBrxa/FiA==` and back; URL-safe input decodes; invalid input shows the position of the problem; binary output is shown as hex; a dropped file gives its Base64 and data URL.
@@ -108,3 +108,12 @@ None.
 - Implementation hint (to verify against CEF 154 and the protocol): Chrome DevTools Protocol on the tab's own session — `Emulation.setTimezoneOverride`, `Emulation.setLocaleOverride`, `Emulation.setGeolocationOverride`, `Network.setUserAgentOverride` (with `acceptLanguage` and `userAgentMetadata`), `Emulation.setEmulatedMedia`; these methods must be added to the tools page's allowed list (`src/core/devtools_tools.cc`). Overrides are set again after a renderer crash or a cross-process navigation if the protocol does not keep them. Check whether workers and service workers of the page see the overrides; record differences in these notes.
 - 2026-11-04 (user's decision): the utilities stay only in the dev tools dock, as a tab next to Site data and Requests, with no separate window; the menu, the command palette and "Decode with…" turn on the tab's dev tools when they are off.
 - Choices made while writing (Chrome has nothing comparable): cron accepts 5 fields and 6 fields with seconds first (Spring/Quartz style); regular expressions use JavaScript syntax.
+- 2026-11-04 (implementation): verified against CEF 156's protocol. The overrides are sent on the tab's own DevTools session (`DevToolsChannel::SetEnvironment`) and are kept by Chromium across reloads and navigations, including cross-process ones; turning the dev tools off sends the clearing commands before the session closes. Methods used: `Emulation.setTimezoneOverride`, `Emulation.setLocaleOverride`, `Emulation.setUserAgentOverride` (it also sets `Accept-Language`), `Emulation.setGeolocationOverride` / `clearGeolocationOverride` (an override without coordinates is "position unavailable"), `Emulation.setEmulatedMedia`. They are sent by the browser side, not by the tools page, so the page's allowed list is unchanged; the page asks through `tools.setEnvironment`, which the C++ side validates (time zone, language tags, coordinates, user agent length).
+- `acceptLanguage` is sent as a plain comma list (`de-DE,de`): Chromium adds the `q` values itself (`de-DE,de;q=0.9`) and uses the list for `navigator.languages`; sending `q` values put them into `navigator.languages`.
+- Language alone keeps the real user agent and its client hints (`userAgent` sent empty). A user agent preset uses the browser's own Chrome version for the Chrome and Edge presets; Safari and Firefox presets carry fixed versions (Safari 18, Firefox 140), updated with the presets.
+- Location presets: the eight of Chrome's Sensors panel plus Prague (`kLocationPresets` in `web/tools/environment_logic.ts`).
+- An invalid time zone is rejected by the page (`Intl`), as the protocol accepts unknown names silently.
+- Regular expressions run in a worker that is stopped after 2 seconds, so a runaway pattern (catastrophic backtracking) cannot freeze the dock.
+- Cron: `L`, `W`, `#` and `H` (Quartz/Jenkins extensions) are reported as not supported rather than as invalid.
+- 2026-11-04 (user's decision, criterion reworded with approval): Brouk's own internal pages open Chromium's DevTools in a window of their own (006), without our dock, so Utilities are not offered there; the menu, palette and "Decode with" do nothing on an internal page. The converters work on any web page and on an empty tab.
+- HTML entities decode numeric entities and the named ones of HTML 4 plus `&apos;` (a table in `web/tools/util_html.ts`). HTML5's ~2,000 rarer names would need parsing HTML in the privileged tools page (blocked by the project's opengrep rule) or a large table; unknown names stay as they are.

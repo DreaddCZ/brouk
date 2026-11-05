@@ -43,6 +43,21 @@ Rules can be switched off one by one, or all paused. When a rule changed somethi
 
 Limits: cookies the browser adds can't be changed by rules, and while rules are active, DevTools' own local overrides don't work. The rules are kept in `profiles/<id>/request-rules.yaml` and can be edited there too.
 
+### Utilities {#devtools-utilities}
+
+Small converters for testing, in the **Utilities** tab of the dock. They work offline: what you paste never leaves Brouk, and inputs are forgotten when the dock closes (the options you chose are remembered).
+
+- **Base64** (also URL-safe, and files as Base64 or a `data:` URL), **URL encoding** (`%20`, as a URL part, a whole URL or form data), **URL parser** (query parameters in an editable table), **HTML entities**, **JSON and escaping** (text as a JSON string, format, minify), **Text and hex bytes**, **Number bases**.
+- **Unix time:** a timestamp in seconds, milliseconds or microseconds (detected from its size) as local time, UTC, ISO 8601 and relative time — or a date back to a timestamp; any time zone.
+- **Hashes and HMAC** (SHA-1, SHA-256, SHA-384, SHA-512) of text or a file; **UUID** v4 and v7, and what a pasted UUID is.
+- **Regular expressions** (JavaScript syntax), **Cron expressions** (in words, with the next runs), **Colours** (hex, rgb, hsl, names).
+
+Type in the list's **Filter** box to find one. Select text on a page and right-click **Decode with** to open it in Base64, URL encoding, Unix time or HTML entities; the menu item **Utilities** and the command palette open them too (both turn on dev tools for the tab).
+
+### Tab environment {#devtools-tab-environment}
+
+**Utilities → Tab environment** makes the current tab see another **time zone**, **language** (the `Accept-Language` header, `navigator.languages` and date formatting), **location**, **user agent** or **colour scheme** and reduced motion — to test how a site behaves elsewhere without changing your computer's settings. Switch each one on separately. While any is on, the dock shows which, with **Reset**. Only this tab is affected, only while its dev tools are on; switching them off ends everything. A page that already read a value sees the change after a reload. A site still needs its location permission.
+
 ### JSON viewer {#devtools-json-viewer}
 
 JSON documents open as a collapsible tree in every tab — developer tools on or off: **Tree / Raw / Pretty**, search over keys and values, **Copy value** and **Copy path** (`$.items[0].name`), and clickable addresses. Large documents stay fast. Turn it off in Settings → Developer tools.

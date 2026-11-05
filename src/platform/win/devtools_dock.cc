@@ -9,6 +9,7 @@
 
 #include "cef/function_task.h"
 #include "core/devtools_frontend.h"
+#include "core/tab_environment.h"
 #include "core/text_file.h"
 #include "include/cef_task.h"
 #include "include/wrapper/cef_helpers.h"
@@ -31,13 +32,17 @@ struct DockTool {
   const char* id;
   const wchar_t* title;
 };
-constexpr std::array<DockTool, 5> kDockTools = {{
+constexpr std::array<DockTool, 6> kDockTools = {{
     {"devtools", L"DevTools"},
     {"site-data", L"Site data"},
     {"requests", L"Requests"},
     {"tokens", L"Tokens"},
     {"rules", L"Rules"},
+    {"utilities", L"Utilities"},
 }};
+
+// The tab environment bar's colour (027), the orange of other warnings.
+constexpr COLORREF kEnvironmentColor = RGB(0xE8, 0x6E, 0x00);
 
 // The position buttons, right to left after the close button. Glyphs of the
 // "Segoe MDL2 Assets" icon font.
@@ -130,6 +135,11 @@ DevToolsDock::DevToolsDock(HWND parent,
     // Dev tools on: record the tab's requests (006).
     channel_->StartRecording();
     channel_->WatchServiceWorkers();
+    // The header shows the tab's environment overrides (027).
+    channel_->OnEnvironmentChanged([this] {
+      Layout();
+      InvalidateRect(window_, nullptr, FALSE);
+    });
   }
   client_ = new DevToolsFrontendClient(this, inspected, preferences_);
   if (inspect) {
@@ -245,10 +255,35 @@ void DevToolsDock::Layout() {
                         .text = tool.title});
       x += width;
     }
-    SelectObject(dc, previous);
-    ReleaseDC(window_, dc);
     int right = inner.right - Scale(4);
     const int button = Scale(26);
+    // Close and the four position buttons, then a gap.
+    const int buttons_left = right - 5 * button - Scale(8);
+    // The tab environment's bar (027) between the tools and the buttons:
+    // what is changed, Reload and Reset.
+    const std::string summary =
+        channel_ ? TabEnvironmentSummary(channel_->environment()) : "";
+    if (!summary.empty()) {
+      x += Scale(8);
+      int end = buttons_left - Scale(8);
+      for (const wchar_t* label : {L"Reset", L"Reload"}) {
+        SIZE size = {};
+        GetTextExtentPoint32W(dc, label, lstrlenW(label), &size);
+        const int width = static_cast<int>(size.cx) + Scale(14);
+        parts_.push_back(
+            {.rect = {end - width, inner.top, end, inner.top + header},
+             .id = label[2] == L's' ? "env-reset" : "env-reload",
+             .text = label});
+        end -= width;
+      }
+      if (end - x > Scale(40)) {
+        parts_.push_back({.rect = {x, inner.top, end, inner.top + header},
+                          .id = "env-summary",
+                          .text = Utf8ToWide("This tab uses: " + summary)});
+      }
+    }
+    SelectObject(dc, previous);
+    ReleaseDC(window_, dc);
     parts_.push_back(
         {.rect = {right - button, inner.top, right, inner.top + header},
          .id = "close",
@@ -302,13 +337,17 @@ void DevToolsDock::Paint() {
   SetBkMode(dc, TRANSPARENT);
   for (const Part& part : parts_) {
     const bool selected = part.id == tool_ || part.id == position_;
+    const bool environment = part.id.starts_with("env-");
     SelectObject(dc, part.glyph ? icon_font_ : text_font_);
-    SetTextColor(dc, selected && part.glyph ? GetSysColor(COLOR_HIGHLIGHT)
-                     : selected             ? theme_.text
-                                            : theme_.text_dim);
+    SetTextColor(dc, environment              ? kEnvironmentColor
+                     : selected && part.glyph ? GetSysColor(COLOR_HIGHLIGHT)
+                     : selected               ? theme_.text
+                                              : theme_.text_dim);
     RECT area = part.rect;
-    DrawTextW(dc, part.text.c_str(), -1, &area,
-              DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
+    DrawTextW(
+        dc, part.text.c_str(), -1, &area,
+        (part.id == "env-summary" ? DT_LEFT | DT_END_ELLIPSIS : DT_CENTER) |
+            DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
     if (selected && !part.glyph) {
       // The chosen tool is underlined, as a tab.
       RECT underline = {part.rect.left + Scale(4), part.rect.bottom - Scale(2),
@@ -353,11 +392,30 @@ void DevToolsDock::ApplyRequestRules(const RequestRuleSet& rules) {
   });
 }
 
+void DevToolsDock::ShowUtility(const std::string& utility,
+                               std::optional<std::string> text) {
+  if (text) {
+    utility_input_ = UtilityInput{utility, std::move(*text)};
+  }
+  ShowTool(utility.empty() ? "utilities" : "utilities/" + utility);
+  if (tools_ && utility_input_) {
+    // The same fragment does not navigate: tell the page to look again.
+    tools_->GetMainFrame()->ExecuteJavaScript(
+        "window.dispatchEvent(new HashChangeEvent('hashchange'))",
+        "brouk://tools/", 0);
+  }
+}
+
+std::optional<ToolsHost::UtilityInput> DevToolsDock::TakeUtilityInput() {
+  return std::exchange(utility_input_, std::nullopt);
+}
+
 void DevToolsDock::ShowTool(const std::string& tool) {
   if (!own_tools_ || closing_) {
     return;
   }
-  tool_ = tool;
+  // "utilities/base64": the Utilities tab, at Base64.
+  tool_ = tool.substr(0, tool.find('/'));
   InvalidateRect(window_, nullptr, FALSE);
   const bool devtools = tool == "devtools";
   ShowWindow(content_, devtools ? SW_SHOWNA : SW_HIDE);
@@ -622,6 +680,12 @@ LRESULT DevToolsDock::HandleMessage(UINT message,
         }
         if (part.id == "close") {
           Close();
+        } else if (part.id == "env-reset" && channel_) {
+          channel_->SetEnvironment({}, [](const std::string&) {});
+        } else if (part.id == "env-reload" && channel_) {
+          channel_->ReloadTab();
+        } else if (part.id == "env-summary") {
+          ShowUtility("environment", std::nullopt);
         } else if (part.glyph) {
           delegate_.DockWantsPosition(part.id);
         } else {

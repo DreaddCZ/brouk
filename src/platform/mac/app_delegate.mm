@@ -4216,6 +4216,10 @@ static void FolderSize(NSString* path, void (^done)(std::int64_t bytes)) {
           title:@"Inspect Elements"
          action:@selector(pickElementToInspect:)
        shortcut:@"devtools_inspect"];
+  [self addItem:developer
+          title:@"Utilities"
+         action:@selector(showDevToolsUtilities:)
+       shortcut:@"devtools_utilities"];
 
   NSMenu* history = [self submenu:@"History" in:bar];
   [self addItem:history

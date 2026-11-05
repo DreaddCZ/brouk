@@ -79,6 +79,8 @@ Chromium DevTools, plus tools we usually open five other sites for — in **one 
 | **Requests** | Filtered list of the tab's API calls |
 | **Request rules** | Add, change or remove headers, redirect or block — live, per profile |
 | **JSON viewer** | Any JSON response as a searchable, collapsible tree |
+| **Utilities** | Base64, Unix time, URL/HTML encoding, hashes, UUIDs, regex, cron, colours — offline, so tokens never go to converter sites; right-click → Decode With |
+| **Tab environment** | The tab sees another time zone, language, location, user agent or dark mode — only while its dev tools are on |
 
 Dev tools are switched **per tab** with an always-visible toggle — rules never leak into normal browsing.
 
@@ -162,6 +164,7 @@ Dev tools are switched **per tab** with an always-visible toggle — rules never
 | Dragging tabs and profile groups between windows | ✅ in use |
 | History, bookmarks, ad blocking | ✅ in use |
 | Developer tools | ✅ in use |
+| Utilities for testers and tab environment (time zone, language, location) | 🧪 being tested |
 | Passwords (built-in manager and Bitwarden) | ✅ in use |
 | Form autofill (Czech and EU company details) | ✅ in use |
 | Downloads (one list for all profiles) | ✅ in use |

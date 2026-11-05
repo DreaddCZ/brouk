@@ -10,6 +10,7 @@ import { RequestsTool } from './requests.js';
 import { RulesTool } from './rules.js';
 import { SiteDataTool } from './site_data.js';
 import { TokensTool } from './tokens.js';
+import { UtilitiesTool } from './utilities.js';
 
 const api = new ToolsApi(cefTransport());
 const root = byId<HTMLElement>('tool');
@@ -17,10 +18,33 @@ const siteData = new SiteDataTool(api, root);
 const requests = new RequestsTool(api, root);
 const tokens = new TokensTool(api, root);
 const rules = new RulesTool(api, root);
+const utilities = new UtilitiesTool(api, root);
 let current = '';
 
+/** "#utilities/base64" -> ["utilities", "base64"]. */
+function route(): [string, string | null] {
+  const [tool, sub] = location.hash.slice(1).split('/', 2);
+  return [tool || 'site-data', sub ?? null];
+}
+
+/** Text sent with "Decode with…" (027), if any, into its utility. */
+async function takeInput(): Promise<void> {
+  const input = await api.takeUtilityInput().catch(() => null);
+  if (input !== null) utilities.show(input.utility, input.text);
+}
+
 function show(): void {
-  const tool = location.hash.slice(1) || 'site-data';
+  const [tool, utility] = route();
+  if (tool === 'utilities') {
+    if (tool !== current) {
+      requests.stop();
+      rules.stop();
+      current = tool;
+    }
+    utilities.show(utility, null);
+    void takeInput();
+    return;
+  }
   if (tool !== current) {
     requests.stop();
     rules.stop();
@@ -45,8 +69,9 @@ function show(): void {
 
 // Help for the tool shown (016).
 byId<HTMLButtonElement>('tool-help').addEventListener('click', () => {
-  const tool = location.hash.slice(1) || 'site-data';
-  if (tool === 'requests') openHelp('devtools-requests');
+  const [tool] = route();
+  if (tool === 'utilities') openHelp('devtools-utilities');
+  else if (tool === 'requests') openHelp('devtools-requests');
   else if (tool === 'rules') openHelp('devtools-request-rules');
   else if (tool === 'tokens') openHelp('devtools-tokens');
   else openHelp('devtools-site-data');
@@ -55,6 +80,6 @@ byId<HTMLButtonElement>('tool-help').addEventListener('click', () => {
 window.addEventListener('hashchange', show);
 // The tab may have navigated meanwhile: refresh when shown again.
 window.addEventListener('focus', () => {
-  if (!siteData.busy && !tokens.busy && !rules.busy) show();
+  if (!siteData.busy && !tokens.busy && !rules.busy && !utilities.busy) show();
 });
 show();

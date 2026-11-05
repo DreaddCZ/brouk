@@ -51,7 +51,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 024 | [Windows app](024-windows-app.md) | in-progress — first beta released (0.3.1: W1–W3, installer and automatic updates, not code-signed); left: screen readers, quit crash #45 | P2 |
 | 025 | [Logging](025-logging.md) | done | P2 |
 | 026 | [Dragging tabs and profile groups](026-tab-dragging.md) | done | P1 |
-| 027 | [Utilities for testers in developer tools](027-tester-utilities.md) | ready | P2 |
+| 027 | [Utilities for testers in developer tools](027-tester-utilities.md) | in-progress | P2 |
 | 028 | [Test data generator](028-test-data.md) | idea | P3 |
 
 ## Roadmap

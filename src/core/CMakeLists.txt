@@ -145,6 +145,8 @@ set(BROUK_CORE_SOURCES
   site_permission_names.h
   sqlite_db.cc
   sqlite_db.h
+  tab_environment.cc
+  tab_environment.h
   tab_strip_layout.cc
   tab_strip_layout.h
   tab_strip_model.cc

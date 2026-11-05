@@ -56,9 +56,25 @@ TEST(ContextMenuTest, SelectionMenu) {
   context.selection_text = "hello";
   std::vector<MenuItem> menu = BuildContextMenu(context);
   EXPECT_EQ(Commands(menu),
-            (std::vector<C>{C::kCopy, C::kSearchForSelection, C::kPrint,
-                            C::kSeparator, C::kInspect}));
+            (std::vector<C>{C::kCopy, C::kSearchForSelection, C::kDecodeBase64,
+                            C::kDecodeUrl, C::kDecodeUnixTime, C::kDecodeHtml,
+                            C::kPrint, C::kSeparator, C::kInspect}));
   EXPECT_EQ(menu[1].label, "Search Google for “hello”");
+  // Decode With is a submenu (027).
+  EXPECT_EQ(menu[2].submenu, "Decode With");
+  EXPECT_EQ(menu[2].label, "Base64");
+  EXPECT_TRUE(menu[6].submenu.empty());
+  EXPECT_STREQ(UtilityForDecodeCommand(C::kDecodeUnixTime), "unix-time");
+  EXPECT_EQ(UtilityForDecodeCommand(C::kCopy), nullptr);
+}
+
+TEST(ContextMenuTest, EditableSelectionCanBeDecoded) {
+  ContextMenuContext context;
+  context.is_editable = true;
+  context.selection_text = "aGVsbG8=";
+  std::vector<C> commands = Commands(BuildContextMenu(context));
+  EXPECT_NE(std::find(commands.begin(), commands.end(), C::kDecodeBase64),
+            commands.end());
 }
 
 TEST(ContextMenuTest, EditableMenuReflectsEditState) {

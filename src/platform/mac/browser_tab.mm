@@ -289,6 +289,10 @@ class TabDelegateBridge : public TabClientDelegate {
   void InspectElement(int x, int y) override {
     [tab_ inspectElementAt:NSMakePoint(x, y)];
   }
+  void ShowUtility(const std::string& utility,
+                   const std::string& text) override {
+    [tab_ showDevToolsUtility:@(utility.c_str()) text:@(text.c_str()) ?: @""];
+  }
   bool AskWhereToSaveDownloads() override {
     return [tab_.delegate askWhereToSaveDownloads];
   }
@@ -1589,6 +1593,14 @@ class TabInternalPageBridge : public InternalPageDelegate {
 - (void)showDevToolsConsole {
   [self setDevToolsOn:YES];
   [_dock showPanel:@"console"];
+}
+
+- (void)showDevToolsUtility:(NSString*)utility text:(NSString*)text {
+  if (self.isInternalPage) {
+    return;  // Brouk's own pages have no Utilities (006).
+  }
+  [self setDevToolsOn:YES];
+  [_dock showUtility:utility text:text];
 }
 
 - (void)startDevToolsElementPicker {

@@ -207,6 +207,10 @@ class TabClientDelegate : public PasswordTabDelegate,
   virtual SearchEngine CurrentSearchEngine() = 0;
   // "Inspect" in the context menu, at page coordinates (006).
   virtual void InspectElement(int x, int y) = 0;
+  // Turns the dev tools on if needed and shows the Utilities tab at
+  // `utility` with `text` as input (027, "Decode With").
+  virtual void ShowUtility(const std::string& utility,
+                           const std::string& text) = 0;
   // Every download asks where to save (otherwise only "Save As…").
   virtual bool AskWhereToSaveDownloads() = 0;
 

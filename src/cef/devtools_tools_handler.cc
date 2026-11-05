@@ -1,5 +1,6 @@
 #include "cef/devtools_tools_handler.h"
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -12,6 +13,7 @@
 #include "core/request_log.h"
 #include "core/request_rules.h"
 #include "core/service_workers.h"
+#include "core/tab_environment.h"
 #include "include/cef_parser.h"
 #include "include/wrapper/cef_helpers.h"
 
@@ -56,6 +58,112 @@ CefRefPtr<CefDictionaryValue> Summary(const RecordedRequest& entry) {
   item->SetDouble("duration", entry.duration);
   item->SetDouble("size", static_cast<double>(entry.encoded_bytes));
   return item;
+}
+
+CefRefPtr<CefDictionaryValue> EnvironmentJson(const TabEnvironment& env) {
+  CefRefPtr<CefDictionaryValue> json = CefDictionaryValue::Create();
+  if (!env.time_zone.empty()) {
+    json->SetString("timeZone", env.time_zone);
+  }
+  if (!env.languages.empty()) {
+    CefRefPtr<CefListValue> list = CefListValue::Create();
+    for (std::size_t i = 0; i < env.languages.size(); ++i) {
+      list->SetString(i, env.languages[i]);
+    }
+    json->SetList("languages", list);
+  }
+  if (env.location) {
+    CefRefPtr<CefDictionaryValue> location = CefDictionaryValue::Create();
+    if (env.location->unavailable) {
+      location->SetBool("unavailable", true);
+    } else {
+      location->SetDouble("latitude", env.location->latitude);
+      location->SetDouble("longitude", env.location->longitude);
+      location->SetDouble("accuracy", env.location->accuracy);
+      location->SetString("label", env.location->label);
+    }
+    json->SetDictionary("location", location);
+  }
+  if (!env.user_agent_preset.empty()) {
+    json->SetString("userAgentPreset", env.user_agent_preset);
+  } else if (!env.user_agent.empty()) {
+    json->SetString("userAgent", env.user_agent);
+  }
+  if (!env.color_scheme.empty()) {
+    json->SetString("colorScheme", env.color_scheme);
+  }
+  if (env.reduced_motion) {
+    json->SetBool("reducedMotion", true);
+  }
+  return json;
+}
+
+double NumberOf(const CefRefPtr<CefDictionaryValue>& dict, const char* key) {
+  return dict->GetType(key) == VTYPE_DOUBLE ? dict->GetDouble(key)
+         : dict->GetType(key) == VTYPE_INT  ? dict->GetInt(key)
+                                            : std::nan("");
+}
+
+// The page's environment message; nullopt when it is malformed (values are
+// checked separately, with messages).
+std::optional<TabEnvironment> EnvironmentFrom(
+    const CefRefPtr<CefDictionaryValue>& message) {
+  constexpr std::size_t kMaxField = 1024;
+  auto text = [&](const char* key) -> std::optional<std::string> {
+    if (message->GetType(key) == VTYPE_NULL || !message->HasKey(key)) {
+      return std::string();
+    }
+    if (message->GetType(key) != VTYPE_STRING) {
+      return std::nullopt;
+    }
+    std::string value = message->GetString(key).ToString();
+    return value.size() <= kMaxField ? std::optional(value) : std::nullopt;
+  };
+  TabEnvironment env;
+  std::optional<std::string> zone = text("timeZone");
+  std::optional<std::string> preset = text("userAgentPreset");
+  std::optional<std::string> agent = text("userAgent");
+  std::optional<std::string> scheme = text("colorScheme");
+  if (!zone || !preset || !agent || !scheme) {
+    return std::nullopt;
+  }
+  env.time_zone = *zone;
+  env.user_agent_preset = *preset;
+  env.user_agent = *agent;
+  env.color_scheme = *scheme;
+  env.reduced_motion = message->GetType("reducedMotion") == VTYPE_BOOL &&
+                       message->GetBool("reducedMotion");
+  if (message->HasKey("languages")) {
+    if (message->GetType("languages") != VTYPE_LIST) {
+      return std::nullopt;
+    }
+    CefRefPtr<CefListValue> list = message->GetList("languages");
+    for (std::size_t i = 0; i < list->GetSize() && i < 20; ++i) {
+      if (list->GetType(i) != VTYPE_STRING) {
+        return std::nullopt;
+      }
+      env.languages.push_back(list->GetString(i).ToString().substr(0, 64));
+    }
+  }
+  if (message->HasKey("location")) {
+    if (message->GetType("location") != VTYPE_DICTIONARY) {
+      return std::nullopt;
+    }
+    CefRefPtr<CefDictionaryValue> at = message->GetDictionary("location");
+    TabEnvironment::Location location;
+    location.unavailable =
+        at->GetType("unavailable") == VTYPE_BOOL && at->GetBool("unavailable");
+    if (!location.unavailable) {
+      location.latitude = NumberOf(at, "latitude");
+      location.longitude = NumberOf(at, "longitude");
+      location.accuracy = NumberOf(at, "accuracy");
+      location.label = at->GetType("label") == VTYPE_STRING
+                           ? at->GetString("label").ToString().substr(0, 100)
+                           : std::string();
+    }
+    env.location = location;
+  }
+  return env;
 }
 
 }  // namespace
@@ -289,6 +397,54 @@ bool DevToolsToolsHandler::OnQuery(CefRefPtr<CefBrowser> /*browser*/,
     } else {
       callback->Success("");
     }
+    return true;
+  }
+  if (type == "tools.environment") {
+    CefRefPtr<CefListValue> presets = CefListValue::Create();
+    for (const UserAgentPreset& preset : UserAgentPresets()) {
+      CefRefPtr<CefDictionaryValue> item = CefDictionaryValue::Create();
+      item->SetString("id", std::string(preset.id));
+      item->SetString("label", std::string(preset.label));
+      presets->SetDictionary(presets->GetSize(), item);
+    }
+    CefRefPtr<CefDictionaryValue> answer = CefDictionaryValue::Create();
+    answer->SetDictionary("active", EnvironmentJson(channel_->environment()));
+    answer->SetList("presets", presets);
+    callback->Success(ToJson(answer));
+    return true;
+  }
+  if (type == "tools.setEnvironment") {
+    std::optional<TabEnvironment> env = EnvironmentFrom(message);
+    if (!env) {
+      callback->Failure(kBadRequest, "Invalid request.");
+      return true;
+    }
+    if (std::optional<std::string> problem = TabEnvironmentProblem(*env)) {
+      callback->Failure(kFailed, *problem);
+      return true;
+    }
+    channel_->SetEnvironment(std::move(*env),
+                             [callback](const std::string& error) {
+                               if (error.empty()) {
+                                 callback->Success("");
+                               } else {
+                                 callback->Failure(kFailed, error);
+                               }
+                             });
+    return true;
+  }
+  if (type == "tools.reloadTab") {
+    channel_->ReloadTab();
+    callback->Success("");
+    return true;
+  }
+  if (type == "tools.takeUtilityInput") {
+    std::optional<ToolsHost::UtilityInput> input =
+        host_ ? host_->TakeUtilityInput() : std::nullopt;
+    CefRefPtr<CefDictionaryValue> answer = CefDictionaryValue::Create();
+    answer->SetString("utility", input ? input->utility : std::string());
+    answer->SetString("text", input ? input->text : std::string());
+    callback->Success(ToJson(answer));
     return true;
   }
   callback->Failure(kBadRequest, "Invalid request.");

@@ -242,6 +242,7 @@ TEST(SettingsTest, FileFormat) {
             "  devtools: \"opt+cmd+i\"\n"
             "  devtools_console: \"opt+cmd+j\"\n"
             "  devtools_inspect: \"opt+cmd+c\"\n"
+            "  devtools_utilities: \"\"\n"
             "  back: \"cmd+[\"\n"
             "  forward: \"cmd+]\"\n"
             "  home: \"shift+cmd+h\"\n"

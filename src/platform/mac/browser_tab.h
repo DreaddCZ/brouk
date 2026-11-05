@@ -150,6 +150,9 @@ NS_ASSUME_NONNULL_BEGIN
 // Turns dev tools on and shows the console / starts picking an element.
 - (void)showDevToolsConsole;
 - (void)startDevToolsElementPicker;
+// Turns dev tools on and shows the Utilities at `utility` ("" for the last
+// one), with `text` as its input if given (027).
+- (void)showDevToolsUtility:(NSString*)utility text:(nullable NSString*)text;
 // A request rule changed something on the current page (006); shown on
 // the dev tools toggle. Reset when a new page starts loading.
 @property(nonatomic, readonly) BOOL rulesAffectedPage;

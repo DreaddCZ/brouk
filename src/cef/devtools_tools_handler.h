@@ -39,6 +39,12 @@ class ToolsHost {
   };
   virtual Rules RequestRules() = 0;
   virtual std::optional<Error> SetRequestRules(RequestRuleSet rules) = 0;
+  // Text sent from the page with "Decode with…" (027), handed over once.
+  struct UtilityInput {
+    std::string utility;  // "base64", "url-encoding", …
+    std::string text;
+  };
+  virtual std::optional<UtilityInput> TakeUtilityInput() = 0;
 };
 
 // Answers the tools page (brouk://tools, 006) shown in one tab's dock:
@@ -54,6 +60,11 @@ class ToolsHost {
 //   {"type":"tools.rules"}  -> {"paused", "rules":[...], "problems", "profile"}
 //   {"type":"tools.setRules","paused":b,"rules":[{pattern, action, header,
 //                                                 value, enabled}]}
+//   {"type":"tools.environment"}  -> {"active":{...}, "presets":[{id, label}]}
+//   {"type":"tools.setEnvironment", timeZone?, languages?, location?,
+//    userAgentPreset? | userAgent?, colorScheme?, reducedMotion?}   (027)
+//   {"type":"tools.reloadTab"}
+//   {"type":"tools.takeUtilityInput"}  -> {"utility", "text"} ("" if none)
 // Only that page may ask, and only protocol methods allowed by
 // IsAllowedToolsProtocolMethod; everything goes to the dock's own tab.
 // UI thread.

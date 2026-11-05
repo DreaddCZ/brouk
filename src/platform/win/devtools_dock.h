@@ -88,6 +88,9 @@ class DevToolsDock final : public DevToolsFrontendDelegate,
   // A DevTools panel ("console"), or picking an element.
   void ShowPanel(const std::string& panel);
   void EnterInspectElementMode();
+  // The Utilities tab at `utility` (027: menu, command palette, "Decode
+  // with…"), with `text` as its input.
+  void ShowUtility(const std::string& utility, std::optional<std::string> text);
   // The profile's request rules, applied to the tab while the dock is open.
   void ApplyRequestRules(const RequestRuleSet& rules);
   // Closes DevTools; the delegate hears DockClosed when done.
@@ -119,6 +122,7 @@ class DevToolsDock final : public DevToolsFrontendDelegate,
   std::string SecretHeaderNames() override { return secret_headers_; }
   Rules RequestRules() override;
   std::optional<Error> SetRequestRules(RequestRuleSet rules) override;
+  std::optional<UtilityInput> TakeUtilityInput() override;
 
  private:
   // A clickable part of the header.
@@ -156,6 +160,7 @@ class DevToolsDock final : public DevToolsFrontendDelegate,
   std::string position_ = "bottom";
   std::string tool_ = "devtools";
   std::string secret_headers_;
+  std::optional<UtilityInput> utility_input_;
   std::vector<Part> parts_;
   // The divider being dragged: the mouse's start and the size then.
   bool dragging_ = false;

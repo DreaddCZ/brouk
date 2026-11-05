@@ -1,5 +1,6 @@
 #include "cef/context_menu_model.h"
 
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -86,20 +87,31 @@ ContextMenuContext ContextFromParams(
 void FillMenuModel(const CefRefPtr<CefMenuModel>& model,
                    const std::vector<MenuItem>& items) {
   model->Clear();
+  // Submenus by name, created at their first item.
+  std::map<std::string, CefRefPtr<CefMenuModel>> submenus;
+  int next_submenu_id = MENU_ID_USER_FIRST + 900;
   for (const MenuItem& item : items) {
     if (item.command == MenuCommand::kSeparator) {
       model->AddSeparator();
       continue;
     }
+    CefRefPtr<CefMenuModel> target = model;
+    if (!item.submenu.empty()) {
+      CefRefPtr<CefMenuModel>& submenu = submenus[item.submenu];
+      if (!submenu) {
+        submenu = model->AddSubMenu(next_submenu_id++, item.submenu);
+      }
+      target = submenu;
+    }
     int id = BuiltInId(item).value_or(CustomId(item.command));
-    model->AddItem(id, item.label);
-    model->SetEnabled(id, item.enabled);
+    target->AddItem(id, item.label);
+    target->SetEnabled(id, item.enabled);
   }
 }
 
 std::optional<MenuCommand> CustomCommandForId(int command_id) {
   int offset = command_id - MENU_ID_USER_FIRST;
-  if (offset < 0 || offset > static_cast<int>(MenuCommand::kSelectAll)) {
+  if (offset < 0 || offset > static_cast<int>(kLastMenuCommand)) {
     return std::nullopt;
   }
   return static_cast<MenuCommand>(offset);
