@@ -165,8 +165,8 @@ Dev tools are switched **per tab** with an always-visible toggle — rules never
 | Dragging tabs and profile groups between windows | ✅ in use |
 | History, bookmarks, ad blocking | ✅ in use |
 | Developer tools | ✅ in use |
-| Utilities for testers and tab environment (time zone, language, location) | 🧪 being tested |
-| Security check of the page (cookies, headers, CSP; OWASP ZAP ratings) | 🧪 being tested |
+| Utilities for testers and tab environment (time zone, language, location) | ✅ in use |
+| Security check of the page (cookies, headers, CSP; OWASP ZAP ratings) | ✅ in use |
 | Passwords (built-in manager and Bitwarden) | ✅ in use |
 | Form autofill (Czech and EU company details) | ✅ in use |
 | Downloads (one list for all profiles) | ✅ in use |

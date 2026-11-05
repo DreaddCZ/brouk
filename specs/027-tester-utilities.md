@@ -1,6 +1,6 @@
 # 027 – Utilities for testers in developer tools
 
-- **Status:** in-progress
+- **Status:** done
 - **Priority:** P2
 - **Depends on:** 006 (developer tools dock and the tools page)
 
@@ -57,29 +57,29 @@ Rules:
 
 ## Acceptance criteria
 
-- [ ] The dev tools dock has a **Utilities** tab; it works with any web page and with an empty tab (internal pages have no dock, 006).
-- [ ] The menu item Utilities and the command palette entries turn on the current tab's dev tools if needed and show the Utilities tab (at the chosen utility).
-- [ ] Each utility in the list converts as the input changes, in both directions where it has two, with Copy and Swap.
-- [ ] Base64: `Žluťoučký kůň` encodes to `xb1sdcWlb3XEjWvDvSBrxa/FiA==` and back; URL-safe input decodes; invalid input shows the position of the problem; binary output is shown as hex; a dropped file gives its Base64 and data URL.
-- [ ] Unix time: `1730000000` and `1730000000000` both show 2024-10-27 03:33:20 UTC, with local time, ISO 8601 and relative time; a date gives the timestamp back; Now works; another time zone can be chosen.
-- [ ] URL encoding: `a b&c=d/é` encodes as a component to `a%20b%26c%3Dd%2F%C3%A9`, as form data with `+` for the space, and decodes back; `%E9` alone or `%G1` is reported as invalid.
-- [ ] URL parser: query parameters are listed decoded; editing one or adding/removing one updates the URL.
-- [ ] HTML entities: `<a href="x">&</a>` encodes and decodes; `&eacute;`, `&#233;` and `&#xE9;` decode to `é`.
-- [ ] Hashes and HMAC give the same results as `shasum` / `openssl` for text and for a file.
-- [ ] UUIDs generated as v4 and v7 are valid; a pasted v7 UUID shows its time.
-- [ ] JSON escaping round-trips text with quotes, backslashes, newlines and non-ASCII characters; invalid JSON shows the error position.
-- [ ] Number bases convert between decimal, hex, octal and binary, also for numbers above 2^53.
-- [ ] Regular expressions: `(?<y>\d{4})-(\d{2})` with `g` on `2024-10 and 2025-01` highlights two matches and lists both groups (`y` named); a replacement `$2/$<y>` gives `10/2024 and 01/2025`; an invalid pattern shows the browser's error.
-- [ ] Cron: `30 8 * * 1-5` is explained as at 08:30, Monday to Friday, with the next 5 run times; `0 */15 * * * *` (6 fields) runs every 15 minutes; `@daily` works; `61 * * * *` points out the minute field.
-- [ ] Colours: `#3366cc`, `rgb(51, 102, 204)` and `hsl(220, 60%, 50%)` are recognised as the same colour and shown in every form with a swatch; `#3366cc80` is shown with 50 % alpha in every form; `rebeccapurple` is recognised.
-- [ ] Selected text on a page can be sent to Base64, URL, Unix time and HTML entities from the right-click menu, also with dev tools off (they turn on).
-- [ ] Closing and reopening the dock keeps the utilities' options but not their inputs; no request leaves the browser while using them (checked with a network log).
-- [ ] Tab environment, time zone `Asia/Tokyo`: `new Date().getTimezoneOffset()` is `-540` and `Intl.DateTimeFormat().resolvedOptions().timeZone` is `Asia/Tokyo` in the tab; another tab of the same window still shows the real time zone.
-- [ ] Tab environment, language `de-DE, de`: the server receives `Accept-Language: de-DE,de;q=0.9`, `navigator.languages` is `["de-DE", "de"]`, and a site that picks its language from the browser shows German after a reload.
-- [ ] Tab environment, location Tokyo: after the site is allowed the location, `getCurrentPosition` returns Tokyo's coordinates; "Location unavailable" makes it fail with `POSITION_UNAVAILABLE`.
-- [ ] Tab environment, user agent and colour scheme: `navigator.userAgent` and the `User-Agent` header show the chosen preset; `matchMedia('(prefers-color-scheme: dark)').matches` follows the choice.
-- [ ] Overrides survive a reload and a navigation in the tab; turning the tab's dev tools off ends them all (after a reload the page sees the real values); while any is on, the dock shows the bar listing them, with Reset.
-- [ ] Works the same on macOS and Windows.
+- [x] The dev tools dock has a **Utilities** tab; it works with any web page and with an empty tab (internal pages have no dock, 006).
+- [x] The menu item Utilities and the command palette entries turn on the current tab's dev tools if needed and show the Utilities tab (at the chosen utility).
+- [x] Each utility in the list converts as the input changes, in both directions where it has two, with Copy and Swap.
+- [x] Base64: `Žluťoučký kůň` encodes to `xb1sdcWlb3XEjWvDvSBrxa/FiA==` and back; URL-safe input decodes; invalid input shows the position of the problem; binary output is shown as hex; a dropped file gives its Base64 and data URL.
+- [x] Unix time: `1730000000` and `1730000000000` both show 2024-10-27 03:33:20 UTC, with local time, ISO 8601 and relative time; a date gives the timestamp back; Now works; another time zone can be chosen.
+- [x] URL encoding: `a b&c=d/é` encodes as a component to `a%20b%26c%3Dd%2F%C3%A9`, as form data with `+` for the space, and decodes back; `%E9` alone or `%G1` is reported as invalid.
+- [x] URL parser: query parameters are listed decoded; editing one or adding/removing one updates the URL.
+- [x] HTML entities: `<a href="x">&</a>` encodes and decodes; `&eacute;`, `&#233;` and `&#xE9;` decode to `é`.
+- [x] Hashes and HMAC give the same results as `shasum` / `openssl` for text and for a file.
+- [x] UUIDs generated as v4 and v7 are valid; a pasted v7 UUID shows its time.
+- [x] JSON escaping round-trips text with quotes, backslashes, newlines and non-ASCII characters; invalid JSON shows the error position.
+- [x] Number bases convert between decimal, hex, octal and binary, also for numbers above 2^53.
+- [x] Regular expressions: `(?<y>\d{4})-(\d{2})` with `g` on `2024-10 and 2025-01` highlights two matches and lists both groups (`y` named); a replacement `$2/$<y>` gives `10/2024 and 01/2025`; an invalid pattern shows the browser's error.
+- [x] Cron: `30 8 * * 1-5` is explained as at 08:30, Monday to Friday, with the next 5 run times; `0 */15 * * * *` (6 fields) runs every 15 minutes; `@daily` works; `61 * * * *` points out the minute field.
+- [x] Colours: `#3366cc`, `rgb(51, 102, 204)` and `hsl(220, 60%, 50%)` are recognised as the same colour and shown in every form with a swatch; `#3366cc80` is shown with 50 % alpha in every form; `rebeccapurple` is recognised.
+- [x] Selected text on a page can be sent to Base64, URL, Unix time and HTML entities from the right-click menu, also with dev tools off (they turn on).
+- [x] Closing and reopening the dock keeps the utilities' options but not their inputs; no request leaves the browser while using them (checked with a network log).
+- [x] Tab environment, time zone `Asia/Tokyo`: `new Date().getTimezoneOffset()` is `-540` and `Intl.DateTimeFormat().resolvedOptions().timeZone` is `Asia/Tokyo` in the tab; another tab of the same window still shows the real time zone.
+- [x] Tab environment, language `de-DE, de`: the server receives `Accept-Language: de-DE,de;q=0.9`, `navigator.languages` is `["de-DE", "de"]`, and a site that picks its language from the browser shows German after a reload.
+- [x] Tab environment, location Tokyo: after the site is allowed the location, `getCurrentPosition` returns Tokyo's coordinates; "Location unavailable" makes it fail with `POSITION_UNAVAILABLE`.
+- [x] Tab environment, user agent and colour scheme: `navigator.userAgent` and the `User-Agent` header show the chosen preset; `matchMedia('(prefers-color-scheme: dark)').matches` follows the choice.
+- [x] Overrides survive a reload and a navigation in the tab; turning the tab's dev tools off ends them all (after a reload the page sees the real values); while any is on, the dock shows the bar listing them, with Reset.
+- [ ] Works the same on macOS and Windows. (Windows: built and unit-tested by CI, not yet tested by hand.)
 
 ## Out of scope
 
@@ -117,3 +117,4 @@ None.
 - Cron: `L`, `W`, `#` and `H` (Quartz/Jenkins extensions) are reported as not supported rather than as invalid.
 - 2026-11-04 (user's decision, criterion reworded with approval): Brouk's own internal pages open Chromium's DevTools in a window of their own (006), without our dock, so Utilities are not offered there; the menu, palette and "Decode with" do nothing on an internal page. The converters work on any web page and on an empty tab.
 - HTML entities decode numeric entities and the named ones of HTML 4 plus `&apos;` (a table in `web/tools/util_html.ts`). HTML5's ~2,000 rarer names would need parsing HTML in the privileged tools page (blocked by the project's opengrep rule) or a large table; unknown names stay as they are.
+- 2026-11-05: tested by the user on macOS; spec set to `done`. Windows is built and unit-tested by CI but not yet tested by hand.

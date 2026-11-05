@@ -1,6 +1,6 @@
 # 029 – Security check in developer tools
 
-- **Status:** in-progress
+- **Status:** done
 - **Priority:** P2
 - **Depends on:** 006 (developer tools dock, Requests, Site data)
 
@@ -52,17 +52,17 @@ Findings are listed by severity (**High**, **Medium**, **Low**, **Info**), each 
 
 ## Acceptance criteria
 
-- [ ] The dev tools dock has a **Security check** tab; it checks the current web page without sending any request of its own (checked with a network log).
-- [ ] With dev tools turned on after the page loaded, the tab offers **Reload and check**; after it, the findings appear.
-- [ ] A test page (`docs/testing/pages/`) served with no security headers and with cookies `session=abc` (no flags) and `theme=dark` gets findings for: no CSP, no HSTS (over HTTPS), no clickjacking protection, no `nosniff`, no `Referrer-Policy`; `session` without `Secure`, `HttpOnly` and `SameSite`; `theme` only without `Secure` and `SameSite`.
-- [ ] A test page with good headers (strict CSP with `frame-ancestors`, HSTS of one year, `nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`) and a `__Host-session` cookie with `Secure; HttpOnly; SameSite=Lax; Path=/` has no High or Medium findings, and the checks are listed as passed.
-- [ ] A CSP with `script-src 'self' 'unsafe-inline'` is reported as weak; a report-only policy is shown as report-only.
-- [ ] `Server: nginx/1.25.3` and `X-Powered-By: Express` are reported as version disclosure.
-- [ ] An API response from the page's own site with `Access-Control-Allow-Origin` echoing the request's `Origin` and `Access-Control-Allow-Credentials: true` is reported; the same from another site is not checked.
-- [ ] A request whose query string contains `access_token=` or `password=` is reported; mixed content on an HTTPS page and a form posting to `http:` are reported.
-- [ ] Each finding shows what was found, why it matters, how to fix it and an OWASP link; **Copy as Markdown** copies them with the page's URL, with token values shortened.
-- [ ] Hiding a finding for a site keeps it hidden after a reload and in a new tab of the same profile and site, shows "n hidden", and **Show hidden** brings it back; another profile still shows it.
-- [ ] Works the same on macOS and Windows.
+- [x] The dev tools dock has a **Security check** tab; it checks the current web page without sending any request of its own (checked with a network log).
+- [x] With dev tools turned on after the page loaded, the tab offers **Reload and check**; after it, the findings appear.
+- [x] A test page (`docs/testing/pages/`) served with no security headers and with cookies `session=abc` (no flags) and `theme=dark` gets findings for: no CSP, no HSTS (over HTTPS), no clickjacking protection, no `nosniff`, no `Referrer-Policy`; `session` without `Secure`, `HttpOnly` and `SameSite`; `theme` only without `Secure` and `SameSite`.
+- [x] A test page with good headers (strict CSP with `frame-ancestors`, HSTS of one year, `nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`) and a `__Host-session` cookie with `Secure; HttpOnly; SameSite=Lax; Path=/` has no High or Medium findings, and the checks are listed as passed.
+- [x] A CSP with `script-src 'self' 'unsafe-inline'` is reported as weak; a report-only policy is shown as report-only.
+- [x] `Server: nginx/1.25.3` and `X-Powered-By: Express` are reported as version disclosure.
+- [x] An API response from the page's own site with `Access-Control-Allow-Origin` echoing the request's `Origin` and `Access-Control-Allow-Credentials: true` is reported; the same from another site is not checked.
+- [x] A request whose query string contains `access_token=` or `password=` is reported; mixed content on an HTTPS page and a form posting to `http:` are reported.
+- [x] Each finding shows what was found, why it matters, how to fix it and an OWASP link; **Copy as Markdown** copies them with the page's URL, with token values shortened.
+- [x] Hiding a finding for a site keeps it hidden after a reload and in a new tab of the same profile and site, shows "n hidden", and **Show hidden** brings it back; another profile still shows it.
+- [ ] Works the same on macOS and Windows. (Windows: built and unit-tested by CI, not yet tested by hand.)
 
 ## Out of scope
 
@@ -96,3 +96,4 @@ None.
 - Hidden findings: `profiles/<id>/security-check.yaml`, keyed by site; the browser decides the site from the tab's URL, the page only sends finding ids (checked: printable, at most 200 characters, 500 per site). The OWASP links open in a tab; the tools page may open only `https://cheatsheetseries.owasp.org/` and `https://owasp.org/` links (`ToolsPageOpensLink`).
 - Test pages: `node docs/testing/pages/security_server.mjs`, then `http://127.0.0.1:8794/bad` and `/good`.
 - 2026-11-05 (user's request): **Download as Markdown** next to Copy as Markdown saves the same text as `security-check-<host>-<date>.md`, through the save dialog the request export uses.
+- 2026-11-05: tested by the user on macOS; spec set to `done`. Windows is built and unit-tested by CI but not yet tested by hand.
