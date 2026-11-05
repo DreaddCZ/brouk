@@ -657,10 +657,17 @@ class TabInternalPageBridge : public InternalPageDelegate {
 }
 
 // A deferred tab has no browser to close: it is gone at once (after this
-// call returns, like a real close).
+// call returns, like a real close). Its client is released now, while CEF
+// runs, as handleBrowserClosed does for tabs with a browser: the tab itself
+// may be freed only after CefShutdown, when the client must not be touched.
 - (void)closeDeferred {
   _deferred = NO;
   _deferredContext = nullptr;
+  if (_client && !_clientDetached) {
+    _client->DetachDelegate();
+  }
+  _clientDetached = YES;
+  _client = nullptr;
   __weak BRTab* weakSelf = self;
   dispatch_async(dispatch_get_main_queue(), ^{
     BRTab* tab = weakSelf;
