@@ -130,7 +130,7 @@ constexpr std::array<std::string_view, 5> kTaskRefreshLabels = {
     "Every half second", "Every second", "Every 2 seconds", "Every 5 seconds",
     "Every 10 seconds"};
 
-constexpr std::array<SettingDef, 61> kSettings = {{
+constexpr std::array<SettingDef, 63> kSettings = {{
     // Global.
     {.key = "appearance.theme",
      .scope = SettingScope::kGlobal,
@@ -457,6 +457,30 @@ constexpr std::array<SettingDef, 61> kSettings = {{
      .description = "Comma-separated header names whose values become "
                     "variables when requests are exported to Postman or "
                     "Bruno."},
+    {.key = "devtools.session_cookies",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kString,
+     .default_value = "session, sess, sid, auth, token, jwt, JSESSIONID, "
+                      "PHPSESSID, ASP.NET_SessionId, .AspNetCore., "
+                      "connect.sid, laravel_session",
+     .max_length = 1024,
+     .section = "Developer tools",
+     .label = "Session cookie names in the security check",
+     .description = "Comma-separated cookie names (or parts of names, such "
+                    "as sid in my_sid) the security check treats as session "
+                    "cookies; a name ending in a dot is a prefix."},
+    {.key = "devtools.secret_parameters",
+     .scope = SettingScope::kGlobal,
+     .type = SettingDef::Type::kString,
+     .default_value = "access_token, id_token, refresh_token, token, "
+                      "session, sessionid, sid, jsessionid, phpsessid, "
+                      "password, passwd, pwd, api_key, apikey, secret, "
+                      "client_secret",
+     .max_length = 1024,
+     .section = "Developer tools",
+     .label = "Secret URL parameters in the security check",
+     .description = "Comma-separated query parameter names the security "
+                    "check reports when they appear in a URL."},
     {.key = "devtools.remote_debugging",
      .scope = SettingScope::kGlobal,
      .type = SettingDef::Type::kBool,

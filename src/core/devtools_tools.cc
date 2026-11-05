@@ -9,10 +9,14 @@ namespace brouk {
 namespace {
 
 // What the tools need, nothing more: reading and changing the current
-// site's cookies and storage, clearing its data, and the tab's requests.
-constexpr std::array<std::string_view, 20> kAllowed = {
+// site's cookies and storage, clearing its data, the tab's requests, and
+// reading (not changing) the page's elements for the security check.
+constexpr std::array<std::string_view, 23> kAllowed = {
     "CacheStorage.deleteCache",
     "CacheStorage.requestCacheNames",
+    "DOM.getAttributes",
+    "DOM.getDocument",
+    "DOM.querySelectorAll",
     "DOMStorage.clear",
     "DOMStorage.enable",
     "DOMStorage.getDOMStorageItems",
@@ -53,6 +57,18 @@ std::span<const DevToolsUtility> DevToolsUtilities() {
       {"environment", "Tab environment"},
   }};
   return kUtilities;
+}
+
+bool ToolsPageOpensLink(std::string_view url) {
+  constexpr std::array<std::string_view, 2> kPrefixes = {
+      "https://cheatsheetseries.owasp.org/",
+      "https://owasp.org/",
+  };
+  return url.size() < 2048 && std::ranges::any_of(
+                                  kPrefixes,
+                                  [url](std::string_view prefix) {
+                                    return url.starts_with(prefix);
+                                  });
 }
 
 bool IsAllowedToolsProtocolMethod(std::string_view method) {
