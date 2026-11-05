@@ -32,13 +32,14 @@ struct DockTool {
   const char* id;
   const wchar_t* title;
 };
-constexpr std::array<DockTool, 6> kDockTools = {{
+constexpr std::array<DockTool, 7> kDockTools = {{
     {"devtools", L"DevTools"},
     {"site-data", L"Site data"},
     {"requests", L"Requests"},
     {"tokens", L"Tokens"},
     {"rules", L"Rules"},
     {"utilities", L"Utilities"},
+    {"security", L"Security check"},
 }};
 
 // The tab environment bar's colour (027), the orange of other warnings.

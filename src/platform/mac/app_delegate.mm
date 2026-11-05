@@ -2058,6 +2058,22 @@ class AppSettingsPage : public SettingsPageDelegate {
                .c_str());
 }
 
+// The security check (029): its name lists, and hidden findings in the
+// profile's folder.
+- (brouk::ToolsHost::SecurityCheckConfig)securityCheckForProfile:
+    (const brouk::ProfileId&)profile {
+  const brouk::Settings& settings = _profiles->global_settings();
+  brouk::ToolsHost::SecurityCheckConfig config;
+  config.session_cookies = settings.GetString("devtools.session_cookies");
+  config.secret_parameters = settings.GetString("devtools.secret_parameters");
+  if (_profiles->Find(profile) && brouk::IsValidProfileId(profile)) {
+    config.profile_directory =
+        std::filesystem::path(brouk::mac::ProfileDirectory(@(profile.c_str()))
+                                  .fileSystemRepresentation);
+  }
+  return config;
+}
+
 - (brouk::DevToolsPreferences*)devToolsPreferences {
   if (!_devToolsPreferences) {
     NSString* path = [brouk::mac::AppDataDirectory()

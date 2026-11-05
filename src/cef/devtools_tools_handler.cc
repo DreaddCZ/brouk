@@ -1,17 +1,22 @@
 #include "cef/devtools_tools_handler.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
+#include <vector>
 
 #include "cef/json_util.h"
 #include "core/devtools_tools.h"
 #include "core/internal_pages.h"
 #include "core/request_log.h"
 #include "core/request_rules.h"
+#include "core/security_check.h"
 #include "core/service_workers.h"
 #include "core/tab_environment.h"
 #include "include/cef_parser.h"
@@ -59,6 +64,15 @@ CefRefPtr<CefDictionaryValue> Summary(const RecordedRequest& entry) {
   item->SetDouble("size", static_cast<double>(entry.encoded_bytes));
   return item;
 }
+
+CefRefPtr<CefDictionaryValue> WithHeaders(const RecordedRequest& entry) {
+  CefRefPtr<CefDictionaryValue> item = Summary(entry);
+  item->SetList("requestHeaders", HeaderList(entry.request_headers));
+  item->SetList("responseHeaders", HeaderList(entry.response_headers));
+  return item;
+}
+
+constexpr std::string_view kHiddenFindingsFile = "security-check.yaml";
 
 CefRefPtr<CefDictionaryValue> EnvironmentJson(const TabEnvironment& env) {
   CefRefPtr<CefDictionaryValue> json = CefDictionaryValue::Create();
@@ -268,9 +282,7 @@ bool DevToolsToolsHandler::OnQuery(CefRefPtr<CefBrowser> /*browser*/,
       callback->Failure(kFailed, "This request is no longer recorded.");
       return true;
     }
-    CefRefPtr<CefDictionaryValue> answer = Summary(*entry);
-    answer->SetList("requestHeaders", HeaderList(entry->request_headers));
-    answer->SetList("responseHeaders", HeaderList(entry->response_headers));
+    CefRefPtr<CefDictionaryValue> answer = WithHeaders(*entry);
     if (entry->post_data) {
       answer->SetString("postData", *entry->post_data);
       answer->SetBool("postDataTruncated", entry->post_data_truncated);
@@ -445,6 +457,103 @@ bool DevToolsToolsHandler::OnQuery(CefRefPtr<CefBrowser> /*browser*/,
     answer->SetString("utility", input ? input->utility : std::string());
     answer->SetString("text", input ? input->text : std::string());
     callback->Success(ToJson(answer));
+    return true;
+  }
+  if (type == "tools.securityCheck") {
+    const std::string url = channel_->PageUrl();
+    const std::string site = SecurityCheckSite(url);
+    const ToolsHost::SecurityCheckConfig config =
+        host_ ? host_->SecurityCheck() : ToolsHost::SecurityCheckConfig{};
+    SecurityCheckRequests found =
+        CollectSecurityCheckRequests(channel_->requests(), url);
+    CefRefPtr<CefDictionaryValue> answer = CefDictionaryValue::Create();
+    answer->SetString("url", url);
+    answer->SetString("site", site);
+    if (found.document) {
+      answer->SetDictionary("document", WithHeaders(*found.document));
+    } else {
+      answer->SetNull("document");
+    }
+    CefRefPtr<CefListValue> site_requests = CefListValue::Create();
+    std::size_t index = 0;
+    for (const RecordedRequest* entry : found.site_requests) {
+      site_requests->SetDictionary(index++, WithHeaders(*entry));
+    }
+    answer->SetList("siteRequests", site_requests);
+    CefRefPtr<CefListValue> page_requests = CefListValue::Create();
+    index = 0;
+    for (const RecordedRequest* entry : found.page_requests) {
+      CefRefPtr<CefDictionaryValue> item = CefDictionaryValue::Create();
+      item->SetString("url", entry->url);
+      item->SetString("type", entry->type);
+      item->SetInt("status", entry->status);
+      item->SetString("error", entry->error);
+      page_requests->SetDictionary(index++, item);
+    }
+    answer->SetList("pageRequests", page_requests);
+    answer->SetString("sessionCookies", config.session_cookies);
+    answer->SetString("secretParameters", config.secret_parameters);
+    const bool can_hide = !config.profile_directory.empty() && !site.empty();
+    CefRefPtr<CefListValue> hidden = CefListValue::Create();
+    if (can_hide) {
+      HiddenFindings all =
+          LoadHiddenFindings(config.profile_directory / kHiddenFindingsFile);
+      index = 0;
+      for (const std::string& id : all[site]) {
+        hidden->SetString(index++, id);
+      }
+    }
+    answer->SetList("hidden", hidden);
+    answer->SetBool("canHide", can_hide);
+    callback->Success(ToJson(answer));
+    return true;
+  }
+  if (type == "tools.setSecurityHidden") {
+    const std::string site = SecurityCheckSite(channel_->PageUrl());
+    const ToolsHost::SecurityCheckConfig config =
+        host_ ? host_->SecurityCheck() : ToolsHost::SecurityCheckConfig{};
+    CefRefPtr<CefListValue> list = message->GetType("ids") == VTYPE_LIST
+                                       ? message->GetList("ids")
+                                       : nullptr;
+    if (!list || list->GetSize() > kMaxHiddenPerSite) {
+      callback->Failure(kBadRequest, "Invalid request.");
+      return true;
+    }
+    std::vector<std::string> ids;
+    for (std::size_t i = 0; i < list->GetSize(); ++i) {
+      std::string id = list->GetType(i) == VTYPE_STRING
+                           ? list->GetString(i).ToString()
+                           : std::string();
+      if (!IsFindingId(id)) {
+        callback->Failure(kBadRequest, "Invalid request.");
+        return true;
+      }
+      if (std::ranges::find(ids, id) == ids.end()) {
+        ids.push_back(std::move(id));
+      }
+    }
+    if (config.profile_directory.empty() || site.empty()) {
+      callback->Failure(kFailed,
+                        "Findings can be hidden only for web pages of a "
+                        "profile.");
+      return true;
+    }
+    const std::filesystem::path path =
+        config.profile_directory / kHiddenFindingsFile;
+    HiddenFindings all = LoadHiddenFindings(path);
+    if (ids.empty()) {
+      all.erase(site);
+    } else if (all.size() >= kMaxHiddenSites && !all.contains(site)) {
+      callback->Failure(kFailed, "Too many sites have hidden findings.");
+      return true;
+    } else {
+      all[site] = std::move(ids);
+    }
+    if (std::optional<Error> error = SaveHiddenFindings(path, all)) {
+      callback->Failure(kFailed, error->message);
+      return true;
+    }
+    callback->Success("");
     return true;
   }
   callback->Failure(kBadRequest, "Invalid request.");

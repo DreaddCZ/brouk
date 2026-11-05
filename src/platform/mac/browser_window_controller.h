@@ -105,6 +105,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (CefRefPtr<CefRequestContext>)devToolsContext;
 - (brouk::DevToolsPreferences*)devToolsPreferences;
 - (NSString*)secretHeaderNames;
+- (brouk::ToolsHost::SecurityCheckConfig)securityCheckForProfile:
+    (const brouk::ProfileId&)profile;
 - (brouk::ToolsHost::Rules)requestRulesForProfile:
     (const brouk::ProfileId&)profile;
 - (std::optional<brouk::Error>)setRequestRules:(brouk::RequestRuleSet)rules

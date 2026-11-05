@@ -8,6 +8,7 @@ import { openHelp } from '../shared/help.js';
 import { ToolsApi } from './api.js';
 import { RequestsTool } from './requests.js';
 import { RulesTool } from './rules.js';
+import { SecurityTool } from './security.js';
 import { SiteDataTool } from './site_data.js';
 import { TokensTool } from './tokens.js';
 import { UtilitiesTool } from './utilities.js';
@@ -19,6 +20,7 @@ const requests = new RequestsTool(api, root);
 const tokens = new TokensTool(api, root);
 const rules = new RulesTool(api, root);
 const utilities = new UtilitiesTool(api, root);
+const security = new SecurityTool(api, root);
 let current = '';
 
 /** "#utilities/base64" -> ["utilities", "base64"]. */
@@ -61,6 +63,9 @@ function show(): void {
   } else if (tool === 'tokens') {
     document.title = 'Tokens';
     void tokens.refresh();
+  } else if (tool === 'security') {
+    document.title = 'Security check';
+    void security.refresh();
   } else {
     document.title = 'Site data';
     void siteData.refresh();
@@ -74,12 +79,13 @@ byId<HTMLButtonElement>('tool-help').addEventListener('click', () => {
   else if (tool === 'requests') openHelp('devtools-requests');
   else if (tool === 'rules') openHelp('devtools-request-rules');
   else if (tool === 'tokens') openHelp('devtools-tokens');
+  else if (tool === 'security') openHelp('devtools-security-check');
   else openHelp('devtools-site-data');
 });
 
 window.addEventListener('hashchange', show);
 // The tab may have navigated meanwhile: refresh when shown again.
 window.addEventListener('focus', () => {
-  if (!siteData.busy && !tokens.busy && !rules.busy && !utilities.busy) show();
+  if (!siteData.busy && !tokens.busy && !rules.busy && !utilities.busy && !security.busy) show();
 });
 show();

@@ -116,6 +116,8 @@ class TabHost {
   virtual void SetTabDockPosition(const std::string& position) = 0;
   virtual void SetTabDockSize(int size) = 0;
   virtual std::string TabSecretHeaderNames() = 0;
+  virtual ToolsHost::SecurityCheckConfig TabSecurityCheck(
+      const ProfileId& profile) = 0;
   virtual ToolsHost::Rules TabRequestRules(const ProfileId& profile) = 0;
   virtual std::optional<Error> SetTabRequestRules(const ProfileId& profile,
                                                   RequestRuleSet rules) = 0;

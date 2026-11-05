@@ -86,6 +86,8 @@ class App final : public BrowserWindowOwner,
   void SetDockSize(int size) override;
   bool DevToolsToggleOnLeft() override;
   std::string SecretHeaderNames() override;
+  ToolsHost::SecurityCheckConfig SecurityCheck(
+      const ProfileId& profile) override;
   ToolsHost::Rules RequestRules(const ProfileId& profile) override;
   std::optional<Error> SetRequestRules(const ProfileId& profile,
                                        RequestRuleSet rules) override;

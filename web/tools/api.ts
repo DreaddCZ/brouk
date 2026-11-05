@@ -4,8 +4,22 @@
  */
 import { BridgeError, isRecord, send, type Transport } from '../shared/bridge.js';
 import { parseDetails, parseSummary, type RequestDetails, type RequestSummary } from './requests_logic.js';
+import type { PageRequest } from './security_logic.js';
 import { parseRule, type Rule } from './rules_logic.js';
 import { environmentMessage, parseEnvironmentState, type EnvironmentState, type TabEnvironment } from './environment_logic.js';
+
+/** What the browser gives the security check (029). */
+export interface SecurityAnswer {
+  readonly url: string;
+  readonly site: string;
+  readonly document: RequestDetails | null;
+  readonly siteRequests: RequestDetails[];
+  readonly pageRequests: PageRequest[];
+  readonly sessionCookies: string;
+  readonly secretParameters: string;
+  readonly hidden: string[];
+  readonly canHide: boolean;
+}
 
 export interface SaveFile {
   readonly name: string;
@@ -126,6 +140,35 @@ export class ToolsApi {
     const answer = await send('tools.takeUtilityInput', {}, this.#transport);
     if (!isRecord(answer) || typeof answer['utility'] !== 'string' || typeof answer['text'] !== 'string') return null;
     return answer['utility'] === '' ? null : { utility: answer['utility'], text: answer['text'] };
+  }
+
+  /** The tab's recorded page load and requests, settings and hidden findings, for the security check. */
+  async securityCheck(): Promise<SecurityAnswer> {
+    const answer = await send('tools.securityCheck', {}, this.#transport);
+    if (!isRecord(answer) || typeof answer['url'] !== 'string') throw invalid();
+    const text = (key: string): string => (typeof answer[key] === 'string' ? answer[key] : '');
+    const array = (key: string): unknown[] => {
+      const value: unknown = answer[key];
+      return Array.isArray(value) ? value : [];
+    };
+    return {
+      url: answer['url'],
+      site: text('site'),
+      document: answer['document'] === null ? null : parseDetails(answer['document']),
+      siteRequests: array('siteRequests').map(parseDetails).filter((r): r is RequestDetails => r !== null),
+      pageRequests: array('pageRequests').flatMap((r) => isRecord(r) && typeof r['url'] === 'string'
+        ? [{ url: r['url'], type: typeof r['type'] === 'string' ? r['type'] : '',
+          error: typeof r['error'] === 'string' ? r['error'] : '' }] : []),
+      sessionCookies: text('sessionCookies'),
+      secretParameters: text('secretParameters'),
+      hidden: array('hidden').filter((id): id is string => typeof id === 'string'),
+      canHide: answer['canHide'] === true,
+    };
+  }
+
+  /** The findings hidden for the page's site (the browser decides the site). */
+  async setSecurityHidden(ids: readonly string[]): Promise<void> {
+    await send('tools.setSecurityHidden', { ids }, this.#transport);
   }
 
   /** Runs a protocol command on the tab; resolves with its result object. */

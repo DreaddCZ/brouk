@@ -83,6 +83,10 @@ class DevToolsDock final : public DevToolsFrontendDelegate,
   void SetSecretHeaderNames(std::string names) {
     secret_headers_ = std::move(names);
   }
+  // The security check's settings and the tab profile's folder (029).
+  void SetSecurityCheck(SecurityCheckConfig config) {
+    security_check_ = std::move(config);
+  }
   // "Inspect" again while open: select the element at the page point.
   void InspectAt(POINT point);
   // A DevTools panel ("console"), or picking an element.
@@ -120,6 +124,7 @@ class DevToolsDock final : public DevToolsFrontendDelegate,
   // ToolsHost (our own tools' page):
   void SaveFiles(File main, std::optional<File> extra, Done done) override;
   std::string SecretHeaderNames() override { return secret_headers_; }
+  SecurityCheckConfig SecurityCheck() override { return security_check_; }
   Rules RequestRules() override;
   std::optional<Error> SetRequestRules(RequestRuleSet rules) override;
   std::optional<UtilityInput> TakeUtilityInput() override;
@@ -160,6 +165,7 @@ class DevToolsDock final : public DevToolsFrontendDelegate,
   std::string position_ = "bottom";
   std::string tool_ = "devtools";
   std::string secret_headers_;
+  SecurityCheckConfig security_check_;
   std::optional<UtilityInput> utility_input_;
   std::vector<Part> parts_;
   // The divider being dragged: the mouse's start and the size then.

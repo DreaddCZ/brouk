@@ -5,7 +5,7 @@ Developer tools are switched on **per tab** with the hammer button next to the a
 - A tab opened from a tab with developer tools on starts with them on; other tabs start off.
 - Turning them on opens the **dock** and starts recording the tab's requests; [request rules](#devtools-request-rules) apply only to such tabs. Turning them off (or closing the dock) stops both.
 - The dock sits at the bottom, left or right, or in its own window — the buttons in its header. Its size and position are remembered.
-- The dock's tabs: **DevTools** (Chromium's own: Elements, Console, Sources, Network…) and Brouk's tools below. They work only with the tab's own profile.
+- The dock's tabs: **DevTools** (Chromium's own: Elements, Console, Sources, Network…) and Brouk's tools below, among them [Utilities](#devtools-utilities) and the [Security check](#devtools-security-check). They work only with the tab's own profile.
 - Brouk's own pages (Settings, History…) can be inspected the same way.
 
 **On Windows:** <kbd>F12</kbd> or <kbd>Ctrl+Shift+I</kbd> (also "⋮" → Developer tools, and the toolbar's button) switches the tab's developer tools on and off. <kbd>Ctrl+Shift+J</kbd> opens the console and <kbd>Ctrl+Shift+C</kbd> picks an element, as in Chrome. Drag the dock's edge to resize it. "Inspect" on one of Brouk's own pages (settings, help, the profile manager) opens DevTools in a window of its own.
@@ -57,6 +57,18 @@ Type in the list's **Filter** box to find one. Select text on a page and right-c
 ### Tab environment {#devtools-tab-environment}
 
 **Utilities → Tab environment** makes the current tab see another **time zone**, **language** (the `Accept-Language` header, `navigator.languages` and date formatting), **location**, **user agent** or **colour scheme** and reduced motion — to test how a site behaves elsewhere without changing your computer's settings. Switch each one on separately. While any is on, the dock shows which, with **Reset**. Only this tab is affected, only while its dev tools are on; switching them off ends everything. A page that already read a value sees the change after a reload. A site still needs its location permission.
+
+### Security check {#devtools-security-check}
+
+**Security check** looks for common mistakes in the current page's security set-up — the kind OWASP ZAP's passive scan finds — without sending anything: it reads only what the tab already loaded.
+
+- **Cookies:** missing `Secure`, `HttpOnly` on session cookies, `SameSite`; session cookies shared with every subdomain or living longer than 30 days; broken `__Host-` / `__Secure-` prefixes.
+- **Headers** of the page and of the site's own API calls: `Content-Security-Policy` (missing or weak), `Strict-Transport-Security`, protection against framing (clickjacking), `X-Content-Type-Options`, `Referrer-Policy`, `Cross-Origin-Opener-Policy`, `Permissions-Policy`, server versions, CORS with credentials, and caching of signed-in responses.
+- **The page:** plain HTTP, mixed content, forms that send to HTTP, tokens or passwords in URLs, scripts and styles from other sites without `integrity`, and JWTs kept in local or session storage.
+
+Findings are grouped as **High**, **Medium**, **Low** and **Informational**, rated as OWASP ZAP rates the same issue. Open one to see what was found, why it matters, how to fix it and a link to OWASP's guidance. **Copy as Markdown** copies them for a bug report and **Download as Markdown** saves them as a `.md` file, with tokens shortened. **Hide for this site** hides a known, accepted finding for the site in this profile; **Show hidden** brings it back. Pages on `localhost` are checked as if they were served over HTTPS.
+
+If the dev tools were turned on after the page loaded, the page's own headers are not known: use **Reload and check**. Only the page's own site is checked, not other sites it loads from. Settings → Developer tools sets which cookie names count as session cookies and which URL parameters count as secrets. A clean result is not a security test: it covers only what a passive check can see.
 
 ### JSON viewer {#devtools-json-viewer}
 

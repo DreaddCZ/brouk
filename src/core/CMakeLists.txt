@@ -125,6 +125,8 @@ set(BROUK_CORE_SOURCES
   secret_store.h
   secure_dns.cc
   secure_dns.h
+  security_check.cc
+  security_check.h
   security_state.cc
   security_state.h
   service_workers.cc

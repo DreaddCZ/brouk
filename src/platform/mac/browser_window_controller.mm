@@ -1684,6 +1684,13 @@ NSButton* ToolbarButton(NSString* symbol,
   return [_owner secretHeaderNames];
 }
 
+- (brouk::ToolsHost::SecurityCheckConfig)securityCheckForProfile:
+    (const brouk::ProfileId&)profile {
+  id<BRBrowserWindowOwner> owner = _owner;
+  return owner ? [owner securityCheckForProfile:profile]
+               : brouk::ToolsHost::SecurityCheckConfig{};
+}
+
 - (brouk::ToolsHost::Rules)requestRulesForProfile:
     (const brouk::ProfileId&)profile {
   id<BRBrowserWindowOwner> owner = _owner;

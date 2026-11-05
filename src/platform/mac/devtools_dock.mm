@@ -121,6 +121,10 @@ class DockToolsHost : public ToolsHost {
     BRDevToolsDock* dock = dock_;
     return dock ? [dock takeUtilityInput] : std::nullopt;
   }
+  SecurityCheckConfig SecurityCheck() override {
+    BRDevToolsDock* dock = dock_;
+    return dock ? dock.securityCheck : SecurityCheckConfig{};
+  }
   std::string SecretHeaderNames() override {
     BRDevToolsDock* dock = dock_;
     return dock ? std::string(dock.secretHeaderNames.UTF8String)
@@ -141,9 +145,13 @@ struct DockTool {
   NSString* title;
 };
 const DockTool kDockTools[] = {
-    {@"devtools", @"DevTools"}, {@"site-data", @"Site data"},
-    {@"requests", @"Requests"}, {@"tokens", @"Tokens"},
-    {@"rules", @"Rules"},       {@"utilities", @"Utilities"},
+    {@"devtools", @"DevTools"},
+    {@"site-data", @"Site data"},
+    {@"requests", @"Requests"},
+    {@"tokens", @"Tokens"},
+    {@"rules", @"Rules"},
+    {@"utilities", @"Utilities"},
+    {@"security", @"Security check"},
 };
 
 constexpr CGFloat kHeaderHeight = 28;

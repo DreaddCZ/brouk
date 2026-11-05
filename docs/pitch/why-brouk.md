@@ -80,6 +80,7 @@ Chromium DevTools, plus tools we usually open five other sites for — in **one 
 | **Request rules** | Add, change or remove headers, redirect or block — live, per profile |
 | **JSON viewer** | Any JSON response as a searchable, collapsible tree |
 | **Utilities** | Base64, Unix time, URL/HTML encoding, hashes, UUIDs, regex, cron, colours — offline, so tokens never go to converter sites; right-click → Decode With |
+| **Security check** | Missing or weak CSP, HSTS, cookie flags, CORS, tokens in URLs — rated like OWASP ZAP, passive, one click to a bug report |
 | **Tab environment** | The tab sees another time zone, language, location, user agent or dark mode — only while its dev tools are on |
 
 Dev tools are switched **per tab** with an always-visible toggle — rules never leak into normal browsing.
@@ -165,6 +166,7 @@ Dev tools are switched **per tab** with an always-visible toggle — rules never
 | History, bookmarks, ad blocking | ✅ in use |
 | Developer tools | ✅ in use |
 | Utilities for testers and tab environment (time zone, language, location) | 🧪 being tested |
+| Security check of the page (cookies, headers, CSP; OWASP ZAP ratings) | 🧪 being tested |
 | Passwords (built-in manager and Bitwarden) | ✅ in use |
 | Form autofill (Czech and EU company details) | ✅ in use |
 | Downloads (one list for all profiles) | ✅ in use |

@@ -1264,6 +1264,7 @@ void Tab::OpenDock(std::optional<POINT> inspect) {
       host_->TabDevToolsPreferences(), /*own_tools=*/true, *this);
   dock_->SetPosition(dock_position_);
   dock_->SetSecretHeaderNames(host_->TabSecretHeaderNames());
+  dock_->SetSecurityCheck(host_->TabSecurityCheck(profile_));
   dock_->ApplyRequestRules(host_->TabRequestRules(profile_).set);
   PlaceDock();
 }

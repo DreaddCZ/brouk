@@ -2516,6 +2516,20 @@ std::string App::SecretHeaderNames() {
   return profiles_.global_settings().GetString("devtools.secret_headers");
 }
 
+// The security check (029): its name lists, and hidden findings in
+// profiles\<id>\security-check.yaml.
+ToolsHost::SecurityCheckConfig App::SecurityCheck(const ProfileId& profile) {
+  const Settings& settings = profiles_.global_settings();
+  ToolsHost::SecurityCheckConfig config;
+  config.session_cookies = settings.GetString("devtools.session_cookies");
+  config.secret_parameters = settings.GetString("devtools.secret_parameters");
+  if (profiles_.Find(profile) && IsValidProfileId(profile)) {
+    config.profile_directory =
+        AppDataDirectory() / L"profiles" / Utf8ToWide(profile);
+  }
+  return config;
+}
+
 // Request rules (006), per profile, in profiles\<id>\request-rules.yaml.
 ToolsHost::Rules App::RequestRules(const ProfileId& profile) {
   ToolsHost::Rules rules;

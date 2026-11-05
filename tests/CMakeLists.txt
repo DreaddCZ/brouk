@@ -76,6 +76,7 @@ add_executable(brouk_core_tests
   core/search_engines_test.cc
   core/secret_store_test.cc
   core/secure_dns_test.cc
+  core/security_check_test.cc
   core/security_state_test.cc
   core/service_workers_test.cc
   core/session_test.cc
