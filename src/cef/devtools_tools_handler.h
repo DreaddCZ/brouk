@@ -1,6 +1,7 @@
 #ifndef BROUK_CEF_DEVTOOLS_TOOLS_HANDLER_H_
 #define BROUK_CEF_DEVTOOLS_TOOLS_HANDLER_H_
 
+#include <filesystem>
 #include <functional>
 #include <optional>
 #include <string>
@@ -45,6 +46,15 @@ class ToolsHost {
     std::string text;
   };
   virtual std::optional<UtilityInput> TakeUtilityInput() = 0;
+  // What the security check (029) needs: the settings with its name lists,
+  // and the tab profile's folder, where hidden findings are kept (empty
+  // when there is none, e.g. for internal pages).
+  struct SecurityCheckConfig {
+    std::string session_cookies;
+    std::string secret_parameters;
+    std::filesystem::path profile_directory;
+  };
+  virtual SecurityCheckConfig SecurityCheck() = 0;
 };
 
 // Answers the tools page (brouk://tools, 006) shown in one tab's dock:
@@ -65,6 +75,11 @@ class ToolsHost {
 //    userAgentPreset? | userAgent?, colorScheme?, reducedMotion?}   (027)
 //   {"type":"tools.reloadTab"}
 //   {"type":"tools.takeUtilityInput"}  -> {"utility", "text"} ("" if none)
+//   {"type":"tools.securityCheck"}  -> {"url", "site", "document": request
+//      with headers or null, "siteRequests": [...], "pageRequests": [{url,
+//      type, status, error}], "sessionCookies", "secretParameters",
+//      "hidden": [ids], "canHide"}                                   (029)
+//   {"type":"tools.setSecurityHidden","ids":[...]}  for the page's site
 // Only that page may ask, and only protocol methods allowed by
 // IsAllowedToolsProtocolMethod; everything goes to the dock's own tab.
 // UI thread.

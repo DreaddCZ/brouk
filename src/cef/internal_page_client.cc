@@ -8,6 +8,7 @@
 #include "cef/context_menu_model.h"
 #include "cef/help_link.h"
 #include "core/context_menu.h"
+#include "core/devtools_tools.h"
 #include "core/internal_pages.h"
 #include "core/page_events.h"
 #include "include/wrapper/cef_helpers.h"
@@ -17,9 +18,11 @@ namespace brouk {
 namespace {
 
 // Pages whose web links open in a tab: help (016) and the licences (023).
-bool OpensWebLinks(const std::string& page_url) {
+bool OpensWebLinks(const std::string& page_url, const std::string& target) {
   std::optional<std::string> page = InternalPageOf(page_url);
-  return page == "help" || page == "credits";
+  // The dev tools page: only the security check's references (029).
+  return page == "help" || page == "credits" ||
+         (page == "tools" && ToolsPageOpensLink(target));
 }
 
 }  // namespace
@@ -126,7 +129,8 @@ bool InternalPageClient::OnBeforePopup(
   CEF_REQUIRE_UI_THREAD();
   // Internal pages open no popups; a web link ⌘-clicked on the help page
   // (016) or the licences page (023) opens in a tab.
-  if (frame && OpensWebLinks(frame->GetURL().ToString())) {
+  if (frame &&
+      OpensWebLinks(frame->GetURL().ToString(), target_url.ToString())) {
     OpenHelpWebLink(target_url.ToString());
   }
   return true;
@@ -168,7 +172,7 @@ bool InternalPageClient::OnBeforeBrowse(CefRefPtr<CefBrowser> browser,
   // instead.
   std::string url = request->GetURL().ToString();
   if (!IsInternalPageUrl(url)) {
-    if (frame->IsMain() && OpensWebLinks(frame->GetURL().ToString())) {
+    if (frame->IsMain() && OpensWebLinks(frame->GetURL().ToString(), url)) {
       OpenHelpWebLink(url);
     }
     return true;
