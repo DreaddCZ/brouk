@@ -54,6 +54,8 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 027 | [Utilities for testers in developer tools](027-tester-utilities.md) | done — Windows not yet tested by hand | P2 |
 | 028 | [Test data generator](028-test-data.md) | idea | P3 |
 | 029 | [Security check in developer tools](029-security-check.md) | done — Windows not yet tested by hand | P2 |
+| 030 | [Tab groups within a profile](030-tab-groups.md) | draft | P2 |
+| 031 | [Vertical tabs](031-vertical-tabs.md) | draft | P2 |
 
 ## Roadmap
 

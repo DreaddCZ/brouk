@@ -52,7 +52,7 @@ Core UI elements:
 ## Out of scope
 
 - Detailed visual design (separate design work).
-- Vertical tabs — planned for later, in a separate spec.
+- Vertical tabs — planned for later, in a separate spec ([031](031-vertical-tabs.md)).
 - Workspaces (named, switchable sets of tabs) — not planned for now; profile groups cover the need.
 
 ## Configuration
