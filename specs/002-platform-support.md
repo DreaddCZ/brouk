@@ -62,3 +62,4 @@ None for macOS. Deferred until they become relevant (they do not block macOS wor
 - 2026-11-04 (user's decision): with the Windows app built (024), every feature is done for both macOS and Windows, except code signing (Windows releases stay unsigned).
 - 2026-11-04 (review of the acceptance criteria): all met except Windows with the same feature set, which waits for 024 (left: screen readers, quit crash #45).
 - 2026-11-04 (user's decision): marked done — Brouk builds and runs on Windows 10/11 x64 with the same features (0.3.1 onwards); the remaining Windows items (screen readers, quit crash #45) are tracked in 024.
+- 2026-11-19 (user's decision): Windows gets the Microsoft Store as an additional way to install Brouk, next to the direct download; specified in 032.
