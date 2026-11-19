@@ -1,6 +1,6 @@
 # 032 – Microsoft Store
 
-- **Status:** draft
+- **Status:** ready
 - **Priority:** P2
 - **Depends on:** 004 (data folder), 010 (default browser), 016 (help), 019 (releases), 023 (licences), 024 (Windows app)
 
@@ -36,14 +36,20 @@ The Store is an **additional** way to get Brouk. The direct download (installer 
 - Settings → Links → "Make Brouk the default browser" opens Windows Settings at the Store app's default apps page, as for the installer.
 - A second start (a link from another app) reaches the running Brouk as today (`BroukRunning` mutex).
 
+### Both installed
+
+- When the Store app starts for the first time and the installer's Brouk is installed (its uninstall entry for the current user exists), it offers to uninstall the installer's Brouk: "Brouk is also installed from the direct download. Uninstall that copy? Your data stays." with **Uninstall** and **Keep both**. Uninstall runs the installer's uninstaller silently; the data folder stays. Keep both is remembered and the question is not asked again.
+- If both are kept, both work with the same data, one at a time (`BroukRunning`).
+
 ### Releases
 
-- `scripts/release_windows` (019, 024) also submits the MSIX package to the Store, from the Intel Mac, after the release is published. Credentials for the Store submission go only into the keychain, as the update signing key does.
-- Only **stable** releases go to the Store. Beta releases stay on the direct download (see open question 2).
-- The Store certifies each submission (usually 1–3 days). A release counts as published when the direct download is published; the Store version follows when certified. A failed certification does not block the direct download.
+- `scripts/release_windows` (019, 024) also submits the MSIX package to the Store, from the Intel Mac, after the release is published, with the Microsoft Store Developer CLI (`msstore`, pinned in `scripts/install_tools`) through an Entra app registration linked to the Partner Center account. Its credentials go only into the keychain, as the update signing key does. No manual steps in Partner Center per release.
+- Only **stable** releases go to the Store. Beta releases stay on the direct download.
+- The Store certifies each submission (usually 1–3 days). A release counts as published when the direct download is published; the Store version simply follows when certified, and the release is not held back for it. A failed certification does not block the direct download; the script reports it.
 
 ### Store listing
 
+- The publisher display name is the user's own name (the individual developer account). The listing is in **English** only.
 - The listing's texts (short and long description, features, "what's new" from `CHANGELOG.md`) and screenshots live in the repository (`store/windows/`), so they are reviewed like other changes and follow the pitch deck.
 - A **privacy policy** page is published in the releases repository (GitHub Pages) and linked from the listing and from help. It states what Brouk sends anywhere and to whom (search suggestions, update checks, ad block list downloads, Bitwarden), and that Brouk sends nothing to its developer.
 - The age rating comes from the Store's questionnaire (a browser: unrestricted web access).
@@ -57,6 +63,7 @@ The Store is an **additional** way to get Brouk. The direct download (installer 
 - [ ] Every Windows release run builds `Brouk-<version>-x64.msix` from the same files as the installer; the Windows App Certification Kit (WACK) passes on it in CI.
 - [ ] CI installs the package (signed with a throwaway test certificate made in the run), runs the Windows smoke test (024) against it and uninstalls it.
 - [ ] The Store app reads and writes its settings, profiles and Chromium data in `%LOCALAPPDATA%\Brouk\`; data written by the installer's Brouk is used by the Store app and the other way round.
+- [ ] At the first start of the Store app with the installer's Brouk installed, Brouk offers to uninstall that copy; Uninstall removes it and keeps `%LOCALAPPDATA%\Brouk\`, Keep both is not asked again.
 - [ ] Uninstalling the Store app leaves `%LOCALAPPDATA%\Brouk\` in place.
 - [ ] The Store app never checks for or downloads updates of its own; Settings → Updates and About say it is updated by the Microsoft Store. The installer's Brouk behaves as before.
 - [ ] The Store app can be made the default browser from Settings → Links; then a link from another app and a double-clicked `.html` file open in Brouk, routed as in 010.
@@ -80,12 +87,7 @@ None. Settings → Updates shows no choices in the Store app.
 
 ## Open questions
 
-1. **Both installed:** what happens when a user has the installer's Brouk and the Store app on the same PC? They share the data folder, so only one may run at a time (the mutex already ensures this), but Windows shows two "Brouk" browsers and Start menu entries. Proposal: the Store app, at first start, notices the installer's Brouk and offers to uninstall it (keeping the data); otherwise both stay and work.
-2. **Beta in the Store:** stable only (proposal), or beta releases too as a Store "package flight" for a group of testers (needs their Microsoft account emails in Partner Center)?
-3. **Store submission automation:** with the Microsoft Store Developer CLI (`msstore`) or the Store submission API from the Intel Mac, which needs an Entra app registration linked to the Partner Center account. Proposal: `msstore` from the Mac (it runs on macOS), credentials in the keychain. Alternative: the user uploads the package by hand in Partner Center.
-4. **Publisher display name** in the Store: "Brouk" or the user's name? (Shown on the listing; the account itself is the user's individual developer account.)
-5. **Store listing language:** English only (proposal), or also Czech?
-6. **Release timing:** does a stable release wait for Store certification before it is announced, or does the Store simply follow (proposal)?
+None.
 
 ## Notes
 
@@ -95,3 +97,4 @@ None. Settings → Updates shows no choices in the Store app.
   - The Chromium sandbox, Crashpad, Windows Hello, Credential Manager and launching `bw.exe` (008) inside a full-trust package.
   - Registry writes of a packaged app are virtualized; any HKCU writes Brouk makes apart from the browser registration (e.g. for the second start or the updater) must still work or be skipped in the Store app.
   - Whether the manifest's protocol declaration can pass `--single-argument` before the URL (manifest schema in the Windows SDK); if not, how the Store app keeps a link from adding switches.
+- 2026-11-19 (user's decisions): the Store app offers to uninstall the installer's copy (keeping the data); only stable releases go to the Store; submission is automated (`msstore` from the Intel Mac); publisher display name is the user's name; listing in English only; the Store simply follows a release, which is not held back for certification. Status set to `ready`.
