@@ -1,6 +1,6 @@
 // Writes Brouk's icons from the beetle drawn below, so every size and
 // variant comes from one drawing: the SVGs in branding/, the macOS
-// AppIcon.icns, the Windows app.ico and the social preview. Run by hand
+// AppIcon.icns, the Windows app.ico, the MSIX logos and the social preview. Run by hand
 // on a Mac after changing the drawing (scripts/make_icons); the results
 // are committed, so builds do not need it. Needs Google Chrome (renders
 // the SVGs) and iconutil (Xcode's command line tools).
@@ -165,6 +165,15 @@ for (const { size, png } of images) {
 }
 writeFileSync(join(ROOT, 'src/platform/win/app.ico'),
   Buffer.concat([header, ...entries, ...images.map((i) => i.png)]));
+
+// Windows: the MSIX package's logos (032), at the sizes its manifest names.
+const assets = join(ROOT, 'src/platform/win/package/Assets');
+mkdirSync(assets, { recursive: true });
+for (const [file, size] of [
+  ['StoreLogo.png', 50], ['Square44x44Logo.png', 44], ['Square150x150Logo.png', 150],
+]) {
+  render(size <= 50 ? 'icon-windows-small.svg' : 'icon-windows.svg', size, join(assets, file));
+}
 
 // The repository's social preview (GitHub → Settings → Social preview).
 screenshot(

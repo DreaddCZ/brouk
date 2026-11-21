@@ -13,6 +13,13 @@ set(APP_VERSION "0.5.0")
 # contain them.
 set(APP_UPDATE_FEED_BASE "https://dreaddcz.github.io/brouk-releases")
 set(APP_UPDATE_PUBLIC_KEY "ZJ8QKD4uks699Clq/d/WTsnZUxgor2ngDFuWvL33Tbc=")
+# Microsoft Store (032): the package identity Partner Center assigns
+# (Product management -> Product identity). Placeholders until the Store
+# account exists; CI signs its test packages with a throwaway certificate
+# for APP_STORE_PUBLISHER.
+set(APP_STORE_IDENTITY_NAME "Brouk.Placeholder")
+set(APP_STORE_PUBLISHER "CN=Brouk Placeholder")
+set(APP_STORE_PUBLISHER_DISPLAY_NAME "Brouk")
 
 # macOS 15 Sequoia is the minimum (002). Must be set before project().
 set(CMAKE_OSX_DEPLOYMENT_TARGET "15.0" CACHE STRING "Minimum macOS version")

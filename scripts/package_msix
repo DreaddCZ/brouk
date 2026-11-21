@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# Builds Brouk's MSIX package for the Microsoft Store (032) from a built app
+# folder, with makeappx from the Windows SDK (on PATH after vcvars64.bat).
+# Runs in Git Bash on Windows (CI).
+#
+#   scripts/package_msix <build dir> [<output dir>]
+#     e.g. scripts/package_msix build/release build/dist
+#
+# Writes <output dir>/<AppName>-<version>-x64.msix and its .sha256 file. The
+# package is not signed: the Store signs what it publishes, and CI signs a
+# copy with a throwaway certificate to test it (scripts/test_windows_msix).
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+if [[ $# -lt 1 || $# -gt 2 ]]; then
+  echo "Usage: scripts/package_msix <build dir> [<output dir>]" >&2
+  exit 2
+fi
+BUILD="$1"
+DIST="${2:-$ROOT/build/dist}"
+
+cmake_var() { sed -n "s/^set($1 \"\(.*\)\")$/\1/p" "$ROOT/CMakeLists.txt"; }
+APP_NAME="$(cmake_var APP_NAME)"
+APP_EXE="$(cmake_var APP_EXECUTABLE_NAME)"
+VERSION="$(cmake_var APP_VERSION)"
+IDENTITY_NAME="$(cmake_var APP_STORE_IDENTITY_NAME)"
+PUBLISHER="$(cmake_var APP_STORE_PUBLISHER)"
+PUBLISHER_DISPLAY_NAME="$(cmake_var APP_STORE_PUBLISHER_DISPLAY_NAME)"
+
+APP_DIR="$BUILD/$APP_NAME"
+[[ -f "$APP_DIR/$APP_EXE.exe" ]] || {
+  echo "No built app in $APP_DIR (build it first)" >&2
+  exit 1
+}
+command -v makeappx >/dev/null || {
+  echo "makeappx not found: load the Visual Studio environment (vcvars64.bat)" >&2
+  exit 1
+}
+
+# The package's files: the app folder as the installer ships it (no debug
+# symbols, no test-only crash reporter settings), the logos and the manifest.
+LAYOUT="$BUILD/msix-layout"
+rm -rf "$LAYOUT" && mkdir -p "$LAYOUT"
+(cd "$APP_DIR" && tar -cf - --exclude='*.pdb' --exclude=crash_reporter.cfg .) |
+  (cd "$LAYOUT" && tar -xf -)
+cp -R "$ROOT/src/platform/win/package/Assets" "$LAYOUT/Assets"
+# The values are plain names from CMakeLists.txt; & and | would break sed.
+for v in "$APP_NAME" "$APP_EXE" "$VERSION" "$IDENTITY_NAME" "$PUBLISHER" \
+  "$PUBLISHER_DISPLAY_NAME"; do
+  [[ "$v" != *[\&\|\<\>\"]* ]] || { echo "Unexpected character in \"$v\"" >&2; exit 1; }
+done
+sed -e "s|@APP_NAME@|$APP_NAME|g" -e "s|@APP_EXE@|$APP_EXE|g" \
+  -e "s|@VERSION@|$VERSION|g" -e "s|@IDENTITY_NAME@|$IDENTITY_NAME|g" \
+  -e "s|@PUBLISHER@|$PUBLISHER|g" \
+  -e "s|@PUBLISHER_DISPLAY_NAME@|$PUBLISHER_DISPLAY_NAME|g" \
+  "$ROOT/src/platform/win/package/AppxManifest.xml.in" > "$LAYOUT/AppxManifest.xml"
+! grep -q '@[A-Z_]*@' "$LAYOUT/AppxManifest.xml" ||
+  { echo "Unfilled value in AppxManifest.xml" >&2; exit 1; }
+
+mkdir -p "$DIST"
+DIST="$(cd "$DIST" && pwd)"
+MSIX="$DIST/$APP_NAME-$VERSION-x64.msix"
+rm -f "$MSIX"
+# makeappx checks the manifest against the SDK's schema.
+if ! out="$(makeappx pack //o //d "$(cygpath -w "$LAYOUT")" //p "$(cygpath -w "$MSIX")" 2>&1)"; then
+  echo "$out" >&2
+  exit 1
+fi
+[[ -f "$MSIX" ]] || { echo "makeappx wrote no $MSIX" >&2; exit 1; }
+(cd "$DIST" && sha256sum "$(basename "$MSIX")" > "$(basename "$MSIX").sha256")
+echo "$MSIX"
