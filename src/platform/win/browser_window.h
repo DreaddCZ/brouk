@@ -669,6 +669,11 @@ class BrowserWindow final : public TabHost,
   // history ranking (addresses, not searches; Chrome).
   void NavigateActiveTab(const std::string& url, bool typed);
 
+  // Copies or cuts the address bar's selection when the whole address is
+  // selected: it goes on the clipboard as a full URL with its scheme
+  // (AddressTextForCopy). Returns false to leave it to the edit control.
+  // UI thread.
+  bool CopyAddressSelection(bool cut);
   // Address bar suggestions (003), as on macOS: the field's text changed by
   // typing; asking the sources again (the profile's history, the search
   // engine); showing the list with the first row's inline completion; the

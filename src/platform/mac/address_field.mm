@@ -2,6 +2,7 @@
 
 #include <string>
 
+#include "core/address_input.h"
 #include "core/url_display.h"
 
 // Keeps the text, shown or edited, clear of the field's right end, where
@@ -49,6 +50,58 @@
 
 @end
 
+// The address bar's field editor: copying or cutting the whole address puts
+// the full URL, with its scheme, on the clipboard (Chrome).
+@interface BRAddressFieldEditor : NSTextView
+@end
+
+@implementation BRAddressFieldEditor
+
+// The text to copy instead of the selection, or nil to copy it as is.
+- (nullable NSString*)adjustedCopyText {
+  if (![self.delegate isKindOfClass:BRAddressField.class]) {
+    return nil;
+  }
+  NSRange range = self.selectedRange;
+  if (range.length == 0 || NSMaxRange(range) > self.string.length) {
+    return nil;
+  }
+  NSString* selected = [self.string substringWithRange:range];
+  NSString* page = static_cast<BRAddressField*>(self.delegate).pageURL;
+  std::string text = brouk::AddressTextForCopy(selected.UTF8String ?: "",
+                                               self.string.UTF8String ?: "",
+                                               page.UTF8String ?: "");
+  NSString* adjusted = [NSString stringWithUTF8String:text.c_str()];
+  return adjusted && ![adjusted isEqualToString:selected] ? adjusted : nil;
+}
+
+- (BOOL)writeAdjustedCopyText {
+  NSString* text = [self adjustedCopyText];
+  if (!text) {
+    return NO;
+  }
+  NSPasteboard* pasteboard = NSPasteboard.generalPasteboard;
+  [pasteboard clearContents];
+  [pasteboard setString:text forType:NSPasteboardTypeString];
+  return YES;
+}
+
+- (void)copy:(nullable id)sender {
+  if (![self writeAdjustedCopyText]) {
+    [super copy:sender];
+  }
+}
+
+- (void)cut:(nullable id)sender {
+  if ([self writeAdjustedCopyText]) {
+    [self delete:sender];  // Removes the selection, with undo.
+  } else {
+    [super cut:sender];
+  }
+}
+
+@end
+
 @interface BRAddressField () <NSTextFieldDelegate>
 @end
 
@@ -60,6 +113,7 @@
   BOOL _allowInline;
   // The field got the focus from the mouse click being handled.
   BOOL _focusedByClick;
+  BRAddressFieldEditor* _fieldEditor;
 }
 
 + (Class)cellClass {
@@ -102,6 +156,14 @@
 
 - (NSString*)typedText {
   return _typedText;
+}
+
+- (NSTextView*)fieldEditor {
+  if (!_fieldEditor) {
+    _fieldEditor = [[BRAddressFieldEditor alloc] initWithFrame:NSZeroRect];
+    _fieldEditor.fieldEditor = YES;
+  }
+  return _fieldEditor;
 }
 
 // Replaces the field editor's text without a change notification.
@@ -148,11 +210,36 @@
 
 - (void)showPendingText:(nullable NSString*)text {
   _hasPendingText = text != nil;
-  if (text) {
-    self.stringValue = text;
-  } else {
-    [self showDisplayText];
+  if (!_isEditing) {
+    if (text) {
+      self.stringValue = text;
+    } else {
+      [self showDisplayText];
+    }
+    return;
   }
+  // The field is being edited: the page changes often while it loads
+  // (redirects), and each change calls this. Text the user typed stays as
+  // it is, cursor included (it changes only on a switch to another tab
+  // with typed text); an unedited field follows the page with its full URL
+  // (as when editing began, so a copy keeps the scheme), still all
+  // selected if it was.
+  NSText* editor = self.currentEditor;
+  if (text) {
+    if (editor && ![editor.string isEqualToString:text]) {
+      [self replaceEditorText:text selection:NSMakeRange(text.length, 0)];
+    }
+    return;
+  }
+  std::string display = brouk::FormatUrlForDisplay(_pageURL.UTF8String);
+  NSString* full = display.empty() ? @"" : _pageURL;
+  if (!editor || [editor.string isEqualToString:full]) {
+    return;
+  }
+  BOOL allSelected = editor.selectedRange.length == editor.string.length;
+  [self replaceEditorText:full
+                selection:allSelected ? NSMakeRange(0, full.length)
+                                      : NSMakeRange(full.length, 0)];
 }
 
 - (BOOL)becomeFirstResponder {

@@ -33,6 +33,11 @@ NS_ASSUME_NONNULL_BEGIN
 // (star, key, shield…), so long text ends before them.
 @property(nonatomic) CGFloat trailingInset;
 
+// The field's own field editor, which the window returns for it
+// (windowWillReturnFieldEditor:toObject:): copying the whole address puts
+// the full URL on the clipboard.
+@property(nonatomic, readonly) NSTextView* fieldEditor;
+
 // Focuses the field and selects its text (Cmd+L).
 - (void)focusAndSelectAll;
 // Shows `text` as unsubmitted input (restored when switching back to a tab).
