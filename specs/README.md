@@ -56,7 +56,7 @@ Priority: `P1` (must have) · `P2` (should have) · `P3` (nice to have)
 | 029 | [Security check in developer tools](029-security-check.md) | done — Windows not yet tested by hand | P2 |
 | 030 | [Tab groups within a profile](030-tab-groups.md) | draft | P2 |
 | 031 | [Vertical tabs](031-vertical-tabs.md) | draft | P2 |
-| 032 | [Microsoft Store](032-microsoft-store.md) | in-progress — part 1: the package | P2 |
+| 032 | [Microsoft Store](032-microsoft-store.md) | in-progress — package, Store app behaviour, listing and automated submission merged; first submission (0.6.0) in certification; left: WACK, Store install help, pitch deck, manual tests | P2 |
 
 ## Roadmap
 
