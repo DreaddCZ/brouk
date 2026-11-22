@@ -12,9 +12,23 @@
 namespace brouk {
 namespace {
 
+// The parsing and display tests name their platform; the settings tests
+// below use the one they run on, as the settings do.
+constexpr KeyPlatform kMac = KeyPlatform::kMac;
+constexpr bool kOnMac = kThisKeyPlatform == KeyPlatform::kMac;
+
 std::string Canonical(std::string_view text) {
-  std::optional<Shortcut> shortcut = ParseShortcut(text);
-  return shortcut ? FormatShortcut(*shortcut) : "invalid";
+  std::optional<Shortcut> shortcut = ParseShortcut(text, kMac);
+  return shortcut ? FormatShortcut(*shortcut, kMac) : "invalid";
+}
+
+// A shortcut as written on the platform the tests run on.
+std::string Here(std::string_view mac, std::string_view windows) {
+  return std::string(kOnMac ? mac : windows);
+}
+
+std::string HereCanonical(const Shortcut& shortcut) {
+  return FormatShortcut(shortcut);
 }
 
 TEST(ShortcutsTest, ParsesModifiersInAnyOrderAndCase) {
@@ -45,22 +59,23 @@ TEST(ShortcutsTest, RejectsInvalidShortcuts) {
 
 TEST(ShortcutsTest, ParsesLists) {
   std::optional<std::vector<Shortcut>> list =
-      ParseShortcutList("opt+cmd+right, cmd+} ,ctrl+tab");
+      ParseShortcutList("opt+cmd+right, cmd+} ,ctrl+tab", kMac);
   ASSERT_TRUE(list);
   ASSERT_EQ(list->size(), 3U);
-  EXPECT_EQ(FormatShortcut((*list)[1]), "cmd+}");
-  EXPECT_TRUE(ParseShortcutList("")->empty());
-  EXPECT_TRUE(ParseShortcutList(" None ")->empty());
-  EXPECT_FALSE(ParseShortcutList("cmd+t, t"));
-  EXPECT_FALSE(ParseShortcutList("cmd+t,"));
+  EXPECT_EQ(FormatShortcut((*list)[1], kMac), "cmd+}");
+  EXPECT_TRUE(ParseShortcutList("", kMac)->empty());
+  EXPECT_TRUE(ParseShortcutList(" None ", kMac)->empty());
+  EXPECT_FALSE(ParseShortcutList("cmd+t, t", kMac));
+  EXPECT_FALSE(ParseShortcutList("cmd+t,", kMac));
 }
 
 TEST(ShortcutsTest, DisplaysLikeMacMenus) {
-  EXPECT_EQ(DisplayShortcut(*ParseShortcut("cmd+shift+t")), "⇧⌘T");
-  EXPECT_EQ(DisplayShortcut(*ParseShortcut("ctrl+opt+cmd+left")), "⌃⌥⌘←");
-  EXPECT_EQ(DisplayShortcut(*ParseShortcut("cmd+comma")), "⌘,");
-  EXPECT_EQ(DisplayShortcut(*ParseShortcut("ctrl+tab")), "⌃⇥");
-  EXPECT_EQ(DisplayShortcut(*ParseShortcut("f12")), "F12");
+  EXPECT_EQ(DisplayShortcut(*ParseShortcut("cmd+shift+t", kMac), kMac), "⇧⌘T");
+  EXPECT_EQ(DisplayShortcut(*ParseShortcut("ctrl+opt+cmd+left", kMac), kMac),
+            "⌃⌥⌘←");
+  EXPECT_EQ(DisplayShortcut(*ParseShortcut("cmd+comma", kMac), kMac), "⌘,");
+  EXPECT_EQ(DisplayShortcut(*ParseShortcut("ctrl+tab", kMac), kMac), "⌃⇥");
+  EXPECT_EQ(DisplayShortcut(*ParseShortcut("f12", kMac), kMac), "F12");
 }
 
 TEST(ShortcutsTest, DefaultsAreValidAndDoNotOverlap) {
@@ -84,8 +99,9 @@ TEST(ShortcutsTest, DefaultsAreValidAndDoNotOverlap) {
 TEST(ShortcutsTest, SettingsRejectInvalidShortcuts) {
   Settings global(SettingScope::kGlobal);
   EXPECT_TRUE(global.Set("shortcuts.new_tab", std::string("t")));
-  EXPECT_EQ(global.GetString("shortcuts.new_tab"), "cmd+t");
-  EXPECT_FALSE(global.Set("shortcuts.new_tab", std::string("cmd+opt+t")));
+  EXPECT_EQ(global.GetString("shortcuts.new_tab"), Here("cmd+t", "ctrl+t"));
+  EXPECT_FALSE(
+      global.Set("shortcuts.new_tab", Here("cmd+opt+t", "ctrl+alt+t")));
 }
 
 TEST(ShortcutsTest, DefaultsWhenNothingChanged) {
@@ -93,34 +109,36 @@ TEST(ShortcutsTest, DefaultsWhenNothingChanged) {
   std::vector<std::string> problems;
   auto shortcuts = ResolveShortcuts(global, problems);
   EXPECT_TRUE(problems.empty());
-  ASSERT_EQ(shortcuts["next_tab"].size(), 3U);
-  EXPECT_EQ(FormatShortcut(shortcuts["new_tab"][0]), "cmd+t");
+  ASSERT_EQ(shortcuts["next_tab"].size(), kOnMac ? 3U : 2U);
+  EXPECT_EQ(HereCanonical(shortcuts["new_tab"][0]), Here("cmd+t", "ctrl+t"));
   EXPECT_TRUE(shortcuts["pin_tab"].empty());
 }
 
 TEST(ShortcutsTest, ChangedShortcutTakesItFromADefault) {
   Settings global(SettingScope::kGlobal);
-  global.Set("shortcuts.pin_tab", std::string("cmd+p"));
+  global.Set("shortcuts.pin_tab", Here("cmd+p", "ctrl+p"));
   std::vector<std::string> problems;
   auto shortcuts = ResolveShortcuts(global, problems);
   EXPECT_TRUE(problems.empty());
-  EXPECT_EQ(FormatShortcut(shortcuts["pin_tab"][0]), "cmd+p");
+  EXPECT_EQ(HereCanonical(shortcuts["pin_tab"][0]), Here("cmd+p", "ctrl+p"));
   EXPECT_TRUE(shortcuts["print"].empty());
 }
 
 TEST(ShortcutsTest, TwoChangedSettingsWithTheSameShortcut) {
   Settings global(SettingScope::kGlobal);
-  global.Set("shortcuts.reload", std::string("cmd+e"));
-  global.Set("shortcuts.pin_tab", std::string("cmd+e, cmd+shift+e"));
+  global.Set("shortcuts.reload", Here("cmd+e", "ctrl+e"));
+  global.Set("shortcuts.pin_tab",
+             Here("cmd+e, cmd+shift+e", "ctrl+e, ctrl+shift+e"));
   std::vector<std::string> problems;
   auto shortcuts = ResolveShortcuts(global, problems);
   ASSERT_EQ(problems.size(), 1U);
-  EXPECT_EQ(problems[0],
-            "⌘E is set for both \"Reload\" and \"Pin or unpin tab\"; only "
-            "\"Reload\" uses it.");
+  EXPECT_EQ(problems[0], Here("⌘E", "Ctrl+E") +
+                             " is set for both \"Reload\" and \"Pin or "
+                             "unpin tab\"; only \"Reload\" uses it.");
   EXPECT_EQ(shortcuts["reload"].size(), 1U);
   ASSERT_EQ(shortcuts["pin_tab"].size(), 1U);
-  EXPECT_EQ(FormatShortcut(shortcuts["pin_tab"][0]), "shift+cmd+e");
+  EXPECT_EQ(HereCanonical(shortcuts["pin_tab"][0]),
+            Here("shift+cmd+e", "ctrl+shift+e"));
 }
 
 TEST(ShortcutsTest, RemovingAShortcut) {
