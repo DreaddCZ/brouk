@@ -42,5 +42,18 @@ TEST(LaunchArgsTest, UrlEndsAtNul) {
   EXPECT_EQ(request.urls, (Strings{"http://localhost/a.html"}));
 }
 
+TEST(LaunchArgsTest, DisabledFeatureIsAdded) {
+  EXPECT_EQ(WithDisabledFeature("", "FedCm"), "FedCm");
+  EXPECT_EQ(WithDisabledFeature("Foo", "FedCm"), "Foo,FedCm");
+  EXPECT_EQ(WithDisabledFeature("Foo,,Bar,", "FedCm"), "Foo,Bar,FedCm");
+}
+
+TEST(LaunchArgsTest, DisabledFeatureIsNotRepeated) {
+  EXPECT_EQ(WithDisabledFeature("FedCm,Foo", "FedCm"), "Foo,FedCm");
+  // Only the whole name counts.
+  EXPECT_EQ(WithDisabledFeature("FedCmAutofill", "FedCm"),
+            "FedCmAutofill,FedCm");
+}
+
 }  // namespace
 }  // namespace brouk

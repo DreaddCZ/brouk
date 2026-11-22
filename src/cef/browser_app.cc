@@ -8,6 +8,7 @@
 
 #include "cef/internal_scheme.h"
 #include "cef/profile_prefs.h"
+#include "core/launch_args.h"
 #include "core/page_events.h"
 #include "include/cef_command_line.h"
 #include "include/wrapper/cef_helpers.h"
@@ -30,6 +31,19 @@ void BrowserApp::OnBeforeCommandLineProcessing(
   // 3603).
   if (process_type.empty()) {
     command_line->AppendSwitch("disable-chrome-login-prompt");
+  }
+  // FedCM ("Sign in with ..." account prompts, navigator.credentials.get
+  // with an identity provider) crashed the browser process (2026-11-22,
+  // CEF 158, Alloy style): a null dereference in Chromium's FedCM code
+  // (content/browser/webid) once a provider's accounts had arrived. Brouk
+  // has no FedCM prompt of its own, so it is off; sites then use their
+  // normal sign-in pages, as in browsers without FedCM.
+  if (process_type.empty()) {
+    command_line->AppendSwitchWithValue(
+        "disable-features",
+        WithDisabledFeature(
+            command_line->GetSwitchValue("disable-features").ToString(),
+            "FedCm"));
   }
 #if defined(OS_WIN)
   // Chromium's own profile (behind CEF's global request context, used only
