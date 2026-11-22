@@ -1,13 +1,16 @@
 ## Bookmarks {#bookmarks}
 
-- Click the **star** in the address bar or press <kbd>⌘D</kbd> to bookmark the page. The bookmark is saved at once; the bubble lets you change its name, folder and profile, or **Remove** it.
+- Click the **star** in the address bar or press {shortcut:bookmark_page} to bookmark the page. The bookmark is saved at once; the bubble lets you change its name, folder and profile, or **Remove** it.
 - The star is filled when the page is bookmarked; clicking it then edits that bookmark.
-- **Bookmarks → Bookmark All Tabs…** (<kbd>⇧⌘D</kbd>) saves the tabs of the current profile's group into a new folder.
+- {mac}**Bookmarks → Bookmark All Tabs…**{/mac}{win}**⋮ → Bookmarks → Bookmark all tabs…**{/win} ({shortcut:bookmark_all_tabs}) saves the tabs of the current profile's group into a new folder.
 - Bookmarks appear in [address bar suggestions](#address-bar) and the [command palette](#command-palette).
-- Deleting a bookmark anywhere shows **Undo** for a few seconds; <kbd>⌘Z</kbd> on the bookmark manager undoes it too.
+- Deleting a bookmark anywhere shows **Undo** for a few seconds; {key:mod+z} on the bookmark manager undoes it too.
 - Bookmarks show their site's icon once you have visited the site in that profile.
 
-**On Windows:** <kbd>Ctrl+D</kbd> or the star bookmarks the page, <kbd>Ctrl+Shift+D</kbd> bookmarks all tabs, <kbd>Ctrl+Shift+O</kbd> opens the bookmark manager, and "⋮" → Bookmarks lists the bar's bookmarks and Other bookmarks. <kbd>Ctrl+Shift+B</kbd> shows the bookmarks bar on every tab; Ctrl-click or middle-click on the bar opens a bookmark in a background tab, Ctrl+Shift-click in a new tab in front. Drag a link from a page onto the bar to bookmark it there. In the bubble's folder list, "New folder…" asks for a name and puts the bookmark into the new folder. After a deletion, "Undo" shows for a few seconds.
+{win}
+- **⋮ → Bookmarks** lists the bar's bookmarks and Other bookmarks.
+- In the bubble's folder list, "New folder…" asks for a name and puts the bookmark into the new folder.
+{/win}
 
 ### Bookmarks and profiles {#bookmarks-profiles}
 
@@ -21,20 +24,20 @@ There is one bookmark tree for the whole app. Each bookmark or folder is either 
 
 ### Bookmarks bar {#bookmarks-bar}
 
-- The bar shows on new tabs; <kbd>⇧⌘B</kbd> (View → Always Show Bookmarks Bar) shows it on every tab.
-- Click opens in the current tab; <kbd>⌘</kbd>-click or middle-click in a new tab; <kbd>⇧⌘</kbd>-click in a new tab you switch to; <kbd>⇧</kbd>-click in a new window.
+- The bar shows on new tabs; {shortcut:toggle_bookmarks_bar} ({mac}View → Always Show Bookmarks Bar{/mac}{win}⋮ → Bookmarks → Always show bookmarks bar{/win}) shows it on every tab.
+- {mac}Click opens in the current tab; {key:mod}-click or middle-click in a new tab; {key:shift+mod}-click in a new tab you switch to; {key:shift}-click in a new window.{/mac}{win}Click opens in the current tab; {key:ctrl}-click or middle-click in a background tab; {key:ctrl+shift}-click in a new tab in front.{/win}
 - Folders open as menus; items that don't fit are in the **»** menu.
 - Drag items to reorder them or onto a folder to move them in. Drop a link, or the site icon left of the address, onto the bar to bookmark it there.
 - Right-click for Open in New Tab/Window, Open All, Edit…, Delete, Add Bookmark…, Add Folder….
 
 ### Bookmark manager {#bookmarks-manager}
 
-**Bookmarks → Bookmark Manager** (<kbd>⌥⌘B</kbd>) opens all bookmarks of all profiles as a tab:
+{mac}**Bookmarks → Bookmark Manager**{/mac}{win}**⋮ → Bookmarks → Bookmark manager**{/win} ({shortcut:bookmark_manager}) opens all bookmarks of all profiles as a tab:
 
 - folders on the left, the folder's contents on the right; linked items show their profile's colour and name;
 - **Profile** filter (all, general, one profile) and **search** by name and address;
-- select with click, <kbd>⌘</kbd>-click, <kbd>⇧</kbd>-click, <kbd>⌘A</kbd>; drag to move; <kbd>Delete</kbd> deletes;
-- double-click or <kbd>Return</kbd> opens a bookmark ([which profile](#bookmarks-profiles)).
+- select with click, {key:mod}-click, {key:shift}-click, {key:mod+a}; drag to move; {mac}{key:backspace}{/mac}{win}{key:delete}{/win} deletes;
+- double-click or {key:return} opens a bookmark ([which profile](#bookmarks-profiles)).
 
 ### Import and export {#bookmarks-import-export}
 

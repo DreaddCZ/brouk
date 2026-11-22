@@ -9,13 +9,13 @@ Brouk remembers the pages you visit, **per profile**: a page visited in one prof
 
 ### History page {#history-page}
 
-<kbd>⌘Y</kbd> (History → Show Full History; on Windows <kbd>Ctrl+H</kbd> or "⋮" → History) opens the history of **all profiles** as a tab:
+{shortcut:show_history} ({mac}History → Show Full History{/mac}{win}⋮ → History → History{/win}) opens the history of **all profiles** as a tab:
 
 - **By site** (default): one row per exact host and profile — `companya.atlassian.net` and `companyb.atlassian.net` are separate rows — with visits, pages and last visit. Sort by last visit, visits or site; click a row to see its pages.
 - **By day:** single visits under Today, Yesterday and dates.
 - **Profile** filter: all profiles or one; each row shows its profile's colour.
-- **Open** a page by clicking its title — in its own profile. If that profile's tabs are in another window, it opens there; if in several, Brouk asks which one. <kbd>⌘</kbd>-click opens a background tab.
-- **Delete** with ✕ on a row, or tick several rows (<kbd>⇧</kbd>-click ticks a range) and delete them together. Deleting a site deletes all its pages.
+- **Open** a page by clicking its title — in its own profile. If that profile's tabs are in another window, it opens there; if in several, Brouk asks which one. {key:mod}-click opens a background tab.
+- **Delete** with ✕ on a row, or tick several rows ({key:shift}-click ticks a range) and delete them together. Deleting a site deletes all its pages.
 
 ### Searching history {#history-search}
 
@@ -76,7 +76,7 @@ In keep mode, the ticked sites become the profile's keep list for next time. Onl
 
 ### Clear browsing data {#history-clear-data}
 
-**Clear browsing data…** (<kbd>⇧⌘⌫</kbd>, on Windows <kbd>Ctrl+Shift+Del</kbd>, also on the history page and in Settings → History) clears, for one profile or all, within a time range (last hour to all time):
+**Clear browsing data…** ({shortcut:clear_browsing_data}, also on the history page and in Settings → History) clears, for one profile or all, within a time range (last hour to all time):
 
 - **Browsing history**;
 - **Download history** — the list only, the files stay;
@@ -87,10 +87,19 @@ It shows how much will be cleared before it does. Bookmarked sites keep their ic
 
 ### History menu {#history-menu}
 
-- Back, Forward, Home (<kbd>⇧⌘H</kbd>, the new tab page).
-- **Reopen Closed Tab** (<kbd>⇧⌘T</kbd>, on Windows <kbd>Ctrl+Shift+T</kbd>): the last closed tab — or window — goes back where it was, in its profile, pinned if it was. Brouk remembers the last 10 closed tabs and windows until you quit.
-- **Recently Closed** (on Windows in "⋮" → History) and **Recently Visited** (the last pages of the active tab's profile).
-- Show Full History (<kbd>⌘Y</kbd>).
+{mac}
+- Back, Forward, Home ({shortcut:home}, the new tab page).
+- **Reopen Closed Tab** ({shortcut:reopen_closed_tab}): the last closed tab — or window — goes back where it was, in its profile, pinned if it was. Brouk remembers the last 10 closed tabs and windows until you quit.
+- **Recently Closed** and **Recently Visited** (the last pages of the active tab's profile).
+- Show Full History ({shortcut:show_history}).
+{/mac}
+{win}
+**⋮ → History:**
+
+- **History** ({shortcut:show_history}) and **Clear browsing data…** ({shortcut:clear_browsing_data}).
+- **Reopen closed tab** ({shortcut:reopen_closed_tab}): the last closed tab — or window — goes back where it was, in its profile, pinned if it was. Below it the recently closed tabs and windows: Brouk remembers the last 10 until you quit.
+- **Recently visited:** the last pages of the active tab's profile.
+{/win}
 
 ### Never record these sites {#history-never-record}
 

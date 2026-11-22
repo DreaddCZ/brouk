@@ -5,7 +5,7 @@ Brouk opens links in the right profile by **rules**: a URL pattern and the profi
 **Which links are routed:**
 
 - links from other apps (mail, chat, documents) — when Brouk is the [default browser](#link-routing-default-browser);
-- new tabs and windows you open from a page: <kbd>⌘</kbd>-click, middle-click, "Open Link in New Tab/Window", links that open a new tab;
+- new tabs and windows you open from a page: {key:mod}-click, middle-click, "Open Link in New Tab/Window", links that open a new tab;
 - addresses typed into a **new** tab.
 
 **Never routed:** navigation inside a tab, redirects, and sign-in popups. They stay in their profile, so sign-ins (Microsoft, Google, GitHub) keep working.
@@ -36,11 +36,13 @@ When a rule lists several profiles, or the profile's tabs are in several windows
 1. **Profile:** the rule's profiles with their number keys <kbd>1</kbd>–<kbd>9</kbd>. Tick **"Always open links matching … in this profile"** (or press <kbd>A</kbd>) to make the rule use only the chosen profile from now on; you can change it back in Settings → Links.
 2. **Window** (only when that profile's group is in several windows): each window with a thumbnail, its active tab and its profile groups; the last entry is **New window**.
 
-Number keys choose at once; <kbd>↑</kbd> <kbd>↓</kbd> and <kbd>Return</kbd> work too. <kbd>Esc</kbd> goes back a step, or cancels — the link is then not opened.
+Number keys choose at once; <kbd>↑</kbd> <kbd>↓</kbd> and {key:return} work too. <kbd>Esc</kbd> goes back a step, or cancels — the link is then not opened.
 
-**Which window:** a profile's group in exactly one window → that window; in several → the picker asks; in none → a new group in the front window. When the chosen window is on another desktop (Space), macOS switches there, or — Settings → Links → "When the chosen window is on another Space" — the window moves to you.
+**Which window:** a profile's group in exactly one window → that window; in several → the picker asks; in none → a new group in the front window. {mac}When the chosen window is on another desktop (Space), macOS switches there, or — Settings → Links → "When the chosen window is on another Space" — the window moves to you.{/mac}{win}When the chosen window is on another virtual desktop, Windows switches to that desktop, or — Settings → Links → "When the chosen window is on another desktop" — the window moves to yours.{/win}
+{win}
 
-**On Windows:** the picker shows a live picture of each window, as the taskbar does (a minimised window shows a frame instead). Virtual desktops take the place of Spaces: Windows switches to the chosen window's desktop, or the window moves to yours with the setting. Brouk's log (`debug.log` next to `brouk.exe`) has a line for each routed link.
+The picker shows a live picture of each window, as the taskbar does (a minimised window shows a frame instead).
+{/win}
 
 ### Safe links and other wrappers {#link-routing-wrappers}
 
@@ -53,10 +55,8 @@ Links in mail and chat often go through a security service first (Microsoft Safe
 
 ### Default browser {#link-routing-default-browser}
 
-Links from other apps reach Brouk only when it is the default browser: **Settings → Links → Make Brouk the default browser** (macOS asks you to confirm).
-
-**On Windows:** the button registers Brouk as a browser for your Windows account and opens Windows Settings → Default apps → Brouk. Choose Brouk there for HTTP and HTTPS (Windows lets no app do this by itself). If you move the Brouk folder, it updates its registration at the next start.
+Links from other apps reach Brouk only when it is the default browser: **Settings → Links → Make Brouk the default browser** {mac}(macOS asks you to confirm).{/mac}{win}— it registers Brouk as a browser for your Windows account and opens Windows Settings → Default apps → Brouk. Choose Brouk there for HTTP and HTTPS (Windows lets no app do this by itself). If you move the Brouk folder, it updates its registration at the next start.{/win}
 
 ### Why did a link open there? {#link-routing-why}
 
-Every routed link is noted in the macOS log. Open **Console**, search for `Link routing` and process `brouk`. Each line says where the link came from, which address it was routed by and which rule decided. It never contains passwords or tokens (query values are left out).
+{mac}Every routed link is noted in the macOS log. Open **Console**, search for `Link routing` and process `brouk`.{/mac}{win}Every routed link is noted in Brouk's log (`debug.log` next to `brouk.exe`), one line per link.{/win} Each line says where the link came from, which address it was routed by and which rule decided. It never contains passwords or tokens (query values are left out).

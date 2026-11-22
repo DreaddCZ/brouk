@@ -4,7 +4,7 @@ Brouk blocks ads, trackers, malware sites and cookie banners itself, with the fi
 
 ### The shield {#adblock-shield}
 
-The **shield** next to the address shows how many requests were blocked on the page. Click it for:
+The **shield** {mac}next to the address{/mac}{win}— a toolbar button left of the downloads button —{/win} shows how many requests were blocked on the page. Click it for:
 
 - an **on/off switch for this site** (in this profile);
 - what was blocked, and the other sites the page contacted, each with allow and block buttons — for this site or everywhere;
@@ -12,7 +12,7 @@ The **shield** next to the address shows how many requests were blocked on the p
 
 A page blocked as a whole (e.g. a known malware site) shows which list blocked it, with **Allow this site** and **Go back**.
 
-**On Windows:** the shield is a toolbar button left of the downloads button, with the page's blocked count. In its popup, click a third-party domain (or select it and press <kbd>Enter</kbd>) for its rules. "Show blocked requests" opens a window with the list. A blocked page and **Block element…** work as on macOS.
+{win}In its popup, click a third-party domain (or select it and press {key:return}) for its rules. "Show blocked requests" opens a window with the list.{/win}
 
 ### Filter lists {#adblock-lists}
 

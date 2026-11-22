@@ -1,13 +1,14 @@
 /**
  * The bookmark manager page (011): all bookmarks of all profiles, a folder
  * tree on the left and the chosen folder (or the search results) on the
- * right. Rows are selected by clicking (⌘ toggles, Shift selects a range),
+ * right. Rows are selected by clicking (⌘ / Ctrl toggles, Shift selects a range),
  * opened by double-click or Return, moved by dragging onto a folder or
- * between rows, and deleted with Delete (with Undo, also ⌘Z).
+ * between rows, and deleted with Delete (with Undo, also ⌘Z / Ctrl+Z).
  */
 import { cefSubscriber, cefTransport } from '../shared/bridge.js';
 import { button, byId, element, errorText } from '../shared/dom.js';
 import { wireHelpButtons } from '../shared/help.js';
+import { commandKey } from '../shared/platform.js';
 import { BookmarksApi, type Profile } from './api.js';
 import {
   clickSelection,
@@ -232,13 +233,13 @@ function renderRow(node: BookmarkNode): HTMLElement {
 
   row.addEventListener('click', (event) => {
     if ((event.target as HTMLElement).closest('.row-action') !== null) return;
-    selected = clickSelection(selected, order, anchor, node.id, { toggle: event.metaKey, range: event.shiftKey });
+    selected = clickSelection(selected, order, anchor, node.id, { toggle: commandKey(event), range: event.shiftKey });
     if (!event.shiftKey) anchor = node.id;
     renderSelectionOnly();
   });
-  row.addEventListener('dblclick', (event) => activate(node, event.metaKey));
+  row.addEventListener('dblclick', (event) => activate(node, commandKey(event)));
   row.addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') activate(node, event.metaKey);
+    if (event.key === 'Enter') activate(node, commandKey(event));
   });
   addRowDrag(row, node);
   return row;
@@ -568,10 +569,10 @@ function setUp(): void {
     }
     const typing = event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement;
     if (typing) return;
-    if (event.metaKey && event.key === 'z') {
+    if (commandKey(event) && event.key === 'z') {
       event.preventDefault();
       void undo();
-    } else if (event.metaKey && event.key === 'a') {
+    } else if (commandKey(event) && event.key === 'a') {
       event.preventDefault();
       selected = new Set(order);
       renderSelectionOnly();
