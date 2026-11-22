@@ -74,6 +74,18 @@ const profile = (id, name, color) => {
 profile('default', 'Personal', 'green');
 profile('p-0000000a', 'Client A', 'blue');
 profile('p-0000000b', 'Client B', 'orange');
+// Link rules (010) for Settings → Links.
+writeFileSync(join(data, 'link-routing.yaml'), `rules:
+  - pattern: "*.client-a.example"
+    profiles: [p-0000000a]
+  - pattern: "*.client-b.example"
+    profiles: [p-0000000b]
+  - pattern: tickets.example
+    profiles: [p-0000000a, p-0000000b]
+wrappers:
+  - pattern: safelinks.example
+    parameter: url
+`);
 writeFileSync(join(data, 'settings.yaml'), 'appearance:\n  theme: light\nstartup:\n  restore: last_session\n');
 const tab = (url, title, id) => `      - url: "${url}"\n        title: "${title}"\n        profile: ${id}\n`;
 writeFileSync(join(data, 'session.yaml'), `clean_exit: true
@@ -111,6 +123,16 @@ $i = New-Object System.Drawing.Bitmap $w, $h
 $i.Save('${file}')
 "${name}: $w x $h"`).trim());
 }
+// Maximizes the foreground window (the Store wants at least 1366×768).
+const maximize = () => powershell(`
+Add-Type @'
+using System; using System.Runtime.InteropServices;
+public static class Max {
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);
+}
+'@
+[void][Max]::ShowWindow([Max]::GetForegroundWindow(), 3)`);
 const keys = (k) => powershell(`Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('${k}')`);
 
 try {
@@ -120,14 +142,27 @@ try {
   await sleep(6000);
   shot('2-developer-tools');
   keys('{F12}');
-  again('brouk://task-manager');
-  await sleep(6000);
+  await sleep(2000);
+  // The task manager (020) opens in its own window with Shift+Esc.
+  keys('+{ESC}');
+  await sleep(5000);
+  maximize();
+  await sleep(2000);
   shot('3-task-manager');
-  again('brouk://help');
+  keys('%{F4}');
+  await sleep(2000);
+  // Settings → Links: the link routing rules (010).
+  again('brouk://settings/#global:links');
   await sleep(6000);
-  shot('4-help');
+  maximize();
+  await sleep(2000);
+  shot('4-link-rules');
 } finally {
   brouk.kill();
-  powershell('Get-Process brouk -ErrorAction SilentlyContinue | Stop-Process -Force');
+  try {
+    powershell('Get-Process brouk -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue; exit 0');
+  } catch {
+    // Already gone.
+  }
   server.close();
 }
