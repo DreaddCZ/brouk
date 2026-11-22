@@ -41,6 +41,8 @@ export interface SettingsState {
   readonly profile: { readonly id: string; readonly items: readonly SettingItem[] };
   /** Problems found in the settings files. */
   readonly problems: readonly string[];
+  /** The Microsoft Store updates this copy (032); no update settings apply. */
+  readonly updatesByStore: boolean;
 }
 
 export interface FileResult {
@@ -127,6 +129,7 @@ export function parseState(value: unknown): SettingsState {
     }),
     profile: { id: profile['id'], items: items(profile['items']) },
     problems: strings(value['problems']),
+    updatesByStore: value['updatesByStore'] === true,
   };
 }
 

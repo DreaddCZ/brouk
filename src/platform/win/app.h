@@ -231,6 +231,7 @@ class App final : public BrowserWindowOwner,
   bool IsDefaultBrowser() override;
   void MakeDefaultBrowser(
       std::function<void(std::optional<Error> error)> done) override;
+  bool UpdatedByStore() override;
 
  private:
   // A launch's URLs as tabs of a new window (Chrome), or of `into` (the
@@ -280,6 +281,8 @@ class App final : public BrowserWindowOwner,
   // The window the settings and profile pages' dialogs belong to.
   HWND DialogOwner() const;
   void SetUpBitwarden();
+  // The Store app's question about the installer's copy (032).
+  void OfferToUninstallInstallerCopy();
   // "Inspect" in one of Brouk's page windows: InspectPage.
   std::function<void(CefRefPtr<CefBrowser>, const std::wstring&, POINT)>
   PageInspector();

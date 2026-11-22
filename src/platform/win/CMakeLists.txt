@@ -92,6 +92,8 @@ add_library(brouk_app SHARED
   system_events.h
   tab.cc
   tab.h
+  store_package.cc
+  store_package.h
   tab_drag_image.cc
   tab_drag_image.h
   tab_panel.cc

@@ -142,6 +142,7 @@ std::string StateJson(SettingsPageDelegate& delegate,
     problems->SetString(index++, problem);
   }
   state->SetList("problems", problems);
+  state->SetBool("updatesByStore", delegate.UpdatedByStore());
   return ToJson(state);
 }
 

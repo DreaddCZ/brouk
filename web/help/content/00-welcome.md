@@ -34,4 +34,6 @@ Settings → [Updates](#settings-updates):
 
 **On Windows:** the same, with **⋮ → Check for updates…**; a downloaded update shows **⋮ → Restart to update Brouk**, and with *ask before downloading* **⋮ → Update Brouk to …** downloads it. The installer runs by itself after Brouk quits. Every update is checked against Brouk's signing key before it runs.
 
+**Brouk from the Microsoft Store** is updated by the Store, not by Brouk: Settings → Updates says so, and **⋮ → Check for updates…** opens the Store's updates page. Its data is in `%LOCALAPPDATA%\Brouk` too, so it shares profiles, passwords and settings with the downloaded copy. If both are installed, the Store app offers once to uninstall the downloaded copy; your data stays either way. To make it the default browser, Settings → Links opens Windows' default apps page for it.
+
 Brouk checks only by downloading the update feed; it sends nothing but its version. Copies you build yourself never update. **Brouk → About Brouk** shows the version and the exact build, e.g. `0.1.0 (a1b2c3d)` — mention it when you report a problem.
