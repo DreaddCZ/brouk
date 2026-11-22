@@ -3584,6 +3584,30 @@ void BrowserWindow::SetAddressText(const std::wstring& text, int select_from) {
   SendMessageW(address_, EM_SETSEL, select_from < 0 ? end : select_from, end);
 }
 
+bool BrowserWindow::CopyAddressSelection(bool cut) {
+  CEF_REQUIRE_UI_THREAD();
+  const std::wstring text = WindowText(address_);
+  DWORD start = 0;
+  DWORD end = 0;
+  SendMessageW(address_, EM_GETSEL, reinterpret_cast<WPARAM>(&start),
+               reinterpret_cast<LPARAM>(&end));
+  if (start >= end || end > text.size()) {
+    return false;
+  }
+  const std::string selected = WideToUtf8(text.substr(start, end - start));
+  const Tab* tab = ActiveTab();
+  const std::string adjusted = AddressTextForCopy(
+      selected, WideToUtf8(text), tab ? tab->url() : std::string());
+  if (adjusted == selected) {
+    return false;
+  }
+  SetClipboardText(window_, Utf8ToWide(adjusted), /*secret=*/false);
+  if (cut) {
+    SendMessageW(address_, EM_REPLACESEL, TRUE, reinterpret_cast<LPARAM>(L""));
+  }
+  return true;
+}
+
 void BrowserWindow::OnAddressEdited() {
   if (setting_address_ || GetFocus() != address_ || kind_ == Kind::kPopup) {
     return;
@@ -5050,6 +5074,17 @@ LRESULT CALLBACK BrowserWindow::AddressProc(HWND window,
       // Enter, Escape and Ctrl+Tab are handled above; without this the edit
       // beeps.
       if (wparam == L'\r' || wparam == 0x1B || wparam == L'\t') {
+        return 0;
+      }
+      // Ctrl+C and Ctrl+X.
+      if ((wparam == 0x03 || wparam == 0x18) &&
+          self->CopyAddressSelection(wparam == 0x18)) {
+        return 0;
+      }
+      break;
+    case WM_COPY:
+    case WM_CUT:
+      if (self->CopyAddressSelection(message == WM_CUT)) {
         return 0;
       }
       break;

@@ -22,6 +22,7 @@ As in Chrome, tabs move freely between windows; the page moves with them and is 
 ### Address bar {#address-bar}
 
 - Clicking the address bar, <kbd>⌘L</kbd>, or a new tab selects the address, so you can type or paste right away.
+- Copying the whole address copies the full URL, with `https://`, also when the bar shows it shortened or you typed it without one.
 - Type an address or words to search. The search engine is in Settings → [Search](#settings-search).
 - **Suggestions** while typing: your history in this tab's profile, then bookmarks visible in this profile, then your search engine's suggestions. Each source can be turned off in Settings → Search.
 - An address you typed before is completed inline; keep typing to replace it.

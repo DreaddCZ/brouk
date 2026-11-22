@@ -3888,6 +3888,11 @@ static std::int64_t Now() {
 
 #pragma mark - NSWindowDelegate
 
+- (nullable id)windowWillReturnFieldEditor:(NSWindow*)sender
+                                  toObject:(nullable id)client {
+  return client == _addressField ? _addressField.fieldEditor : nil;
+}
+
 - (BOOL)windowShouldClose:(NSWindow*)sender {
   if (self.liveTabCount == 0) {
     return YES;

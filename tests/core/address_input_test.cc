@@ -107,5 +107,36 @@ TEST(AddressInputTest, InternalPagesAreAddresses) {
   EXPECT_EQ(result.url, "brouk://history/");
 }
 
+TEST(AddressInputTest, CopyOfTheShortenedPageAddressIsTheFullUrl) {
+  constexpr std::string_view kPage = "https://www.example.com/";
+  EXPECT_EQ(AddressTextForCopy("example.com", "example.com", kPage), kPage);
+  EXPECT_EQ(AddressTextForCopy(kPage, kPage, kPage), kPage);
+  EXPECT_EQ(AddressTextForCopy("example.com/a?b", "example.com/a?b",
+                               "http://example.com/a?b"),
+            "http://example.com/a?b");
+}
+
+TEST(AddressInputTest, CopyOfTypedAddressAddsTheScheme) {
+  EXPECT_EQ(AddressTextForCopy("example.com/path", "example.com/path",
+                               "https://other.example/"),
+            "https://example.com/path");
+  EXPECT_EQ(AddressTextForCopy("localhost:8080", "localhost:8080", ""),
+            "http://localhost:8080");
+  EXPECT_EQ(AddressTextForCopy(" example.com ", " example.com ", ""),
+            "https://example.com");
+  EXPECT_EQ(AddressTextForCopy("brouk://history/", "brouk://history/", ""),
+            "brouk://history/");
+}
+
+TEST(AddressInputTest, CopyOfPartsAndSearchesIsUnchanged) {
+  EXPECT_EQ(AddressTextForCopy("example", "example.com/path",
+                               "https://example.com/path"),
+            "example");
+  EXPECT_EQ(AddressTextForCopy("two words", "two words", ""), "two words");
+  EXPECT_EQ(AddressTextForCopy("", "", "https://example.com/"), "");
+  EXPECT_EQ(AddressTextForCopy("user@example.com", "user@example.com", ""),
+            "user@example.com");
+}
+
 }  // namespace
 }  // namespace brouk
