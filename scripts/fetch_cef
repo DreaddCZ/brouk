@@ -12,14 +12,14 @@
 
 set -euo pipefail
 
-CEF_VERSION="156.0.14+g4fa4ab5+chromium-156.0.8078.48"
+CEF_VERSION="158.0.3+g8c29be2+chromium-158.0.8127.18"
 
 checksum() {
   case "$1" in
-    macosx64) echo e584ade521802f8c2779d24996b32ddc183e8502743e5e3910b7247bb08f24f1 ;;
-    macosarm64) echo ed994b907ad596ca609a0542a1e2b22aa97e93e98b8141fed4c24aef39b9ccf6 ;;
-    linux64) echo 4191ac920a91a052eba04afb6ed830d47aed46a3e246c434a2f062c23588dc8a ;;
-    windows64) echo 99f8a6dffd47417e0caee7845a98c549b41f1d4246cd715dec843ca4b699ee57 ;;
+    macosx64) echo 38e5264c72ab4bdc7e3c0889faed8a30496344a7a76a81e2ad6557006d3e24d7 ;;
+    macosarm64) echo eb4877f894615c0f1b806b699c74d19c476696f7716daee22811b883a9e8441f ;;
+    linux64) echo 2c5dfc7c1073f61f2511ab0183e835e0810d6ace7e17811ae9d375faa838fd25 ;;
+    windows64) echo a5659888cca36e3b7fde841c05c67f923065c3bb2d62609ba379c7f79986a02b ;;
     *) echo "Unknown CEF platform: $1" >&2; return 1 ;;
   esac
 }

@@ -88,8 +88,8 @@ jobs:
             }
           }
 
-      # clang-cl is the runner's LLVM (not pinned, like clang on the Linux
-      # runner); its version is printed here.
+      # clang-cl is the pinned LLVM from scripts/install_tools (the runner's
+      # own is too old for its MSVC library); its version is printed here.
       - name: Tool versions
         run: |
           source scripts/env.sh

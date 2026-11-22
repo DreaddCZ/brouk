@@ -41,6 +41,9 @@ CARGO_DENY_VERSION=0.20.2
 ZIZMOR_VERSION=1.30.1
 # Builds the Windows installer (024, W4). Windows only.
 INNO_SETUP_VERSION=6.7.3
+# clang-cl and lld-link for the Windows builds. Pinned, as the runner image's
+# MSVC C++ library requires a newer clang than the image's own LLVM (2026-11).
+LLVM_VERSION=23.1.5
 
 PYPI=https://files.pythonhosted.org/packages
 
@@ -91,6 +94,7 @@ artifact() {
     zizmor-mac-arm64) echo "https://github.com/zizmorcore/zizmor/releases/download/v$ZIZMOR_VERSION/zizmor-aarch64-apple-darwin.tar.gz e28d22b087f9ebb8d99da6e740d348c930f559961c7c3f12badda54f882195a2" ;;
     zizmor-linux-x64) echo "https://github.com/zizmorcore/zizmor/releases/download/v$ZIZMOR_VERSION/zizmor-x86_64-unknown-linux-gnu.tar.gz e65324f4430c2717591937edcec90ccbefaf14c174f8ec9415e03ca875b46e1a" ;;
     innosetup-win-x64) echo "https://github.com/jrsoftware/issrc/releases/download/is-${INNO_SETUP_VERSION//./_}/innosetup-$INNO_SETUP_VERSION.exe 9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732" ;;
+    llvm-win-x64) echo "https://github.com/llvm/llvm-project/releases/download/llvmorg-$LLVM_VERSION/clang+llvm-$LLVM_VERSION-x86_64-pc-windows-msvc.tar.xz 62fdada7f6fa2b73856486dfbbdba3d2c1882991621615bcb55c60207611c6d4" ;;
     rust-win-x64) echo "https://static.rust-lang.org/dist/rust-$RUST_VERSION-x86_64-pc-windows-msvc.tar.xz 14ff744da07522dde540ab01bc02f2265aa9b4d58bfe8cf42c4c45e479acef1d" ;;
     *) echo "No artifact for $1 on $PLATFORM" >&2; return 1 ;;
   esac
@@ -236,6 +240,22 @@ if [[ "$PLATFORM" == win-x64 ]]; then
   fi
   [[ -f "$INNO_DIR/ISCC.exe" ]] || { echo "Inno Setup did not install" >&2; exit 1; }
   link "$INNO_DIR/ISCC.exe" iscc
+fi
+
+# LLVM: only the programs and clang's own headers and runtime libraries
+# (lib/clang) are extracted; the archive is 900 MB with the rest.
+if [[ "$PLATFORM" == win-x64 ]]; then
+  LLVM_DIR="$TOOLS/llvm-$LLVM_VERSION"
+  if [[ ! -f "$LLVM_DIR/bin/clang-cl.exe" ]]; then
+    archive="$(fetch llvm)"
+    rm -rf "$LLVM_DIR.tmp" && mkdir -p "$LLVM_DIR.tmp"
+    tar -xf "$archive" -C "$LLVM_DIR.tmp" --strip-components=1 \
+      --wildcards '*/bin/*' '*/lib/clang/*'
+    rm -rf "$LLVM_DIR" && mv "$LLVM_DIR.tmp" "$LLVM_DIR"
+    rm -f "$archive"
+  fi
+  [[ -f "$LLVM_DIR/bin/clang-cl.exe" ]] || { echo "LLVM did not install" >&2; exit 1; }
+  link "$LLVM_DIR/bin/clang-cl.exe" clang-cl
 fi
 
 # Scanners: each archive (or bare download) holds one executable. Not on

@@ -63,3 +63,4 @@ None for macOS. Deferred until they become relevant (they do not block macOS wor
 - 2026-11-04 (review of the acceptance criteria): all met except Windows with the same feature set, which waits for 024 (left: screen readers, quit crash #45).
 - 2026-11-04 (user's decision): marked done — Brouk builds and runs on Windows 10/11 x64 with the same features (0.3.1 onwards); the remaining Windows items (screen readers, quit crash #45) are tracked in 024.
 - 2026-11-19 (user's decision): Windows gets the Microsoft Store as an additional way to install Brouk, next to the direct download; specified in 032.
+- 2026-11-21 (user's decision): clang-cl on Windows is pinned (LLVM 23.1.5, `scripts/install_tools`) instead of the runner's LLVM: the runner image's MSVC C++ library 14.52 refuses clang older than 22, and the image still had 20.1.8.
