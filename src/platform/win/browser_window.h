@@ -23,6 +23,7 @@
 #include "core/closed_tabs.h"
 #include "core/profile_registry.h"
 #include "core/session.h"
+#include "core/shortcuts.h"
 #include "core/tab_strip_model.h"
 #include "include/cef_request_context.h"
 #include "platform/win/adblock_popup.h"
@@ -155,6 +156,9 @@ class BrowserWindowOwner {
   // The task manager window (020), with the row `row` ("tab-12") selected
   // when not empty.
   virtual void OpenTaskManager(const std::string& row) = 0;
+  // The shortcuts in effect (003), from the settings (changes apply at
+  // once).
+  virtual const ShortcutMap& Shortcuts() = 0;
   // For the command palette (003): the normal browser windows, and help's
   // sections as (anchor, title).
   virtual std::vector<BrowserWindow*> NormalWindows() = 0;
@@ -355,6 +359,7 @@ class BrowserWindow final : public TabHost,
                     std::size_t index) override;
   void ShowBookmarkManager() override;
   void ToggleBookmarksBar() override;
+  std::wstring ShortcutText(std::string_view action) override;
   void DropLink(const std::string& url,
                 const std::string& title,
                 BookmarkId parent,
@@ -645,8 +650,15 @@ class BrowserWindow final : public TabHost,
   // "Press Esc to exit full screen" for a few seconds, as in Chrome.
   void ShowFullscreenHint(const wchar_t* text);
 
-  // Browser shortcuts, from the page, the address bar or the window.
+  // Browser shortcuts (003), from the page, the address bar or the window:
+  // the key's action in the settings, run if there is one. Returns true if
+  // the key was a shortcut.
   bool HandleShortcut(int key, bool control, bool alt, bool shift);
+  // Runs a shortcut action by its id (src/core/shortcuts.cc); false if it
+  // does nothing in this window.
+  bool RunAction(std::string_view action);
+  // A menu item's text with the action's shortcut: "New tab\tCtrl+T".
+  std::wstring MenuLabel(std::wstring_view label, std::string_view action);
   void FocusAddressBar();
   void NavigateToAddressBarText();
   void ShowAddress();

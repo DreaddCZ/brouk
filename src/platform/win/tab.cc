@@ -420,6 +420,19 @@ void Tab::Reload() {
   }
 }
 
+void Tab::ReloadIgnoringCache() {
+  SetPaused(false);
+  if (browser_) {
+    browser_->ReloadIgnoreCache();
+  }
+}
+
+void Tab::Stop() {
+  if (browser_) {
+    browser_->StopLoad();
+  }
+}
+
 void Tab::Focus() {
   if (TabPanel* panel = ModalPanel()) {
     panel->Focus();

@@ -8,6 +8,7 @@
 #include <cstddef>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "core/bookmark_model.h"
@@ -62,6 +63,8 @@ class BookmarksBar {
     // "Always show bookmarks bar" (Ctrl+Shift+B).
     virtual void ToggleBookmarksBar() = 0;
     virtual bool BookmarksBarAlwaysShown() = 0;
+    // The action's first shortcut as menus show it ("Ctrl+D"), or "".
+    virtual std::wstring ShortcutText(std::string_view action) = 0;
 
    protected:
     virtual ~Delegate() = default;

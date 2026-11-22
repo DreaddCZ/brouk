@@ -54,6 +54,25 @@ constexpr int kMargin = 4;
 constexpr int kAddressHeight = 30;
 constexpr int kAddressPadding = 12;
 
+// What `virtual_key` types with Shift as held and without Ctrl or Alt, for
+// shortcuts written with characters ("ctrl+}", "ctrl+="); "" for none.
+std::string TypedCharacter(int virtual_key, bool shift) {
+  std::array<BYTE, 256> state = {};
+  if (shift) {
+    state[VK_SHIFT] = 0x80;
+  }
+  std::array<wchar_t, 4> buffer = {};
+  const auto key = static_cast<UINT>(virtual_key);
+  // Flag 4: keeps the keyboard's dead key state (Windows 10 1607 and later).
+  const int count =
+      ToUnicode(key, MapVirtualKeyW(key, MAPVK_VK_TO_VSC), state.data(),
+                buffer.data(), static_cast<int>(buffer.size()), 4);
+  if (count != 1) {
+    return {};
+  }
+  return WideToUtf8(std::wstring(1, buffer[0]));
+}
+
 constexpr UINT_PTR kSpinnerTimer = 1;
 constexpr UINT kSpinnerInterval = 80;  // Milliseconds per step.
 constexpr UINT_PTR kFullscreenHintTimer = 2;
@@ -967,58 +986,18 @@ void BrowserWindow::ShowCommandPalette() {
                 icon_font_);
 }
 
-// The browser's actions, as the menus and shortcuts have them; one with a
-// shortcut runs as its keys would.
+// The browser's actions (003), with their shortcuts in the settings, and
+// the menu's commands that have none.
 std::vector<PaletteEntry> BrowserWindow::PaletteActions() {
-  struct Action {
-    const char* label;
-    const wchar_t* shortcut;
-    int key;
-    bool control;
-    bool shift;
-    bool alt;
-  };
-  static constexpr std::array<Action, 27> kActions = {{
-      {"New tab", L"Ctrl+T", 'T', true, false, false},
-      {"New window", L"Ctrl+N", 'N', true, false, false},
-      {"Reopen closed tab", L"Ctrl+Shift+T", 'T', true, true, false},
-      {"Close tab", L"Ctrl+W", 'W', true, false, false},
-      {"Close window", L"Ctrl+Shift+W", 'W', true, true, false},
-      {"Reload", L"F5", VK_F5, false, false, false},
-      {"Back", L"Alt+Left", VK_LEFT, false, false, true},
-      {"Forward", L"Alt+Right", VK_RIGHT, false, false, true},
-      {"Find in page", L"Ctrl+F", 'F', true, false, false},
-      {"Print", L"Ctrl+P", 'P', true, false, false},
-      {"Zoom in", L"Ctrl++", VK_OEM_PLUS, true, false, false},
-      {"Zoom out", L"Ctrl+-", VK_OEM_MINUS, true, false, false},
-      {"Actual size", L"Ctrl+0", '0', true, false, false},
-      {"Full screen", L"F11", VK_F11, false, false, false},
-      {"Focus the address bar", L"Ctrl+L", 'L', true, false, false},
-      {"History", L"Ctrl+H", 'H', true, false, false},
-      {"Clear browsing data", L"Ctrl+Shift+Del", VK_DELETE, true, true, false},
-      {"Downloads", L"Ctrl+J", 'J', true, false, false},
-      {"Bookmark this tab", L"Ctrl+D", 'D', true, false, false},
-      {"Bookmark all tabs", L"Ctrl+Shift+D", 'D', true, true, false},
-      {"Bookmark manager", L"Ctrl+Shift+O", 'O', true, true, false},
-      {"Always show bookmarks bar", L"Ctrl+Shift+B", 'B', true, true, false},
-      {"Task manager", L"Shift+Esc", VK_ESCAPE, false, true, false},
-      {"Developer tools", L"Ctrl+Shift+I", 'I', true, true, false},
-      {"JavaScript console", L"Ctrl+Shift+J", 'J', true, true, false},
-      {"Inspect an element", L"Ctrl+Shift+C", 'C', true, true, false},
-      {"Help", L"F1", VK_F1, false, false, false},
-  }};
   std::vector<PaletteEntry> entries;
-  for (const Action& action : kActions) {
-    entries.push_back({.kind = PaletteItem::Kind::kAction,
-                       .title = action.label,
-                       .detail = "",
-                       .shortcut = action.shortcut,
-                       .run = [this, action] {
-                         HandleShortcut(action.key, action.control, action.alt,
-                                        action.shift);
-                       }});
+  for (const ShortcutAction& action : AllShortcutActions()) {
+    entries.push_back(
+        {.kind = PaletteItem::Kind::kAction,
+         .title = std::string(action.label),
+         .detail = "",
+         .shortcut = ShortcutText(action.id),
+         .run = [this, id = std::string(action.id)] { RunAction(id); }});
   }
-  // Without a shortcut on Windows.
   auto add = [&entries](const char* label, std::function<void()> run) {
     entries.push_back({.kind = PaletteItem::Kind::kAction,
                        .title = label,
@@ -1026,47 +1005,10 @@ std::vector<PaletteEntry> BrowserWindow::PaletteActions() {
                        .shortcut = {},
                        .run = std::move(run)});
   };
-  add("New tab to the right", [this] {
-    if (const Tab* tab = ActiveTab()) {
-      OpenTabAfter(tab->id(), std::string());
-    }
-  });
-  add("Duplicate tab", [this] {
-    if (const Tab* tab = ActiveTab(); tab && !tab->internal()) {
-      OpenTabAfter(tab->id(), tab->url());
-    }
-  });
-  add("Pin or unpin tab", [this] {
-    if (const Tab* tab = ActiveTab()) {
-      model_.SetPinned(tab->id(), !model_.IsPinned(tab->id()));
-      ModelChanged();
-    }
-  });
-  add("Mute or unmute site", [this] {
-    if (Tab* tab = ActiveTab()) {
-      tab->SetMuted(!tab->muted());
-    }
-  });
-  add("Close other tabs", [this] {
-    if (const Tab* tab = ActiveTab()) {
-      for (TabId id :
-           model_.TabsToClose(tab->id(), TabStripModel::CloseScope::kOthers)) {
-        CloseTab(id);
-      }
-    }
-  });
-  add("Passwords", [this] { OpenInternalPage("brouk://passwords/"); });
   add("Addresses and more (autofill)",
       [this] { owner_.OpenSettings("brouk://settings/#global:autofill"); });
-  add("Settings", [this] { owner_.OpenSettings(std::string()); });
-  add("Manage profiles", [this] { owner_.OpenProfileManager(); });
   add("Open-source licences", [this] { OpenInternalPage("brouk://credits/"); });
   // The dev tools' Utilities (027), each on its own.
-  add("Utilities", [this] {
-    if (Tab* tab = ActiveTab()) {
-      tab->ShowDevToolsUtility(std::string(), std::nullopt);
-    }
-  });
   for (const DevToolsUtility& utility : DevToolsUtilities()) {
     entries.push_back({.kind = PaletteItem::Kind::kAction,
                        .title = std::string(utility.title),
@@ -2499,7 +2441,7 @@ void BrowserWindow::ShowTabMenu(TabId id, POINT screen_point) {
   AppendMenuW(menu, MF_POPUP | (is_normal() ? 0 : MF_GRAYED),
               reinterpret_cast<UINT_PTR>(move), L"Move tab to another window");
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-  add(kCloseTabCommand, L"Close\tCtrl+W", true);
+  add(kCloseTabCommand, MenuLabel(L"Close", "close_tab").c_str(), true);
   add(kCloseOtherTabsCommand, L"Close other tabs", others);
   add(kCloseTabsLeftCommand, L"Close tabs to the left", left);
   add(kCloseTabsRightCommand, L"Close tabs to the right", right);
@@ -2809,8 +2751,10 @@ void BrowserWindow::ShowAppMenu() {
   if (update.kind != UpdateMenuItem::Kind::kNone) {
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
   }
-  AppendMenuW(menu, MF_STRING, kNewTabCommand, L"New tab\tCtrl+T");
-  AppendMenuW(menu, MF_STRING, kNewWindowCommand, L"New window\tCtrl+N");
+  AppendMenuW(menu, MF_STRING, kNewTabCommand,
+              MenuLabel(L"New tab", "new_tab").c_str());
+  AppendMenuW(menu, MF_STRING, kNewWindowCommand,
+              MenuLabel(L"New window", "new_window").c_str());
   // Profiles (005): a new tab in one, or the profile manager.
   HMENU profiles = CreatePopupMenu();
   const std::vector<ProfileInfo> profile_list = owner_.ProfileList();
@@ -2832,14 +2776,17 @@ void BrowserWindow::ShowAppMenu() {
   // closed tabs and windows (newest first) and recently visited pages of
   // the active tab's profile.
   HMENU closed = CreatePopupMenu();
-  AppendMenuW(closed, MF_STRING, kHistoryCommand, L"History\tCtrl+H");
-  AppendMenuW(closed, MF_STRING, kClearBrowsingDataCommand,
-              L"Clear browsing data\u2026\tCtrl+Shift+Del");
+  AppendMenuW(closed, MF_STRING, kHistoryCommand,
+              MenuLabel(L"History", "show_history").c_str());
+  AppendMenuW(
+      closed, MF_STRING, kClearBrowsingDataCommand,
+      MenuLabel(L"Clear browsing data\u2026", "clear_browsing_data").c_str());
   AppendMenuW(closed, MF_SEPARATOR, 0, nullptr);
   std::vector<std::int64_t> closed_ids;
   const std::deque<ClosedEntry>& entries = owner_.RecentlyClosed();
   AppendMenuW(closed, MF_STRING | (entries.empty() ? MF_GRAYED : 0),
-              kReopenClosedTabCommand, L"Reopen closed tab\tCtrl+Shift+T");
+              kReopenClosedTabCommand,
+              MenuLabel(L"Reopen closed tab", "reopen_closed_tab").c_str());
   for (const ClosedEntry& entry : entries) {
     const ClosedTab& first = entry.tabs.front();
     const std::wstring title =
@@ -2874,27 +2821,32 @@ void BrowserWindow::ShowAppMenu() {
     AppendMenuW(closed, MF_STRING | MF_GRAYED, 0, L"Loading\u2026");
   }
   AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(closed), L"History");
-  AppendMenuW(menu, MF_STRING, kDownloadsCommand, L"Downloads\tCtrl+J");
-  AppendMenuW(menu, MF_STRING, kTaskManagerCommand, L"Task manager\tShift+Esc");
+  AppendMenuW(menu, MF_STRING, kDownloadsCommand,
+              MenuLabel(L"Downloads", "show_downloads").c_str());
+  AppendMenuW(menu, MF_STRING, kTaskManagerCommand,
+              MenuLabel(L"Task manager", "task_manager").c_str());
   AppendMenuW(menu, MF_STRING, kDevToolsCommand,
-              L"Developer tools\tCtrl+Shift+I");
+              MenuLabel(L"Developer tools", "devtools").c_str());
   AppendMenuW(menu, MF_STRING, kUtilitiesCommand, L"Utilities");
   AppendMenuW(menu, MF_STRING, kCommandPaletteCommand,
-              L"Command palette\u2026\tCtrl+K");
+              MenuLabel(L"Command palette\u2026", "command_palette").c_str());
   // Bookmarks (011), as Chrome's submenu: the actions, then the bar's
   // items and Other bookmarks visible in the active tab's profile.
   HMENU bookmarks = CreatePopupMenu();
   const bool can_bookmark = CanBookmark(ActiveTab());
   AppendMenuW(bookmarks, MF_STRING | (can_bookmark ? 0 : MF_GRAYED),
-              kBookmarkThisTabCommand, L"Bookmark this tab\u2026\tCtrl+D");
-  AppendMenuW(bookmarks, MF_STRING, kBookmarkAllTabsCommand,
-              L"Bookmark all tabs\u2026\tCtrl+Shift+D");
+              kBookmarkThisTabCommand,
+              MenuLabel(L"Bookmark this tab\u2026", "bookmark_page").c_str());
+  AppendMenuW(
+      bookmarks, MF_STRING, kBookmarkAllTabsCommand,
+      MenuLabel(L"Bookmark all tabs\u2026", "bookmark_all_tabs").c_str());
   AppendMenuW(bookmarks, MF_STRING, kBookmarkManagerCommand,
-              L"Bookmark manager\tCtrl+Shift+O");
-  AppendMenuW(bookmarks,
-              MF_STRING | (owner_.BookmarksBarAlwaysShown() ? MF_CHECKED : 0),
-              kAlwaysShowBarCommand,
-              L"Always show bookmarks bar\tCtrl+Shift+B");
+              MenuLabel(L"Bookmark manager", "bookmark_manager").c_str());
+  AppendMenuW(
+      bookmarks,
+      MF_STRING | (owner_.BookmarksBarAlwaysShown() ? MF_CHECKED : 0),
+      kAlwaysShowBarCommand,
+      MenuLabel(L"Always show bookmarks bar", "toggle_bookmarks_bar").c_str());
   std::vector<BookmarkId> bookmark_ids;
   if (owner_.Bookmarks()) {
     AppendMenuW(bookmarks, MF_SEPARATOR, 0, nullptr);
@@ -2911,21 +2863,29 @@ void BrowserWindow::ShowAppMenu() {
   // Passwords (008) and autofill (009), as Chrome's "Passwords and
   // autofill": the passwords page as a tab, Settings → Autofill.
   HMENU passwords = CreatePopupMenu();
-  AppendMenuW(passwords, MF_STRING, kPasswordsCommand, L"Passwords");
+  AppendMenuW(passwords, MF_STRING, kPasswordsCommand,
+              MenuLabel(L"Passwords", "passwords").c_str());
   AppendMenuW(passwords, MF_STRING, kAutofillSettingsCommand,
               L"Addresses and more");
   AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(passwords),
               L"Passwords and autofill");
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-  AppendMenuW(menu, MF_STRING, kZoomInCommand, L"Zoom in\tCtrl++");
-  AppendMenuW(menu, MF_STRING, kZoomOutCommand, L"Zoom out\tCtrl+-");
-  AppendMenuW(menu, MF_STRING, kZoomResetCommand, L"Actual size\tCtrl+0");
+  AppendMenuW(menu, MF_STRING, kZoomInCommand,
+              MenuLabel(L"Zoom in", "zoom_in").c_str());
+  AppendMenuW(menu, MF_STRING, kZoomOutCommand,
+              MenuLabel(L"Zoom out", "zoom_out").c_str());
+  AppendMenuW(menu, MF_STRING, kZoomResetCommand,
+              MenuLabel(L"Actual size", "zoom_reset").c_str());
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-  AppendMenuW(menu, MF_STRING, kPrintCommand, L"Print\u2026\tCtrl+P");
-  AppendMenuW(menu, MF_STRING, kFindCommand, L"Find\u2026\tCtrl+F");
+  AppendMenuW(menu, MF_STRING, kPrintCommand,
+              MenuLabel(L"Print\u2026", "print").c_str());
+  AppendMenuW(menu, MF_STRING, kFindCommand,
+              MenuLabel(L"Find\u2026", "find").c_str());
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-  AppendMenuW(menu, MF_STRING, kSettingsCommand, L"Settings");
-  AppendMenuW(menu, MF_STRING, kHelpCommand, L"Brouk Help\tF1");
+  AppendMenuW(menu, MF_STRING, kSettingsCommand,
+              MenuLabel(L"Settings", "settings").c_str());
+  AppendMenuW(menu, MF_STRING, kHelpCommand,
+              MenuLabel(L"Brouk Help", "help").c_str());
   AppendMenuW(menu, MF_STRING, kCheckForUpdatesCommand,
               L"Check for updates\u2026");
   AppendMenuW(menu, MF_STRING, kLicencesCommand, L"Open-source licences");
@@ -3913,33 +3873,86 @@ bool BrowserWindow::HandleShortcut(int key,
                                    bool control,
                                    bool alt,
                                    bool shift) {
-  // Chrome's Windows shortcuts for what the Windows app has so far.
+  CEF_REQUIRE_UI_THREAD();
+  const ShortcutAction* action = ActionForKeyPress(
+      owner_.Shortcuts(),
+      WindowsKeyPress(key, TypedCharacter(key, shift), control, alt, shift));
+  if (!action) {
+    return false;
+  }
+  // A popup window (window.open() with a size) has no tabs and no toolbar:
+  // only what acts on its page.
+  static constexpr std::array<std::string_view, 15> kPopupActions = {
+      "help",      "open_location", "reload",  "force_reload", "stop",
+      "back",      "forward",       "print",   "full_screen",  "find",
+      "find_next", "find_previous", "zoom_in", "zoom_out",     "zoom_reset"};
+  if (kind_ == Kind::kPopup &&
+      std::ranges::find(kPopupActions, action->id) == kPopupActions.end()) {
+    return false;
+  }
+  RunAction(action->id);
+  return true;
+}
+
+bool BrowserWindow::RunAction(std::string_view action) {
+  CEF_REQUIRE_UI_THREAD();
   Tab* tab = ActiveTab();
-  if (!control && !alt && !shift && key == VK_F1) {
-    owner_.OpenHelp(std::string());
-    return true;
-  }
-  if ((control && !alt && key == 'L') || (alt && !control && key == 'D') ||
-      (!control && !alt && key == VK_F6)) {
-    FocusAddressBar();
-    return true;
-  }
-  if ((!control && !alt && key == VK_F5) ||
-      (control && !alt && !shift && key == 'R')) {
+  // Actions on the active tab; they do nothing without one.
+  auto on_tab = [tab](auto&& run) {
     if (tab) {
-      tab->Reload();
+      run(*tab);
     }
     return true;
-  }
-  if (alt && !control && (key == VK_LEFT || key == VK_RIGHT)) {
-    if (tab && key == VK_LEFT) {
-      tab->GoBack();
-    } else if (tab) {
-      tab->GoForward();
+  };
+  auto switch_tab = [this](auto&& change) {
+    change();
+    ModelChanged();
+    FocusActiveTab();
+    return true;
+  };
+  auto close_scope = [this, tab](TabStripModel::CloseScope scope) {
+    if (tab) {
+      for (TabId id : model_.TabsToClose(tab->id(), scope)) {
+        CloseTab(id);
+      }
     }
     return true;
-  }
-  if (!control && !alt && !shift && key == VK_F11) {
+  };
+  if (action == "new_tab") {
+    OpenTab(std::string(), true);
+  } else if (action == "new_window") {
+    owner_.OpenWindow(std::string(), ProfileId());
+  } else if (action == "open_location") {
+    FocusAddressBar();
+  } else if (action == "print") {
+    return on_tab([](Tab& t) { t.Print(); });
+  } else if (action == "close_window") {
+    PostMessageW(window_, WM_CLOSE, 0, 0);
+  } else if (action == "close_tab") {
+    return on_tab([this](Tab& t) { CloseTab(t.id()); });
+  } else if (action == "settings") {
+    owner_.OpenSettings(std::string());
+  } else if (action == "find") {
+    return on_tab([](Tab& t) { t.ShowFindBar(); });
+  } else if (action == "find_next" || action == "find_previous") {
+    const bool forward = action == "find_next";
+    return on_tab([forward](Tab& t) { t.FindNext(forward); });
+  } else if (action == "command_palette") {
+    ShowCommandPalette();
+  } else if (action == "stop") {
+    return on_tab([](Tab& t) { t.Stop(); });
+  } else if (action == "reload") {
+    return on_tab([](Tab& t) { t.Reload(); });
+  } else if (action == "force_reload") {
+    return on_tab([](Tab& t) { t.ReloadIgnoringCache(); });
+  } else if (action == "zoom_in" || action == "zoom_out" ||
+             action == "zoom_reset") {
+    const cef_zoom_command_t zoom = action == "zoom_in" ? CEF_ZOOM_COMMAND_IN
+                                    : action == "zoom_out"
+                                        ? CEF_ZOOM_COMMAND_OUT
+                                        : CEF_ZOOM_COMMAND_RESET;
+    return on_tab([zoom](Tab& t) { t.Zoom(zoom); });
+  } else if (action == "full_screen") {
     if (fullscreen_tab_) {
       // Leaves the page's full screen, and with it the window's.
       if (Tab* fullscreen_tab = FindTab(*fullscreen_tab_)) {
@@ -3949,145 +3962,119 @@ bool BrowserWindow::HandleShortcut(int key,
       fullscreen_for_page_ = false;
       SetFullscreen(!fullscreen_);
       if (fullscreen_) {
-        ShowFullscreenHint(L"Press F11 to exit full screen");
+        const std::wstring keys = ShortcutText("full_screen");
+        const std::wstring hint = L"Press " +
+                                  (keys.empty() ? std::wstring(L"Esc") : keys) +
+                                  L" to exit full screen";
+        ShowFullscreenHint(hint.c_str());
       }
     }
-    return true;
-  }
-  if (control && !alt && !shift && key == 'P') {
+  } else if (action == "devtools") {
+    return on_tab([](Tab& t) { t.SetDevToolsOn(!t.devtools_on()); });
+  } else if (action == "devtools_console") {
+    return on_tab([](Tab& t) { t.ShowDevToolsConsole(); });
+  } else if (action == "devtools_inspect") {
+    return on_tab([](Tab& t) { t.StartDevToolsElementPicker(); });
+  } else if (action == "devtools_utilities") {
+    return on_tab(
+        [](Tab& t) { t.ShowDevToolsUtility(std::string(), std::nullopt); });
+  } else if (action == "back") {
+    return on_tab([](Tab& t) { t.GoBack(); });
+  } else if (action == "forward") {
+    return on_tab([](Tab& t) { t.GoForward(); });
+  } else if (action == "home") {
+    // The new tab page, as on macOS.
     if (tab) {
-      tab->Print();
+      NavigateActiveTab("about:blank", false);
+      FocusAddressBar();
     }
-    return true;
-  }
-  if (control && !alt && !shift && key == 'F') {
-    if (tab) {
-      tab->ShowFindBar();
-    }
-    return true;
-  }
-  // F3 and Ctrl+G: next match; with Shift the previous one.
-  if ((!control && !alt && key == VK_F3) || (control && !alt && key == 'G')) {
-    if (tab) {
-      tab->FindNext(!shift);
-    }
-    return true;
-  }
-  if (control && !alt) {
-    std::optional<cef_zoom_command_t> zoom;
-    if (key == VK_OEM_PLUS || key == VK_ADD) {
-      zoom = CEF_ZOOM_COMMAND_IN;
-    } else if (key == VK_OEM_MINUS || key == VK_SUBTRACT) {
-      zoom = CEF_ZOOM_COMMAND_OUT;
-    } else if (!shift && (key == '0' || key == VK_NUMPAD0)) {
-      zoom = CEF_ZOOM_COMMAND_RESET;
-    }
-    if (zoom) {
-      if (tab) {
-        tab->Zoom(*zoom);
+  } else if (action == "reopen_closed_tab") {
+    owner_.ReopenClosed(std::nullopt);
+  } else if (action == "show_history") {
+    OpenInternalPage("brouk://history/");
+  } else if (action == "clear_browsing_data") {
+    owner_.OpenClearBrowsingData();
+  } else if (action == "bookmark_page") {
+    BookmarkPage();
+  } else if (action == "bookmark_all_tabs") {
+    BookmarkAllTabs();
+  } else if (action == "bookmark_manager") {
+    ShowBookmarkManager();
+  } else if (action == "toggle_bookmarks_bar") {
+    ToggleBookmarksBar();
+  } else if (action == "passwords") {
+    OpenInternalPage("brouk://passwords/");
+  } else if (action == "show_downloads") {
+    ShowDownloads();
+  } else if (action == "task_manager") {
+    owner_.OpenTaskManager(std::string());
+  } else if (action == "next_tab") {
+    return switch_tab([this] { model_.ActivateNext(); });
+  } else if (action == "previous_tab") {
+    return switch_tab([this] { model_.ActivatePrevious(); });
+  } else if (action.starts_with("select_tab_") && action.size() == 12 &&
+             action.back() >= '1' && action.back() <= '8') {
+    const int number = action.back() - '0';
+    return switch_tab(
+        [this, number] { model_.ActivateByShortcutNumber(number); });
+  } else if (action == "select_last_tab") {
+    return switch_tab([this] { model_.ActivateByShortcutNumber(9); });
+  } else if (action == "new_tab_right") {
+    return on_tab([this](Tab& t) { OpenTabAfter(t.id(), std::string()); });
+  } else if (action == "duplicate_tab") {
+    return on_tab([this](Tab& t) {
+      if (!t.internal()) {
+        OpenTabAfter(t.id(), t.url());
       }
-      return true;
-    }
-  }
-  if (kind_ == Kind::kPopup) {
+    });
+  } else if (action == "move_tab_new_window") {
+    return on_tab([this](Tab& t) {
+      RECT frame = {};
+      GetWindowRect(window_, &frame);
+      OffsetRect(&frame, Scale(30), Scale(30));
+      MoveTabsToNewWindow({t.id()}, frame);
+    });
+  } else if (action == "pin_tab") {
+    return on_tab([this](Tab& t) {
+      model_.SetPinned(t.id(), !model_.IsPinned(t.id()));
+      ModelChanged();
+    });
+  } else if (action == "mute_tab") {
+    return on_tab([](Tab& t) { t.SetMuted(!t.muted()); });
+  } else if (action == "close_other_tabs") {
+    return close_scope(TabStripModel::CloseScope::kOthers);
+  } else if (action == "close_tabs_left") {
+    return close_scope(TabStripModel::CloseScope::kLeft);
+  } else if (action == "close_tabs_right") {
+    return close_scope(TabStripModel::CloseScope::kRight);
+  } else if (action == "site_info") {
+    ShowSiteInfo();
+  } else if (action == "manage_profiles") {
+    owner_.OpenProfileManager();
+  } else if (action == "help") {
+    owner_.OpenHelp(std::string());
+  } else {
     return false;
   }
-  if (control && !alt && !shift && key == 'T') {
-    OpenTab(std::string(), true);
-    return true;
+  return true;
+}
+
+std::wstring BrowserWindow::ShortcutText(std::string_view action) {
+  const ShortcutMap& shortcuts = owner_.Shortcuts();
+  auto it = shortcuts.find(action);
+  if (it == shortcuts.end() || it->second.empty()) {
+    return {};
   }
-  if (control && !alt && key == 'D') {
-    if (shift) {
-      BookmarkAllTabs();
-    } else {
-      BookmarkPage();
-    }
-    return true;
+  return Utf8ToWide(DisplayShortcut(it->second.front()));
+}
+
+std::wstring BrowserWindow::MenuLabel(std::wstring_view label,
+                                      std::string_view action) {
+  std::wstring text(label);
+  if (const std::wstring keys = ShortcutText(action); !keys.empty()) {
+    text += L"\t" + keys;
   }
-  if (control && !alt && shift && key == 'O') {
-    ShowBookmarkManager();
-    return true;
-  }
-  if (control && !alt && shift && key == 'B') {
-    ToggleBookmarksBar();
-    return true;
-  }
-  // Ctrl+K: the command palette (003), as Cmd+K on macOS.
-  if (control && !alt && !shift && key == 'K') {
-    ShowCommandPalette();
-    return true;
-  }
-  // Developer tools (006), as in Chrome on Windows: F12 and Ctrl+Shift+I
-  // switch them on and off, Ctrl+Shift+J shows the console, Ctrl+Shift+C
-  // picks an element.
-  if (tab && !alt &&
-      ((!control && !shift && key == VK_F12) ||
-       (control && shift && key == 'I'))) {
-    tab->SetDevToolsOn(!tab->devtools_on());
-    return true;
-  }
-  if (tab && control && shift && !alt && key == 'J') {
-    tab->ShowDevToolsConsole();
-    return true;
-  }
-  if (tab && control && shift && !alt && key == 'C') {
-    tab->StartDevToolsElementPicker();
-    return true;
-  }
-  // Shift+Esc: the task manager, as in Chrome on Windows (020).
-  if (!control && !alt && shift && key == VK_ESCAPE) {
-    owner_.OpenTaskManager(std::string());
-    return true;
-  }
-  if (control && !alt && !shift && key == 'J') {
-    ShowDownloads();
-    return true;
-  }
-  if (control && !alt && !shift && key == 'H') {
-    OpenInternalPage("brouk://history/");
-    return true;
-  }
-  if (control && !alt && shift && key == VK_DELETE) {
-    owner_.OpenClearBrowsingData();
-    return true;
-  }
-  if (control && !alt && shift && key == 'T') {
-    owner_.ReopenClosed(std::nullopt);
-    return true;
-  }
-  if (control && !alt && !shift && key == 'N') {
-    owner_.OpenWindow(std::string(), ProfileId());
-    return true;
-  }
-  if (control && !alt && shift && key == 'W') {
-    PostMessageW(window_, WM_CLOSE, 0, 0);
-    return true;
-  }
-  if (control && !alt && !shift && (key == 'W' || key == VK_F4)) {
-    if (tab) {
-      CloseTab(tab->id());
-    }
-    return true;
-  }
-  const bool next = (key == VK_TAB && !shift) || (key == VK_NEXT && !shift);
-  const bool previous = (key == VK_TAB && shift) || (key == VK_PRIOR && !shift);
-  if (control && !alt && (next || previous)) {
-    if (next) {
-      model_.ActivateNext();
-    } else {
-      model_.ActivatePrevious();
-    }
-    ModelChanged();
-    FocusActiveTab();
-    return true;
-  }
-  if (control && !alt && !shift && key >= '1' && key <= '9') {
-    model_.ActivateByShortcutNumber(key - '0');
-    ModelChanged();
-    FocusActiveTab();
-    return true;
-  }
-  return false;
+  return text;
 }
 
 void BrowserWindow::OnTabChanged(Tab& tab) {

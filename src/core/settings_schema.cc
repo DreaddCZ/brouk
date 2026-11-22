@@ -718,7 +718,7 @@ std::vector<SettingDef> BuildSettingDefs() {
     defs.push_back({.key = action.setting_key,
                     .scope = SettingScope::kGlobal,
                     .type = SettingDef::Type::kString,
-                    .default_value = action.defaults,
+                    .default_value = DefaultShortcuts(action),
                     .format = SettingDef::Format::kShortcut,
                     .max_length = 200,
                     .section = "Shortcuts",

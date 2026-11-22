@@ -8,7 +8,7 @@ export interface ShortcutRow {
   readonly id: string;
   readonly label: string;
   readonly setting: string;
-  /** As macOS menus show them, e.g. "⇧⌘T". */
+  /** As the platform's menus show them, e.g. "⇧⌘T" or "Ctrl+Shift+T". */
   readonly keys: readonly string[];
 }
 
