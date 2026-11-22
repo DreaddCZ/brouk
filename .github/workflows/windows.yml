@@ -205,3 +205,20 @@ jobs:
           path: build/dist/
           retention-days: 14
           if-no-files-found: error
+
+      # Screenshots for the Microsoft Store listing (032), only for a pull
+      # request labelled "store-screenshots": the app with made-up profiles
+      # and pages on a 1920x1080 screen (tests/store-screenshots). Last, as it
+      # changes the runner's screen.
+      - name: Store screenshots
+        if: ${{ contains(github.event.pull_request.labels.*.name, 'store-screenshots') }}
+        run: node tests/store-screenshots/screenshots.mjs "$BUILD/Brouk" build/store-screenshots
+
+      - name: Upload the Store screenshots
+        if: ${{ !cancelled() && contains(github.event.pull_request.labels.*.name, 'store-screenshots') }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: store-screenshots-${{ github.sha }}
+          path: build/store-screenshots/
+          retention-days: 14
+          if-no-files-found: error

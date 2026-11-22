@@ -1,0 +1,62 @@
+<!doctype html>
+<!-- A made-up work page for the Store screenshots (032); the host name
+     ({{HOST}}) picks its name and colour. No real company or product. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Demo</title>
+<style>
+  body { margin: 0; font: 15px/1.5 "Segoe UI", system-ui, sans-serif; color: #1b2a47; background: #f4f6fa; }
+  header { display: flex; align-items: center; gap: 12px; padding: 14px 28px; color: #fff; }
+  header b { font-size: 18px; }
+  nav { margin-left: 32px; display: flex; gap: 22px; opacity: .9; }
+  main { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; padding: 28px; max-width: 1400px; }
+  .card { background: #fff; border-radius: 10px; padding: 18px 20px; box-shadow: 0 1px 3px rgba(11,18,32,.12); }
+  .card h2 { margin: 0 0 8px; font-size: 15px; color: #5b6b86; font-weight: 600; }
+  .big { font-size: 32px; font-weight: 700; }
+  .wide { grid-column: span 2; }
+  table { width: 100%; border-collapse: collapse; }
+  td { padding: 8px 4px; border-top: 1px solid #e6eaf1; }
+  .tag { padding: 2px 8px; border-radius: 10px; font-size: 12px; background: #e6f6f3; color: #0f766e; }
+  .bar { height: 140px; display: flex; align-items: flex-end; gap: 10px; }
+  .bar div { flex: 1; border-radius: 4px 4px 0 0; opacity: .85; }
+</style>
+</head>
+<body>
+<header id="top"><b id="name"></b><nav><span>Overview</span><span>Projects</span><span>Reports</span><span>Team</span></nav></header>
+<main>
+  <div class="card"><h2>Open tickets</h2><div class="big">27</div>4 due this week</div>
+  <div class="card"><h2>Deployments</h2><div class="big">12</div>All green since Monday</div>
+  <div class="card"><h2>Test runs</h2><div class="big">98.4 %</div>passed in the last 7 days</div>
+  <div class="card wide"><h2>This sprint</h2>
+    <table>
+      <tr><td>Sign-in with a second tenant</td><td><span class="tag">In review</span></td><td>Ana</td></tr>
+      <tr><td>Export reports as CSV</td><td><span class="tag">Testing</span></td><td>Tom</td></tr>
+      <tr><td>Faster search on large projects</td><td><span class="tag">In progress</span></td><td>Eva</td></tr>
+      <tr><td>Audit log for admin changes</td><td><span class="tag">Done</span></td><td>Jan</td></tr>
+    </table>
+  </div>
+  <div class="card"><h2>Requests per day</h2>
+    <div class="bar" id="bars"></div>
+  </div>
+</main>
+<script>
+  const host = '{{HOST}}';
+  const sites = {
+    'client-a': ['Client A', '#3b82f6'], 'client-b': ['Client B', '#f97316'],
+  };
+  const key = Object.keys(sites).find((k) => host.includes(k));
+  const [name, color] = key ? sites[key] : ['News', '#14b8a6'];
+  const part = host.split('.')[0];
+  document.getElementById('name').textContent = `${name} · ${part[0].toUpperCase()}${part.slice(1)}`;
+  document.getElementById('top').style.background = color;
+  document.title = `${name} – ${part[0].toUpperCase()}${part.slice(1)}`;
+  for (const h of [40, 65, 52, 80, 72, 95, 60]) {
+    const d = document.createElement('div');
+    d.style.height = `${h}%`;
+    d.style.background = color;
+    document.getElementById('bars').append(d);
+  }
+</script>
+</body>
+</html>
