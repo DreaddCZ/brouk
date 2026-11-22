@@ -74,6 +74,9 @@ class SettingsPageDelegate {
   virtual bool IsDefaultBrowser() = 0;
   virtual void MakeDefaultBrowser(
       std::function<void(std::optional<Error> error)> done) = 0;
+  // The Microsoft Store updates this copy (032): the page shows that in
+  // place of the update settings.
+  virtual bool UpdatedByStore() { return false; }
 };
 
 // Answers the settings page's bridge messages (web/settings/api.ts). The

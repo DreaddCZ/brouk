@@ -41,6 +41,10 @@ test('parseState', () => {
   assert.equal(state.global.length, 2);
   assert.equal(state.profile.id, 'default');
   assert.equal(state.problems.length, 1);
+  assert.equal(state.updatesByStore, false);
+  assert.equal(parseState({ ...state, updatesByStore: true }).updatesByStore, true);
+  // Only a real true counts (032).
+  assert.equal(parseState({ ...state, updatesByStore: 'yes' }).updatesByStore, false);
   assert.throws(() => parseState({ ...state, problems: [1] }), BridgeError);
 });
 

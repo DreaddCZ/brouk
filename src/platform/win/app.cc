@@ -12,6 +12,7 @@
 #include <cstring>
 #include <filesystem>
 #include <format>
+#include <fstream>
 #include <iterator>
 #include <set>
 #include <system_error>
@@ -63,6 +64,7 @@
 #include "platform/win/devtools_window.h"
 #include "platform/win/downloaded_files.h"
 #include "platform/win/file_dialogs.h"
+#include "platform/win/store_package.h"
 #include "platform/win/system_events.h"
 #include "platform/win/theme.h"
 #include "platform/win/user_verification.h"
@@ -522,7 +524,10 @@ App::App()
   profiles_.RemoveWebDataOfDeletedProfiles(WebDataRootDirectory());
   LinkResolver::RemoveLeftoverData(WebDataRootDirectory());
   // A default-browser registration follows brouk.exe if its folder moved.
-  RefreshBrowserRegistration();
+  // Not for the Store app: its manifest declares it as a browser (032).
+  if (!IsStoreApp()) {
+    RefreshBrowserRegistration();
+  }
 }
 
 void App::OnContextInitialized() {
@@ -593,8 +598,9 @@ void App::OnContextInitialized() {
   routing_ = std::make_unique<LinkRoutingController>(
       *this, AppDataDirectory() / L"link-routing.yaml");
   // A test run with its own data folder (smoke tests) must not update the
-  // user's Brouk (019).
-  if (!kUpdateFeedUrl.empty() && _wgetenv(L"BROUK_DEV_DATA_DIR") == nullptr) {
+  // user's Brouk (019). The Store updates the Store app (032).
+  if (!kUpdateFeedUrl.empty() && _wgetenv(L"BROUK_DEV_DATA_DIR") == nullptr &&
+      !IsStoreApp()) {
     if (std::optional<std::string> key = Base64Decode(kUpdatePublicKey)) {
       updater_ = std::make_unique<Updater>(
           Updater::Config{.feed_url = std::string(kUpdateFeedUrl),
@@ -608,6 +614,12 @@ void App::OnContextInitialized() {
   // Changes made in the files apply while Brouk runs (004).
   settings_watcher_ = std::make_unique<SettingsWatcher>(
       AppDataDirectory(), [this] { SettingsFilesChanged(); });
+  if (IsStoreApp()) {
+    // After the first window is up, so the question has a window to sit on.
+    CefPostDelayedTask(
+        TID_UI, new FunctionTask([this] { OfferToUninstallInstallerCopy(); }),
+        2000);
+  }
   const LaunchRequest request =
       BrowserApp::LaunchRequestFrom(CefCommandLine::GetGlobalCommandLine());
   const Session last = StartSession();
@@ -1620,6 +1632,17 @@ void App::CheckForUpdates() {
   CEF_REQUIRE_UI_THREAD();
   const std::wstring title = Utf8ToWide(kAppName);
   BrowserWindow* front = FrontWindow();
+  if (IsStoreApp()) {
+    // The Store updates the Store app; Brouk never updates it itself (032).
+    if (MessageBoxW(front ? front->hwnd() : nullptr,
+                    (title + L" from the Microsoft Store is updated by the "
+                             L"Store.\n\nOpen the Store's updates now?")
+                        .c_str(),
+                    title.c_str(), MB_YESNO | MB_ICONINFORMATION) == IDYES) {
+      OpenStoreUpdates();
+    }
+    return;
+  }
   if (!updater_) {
     MessageBoxW(front ? front->hwnd() : nullptr,
                 L"Updates are off in this build.\n\nOnly releases update "
@@ -2975,13 +2998,62 @@ std::vector<std::string> App::LinkRoutingProblems() {
 }
 
 bool App::IsDefaultBrowser() {
-  return win::IsDefaultBrowser();
+  return IsStoreApp() ? IsStoreAppDefaultBrowser() : win::IsDefaultBrowser();
+}
+
+bool App::UpdatedByStore() {
+  return IsStoreApp();
+}
+
+// The Store app, at its first start, when the installer's Brouk is installed
+// too (032): both use the same data, so one copy is enough. "No" is
+// remembered with a file in the data folder; after "Yes" the question has
+// nothing left to ask about.
+void App::OfferToUninstallInstallerCopy() {
+  CEF_REQUIRE_UI_THREAD();
+  const std::filesystem::path kept =
+      AppDataDirectory() / L"store-keeps-installer-copy";
+  std::error_code error;
+  const std::optional<std::filesystem::path> uninstaller =
+      InstallerCopyUninstaller();
+  if (!uninstaller || std::filesystem::exists(kept, error)) {
+    return;
+  }
+  BrowserWindow* front = FrontWindow();
+  HWND owner = front ? front->hwnd() : nullptr;
+  const std::wstring title = Utf8ToWide(kAppName);
+  const int answer = MessageBoxW(
+      owner,
+      (title + L" is also installed from the direct download.\n\nUninstall "
+               L"that copy? Your data stays: both copies use the same "
+               L"settings, profiles and passwords.\n\nYes uninstalls it; No "
+               L"keeps both.")
+          .c_str(),
+      title.c_str(), MB_YESNO | MB_ICONQUESTION);
+  if (answer == IDYES) {
+    if (!UninstallInstallerCopy(*uninstaller)) {
+      MessageBoxW(owner,
+                  (title + L" could not start the uninstaller. Uninstall the "
+                           L"other copy in Windows Settings \u2192 Apps.")
+                      .c_str(),
+                  title.c_str(), MB_OK | MB_ICONWARNING);
+    }
+    return;
+  }
+  // An empty file; if it cannot be written, the question comes again.
+  std::ofstream(kept).close();
 }
 
 // As Chrome on Windows: Brouk registers itself as a browser for this user,
 // and Windows' Settings make it the default (no app may do that itself).
 void App::MakeDefaultBrowser(
     std::function<void(std::optional<Error> error)> done) {
+  if (IsStoreApp()) {
+    // Declared in the package's manifest; Windows' Settings choose it.
+    OpenStoreAppDefaultAppsSettings();
+    done(std::nullopt);
+    return;
+  }
   if (std::optional<Error> error = RegisterAsBrowser()) {
     done(error);
     return;

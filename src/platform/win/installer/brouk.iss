@@ -17,6 +17,7 @@
 
 [Setup]
 ; Never change: Windows knows an installed Brouk by it.
+; The Store app (032) finds this copy by it: keep store_package.cc in step.
 AppId={{DE9B09C1-014E-44EE-89A8-AEB2A3DD23D0}
 AppName={#AppName}
 AppVersion={#AppVersion}

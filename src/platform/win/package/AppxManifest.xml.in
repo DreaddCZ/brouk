@@ -7,7 +7,9 @@
   - A full-trust desktop app (runFullTrust), as Firefox's Store package is.
   - File system write virtualization is off (unvirtualizedResources), so
     Brouk keeps its data in %LOCALAPPDATA%\Brouk like the installer's copy,
-    and the data stays when the package is uninstalled.
+    and the data stays when the package is uninstalled. Registry writes are
+    not redirected either, so the installer's uninstaller, started from the
+    Store app, removes that copy's browser registration for real.
   - Brouk is declared as a browser here (http, https, HTML files) instead of
     the HKCU registration the installer makes: the package's install folder
     changes with every version.
@@ -29,6 +31,7 @@
     <PublisherDisplayName>@PUBLISHER_DISPLAY_NAME@</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
     <desktop6:FileSystemWriteVirtualization>disabled</desktop6:FileSystemWriteVirtualization>
+    <desktop6:RegistryWriteVirtualization>disabled</desktop6:RegistryWriteVirtualization>
   </Properties>
 
   <!-- Windows 10 2004: the first version with FileSystemWriteVirtualization. -->

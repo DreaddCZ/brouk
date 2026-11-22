@@ -166,6 +166,17 @@ function renderGroups(container: HTMLElement, scopeProfile: string | null, items
     ...sections(items).map((section) => {
       const group = element('section', { className: 'group' });
       group.setAttribute('aria-label', section.title);
+      if (section.title === 'Updates' && state?.updatesByStore === true) {
+        // The Store app (032): the Store updates it, so the channel and mode
+        // do not apply.
+        const row = element('div', { className: 'setting' });
+        row.append(
+          element('span', { className: 'title', text: 'Updates' }),
+          element('p', { className: 'description', text: 'Brouk from the Microsoft Store is updated by the Store.' }),
+        );
+        group.append(row);
+        return group;
+      }
       group.append(...section.items.map((item) => settingRow(scopeProfile, item)));
       if (section.title === 'History' && scopeProfile === null) {
         const row = element('div', { className: 'setting' });
