@@ -3,6 +3,7 @@
 
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace brouk {
@@ -21,6 +22,12 @@ struct LaunchRequest {
 // the first argument is the profile, not a URL. `--profile=Work` works too.
 LaunchRequest ParseLaunchRequest(std::vector<std::string> arguments,
                                  std::optional<std::string> profile_switch);
+
+// A --disable-features value with `feature` added: Chromium reads only one
+// --disable-features switch, so features Brouk turns off are merged with
+// any the user gave. `list` is the switch's value ("" if it was not given).
+std::string WithDisabledFeature(std::string_view list,
+                                std::string_view feature);
 
 }  // namespace brouk
 

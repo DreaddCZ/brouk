@@ -1,8 +1,10 @@
 #include "core/launch_args.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -27,6 +29,24 @@ LaunchRequest ParseLaunchRequest(std::vector<std::string> arguments,
     }
   }
   return request;
+}
+
+std::string WithDisabledFeature(std::string_view list,
+                                std::string_view feature) {
+  std::string result;
+  std::string_view rest = list;
+  while (!rest.empty()) {
+    std::size_t comma = rest.find(',');
+    std::string_view item = rest.substr(0, comma);
+    rest = comma == std::string_view::npos ? std::string_view()
+                                           : rest.substr(comma + 1);
+    if (item.empty() || item == feature) {
+      continue;
+    }
+    result.append(item).append(",");
+  }
+  result.append(feature);
+  return result;
 }
 
 }  // namespace brouk

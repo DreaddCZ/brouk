@@ -10,8 +10,13 @@
 //
 // Anchors are written in the Markdown, never derived from the wording:
 //   ## Request rules {#devtools-request-rules}
+//
+// Help is built for the platform of the build (BROUK_HELP_PLATFORM=mac|win
+// overrides it): {mac}/{win} text, {key:…} and {shortcut:…} markers are
+// applied by platform_text.ts (compiled into <out-dir> before this runs).
 import { readFileSync, readdirSync, writeFileSync, mkdirSync, statSync } from 'node:fs';
 import { join, resolve, relative } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import MarkdownIt from 'markdown-it';
 
 const kHere = import.meta.dirname;
@@ -21,6 +26,9 @@ if (!outDir) {
   console.error('usage: node web/help/build.mjs <out-dir>');
   process.exit(2);
 }
+
+const { applyPlatform, buildPlatform } = await import(pathToFileURL(resolve(outDir, 'help/platform_text.js')).href);
+const platform = buildPlatform(process.env.BROUK_HELP_PLATFORM, process.platform);
 
 // ---- Markdown ----
 
@@ -58,9 +66,20 @@ const files = readdirSync(contentDir)
 const problems = [];
 const anchors = new Map(); // anchor -> file
 const sections = [];
+// Actions that have shortcuts (src/core/shortcuts.cc), for {shortcut:…}.
+const shortcutActions = new Set(
+  [...readFileSync(join(kRoot, 'src/core/shortcuts.cc'), 'utf8').matchAll(/\{"([a-z0-9_]+)", "shortcuts\.\1"/g)].map(
+    ([, id]) => id,
+  ),
+);
 let body = '';
 for (const name of files) {
-  const source = readFileSync(join(contentDir, name), 'utf8');
+  const result = applyPlatform(readFileSync(join(contentDir, name), 'utf8'), platform);
+  for (const problem of result.problems) problems.push(`${name}: ${problem}`);
+  for (const id of result.actions) {
+    if (!shortcutActions.has(id)) problems.push(`${name}: {shortcut:${id}}, but there is no such action`);
+  }
+  const source = result.text;
   const tokens = md.parse(source, {});
   let first = true;
   for (let i = 0; i < tokens.length; i++) {
@@ -152,4 +171,4 @@ writeFileSync(
   join(outDir, 'help/sections.json'),
   JSON.stringify(sections.map(({ anchor, title, level }) => ({ anchor, title, level }))),
 );
-console.log(`Help: ${files.length} files, ${anchors.size} anchors, ${links} links checked.`);
+console.log(`Help (${platform}): ${files.length} files, ${anchors.size} anchors, ${links} links checked.`);

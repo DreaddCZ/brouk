@@ -1,5 +1,6 @@
 /** Settings page rules kept free of the DOM. */
 import type { SettingItem } from './api.js';
+import { onWindows } from '../shared/platform.js';
 
 export interface Section {
   readonly title: string;
@@ -93,7 +94,6 @@ const kNamedKeys: Readonly<Record<string, string>> = {
   ' ': 'space',
   Enter: 'return',
   Escape: 'escape',
-  Backspace: 'delete',
   Home: 'home',
   End: 'end',
   PageUp: 'pageup',
@@ -119,17 +119,24 @@ const kCodeKeys: Readonly<Record<string, string>> = {
 
 /**
  * The shortcut a key press records, written as the settings file has it
- * ("ctrl+opt+shift+cmd+t"), or null if it is not a shortcut (no Cmd or Ctrl
- * and not F1 to F12, or only a modifier key): such keys edit the text.
- * Letters keep Shift; other characters are recorded as typed ("cmd+}" for
- * Cmd+Shift+]), as the browser matches them.
+ * ("ctrl+opt+shift+cmd+t" on macOS, "ctrl+alt+shift+t" on Windows), or null
+ * if it is not a shortcut (or only a modifier key): such keys edit the
+ * text. A shortcut needs Cmd or Ctrl on macOS and Ctrl or Alt on Windows,
+ * except F1 to F12 (and Esc on Windows). Letters keep Shift; other
+ * characters are recorded as typed ("cmd+}" for Cmd+Shift+]), as the browser
+ * matches them, except digits on Windows, which it matches by key.
  */
-export function shortcutFromKey(press: KeyPress): string | null {
+export function shortcutFromKey(press: KeyPress, windows = onWindows()): string | null {
   const functionKey = /^F([1-9]|1[0-2])$/.exec(press.key);
   let key: string | undefined;
   let shift = press.shiftKey;
   if (functionKey !== null) {
     key = press.key.toLowerCase();
+  } else if (press.key === 'Backspace' || press.key === 'Delete') {
+    // "delete" is ⌫ on macOS and Del on Windows, as the keys are named there.
+    if (press.key === (windows ? 'Delete' : 'Backspace')) key = 'delete';
+  } else if (windows && /^Digit[0-9]$/.test(press.code)) {
+    key = press.code.slice(5);
   } else if (kNamedKeys[press.key] !== undefined) {
     key = kNamedKeys[press.key];
     if (key === 'comma' || key === 'plus') shift = false;
@@ -144,10 +151,16 @@ export function shortcutFromKey(press: KeyPress): string | null {
     shift = false;  // Already in the character ("}" for Shift+]).
   }
   if (key === undefined) return null;
-  if (functionKey === null && !press.metaKey && !press.ctrlKey) return null;
+  if (windows) {
+    // The Windows key belongs to the system.
+    if (press.metaKey) return null;
+    if (functionKey === null && key !== 'escape' && !press.ctrlKey && !press.altKey) return null;
+  } else if (functionKey === null && !press.metaKey && !press.ctrlKey) {
+    return null;
+  }
   const parts: string[] = [];
   if (press.ctrlKey) parts.push('ctrl');
-  if (press.altKey) parts.push('opt');
+  if (press.altKey) parts.push(windows ? 'alt' : 'opt');
   if (shift) parts.push('shift');
   if (press.metaKey) parts.push('cmd');
   parts.push(key);

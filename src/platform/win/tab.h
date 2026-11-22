@@ -212,6 +212,9 @@ class Tab final : public TabClientDelegate,
   void GoBack();
   void GoForward();
   void Reload();
+  // Reload without the cache (Ctrl+Shift+R), and stop loading (003).
+  void ReloadIgnoringCache();
+  void Stop();
   // Focuses the page, or a dialog over it.
   void Focus();
   // Find in page (012): opens the find bar and focuses it (Ctrl+F); the

@@ -6,6 +6,7 @@
 import { cefTransport } from '../shared/bridge.js';
 import { byId, element, errorText } from '../shared/dom.js';
 import { wireHelpButtons } from '../shared/help.js';
+import { commandKey, onWindows } from '../shared/platform.js';
 import {
   act,
   copyText,
@@ -305,13 +306,18 @@ function selectRange(from: string, to: string): void {
   current = to;
 }
 
+// End process is ⌘⌫ on macOS and Del on Windows (as Windows' Task Manager).
+if (onWindows()) {
+  document.querySelector('[data-action="end"]')?.setAttribute('title', 'End the process (Del)');
+}
+
 body.addEventListener('mousedown', (event) => {
   const tr = (event.target as Element).closest('tr');
   const key = tr?.dataset['key'];
   if (key === undefined) return;
   if (event.shiftKey && anchor !== null) {
     selectRange(anchor, key);
-  } else if (event.metaKey) {
+  } else if (commandKey(event)) {
     if (selected.has(key)) selected.delete(key);
     else selected.add(key);
     current = key;
@@ -351,12 +357,12 @@ body.addEventListener('keydown', (event) => {
     moveFocus(event.key === 'Home' ? -views.length : views.length, event.shiftKey);
   } else if (event.key === 'Enter' && plain) {
     void runAction('goto');
-  } else if (event.key === 'Backspace' && event.metaKey) {
+  } else if (onWindows() ? event.key === 'Delete' && plain : event.key === 'Backspace' && event.metaKey) {
     void runAction('end');
-  } else if (event.key === 'a' && event.metaKey) {
+  } else if (event.key === 'a' && commandKey(event)) {
     for (const view of views) selected.add(view.row.key);
     render();
-  } else if (event.key === 'c' && event.metaKey) {
+  } else if (event.key === 'c' && commandKey(event)) {
     void copy('csv');
   } else if (plain && ['p', 'u', 'm', 'r', 'd'].includes(event.key)) {
     const actions: Record<string, string> = { p: 'pause', u: 'unload', m: 'mute', r: 'reload', d: 'devtools' };

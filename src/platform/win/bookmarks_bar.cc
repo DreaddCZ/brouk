@@ -363,10 +363,14 @@ void BookmarksBar::Paint() {
     SelectObject(dc, text_font_);
     SetTextColor(dc, theme_.text_dim);
     RECT hint = {Scale(12), 0, client.right, client.bottom};
-    DrawTextW(dc,
-              L"For quick access, place your bookmarks here on the bookmarks "
-              L"bar (Ctrl+D)",
-              -1, &hint, DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
+    std::wstring text =
+        L"For quick access, place your bookmarks here on the bookmarks bar";
+    if (const std::wstring keys = delegate_.ShortcutText("bookmark_page");
+        !keys.empty()) {
+      text += L" (" + keys + L")";
+    }
+    DrawTextW(dc, text.c_str(), -1, &hint,
+              DT_SINGLELINE | DT_VCENTER | DT_NOPREFIX);
   }
   auto draw_background = [&](const RECT& bounds, COLORREF color) {
     HGDIOBJ pen = SelectObject(dc, GetStockObject(NULL_PEN));
@@ -666,11 +670,20 @@ void BookmarksBar::ShowContextMenu(int hit, POINT screen) {
   AppendMenuW(menu, MF_STRING, kAddBookmarkCommand, L"Add bookmark…");
   AppendMenuW(menu, MF_STRING, kAddFolderCommand, L"Add folder…");
   AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+  // "Label\tShortcut", with the shortcut in the settings (003).
+  auto label = [this](std::wstring text, std::string_view action) {
+    if (const std::wstring keys = delegate_.ShortcutText(action);
+        !keys.empty()) {
+      text += L"\t" + keys;
+    }
+    return text;
+  };
   AppendMenuW(menu, MF_STRING, kManagerCommand,
-              L"Bookmark manager\tCtrl+Shift+O");
+              label(L"Bookmark manager", "bookmark_manager").c_str());
   AppendMenuW(
       menu, MF_STRING | (delegate_.BookmarksBarAlwaysShown() ? MF_CHECKED : 0),
-      kAlwaysShowCommand, L"Always show bookmarks bar\tCtrl+Shift+B");
+      kAlwaysShowCommand,
+      label(L"Always show bookmarks bar", "toggle_bookmarks_bar").c_str());
   const UINT command = static_cast<UINT>(TrackPopupMenuEx(
       menu, TPM_LEFTALIGN | TPM_TOPALIGN | TPM_RETURNCMD | TPM_NONOTIFY,
       screen.x, screen.y, window_, nullptr));

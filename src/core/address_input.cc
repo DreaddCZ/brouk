@@ -7,6 +7,8 @@
 #include <string_view>
 #include <utility>
 
+#include "core/url_display.h"
+
 namespace brouk {
 
 namespace {
@@ -310,6 +312,24 @@ AddressInputResult ClassifyAddressInput(std::string_view input,
 
   return {AddressInputResult::Kind::kSearch,
           BuildSearchUrl(text, search_template)};
+}
+
+std::string AddressTextForCopy(std::string_view selected,
+                               std::string_view field_text,
+                               std::string_view page_url) {
+  std::string_view text = Trim(selected);
+  if (text.empty() || text != Trim(field_text)) {
+    return std::string(selected);
+  }
+  if (!page_url.empty() &&
+      (text == page_url || text == FormatUrlForDisplay(page_url))) {
+    return std::string(page_url);
+  }
+  AddressInputResult input = ClassifyAddressInput(text);
+  if (input.kind == AddressInputResult::Kind::kUrl) {
+    return input.url;
+  }
+  return std::string(selected);
 }
 
 }  // namespace brouk

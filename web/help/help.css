@@ -27,8 +27,9 @@ main table { border-collapse: collapse; margin: 8px 0; width: 100%; }
 main th, main td { text-align: left; vertical-align: top; padding: 4px 8px;
   border-bottom: 1px solid var(--line); }
 main th { color: var(--muted); font-weight: 600; font-size: 12px; }
-main kbd { font: 12px -apple-system, sans-serif; border: 1px solid var(--line); border-radius: 4px;
+main kbd { font: 12px -apple-system, "Segoe UI", sans-serif; border: 1px solid var(--line); border-radius: 4px;
   padding: 0 4px; background: var(--card); white-space: nowrap; }
+main kbd.none { color: var(--muted); border-style: dashed; }
 main a { color: var(--accent); }
 main a.external::after { content: " ↗"; font-size: 11px; }
 .help-section[hidden] { display: none; }

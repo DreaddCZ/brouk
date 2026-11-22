@@ -56,6 +56,17 @@ function renderShortcuts(state: HelpState): void {
   }
 }
 
+/** {shortcut:<action>} in the text: the action's first current shortcut. */
+function renderInlineShortcuts(state: HelpState): void {
+  for (const target of document.querySelectorAll<HTMLElement>('kbd[data-shortcut]')) {
+    const row = state.shortcuts.find((shortcut) => shortcut.id === target.dataset['shortcut']);
+    const key = row?.keys[0];
+    target.classList.toggle('none', key === undefined);
+    target.textContent = key ?? 'no shortcut';
+    target.title = row === undefined ? '' : `${row.label} (${row.setting})`;
+  }
+}
+
 function defaultText(setting: SettingRow): string {
   if (setting.type === 'on/off') return setting.defaultValue === 'true' ? 'on' : 'off';
   if (setting.defaultValue === '') return 'empty';
@@ -99,6 +110,7 @@ async function refreshGenerated(): Promise<void> {
   try {
     const state = await loadState(cefTransport());
     renderShortcuts(state);
+    renderInlineShortcuts(state);
     renderSettings(state);
   } catch {
     for (const target of document.querySelectorAll<HTMLElement>('[data-generated]')) {

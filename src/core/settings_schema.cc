@@ -40,6 +40,9 @@ constexpr std::string_view kRemoteDebuggingDescription =
     "For Playwright, Puppeteer and chrome://inspect, on this PC only. "
     "Programs on this PC can then control tabs of all profiles, including "
     "their sign-ins.";
+constexpr std::string_view kOtherSpaceLabel =
+    "When the chosen window is on another desktop";
+constexpr std::string_view kSwitchSpaceLabel = "Switch to that desktop";
 #else
 constexpr std::string_view kSameAsSystem = "Same as macOS";
 constexpr std::string_view kThemeDescription =
@@ -60,6 +63,9 @@ constexpr std::string_view kRemoteDebuggingDescription =
     "For Playwright, Puppeteer and chrome://inspect, on this Mac only. "
     "Programs on this Mac can then control tabs of all profiles, including "
     "their sign-ins.";
+constexpr std::string_view kOtherSpaceLabel =
+    "When the chosen window is on another Space";
+constexpr std::string_view kSwitchSpaceLabel = "Switch to that Space";
 #endif
 
 constexpr std::array<std::string_view, 3> kThemes = {"system", "light", "dark"};
@@ -92,7 +98,7 @@ constexpr std::array<std::string_view, 2> kStartupLabels = {
 
 constexpr std::array<std::string_view, 2> kOtherSpace = {"switch", "move"};
 constexpr std::array<std::string_view, 2> kOtherSpaceLabels = {
-    "Switch to that Space", "Move the window here"};
+    kSwitchSpaceLabel, "Move the window here"};
 
 constexpr std::array<std::string_view, 2> kHistoryViews = {"site", "day"};
 constexpr std::array<std::string_view, 2> kHistoryViewLabels = {"By site",
@@ -522,7 +528,7 @@ constexpr std::array<SettingDef, 63> kSettings = {{
      .choices = kOtherSpace,
      .choice_labels = kOtherSpaceLabels,
      .section = "Links",
-     .label = "When the chosen window is on another Space",
+     .label = kOtherSpaceLabel,
      .description = "For links opened in a window you chose in the picker."},
     // Per profile.
     {.key = "updates.channel",
@@ -712,7 +718,7 @@ std::vector<SettingDef> BuildSettingDefs() {
     defs.push_back({.key = action.setting_key,
                     .scope = SettingScope::kGlobal,
                     .type = SettingDef::Type::kString,
-                    .default_value = action.defaults,
+                    .default_value = DefaultShortcuts(action),
                     .format = SettingDef::Format::kShortcut,
                     .max_length = 200,
                     .section = "Shortcuts",

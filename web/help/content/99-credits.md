@@ -4,7 +4,7 @@ Brouk is **open source** under the Apache License 2.0: anyone may use, change an
 
 Brouk is built on other open-source software: Chromium (through CEF), the libraries it uses for settings, history, encryption and updates, the ad blocking engine with its Rust crates, and the password strength estimate. Their licences ask that their notices go along with Brouk, and here they are.
 
-**Open them:** Help → **Open-Source Licences**, or type `brouk://credits` in the address bar. The page opens in a tab:
+**Open them:** {mac}Help → **Open-Source Licences**{/mac}{win}⋮ → **Open-source licences**{/win}, or type `brouk://credits` in the address bar. The page opens in a tab:
 
 - **Brouk's own licence** is at the top.
 - **Every component** follows with its version and licence; click one to read its licence texts. **Project page** opens the project's website in a tab.

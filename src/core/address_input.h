@@ -40,6 +40,17 @@ std::string BuildSearchUrl(
     std::string_view query,
     std::string_view search_template = kDefaultSearchTemplate);
 
+// The text the address bar puts on the clipboard when the user copies or
+// cuts `selected` out of `field_text` (Chrome's AdjustTextForCopy): when the
+// whole text is selected and reads as an address, the full URL with its
+// scheme is copied, so it works when pasted elsewhere. The tab's address
+// `page_url`, shortened or not, copies as exactly that URL; other addresses
+// get the scheme typing them would get ("example.com" ->
+// "https://example.com"). A partial selection or a search copies as is.
+std::string AddressTextForCopy(std::string_view selected,
+                               std::string_view field_text,
+                               std::string_view page_url);
+
 // Form-encodes text for a query string: unreserved characters stay, spaces
 // become '+', everything else becomes %XX of its UTF-8 bytes.
 std::string EncodeQueryComponent(std::string_view text);

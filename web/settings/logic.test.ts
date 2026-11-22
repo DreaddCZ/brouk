@@ -60,28 +60,53 @@ function press(key: string, code: string, mods: Partial<KeyPress> = {}): KeyPres
   return { key, code, metaKey: false, ctrlKey: false, altKey: false, shiftKey: false, ...mods };
 }
 
+const shortcutFromKeyMac = (key: KeyPress): string | null => shortcutFromKey(key, false);
+
 test('key presses become shortcuts as the settings file writes them', () => {
-  assert.equal(shortcutFromKey(press('t', 'KeyT', { metaKey: true })), 'cmd+t');
-  assert.equal(shortcutFromKey(press('T', 'KeyT', { metaKey: true, shiftKey: true })), 'shift+cmd+t');
+  assert.equal(shortcutFromKeyMac(press('t', 'KeyT', { metaKey: true })), 'cmd+t');
+  assert.equal(shortcutFromKeyMac(press('T', 'KeyT', { metaKey: true, shiftKey: true })), 'shift+cmd+t');
   // Option types "ˆ"; the key is still I.
-  assert.equal(shortcutFromKey(press('ˆ', 'KeyI', { metaKey: true, altKey: true })), 'opt+cmd+i');
-  assert.equal(shortcutFromKey(press('Tab', 'Tab', { ctrlKey: true, shiftKey: true })), 'ctrl+shift+tab');
-  assert.equal(shortcutFromKey(press('ArrowRight', 'ArrowRight', { metaKey: true, altKey: true })), 'opt+cmd+right');
-  assert.equal(shortcutFromKey(press('}', 'BracketRight', { metaKey: true, shiftKey: true })), 'cmd+}');
-  assert.equal(shortcutFromKey(press('“', 'BracketLeft', { metaKey: true, altKey: true })), 'opt+cmd+[');
-  assert.equal(shortcutFromKey(press(',', 'Comma', { metaKey: true })), 'cmd+comma');
-  assert.equal(shortcutFromKey(press('+', 'Equal', { metaKey: true, shiftKey: true })), 'cmd+plus');
-  assert.equal(shortcutFromKey(press('1', 'Digit1', { metaKey: true })), 'cmd+1');
-  assert.equal(shortcutFromKey(press('!', 'Digit1', { metaKey: true, shiftKey: true })), 'cmd+!');
-  assert.equal(shortcutFromKey(press('F5', 'F5')), 'f5');
+  assert.equal(shortcutFromKeyMac(press('ˆ', 'KeyI', { metaKey: true, altKey: true })), 'opt+cmd+i');
+  assert.equal(shortcutFromKeyMac(press('Tab', 'Tab', { ctrlKey: true, shiftKey: true })), 'ctrl+shift+tab');
+  assert.equal(shortcutFromKeyMac(press('ArrowRight', 'ArrowRight', { metaKey: true, altKey: true })), 'opt+cmd+right');
+  assert.equal(shortcutFromKeyMac(press('}', 'BracketRight', { metaKey: true, shiftKey: true })), 'cmd+}');
+  assert.equal(shortcutFromKeyMac(press('“', 'BracketLeft', { metaKey: true, altKey: true })), 'opt+cmd+[');
+  assert.equal(shortcutFromKeyMac(press(',', 'Comma', { metaKey: true })), 'cmd+comma');
+  assert.equal(shortcutFromKeyMac(press('+', 'Equal', { metaKey: true, shiftKey: true })), 'cmd+plus');
+  assert.equal(shortcutFromKeyMac(press('1', 'Digit1', { metaKey: true })), 'cmd+1');
+  assert.equal(shortcutFromKeyMac(press('!', 'Digit1', { metaKey: true, shiftKey: true })), 'cmd+!');
+  assert.equal(shortcutFromKeyMac(press('F5', 'F5')), 'f5');
+});
+
+test('on Windows, shortcuts use Ctrl or Alt and the keys Windows names', () => {
+  const win = (key: string, code: string, mods: Partial<KeyPress> = {}): string | null =>
+    shortcutFromKey(press(key, code, mods), true);
+  assert.equal(win('t', 'KeyT', { ctrlKey: true }), 'ctrl+t');
+  assert.equal(win('T', 'KeyT', { ctrlKey: true, shiftKey: true }), 'ctrl+shift+t');
+  assert.equal(win('d', 'KeyD', { altKey: true }), 'alt+d');
+  assert.equal(win('ArrowLeft', 'ArrowLeft', { altKey: true }), 'alt+left');
+  assert.equal(win('Delete', 'Delete', { ctrlKey: true, shiftKey: true }), 'ctrl+shift+delete');
+  assert.equal(win('Backspace', 'Backspace', { ctrlKey: true }), null);
+  assert.equal(win('Escape', 'Escape', { shiftKey: true }), 'shift+escape');
+  assert.equal(win('F3', 'F3', { shiftKey: true }), 'shift+f3');
+  // Digits by key, whatever the layout types (Czech: "+" and "1").
+  assert.equal(win('+', 'Digit1', { ctrlKey: true }), 'ctrl+1');
+  assert.equal(win('1', 'Digit1', { ctrlKey: true, shiftKey: true }), 'ctrl+shift+1');
+  assert.equal(win('}', 'BracketRight', { ctrlKey: true, shiftKey: true }), 'ctrl+}');
+  assert.equal(win('t', 'KeyT', { metaKey: true }), null);
+  assert.equal(win('t', 'KeyT', { shiftKey: true }), null);
+  assert.equal(win('Escape', 'Escape'), 'escape');
+  // macOS: ⌫ is "delete", the forward delete key is not used.
+  assert.equal(shortcutFromKey(press('Backspace', 'Backspace', { metaKey: true }), false), 'cmd+delete');
+  assert.equal(shortcutFromKey(press('Delete', 'Delete', { metaKey: true }), false), null);
 });
 
 test('typing and modifier keys alone are not shortcuts', () => {
-  assert.equal(shortcutFromKey(press('t', 'KeyT')), null);
-  assert.equal(shortcutFromKey(press('T', 'KeyT', { shiftKey: true })), null);
-  assert.equal(shortcutFromKey(press('Meta', 'MetaLeft', { metaKey: true })), null);
-  assert.equal(shortcutFromKey(press('Shift', 'ShiftLeft', { metaKey: true, shiftKey: true })), null);
-  assert.equal(shortcutFromKey(press('ArrowLeft', 'ArrowLeft')), null);
+  assert.equal(shortcutFromKeyMac(press('t', 'KeyT')), null);
+  assert.equal(shortcutFromKeyMac(press('T', 'KeyT', { shiftKey: true })), null);
+  assert.equal(shortcutFromKeyMac(press('Meta', 'MetaLeft', { metaKey: true })), null);
+  assert.equal(shortcutFromKeyMac(press('Shift', 'ShiftLeft', { metaKey: true, shiftKey: true })), null);
+  assert.equal(shortcutFromKeyMac(press('ArrowLeft', 'ArrowLeft')), null);
 });
 
 test('the page opens at the setting in the address fragment', () => {

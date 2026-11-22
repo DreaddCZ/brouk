@@ -8,6 +8,7 @@
 import { cefTransport } from '../shared/bridge.js';
 import { button, byId, element, errorText } from '../shared/dom.js';
 import { helpButton, settingsSectionAnchor, wireHelpButtons } from '../shared/help.js';
+import { onWindows } from '../shared/platform.js';
 import { SettingsApi, type SettingItem, type SettingsState } from './api.js';
 import { parseSettingTarget, sections, shortcutFromKey, topicOfSection, topics, type Topic } from './logic.js';
 import { startAdblockPanel } from './adblock_panel.js';
@@ -113,7 +114,7 @@ function control(scopeProfile: string | null, item: SettingItem, inputId: string
     // Pressing a shortcut records it (003); plain keys edit the text, e.g.
     // to add a second shortcut after a comma or to type "none".
     input.placeholder = 'none';
-    input.title = 'Press the keys to record a shortcut, or type e.g. cmd+shift+t';
+    input.title = `Press the keys to record a shortcut, or type e.g. ${onWindows() ? 'ctrl+shift+t' : 'cmd+shift+t'}`;
     input.addEventListener('keydown', (event) => {
       const shortcut = shortcutFromKey(event);
       if (shortcut === null) return;
@@ -347,7 +348,7 @@ async function fileAction(action: () => Promise<{ finished: boolean; problems: r
 }
 
 function start(): void {
-  if (navigator.platform.startsWith('Win')) {
+  if (onWindows()) {
     byId('open-folder').textContent = 'Show in File Explorer';
   }
   byId('open-folder').addEventListener('click', () => {

@@ -8,7 +8,7 @@ Profiles are local: there is no account to sign in to. Two things are deliberate
 
 - A window can hold tabs of several profiles. All tabs of one profile in a window form **one group**, labelled with the profile's name and colour.
 - Click a group's label to collapse or expand it; drag it to put the groups in another order or to [move the whole group to another window](#tabs-dragging). The **+** after a group opens a new tab in that profile.
-- New tabs and windows (<kbd>⌘T</kbd>, <kbd>⌘N</kbd>) open in the **default profile**. Its group is in every window, even without tabs.
+- New tabs and windows ({shortcut:new_tab}, {shortcut:new_window}) open in the **default profile**. Its group is in every window, even without tabs.
 - Tabs opened from a page (links, popups, "Open Link in New Tab") stay in the page's profile — unless a [link routing rule](#link-routing) sends them elsewhere.
 - **Moving a tab to another profile:** drag it into the other profile's group. Brouk asks first, because the page reloads in the other profile and is signed in only if you are signed in there.
 - The bookmarks bar, password filling and the new tab page follow the active tab's profile.
@@ -16,7 +16,7 @@ Profiles are local: there is no account to sign in to. Two things are deliberate
 
 ### Profile manager {#profiles-manager}
 
-**Profiles → Manage Profiles…** opens the profile manager. There you can:
+{mac}**Profiles → Manage Profiles…**{/mac}{win}**⋮ → Profiles → Manage profiles…**{/win} opens the profile manager. There you can:
 
 - create a profile (name and colour), rename it and change its colour;
 - choose the **default profile**;
@@ -26,7 +26,7 @@ Profiles are local: there is no account to sign in to. Two things are deliberate
 
 "Show this window when Brouk starts" makes the manager appear at startup, so you choose a profile first.
 
-The **Profiles** menu opens a new tab in any profile; hold <kbd>⌥</kbd> for a new window.
+{mac}The **Profiles** menu opens a new tab in any profile; hold {key:alt} for a new window.{/mac}{win}**⋮ → Profiles** opens a new tab in any profile.{/win}
 
 ### Export and import {#profiles-export}
 
@@ -41,10 +41,17 @@ The **Profiles** menu opens a new tab in any profile; hold <kbd>⌥</kbd> for a 
 
 ### Starting a profile directly {#profiles-command-line}
 
-Start Brouk with a profile from Terminal or a script:
+Start Brouk with a profile from {mac}Terminal{/mac}{win}PowerShell{/win} or a script:
 
+{mac}
 ```
 open -a Brouk --args --profile "Work"
 ```
+{/mac}
+{win}
+```
+& "$env:LOCALAPPDATA\Programs\Brouk\brouk.exe" --profile "Work"
+```
+{/win}
 
 The profile's name or id works, also while Brouk is running. An unknown name opens the default profile.

@@ -1,14 +1,12 @@
 ## Developer tools {#devtools}
 
-Developer tools are switched on **per tab** with the hammer button next to the address bar (<kbd>⌥⌘I</kbd>), or with <kbd>⌥⌘J</kbd> (console), <kbd>⌥⌘C</kbd> (pick an element) and right-click → **Inspect**.
+Developer tools are switched on **per tab** with the hammer button next to the address bar ({shortcut:devtools}{win}, also ⋮ → Developer tools{/win}), or with {shortcut:devtools_console} (console), {shortcut:devtools_inspect} (pick an element) and right-click → **Inspect**.
 
 - A tab opened from a tab with developer tools on starts with them on; other tabs start off.
 - Turning them on opens the **dock** and starts recording the tab's requests; [request rules](#devtools-request-rules) apply only to such tabs. Turning them off (or closing the dock) stops both.
-- The dock sits at the bottom, left or right, or in its own window — the buttons in its header. Its size and position are remembered.
+- The dock sits at the bottom, left or right, or in its own window — the buttons in its header. {win}Drag its edge to resize it. {/win}Its size and position are remembered.
 - The dock's tabs: **DevTools** (Chromium's own: Elements, Console, Sources, Network…) and Brouk's tools below, among them [Utilities](#devtools-utilities) and the [Security check](#devtools-security-check). They work only with the tab's own profile.
-- Brouk's own pages (Settings, History…) can be inspected the same way.
-
-**On Windows:** <kbd>F12</kbd> or <kbd>Ctrl+Shift+I</kbd> (also "⋮" → Developer tools, and the toolbar's button) switches the tab's developer tools on and off. <kbd>Ctrl+Shift+J</kbd> opens the console and <kbd>Ctrl+Shift+C</kbd> picks an element, as in Chrome. Drag the dock's edge to resize it. "Inspect" on one of Brouk's own pages (settings, help, the profile manager) opens DevTools in a window of its own.
+- Brouk's own pages (Settings, History…) can be inspected the same way.{win} "Inspect" on one shown in a window of its own (settings, help, the profile manager) opens DevTools in a window of its own.{/win}
 
 ### Site data {#devtools-site-data}
 
@@ -76,4 +74,4 @@ JSON documents open as a collapsible tree in every tab — developer tools on or
 
 ### Remote debugging {#devtools-remote-debugging}
 
-Tools like Playwright and Puppeteer can control Brouk over the Chrome DevTools Protocol when **remote debugging** is on (Settings → Developer tools, then restart; or start Brouk with `--remote-debugging-port=9222`). It listens on this Mac only. While it is on, every window shows a warning: **any program on your Mac can then control tabs of all profiles, including their sign-ins.** Keep it off when you don't need it.
+Tools like Playwright and Puppeteer can control Brouk over the Chrome DevTools Protocol when **remote debugging** is on (Settings → Developer tools, then restart; or start Brouk with `--remote-debugging-port=9222`). It listens on this {mac}Mac{/mac}{win}PC{/win} only. While it is on, every window shows a warning: **any program on your {mac}Mac{/mac}{win}PC{/win} can then control tabs of all profiles, including their sign-ins.** Keep it off when you don't need it.

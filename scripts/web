@@ -49,6 +49,10 @@ case "${1:-}" in
   test)
     out="$ROOT/build/web-test"
     compile "$out"
+    # Help is built for the OS of the build (016); check the other one too.
+    for platform in mac win; do
+      BROUK_HELP_PLATFORM=$platform node help/build.mjs "$out"
+    done
     # Node runs the compiled ES modules as modules.
     echo '{"type": "module"}' > "$out/package.json"
     find "$out" -name '*.test.js' -print0 | xargs -0 node --test

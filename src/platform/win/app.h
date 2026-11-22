@@ -148,6 +148,7 @@ class App final : public BrowserWindowOwner,
   bool BookmarksBarAlwaysShown() override;
   void SetBookmarksBarAlwaysShown(bool always) override;
   void OpenTaskManager(const std::string& row) override;
+  const ShortcutMap& Shortcuts() override;
   std::vector<BrowserWindow*> NormalWindows() override;
   const std::vector<std::pair<std::string, std::string>>& HelpSections()
       override;
@@ -311,6 +312,8 @@ class App final : public BrowserWindowOwner,
                                   ImportDone done);
 
   ProfileRegistry profiles_;
+  // The shortcuts in effect (003), resolved when the settings change.
+  ShortcutMap shortcuts_;
   // Debug logging (025) following the settings; from OnContextInitialized.
   std::unique_ptr<DebugLoggingSwitch> debug_logging_;
   // One per profile, made when its first tab opens.

@@ -2670,9 +2670,17 @@ void App::SettingsFilesChanged() {
   }
 }
 
+const ShortcutMap& App::Shortcuts() {
+  CEF_REQUIRE_UI_THREAD();
+  return shortcuts_;
+}
+
 void App::ApplySettings() {
   CEF_REQUIRE_UI_THREAD();
   const Settings& global = profiles_.global_settings();
+  // Problems with shortcuts are among the settings problems already.
+  std::vector<std::string> shortcut_problems;
+  shortcuts_ = ResolveShortcuts(global, shortcut_problems);
   if (debug_logging_) {
     debug_logging_->Apply();
   }
