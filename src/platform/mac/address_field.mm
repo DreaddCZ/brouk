@@ -210,11 +210,36 @@
 
 - (void)showPendingText:(nullable NSString*)text {
   _hasPendingText = text != nil;
-  if (text) {
-    self.stringValue = text;
-  } else {
-    [self showDisplayText];
+  if (!_isEditing) {
+    if (text) {
+      self.stringValue = text;
+    } else {
+      [self showDisplayText];
+    }
+    return;
   }
+  // The field is being edited: the page changes often while it loads
+  // (redirects), and each change calls this. Text the user typed stays as
+  // it is, cursor included (it changes only on a switch to another tab
+  // with typed text); an unedited field follows the page with its full URL
+  // (as when editing began, so a copy keeps the scheme), still all
+  // selected if it was.
+  NSText* editor = self.currentEditor;
+  if (text) {
+    if (editor && ![editor.string isEqualToString:text]) {
+      [self replaceEditorText:text selection:NSMakeRange(text.length, 0)];
+    }
+    return;
+  }
+  std::string display = brouk::FormatUrlForDisplay(_pageURL.UTF8String);
+  NSString* full = display.empty() ? @"" : _pageURL;
+  if (!editor || [editor.string isEqualToString:full]) {
+    return;
+  }
+  BOOL allSelected = editor.selectedRange.length == editor.string.length;
+  [self replaceEditorText:full
+                selection:allSelected ? NSMakeRange(0, full.length)
+                                      : NSMakeRange(full.length, 0)];
 }
 
 - (BOOL)becomeFirstResponder {
