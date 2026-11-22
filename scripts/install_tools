@@ -29,6 +29,8 @@ CMAKE_VERSION=4.4.4
 NINJA_VERSION=1.13.2
 NODE_VERSION=24.21.0
 GH_VERSION=2.102.0
+# Submits Windows releases to the Microsoft Store (032), from the Mac.
+MSSTORE_VERSION=0.4.4
 LLVM_TOOLS_VERSION=22.1.8 # clang-format and clang-tidy (from PyPI wheels)
 # Rust only builds Brave's adblock-rust and our thin C wrapper around it
 # (specs/007, specs/001). Standalone installers from static.rust-lang.org.
@@ -60,6 +62,8 @@ artifact() {
     node-mac-arm64) echo "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-darwin-arm64.tar.gz bed7eea5325e1108f32ce5228ddd6a5f0f08a499ee42aa7442aea583702f6057" ;;
     node-linux-x64) echo "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-linux-x64.tar.xz fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6" ;;
     node-win-x64) echo "https://nodejs.org/dist/v$NODE_VERSION/node-v$NODE_VERSION-win-x64.zip 158f7685b44de51f6c0df1d153526cbcd3e1bc739a8dfc607721cef75de9e541" ;;
+    msstore-mac-x64) echo "https://github.com/microsoft/msstore-cli/releases/download/v$MSSTORE_VERSION/MSStoreCLI-osx-x64.tar.gz c68860d0bc6cca9a4b3077de6be1d53185b6fad15ef07c93efa1ee3188cd5bf6" ;;
+    msstore-mac-arm64) echo "https://github.com/microsoft/msstore-cli/releases/download/v$MSSTORE_VERSION/MSStoreCLI-osx-arm64.tar.gz 5d4849e33b8a64948c82d2b3afc2f332168306bb5cd0c10d806f02e26b624ab3" ;;
     gh-mac-x64) echo "https://github.com/cli/cli/releases/download/v$GH_VERSION/gh_${GH_VERSION}_macOS_amd64.zip b245f24eb2bf5f75b426b4c26da3651a107f8d5b6f4fddfbfccc5679041378b3" ;;
     gh-mac-arm64) echo "https://github.com/cli/cli/releases/download/v$GH_VERSION/gh_${GH_VERSION}_macOS_arm64.zip da922c20d1792e5b2cbf375593d7a658acf034c12c84e007e71c76ef959c337e" ;;
     gh-linux-x64) echo "https://github.com/cli/cli/releases/download/v$GH_VERSION/gh_${GH_VERSION}_linux_amd64.tar.gz bb766f710eef8ede859c18578c72c327597cd4c8a85b06001b1f3843c6019386" ;;
@@ -185,6 +189,12 @@ for t in node npm npx; do link "$node_bin/$t" "$t"; done
 
 dir="$(install_tool gh "$GH_VERSION")"
 link "$(find "$dir" -type f -path "*/bin/gh$EXE" | head -1)" gh
+
+if [[ "$PLATFORM" == mac-* ]]; then
+  dir="$(install_tool msstore "$MSSTORE_VERSION")"
+  chmod +x "$dir/msstore"
+  link "$dir/msstore" msstore
+fi
 
 for t in clang-format clang-tidy; do
   dir="$(install_tool "$t" "$LLVM_TOOLS_VERSION")"
