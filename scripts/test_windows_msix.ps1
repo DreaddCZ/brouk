@@ -18,6 +18,7 @@ param(
   [Parameter(Mandatory)] [string] $IdentityName
 )
 $ErrorActionPreference = 'Stop'
+Import-Module Microsoft.PowerShell.Security, PKI, Appx
 function Fail([string] $message) { throw "MSIX test failed: $message" }
 
 $work = Join-Path $env:RUNNER_TEMP 'msix-test'

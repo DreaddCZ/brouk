@@ -190,7 +190,9 @@ jobs:
           source scripts/env.sh
           msix="$(scripts/package_msix "$BUILD" build/dist)"
           cmake_var() { sed -n "s/^set($1 \"\(.*\)\")$/\1/p" CMakeLists.txt; }
-          powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test_windows_msix.ps1 \
+          # Windows PowerShell with its own module path: the runner's
+          # PSModulePath is PowerShell 7's (no Cert: drive, no Appx module).
+          env -u PSModulePath powershell -NoProfile -ExecutionPolicy Bypass -File scripts/test_windows_msix.ps1 \
             -Msix "$(cygpath -w "$msix")" -Publisher "$(cmake_var APP_STORE_PUBLISHER)" \
             -AppName "$(cmake_var APP_NAME)" -AppExe "$(cmake_var APP_EXECUTABLE_NAME)" \
             -Version "$(cmake_var APP_VERSION)" -IdentityName "$(cmake_var APP_STORE_IDENTITY_NAME)"
