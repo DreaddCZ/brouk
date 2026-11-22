@@ -1,6 +1,6 @@
 # 032 – Microsoft Store
 
-- **Status:** ready
+- **Status:** in-progress
 - **Priority:** P2
 - **Depends on:** 004 (data folder), 010 (default browser), 016 (help), 019 (releases), 023 (licences), 024 (Windows app)
 
@@ -98,3 +98,4 @@ None.
   - Registry writes of a packaged app are virtualized; any HKCU writes Brouk makes apart from the browser registration (e.g. for the second start or the updater) must still work or be skipped in the Store app.
   - Whether the manifest's protocol declaration can pass `--single-argument` before the URL (manifest schema in the Windows SDK); if not, how the Store app keeps a link from adding switches.
 - 2026-11-19 (user's decisions): the Store app offers to uninstall the installer's copy (keeping the data); only stable releases go to the Store; submission is automated (`msstore` from the Intel Mac); publisher display name is the user's name; listing in English only; the Store simply follows a release, which is not held back for certification. Status set to `ready`.
+- 2026-11-21 (implementation, part 1 – the package): `scripts/package_msix` builds `Brouk-<version>-x64.msix` with the SDK's `makeappx` from the built app folder (as the installer ships it: no `.pdb`, no `crash_reporter.cfg`), the logos (`src/platform/win/package/Assets`, written by `scripts/make_icons`) and the manifest (`src/platform/win/package/AppxManifest.xml.in`, filled from `CMakeLists.txt`). The package identity (`APP_STORE_IDENTITY_NAME`, `APP_STORE_PUBLISHER`, `APP_STORE_PUBLISHER_DISPLAY_NAME`) has placeholders until Partner Center assigns it. File system write virtualization is off for the whole package (simpler than excluding one folder, which needs Windows 11), so the minimum is Windows 10 2004. An execution alias (`brouk`) starts the Store app from a terminal. Every Windows CI run and every release run builds the package and tests it (`scripts/test_windows_msix.ps1`: signed with a throwaway certificate, installed, `--version` through the alias, a start that must create `%LOCALAPPDATA%\Brouk` and not the package's private folder, uninstall keeps the data). Not yet: WACK, the runtime changes (updater off, settings text, default browser, the offer to uninstall the installer's copy), listing, privacy policy, help, submission.
