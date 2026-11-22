@@ -60,17 +60,17 @@
         <!-- As the installer's registration (010, 024): a link is one
              argument after the single-argument switch, so it cannot add
              switches of its own. -->
-        <uap:Extension Category="windows.protocol">
-          <uap:Protocol Name="http" Parameters="--single-argument &quot;%1&quot;">
+        <uap3:Extension Category="windows.protocol">
+          <uap3:Protocol Name="http" Parameters="--single-argument &quot;%1&quot;">
             <uap:DisplayName>@APP_NAME@ URL</uap:DisplayName>
-          </uap:Protocol>
-        </uap:Extension>
-        <uap:Extension Category="windows.protocol">
-          <uap:Protocol Name="https" Parameters="--single-argument &quot;%1&quot;">
+          </uap3:Protocol>
+        </uap3:Extension>
+        <uap3:Extension Category="windows.protocol">
+          <uap3:Protocol Name="https" Parameters="--single-argument &quot;%1&quot;">
             <uap:DisplayName>@APP_NAME@ URL</uap:DisplayName>
-          </uap:Protocol>
-        </uap:Extension>
-        <uap:Extension Category="windows.fileTypeAssociation">
+          </uap3:Protocol>
+        </uap3:Extension>
+        <uap3:Extension Category="windows.fileTypeAssociation">
           <uap3:FileTypeAssociation Name="html" Parameters="--single-argument &quot;%1&quot;">
             <uap:DisplayName>@APP_NAME@ HTML Document</uap:DisplayName>
             <uap:SupportedFileTypes>
@@ -81,7 +81,7 @@
               <uap:FileType>.xhtml</uap:FileType>
             </uap:SupportedFileTypes>
           </uap3:FileTypeAssociation>
-        </uap:Extension>
+        </uap3:Extension>
       </Extensions>
     </Application>
   </Applications>
