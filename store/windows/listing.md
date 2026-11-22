@@ -67,9 +67,11 @@ https://dreaddcz.github.io/brouk-releases/privacy (published from `store/windows
 
 ## Screenshots
 
-At least one, 1366×768 or larger, PNG. To be taken on Windows 11 from a real session with made-up data only (no real company or client names): `store/windows/screenshots/`.
+Taken by the Windows CI for a pull request labelled `store-screenshots` (`tests/store-screenshots/screenshots.mjs`): a real Brouk on a 1920×1080 screen, with made-up profiles, pages and link rules only. Each shot is the maximized window, 1920×1032. Download them from the run's "store-screenshots-<sha>" artifact, look at them, and upload them in Partner Center in this order:
 
-1. A window with two profile groups and the tab strip
-2. The window picker
-3. Settings → Links (link rules)
-4. Developer tools docked
+1. `1-profiles-side-by-side.png`: three profile groups in one window
+2. `2-developer-tools.png`: developer tools docked
+3. `3-task-manager.png`: the task manager with tabs by profile
+4. `4-link-rules.png`: Settings → Links with link rules
+
+The same job can be extended for other screenshots and promo videos.
