@@ -58,7 +58,8 @@
           </uap3:AppExecutionAlias>
         </uap3:Extension>
         <!-- As the installer's registration (010, 024): a link is one
-             argument after --single-argument, so it cannot add switches. -->
+             argument after the single-argument switch, so it cannot add
+             switches of its own. -->
         <uap:Extension Category="windows.protocol">
           <uap:Protocol Name="http" Parameters="--single-argument &quot;%1&quot;">
             <uap:DisplayName>@APP_NAME@ URL</uap:DisplayName>
