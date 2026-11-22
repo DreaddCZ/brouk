@@ -64,6 +64,29 @@ pre-release). Running it again continues after an interruption.
 The installer is **not code-signed** yet, so SmartScreen warns about an
 unknown publisher (More info → Run anyway).
 
+### Microsoft Store (032)
+
+The same run builds and tests `Brouk-<version>-x64.msix` (`scripts/package_msix`,
+`scripts/test_windows_msix.ps1`). For a **stable** release,
+`scripts/release_windows` then submits it to the Store with `msstore publish`
+(Store ID `APP_STORE_ID` in `CMakeLists.txt`), after the direct download is
+published. The Store certifies it within a few days and signs it; the release
+does not wait. Beta releases never go to the Store. A failed submission is
+reported and leaves the direct download as it is; running the script again
+retries only the Store. If a submission is still in certification, the script
+submits nothing and says so.
+
+**The first submission is made by hand**, because the submission API only
+changes existing submissions: Partner Center → Apps and games → Brouk →
+Start your submission. Fill in pricing (free), properties (category
+Productivity, privacy policy URL), age ratings, the Store listing (texts from
+`store/windows/listing.md`, screenshots), and upload the `.msix` from
+`build/release/<version>/windows/`. In the submission's notes for
+certification, explain the restricted capabilities: `runFullTrust` (a
+desktop browser built on Chromium) and `unvirtualizedResources` (keeps the
+data in `%LOCALAPPDATA%\Brouk`, shared with the direct download, and lets the
+direct download's uninstaller remove its own registration).
+
 On Windows, Brouk's own updater (not Sparkle) reads
 `https://dreaddcz.github.io/brouk-releases/windows-x64.json`, checks a minute
 after the start and every 5 hours, downloads the newest release of its
@@ -94,6 +117,19 @@ Done already on the Intel Mac; repeat on a new Mac.
   user would have to install a new image by hand. The public key is
   `APP_UPDATE_PUBLIC_KEY` in `CMakeLists.txt`; the release script refuses to
   run if the keychain's key does not match it.
+- **Microsoft Store (032):** a Partner Center account, the product Brouk
+  (identity in `CMakeLists.txt`, `APP_STORE_*`) and an Entra application with
+  the Manager role. `msstore` (`scripts/install_tools`) keeps its client
+  secret in the login keychain:
+
+  ```sh
+  source scripts/env.sh
+  msstore reconfigure     # asks for tenant, seller and client ID and the secret
+  msstore info            # shows the IDs, not the secret
+  ```
+
+  The secret expires (1 or 2 years); make a new key in Partner Center and run
+  `msstore reconfigure` again before it does.
 
 ## How updates work
 

@@ -11,7 +11,10 @@
 # keychain (Sparkle's sign_update, as the macOS images), add it to the
 # release in the releases repository and to the Windows update feed
 # (windows-x64.json). The release's channel is the macOS one: a pre-release
-# is beta. Running it again after an interruption continues; a published
+# is beta. A stable release's MSIX package then goes to the Microsoft Store
+# (032) with msstore, whose credentials it keeps in the keychain itself
+# (msstore reconfigure); the Store certifies it within days, and the direct
+# download does not wait for that. Running it again after an interruption continues; a published
 # file is never replaced.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -43,6 +46,9 @@ SPARKLE_BIN="$ROOT/third_party/sparkle/bin"
 cmake_var() { sed -n "s/^set($1 \"\(.*\)\")$/\1/p" "$ROOT/CMakeLists.txt"; }
 APP_NAME="$(cmake_var APP_NAME)"
 SETUP="$APP_NAME-$VERSION-setup.exe"
+MSIX="$APP_NAME-$VERSION-x64.msix"
+STORE_ID="$(cmake_var APP_STORE_ID)"
+MSSTORE="$ROOT/.tools/bin/msstore"
 
 step "Checking preconditions"
 "$GH" auth status >/dev/null 2>&1 || fail "gh is not signed in (gh auth login)."
@@ -59,6 +65,10 @@ key="$("$SPARKLE_BIN/generate_keys" --account "$SPARKLE_ACCOUNT" -p 2>/dev/null 
   fail "the update signing key does not match APP_UPDATE_PUBLIC_KEY in CMakeLists.txt."
 git fetch -q origin "refs/tags/$TAG:refs/tags/$TAG" 2>/dev/null || true
 COMMIT="$(git rev-list -n 1 "$TAG" 2>/dev/null)" || fail "no tag $TAG."
+if [[ "$CHANNEL" == stable ]]; then
+  "$MSSTORE" info 2>&1 | grep -q "Seller Id" ||
+    fail "msstore has no Store account (run msstore reconfigure, see docs/releasing.md)."
+fi
 
 mkdir -p "$OUT"
 if [[ ! -f "$OUT/$SETUP" ]]; then
@@ -77,9 +87,11 @@ if [[ ! -f "$OUT/$SETUP" ]]; then
     fail "the windows-release build failed; see the run above."
   "$GH" run download "$run" -R "$SOURCE_REPO" -n "brouk-windows-setup-$TAG" -D "$OUT"
 fi
-[[ -f "$OUT/$SETUP" && -f "$OUT/$SETUP.sha256" ]] || fail "the build has no $SETUP."
-(cd "$OUT" && shasum -a 256 -c "$SETUP.sha256" >/dev/null) ||
-  fail "$SETUP does not match its checksum."
+for file in "$SETUP" "$MSIX"; do
+  [[ -f "$OUT/$file" && -f "$OUT/$file.sha256" ]] || fail "the build has no $file."
+  (cd "$OUT" && shasum -a 256 -c "$file.sha256" >/dev/null) ||
+    fail "$file does not match its checksum."
+done
 
 step "Signing $SETUP for the updater"
 signed="$("$SPARKLE_BIN/sign_update" --account "$SPARKLE_ACCOUNT" "$OUT/$SETUP")"
@@ -134,3 +146,23 @@ fi
 
 step "Published $APP_NAME $VERSION for Windows ($CHANNEL)"
 echo "https://github.com/$RELEASES_REPO/releases/tag/$TAG"
+
+# The Microsoft Store (032): stable releases only. The direct download is
+# published already; a problem here is reported and does not undo it.
+store_note() { printf '\nMicrosoft Store: %s\n' "$*" >&2; }
+if [[ "$CHANNEL" == stable ]]; then
+  step "Submitting $MSIX to the Microsoft Store"
+  app="$("$MSSTORE" apps get "$STORE_ID" 2>/dev/null | sed -n '/^{/,/^}/p')"
+  pending="$(python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("PendingApplicationSubmission") is not None)' <<<"$app" 2>/dev/null || echo unknown)"
+  published="$(python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("LastPublishedApplicationSubmission") is not None)' <<<"$app" 2>/dev/null || echo unknown)"
+  if [[ "$pending" == True ]]; then
+    store_note "a submission is already in progress (this version after a rerun, or an earlier one); see Partner Center. Nothing submitted."
+  elif [[ "$published" == False ]]; then
+    # The submission API changes existing submissions only.
+    store_note "Brouk has no published submission yet: upload $OUT/$MSIX by hand in Partner Center for the first one (docs/releasing.md)."
+  elif "$MSSTORE" publish "$OUT/$MSIX" --appId "$STORE_ID"; then
+    echo "Submitted; the Store certifies it within a few days: https://apps.microsoft.com/detail/$STORE_ID"
+  else
+    store_note "the submission failed (see above). The direct download is published; run this script again to retry the Store."
+  fi
+fi
