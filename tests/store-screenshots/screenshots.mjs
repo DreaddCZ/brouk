@@ -133,6 +133,16 @@ public static class Max {
 }
 '@
 [void][Max]::ShowWindow([Max]::GetForegroundWindow(), 3)`);
+// A left click at (x, y) on the screen, to give a window the keyboard.
+const click = (x, y) => powershell(`
+Add-Type @'
+using System; using System.Runtime.InteropServices;
+public static class Mouse {
+  [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+  [DllImport("user32.dll")] public static extern void mouse_event(int f, int x, int y, int d, IntPtr e);
+}
+'@
+[void][Mouse]::SetCursorPos(${x}, ${y}); [Mouse]::mouse_event(2, 0, 0, 0, [IntPtr]::Zero); [Mouse]::mouse_event(4, 0, 0, 0, [IntPtr]::Zero)`);
 const keys = (k) => powershell(`Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('${k}')`);
 
 try {
@@ -143,7 +153,10 @@ try {
   shot('2-developer-tools');
   keys('{F12}');
   await sleep(2000);
-  // The task manager (020) opens in its own window with Shift+Esc.
+  // The task manager (020) opens in its own window with Shift+Esc; the
+  // page gets the keyboard first (an empty part of it).
+  click(1700, 800);
+  await sleep(1000);
   keys('+{ESC}');
   await sleep(5000);
   maximize();
