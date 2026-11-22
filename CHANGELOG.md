@@ -2,6 +2,19 @@
 
 What changed in each release of Brouk. Written by `scripts/release` (spec 019).
 
+## 0.6.0 – 2026-11-22
+
+### New
+
+- Brouk for Windows is now available from the Microsoft Store. Stable releases are published there.
+- The Store version is updated by the Store. "Check for updates" and the update settings send you to the Store.
+- In the Store version, you set Brouk as your default browser through the Windows settings, as with other Store apps.
+- If you already have Brouk from the installer, the Store version offers to uninstall that copy the first time it starts. Your profiles and settings stay, because both copies use the same data.
+
+### Fixed
+
+- Fixed a crash in the ad blocker on pages with deeply nested `blob:` links.
+
 ## 0.5.0 – 2026-11-05
 
 ### New
