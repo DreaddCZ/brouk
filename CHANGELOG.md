@@ -2,6 +2,20 @@
 
 What changed in each release of Brouk. Written by `scripts/release` (spec 019).
 
+## 0.7.0 – 2026-11-22
+
+### New
+
+- On Windows, keyboard shortcuts can now be changed in Settings. They default to Chrome's Windows shortcuts and accept Ctrl and Alt. Menus, the bookmarks bar and the command palette show the shortcuts currently in use.
+
+### Fixed
+
+- Help now matches the system you're on. On Windows it shows Windows shortcuts and menus, and it lists the shortcuts you have set yourself.
+- On Windows, the bookmark manager and the task manager now use Ctrl instead of ⌘, and End process uses Del. The "another Space" setting now says "desktop" there.
+- Copying or cutting the whole address from the address bar now always gives you the full URL, including `https://`.
+- On macOS, the address bar no longer replaces what you are typing when the page changes, for example while a new tab is redirecting.
+- Sign-in pages that use FedCM no longer crash the browser. These sites now show their normal sign-in page.
+
 ## 0.6.0 – 2026-11-22
 
 ### New
