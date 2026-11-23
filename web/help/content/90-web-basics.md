@@ -17,6 +17,7 @@ When a site asks for the camera, microphone, screen sharing, location, notificat
 - **Picture-in-Picture:** a video's own Picture-in-Picture button (or its right-click menu) opens it in a small window that stays above other apps.
 - **Files:** file fields open the system's file dialog, also for several files or a whole folder; files can also be dropped onto a page that accepts them.
 - **Print** ({shortcut:print}), including Save as PDF. PDFs open in the tab.
+- **Video and audio:** most videos play; some don't, see [Video formats](#media-formats).
 - **Full screen:** pages (videos, slides) can go full screen — {key:esc} leaves; {shortcut:full_screen} makes the window full screen.
 - **Popups** a page opens without a click are blocked; an icon in the address bar lets you allow them for the site.
 - **Links to apps** (`mailto:`, `msteams:`, `zoommtg:`, `slack:`…) ask before opening the app, with "always allow for this site".
@@ -25,3 +26,11 @@ When a site asks for the camera, microphone, screen sharing, location, notificat
 {mac}
 - Spelling is checked in text fields with macOS's languages (Settings → Pages).
 {/mac}
+
+### Video formats Brouk can't play {#media-formats}
+
+Brouk uses Chromium's open video and audio formats (VP8, VP9, AV1, Opus, Vorbis, FLAC, MP3). It can't play **H.264** or **HEVC (H.265)** video, or **AAC** audio: these formats are covered by patents that Chrome pays licence fees for, and Brouk's Chromium engine (CEF) comes without them.
+
+Most sites (YouTube, video calls) send an open format and play normally. A site that only offers H.264 shows an error such as "This content can't be played". This happens with videos stored in SharePoint or OneDrive, and with some news sites and MP4 files.
+
+To watch such a video, open the page in another browser, or download the file and play it in {mac}QuickTime Player{/mac}{win}the Media Player app{/win}.
