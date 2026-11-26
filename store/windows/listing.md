@@ -8,7 +8,7 @@ Brouk
 
 ## Short description (max. 100 characters)
 
-A Chromium web browser for work: many accounts side by side, every link in the right profile.
+A web browser for work: many accounts side by side, every link in the right profile.
 
 ## Description
 
@@ -50,7 +50,7 @@ Taken from the version's section of `CHANGELOG.md`.
 
 ## Search terms (max. 7)
 
-browser, chromium, profiles, multiple accounts, developer, work, privacy
+browser, tab groups, profiles, multiple accounts, developer, work, privacy
 
 ## Category
 
@@ -75,3 +75,7 @@ Taken by the Windows CI for a pull request labelled `store-screenshots` (`tests/
 4. `4-link-rules.png`: Settings → Links with link rules
 
 The same job can be extended for other screenshots and promo videos.
+
+## Notes
+
+- 2026-11-26: certification rejected the search term "chromium" ("keywords which are product titles that aren't published by you"). Search terms and the short description name no other product; the description may still say what Brouk is built on.
