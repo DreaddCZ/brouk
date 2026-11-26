@@ -112,7 +112,8 @@ try {
   New-Item -ItemType Directory $cache -Force | Out-Null
   Set-Content (Join-Path $cache 'data_0') 'cache'
   $request = Join-Path $state 'import-direct-download'
-  Set-Content -NoNewline $request 'move'
+  # As Brouk writes it: plain ASCII (Windows PowerShell's default is not).
+  [IO.File]::WriteAllText($request, 'move', [Text.Encoding]::ASCII)
   Start-Process -FilePath $alias -ArgumentList 'about:blank'
   try {
     Wait-For (Join-Path $own 'import-marker.txt') 'imported data'
