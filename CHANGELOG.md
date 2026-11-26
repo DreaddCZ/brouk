@@ -2,6 +2,14 @@
 
 What changed in each release of Brouk. Written by `scripts/release` (spec 019).
 
+## 0.7.1 – 2026-11-26
+
+### New
+- **Import from the direct download (Windows Store version):** when it first starts, and later from Settings, the Store version offers to move or copy your data from the direct download version. The import runs when Brouk restarts, before any data is opened. If you choose to move it, Brouk then opens Windows' Installed apps so you can uninstall the direct download.
+
+### Changed
+- The Windows Store version now keeps its own data and keys, separate from the direct download version.
+
 ## 0.7.0 – 2026-11-22
 
 ### New
