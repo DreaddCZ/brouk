@@ -114,7 +114,41 @@ try {
   $request = Join-Path $state 'import-direct-download'
   Set-Content -NoNewline $request 'move'
   Start-Process -FilePath $alias -ArgumentList 'about:blank'
-  Wait-For (Join-Path $own 'import-marker.txt') 'imported data'
+  try {
+    Wait-For (Join-Path $own 'import-marker.txt') 'imported data'
+  } catch {
+    # What happened: was the request read, did a copy start, which windows
+    # does Brouk show (a message box waits for a click on CI)?
+    Write-Host "Request still there: $(Test-Path $request)"
+    Write-Host "Direct download's folder still there: $(Test-Path $data)"
+    Write-Host "Staging folder there: $(Test-Path "$own.import")"
+    Get-ChildItem $state -Force -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  $($_.Name)" }
+    Get-Process -Name $AppExe -ErrorAction SilentlyContinue |
+      ForEach-Object { Write-Host "Process $($_.Id) $($_.Path) window '$($_.MainWindowTitle)'" }
+    Add-Type -Namespace Win -Name Windows -MemberDefinition @'
+[DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc cb, System.IntPtr p);
+[DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(System.IntPtr w, out uint pid);
+[DllImport("user32.dll")] public static extern bool IsWindowVisible(System.IntPtr w);
+[DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(System.IntPtr w, System.Text.StringBuilder s, int n);
+[DllImport("user32.dll")] public static extern System.IntPtr GetDlgItem(System.IntPtr w, int id);
+public delegate bool EnumProc(System.IntPtr w, System.IntPtr p);
+'@
+    $ids = @(Get-StoreApp | ForEach-Object { [uint32] $_.Id })
+    [Win.Windows]::EnumWindows({ param($w, $p)
+      $procId = [uint32] 0
+      [void] [Win.Windows]::GetWindowThreadProcessId($w, [ref] $procId)
+      if ($ids -contains $procId -and [Win.Windows]::IsWindowVisible($w)) {
+        $text = New-Object System.Text.StringBuilder 512
+        [void] [Win.Windows]::GetWindowText($w, $text, 512)
+        $message = New-Object System.Text.StringBuilder 2048
+        # A message box's text is its static control 0xFFFF.
+        $item = [Win.Windows]::GetDlgItem($w, 0xFFFF)
+        if ($item -ne [IntPtr]::Zero) { [void] [Win.Windows]::GetWindowText($item, $message, 2048) }
+        Write-Host "Window '$text': $message"
+      }
+      $true }, [IntPtr]::Zero) | Out-Null
+    throw
+  }
   Start-Sleep 5
   if (Test-Path $request) { Fail 'the import request is still there' }
   if (Test-Path (Join-Path $own 'web\test\Cache')) { Fail 'the cache was imported' }
