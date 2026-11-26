@@ -10,7 +10,7 @@ Brouk sends nothing to its developer. It has no accounts, no analytics, no telem
 
 ## What stays on your computer
 
-- **Browsing data** (history, bookmarks, cookies, cache, site permissions, downloads list) is kept per profile in Brouk's data folder: `~/Library/Application Support/Brouk` on macOS, `%LOCALAPPDATA%\Brouk` on Windows.
+- **Browsing data** (history, bookmarks, cookies, cache, site permissions, downloads list) is kept per profile in Brouk's data folder: `~/Library/Application Support/Brouk` on macOS, `%LOCALAPPDATA%\Brouk` on Windows (Brouk from the Microsoft Store: its own folder under `%LOCALAPPDATA%\Packages`).
 - **Passwords** of the built-in password manager are encrypted with a key kept in the macOS Keychain or Windows Credential Manager.
 - **Crash reports** are written only to your computer. Brouk never uploads them.
 - **Logs** stay in the data folder. You can attach them to a bug report yourself.
@@ -31,7 +31,7 @@ Brouk contacts these services only for the features listed below:
 
 ## Your choices
 
-You can turn off search suggestions, ad blocking lists and secure DNS in Settings. **Clear browsing data** removes a profile's history, cookies and cache. Uninstalling Brouk leaves its data folder in place. Delete the folder to remove everything.
+You can turn off search suggestions, ad blocking lists and secure DNS in Settings. **Clear browsing data** removes a profile's history, cookies and cache. Uninstalling the direct download leaves its data folder in place; delete the folder to remove everything. Uninstalling Brouk from the Microsoft Store removes its data folder.
 
 ## Children
 

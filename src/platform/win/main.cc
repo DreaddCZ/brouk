@@ -19,6 +19,7 @@
 #include "platform/win/app.h"
 #include "platform/win/data_paths.h"
 #include "platform/win/default_browser.h"
+#include "platform/win/store_data_import.h"
 #include "platform/win/wide_string.h"
 #include "renderer/renderer_app.h"
 
@@ -101,6 +102,10 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance,
   // (010), as the app the user clicked the link in started this one.
   AllowSetForegroundWindow(ASFW_ANY);
 
+  // The Store app's import of the direct download's data (032) replaces
+  // the data folder, so it runs before anything opens it.
+  brouk::win::RunRequestedDirectDownloadImport();
+
   brouk::win::App app;
 
   CefSettings settings;
@@ -132,9 +137,9 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance,
     return CefGetExitCode();
   }
   // Held while Brouk runs: the installer waits until it is gone before it
-  // replaces Brouk's files (W4). Its name is in the installer too.
-  const std::wstring running_name =
-      brouk::win::Utf8ToWide(brouk::kAppName) + L"Running";
+  // replaces Brouk's files (W4). Its name is in the installer too. The
+  // Store app holds one of its own (032).
+  const std::wstring running_name = brouk::win::RunningMutexName();
   HANDLE running = CreateMutexW(nullptr, FALSE, running_name.c_str());
   // Runs until the last window has closed (App::OnWindowDestroyed).
   CefRunMessageLoop();
@@ -145,5 +150,7 @@ CEF_BOOTSTRAP_EXPORT int RunWinMain(HINSTANCE instance,
   if (running) {
     CloseHandle(running);
   }
+  // After the mutex is gone, so the new start can import (032).
+  app.RelaunchIfAsked();
   return 0;
 }

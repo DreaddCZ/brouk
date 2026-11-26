@@ -48,6 +48,8 @@ set(BROUK_CORE_SOURCES
   crash_error_code.h
   crypto.cc
   crypto.h
+  data_folder_import.cc
+  data_folder_import.h
   debug_logging.cc
   debug_logging.h
   devtools_frontend.h

@@ -201,6 +201,19 @@ function renderGroups(container: HTMLElement, scopeProfile: string | null, items
           }),
         );
         group.append(row);
+        if (state?.directDownloadImport === true) {
+          // The Store app (032): the direct download's data, brought in.
+          const imported = element('div', { className: 'setting' });
+          const importTitle = element('span', { className: 'title', text: 'Direct download' });
+          importTitle.append(helpButton('microsoft-store', 'Direct download'));
+          imported.append(
+            importTitle,
+            button('Import from the direct download…', () => {
+              api.importDirectDownload().catch((error: unknown) => showError(errorText(error)));
+            }),
+          );
+          group.append(imported);
+        }
       }
       return group;
     }),

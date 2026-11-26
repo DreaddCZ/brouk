@@ -5,11 +5,10 @@
   only there) and builds the package with makeappx.
 
   - A full-trust desktop app (runFullTrust), as Firefox's Store package is.
-  - File system write virtualization is off (unvirtualizedResources), so
-    Brouk keeps its data in %LOCALAPPDATA%\Brouk like the installer's copy,
-    and the data stays when the package is uninstalled. Registry writes are
-    not redirected either, so the installer's uninstaller, started from the
-    Store app, removes that copy's browser registration for real.
+  - No other restricted capability: the Store refused
+    unvirtualizedResources. Brouk keeps the Store app's data in the
+    package's LocalState folder, apart from the installer's copy, and can
+    import that copy's data (store_data_import.h).
   - Brouk is declared as a browser here (http, https, HTML files) instead of
     the HKCU registration the installer makes: the package's install folder
     changes with every version.
@@ -19,9 +18,8 @@
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
   xmlns:uap3="http://schemas.microsoft.com/appx/manifest/uap/windows10/3"
   xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
-  xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-  IgnorableNamespaces="uap uap3 desktop desktop6 rescap">
+  IgnorableNamespaces="uap uap3 desktop rescap">
 
   <Identity Name="@IDENTITY_NAME@" Publisher="@PUBLISHER@"
             Version="@VERSION@.0" ProcessorArchitecture="x64" />
@@ -30,11 +28,9 @@
     <DisplayName>@APP_NAME@</DisplayName>
     <PublisherDisplayName>@PUBLISHER_DISPLAY_NAME@</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
-    <desktop6:FileSystemWriteVirtualization>disabled</desktop6:FileSystemWriteVirtualization>
-    <desktop6:RegistryWriteVirtualization>disabled</desktop6:RegistryWriteVirtualization>
   </Properties>
 
-  <!-- Windows 10 2004: the first version with FileSystemWriteVirtualization. -->
+  <!-- Windows 10 2004: the oldest version the package is tested for. -->
   <Dependencies>
     <TargetDeviceFamily Name="Windows.Desktop" MinVersion="10.0.19041.0"
                         MaxVersionTested="10.0.26100.0" />
@@ -91,6 +87,5 @@
 
   <Capabilities>
     <rescap:Capability Name="runFullTrust" />
-    <rescap:Capability Name="unvirtualizedResources" />
   </Capabilities>
 </Package>

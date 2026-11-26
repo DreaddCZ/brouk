@@ -39,6 +39,7 @@ add_executable(brouk_core_tests
   core/context_menu_test.cc
   core/crash_error_code_test.cc
   core/crypto_test.cc
+  core/data_folder_import_test.cc
   core/debug_logging_test.cc
   core/devtools_tools_test.cc
   core/dialog_spam_guard_test.cc

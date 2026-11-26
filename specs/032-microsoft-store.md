@@ -21,8 +21,9 @@ The Store is an **additional** way to get Brouk. The direct download (installer 
 
 ### Data folder
 
-- The Store app uses the **same data folder** as the direct download, `%LOCALAPPDATA%\Brouk\` (user's decision of 2026-11-19), so help, "Show the settings file" and profile export work the same, and a user who switches between the two keeps their data.
-- MSIX normally redirects an app's writes to `%LOCALAPPDATA%` into a hidden folder of the package. The package turns this off for Brouk's data folder (`desktop6:FileSystemWriteVirtualization` disabled, which needs the restricted capability `unvirtualizedResources`, justified at submission). The data stays when the Store app is uninstalled, as with the installer.
+- The Store app keeps its data in **its own folder**, the package's `%LOCALAPPDATA%\Packages\<package family>\LocalState\Brouk\` (user's decision of 2026-11-26, after the Store refused `unvirtualizedResources`; it replaces the shared folder decided on 2026-11-19). The package uses no restricted capability apart from `runFullTrust`. Help, "Show the settings file", "Show log" and profile export use this folder in the Store app.
+- Windows deletes this folder when the Store app is uninstalled, as for every Store app. Profile export (005) keeps a copy.
+- The Store app's keys in Credential Manager (008, 009) have their own names ("Brouk Keys (Microsoft Store)…"), so deleting a profile in one copy never removes a key the other copy still uses.
 
 ### Updates
 
@@ -38,8 +39,11 @@ The Store is an **additional** way to get Brouk. The direct download (installer 
 
 ### Both installed
 
-- When the Store app starts for the first time and the installer's Brouk is installed (its uninstall entry for the current user exists), it offers to uninstall the installer's Brouk: "Brouk is also installed from the direct download. Uninstall that copy? Your data stays." with **Uninstall** and **Keep both**. Uninstall runs the installer's uninstaller silently; the data folder stays. Keep both is remembered and the question is not asked again.
-- If both are kept, both work with the same data, one at a time (`BroukRunning`).
+- Installing the Store app does not replace the direct download: both are installed, each with its own data, and both may run at the same time.
+- When the Store app starts for the first time and the direct download's data folder `%LOCALAPPDATA%\Brouk\` exists, it offers to bring that data in: "Brouk from the direct download has data on this computer. Bring its profiles, settings, history and passwords into this copy?" with **Move**, **Copy** and **Not now**. Not now is remembered and the question is not asked again.
+- **Copy** copies the direct download's data folder (without caches, logs and downloaded updates) and its keys in Credential Manager into the Store app; the direct download keeps its own. **Move** does the same, then deletes the direct download's data folder and keys, and opens Windows' Installed apps page when the direct download is still installed, so the user can uninstall it there.
+- The import replaces the Store app's own data. Brouk restarts for it and imports before it opens any data; if the direct download is running, Brouk asks to quit it first (**Retry**, **Cancel**). A failed import leaves the Store app's data as it was and says what failed.
+- The same import is in Settings → Advanced → **Import from the direct download…** in the Store app, while the direct download's data folder exists; it asks Move, Copy or Cancel, saying that it replaces this copy's data.
 
 ### Releases
 
@@ -62,9 +66,9 @@ The Store is an **additional** way to get Brouk. The direct download (installer 
 
 - [ ] Every Windows release run builds `Brouk-<version>-x64.msix` from the same files as the installer; the Windows App Certification Kit (WACK) passes on it in CI.
 - [ ] CI installs the package (signed with a throwaway test certificate made in the run), runs the Windows smoke test (024) against it and uninstalls it.
-- [ ] The Store app reads and writes its settings, profiles and Chromium data in `%LOCALAPPDATA%\Brouk\`; data written by the installer's Brouk is used by the Store app and the other way round.
-- [ ] At the first start of the Store app with the installer's Brouk installed, Brouk offers to uninstall that copy; Uninstall removes it and keeps `%LOCALAPPDATA%\Brouk\`, Keep both is not asked again.
-- [ ] Uninstalling the Store app leaves `%LOCALAPPDATA%\Brouk\` in place.
+- [ ] The package declares no restricted capability apart from `runFullTrust`. The Store app reads and writes its settings, profiles and Chromium data in its package's `LocalState\Brouk\` and never writes `%LOCALAPPDATA%\Brouk\`.
+- [ ] At the first start of the Store app with the direct download's data present, Brouk offers Move, Copy and Not now; after Copy the Store app has the same profiles, settings, history, bookmarks and saved passwords and the direct download still has its own; after Move the same, the direct download's data folder is gone and Windows' Installed apps page opens; Not now is not asked again.
+- [ ] Settings → Advanced → Import from the direct download… does the same at any time, replacing the Store app's data; while the direct download runs, Brouk asks to quit it first.
 - [ ] The Store app never checks for or downloads updates of its own; Settings → Updates and About say it is updated by the Microsoft Store. The installer's Brouk behaves as before.
 - [ ] The Store app can be made the default browser from Settings → Links; then a link from another app and a double-clicked `.html` file open in Brouk, routed as in 010.
 - [ ] `scripts/release_windows <version>` for a stable release submits the package to the Store without manual steps in Partner Center; for a beta release it does not.
@@ -80,6 +84,7 @@ The Store is an **additional** way to get Brouk. The direct download (installer 
 - Windows on ARM (002 open question).
 - Code-signing the direct download (024: stays unsigned).
 - Moving existing installer users to the Store app automatically.
+- Merging the direct download's data into data the Store app already has (the import replaces it; profile export and import (005) move single profiles).
 
 ## Configuration
 
@@ -103,3 +108,4 @@ None.
 - 2026-11-22 (implementation, part 3 – listing): the listing's texts are in `store/windows/listing.md`, the privacy policy in `store/windows/privacy.md` (to be published in the releases repository's Pages as `/privacy`). `msstore` 0.4.4 is pinned in `scripts/install_tools` for the Macs; it keeps the client secret in the macOS Keychain itself (`msstore reconfigure`, run once by the user, asking for the values), so Brouk's scripts never handle the secret. Its `publish` options are shown only once it is configured, so the release step is written after the account exists.
 - 2026-11-22: Partner Center assigned the identity: package name `Radekevk.Brouk`, publisher `CN=0DD652F3-DAAB-4C46-B018-097F29A54770`, package family `Radekevk.Brouk_dkfx2a54qv0ce`, Store ID `9PDWZPW6RZ0Z` (https://apps.microsoft.com/detail/9PDWZPW6RZ0Z). They replace the placeholders in `CMakeLists.txt` (`APP_STORE_*`, with `APP_STORE_ID` new).
 - 2026-11-22: released 0.6.0 with the package; the first submission was made by hand in Partner Center and is in certification. Left: WACK in CI; after the listing is live, help's Installing section names the Store and the pitch deck's "Where it stands" shows it; the manual tests of the Store app (Settings → Updates, Check for updates, default browser, the offer to uninstall the installer's copy, a Store update keeping the session, no SmartScreen warning); then status `done`.
+- 2026-11-26: certification refused the restricted capability `unvirtualizedResources` (asked for: why no less privileged way works). The user decided to drop it rather than ask again: the Store app gets its own data folder and imports the direct download's data on request (Move, Copy, Not now at the first start; also in Settings). "Data folder" and "Both installed" above and their acceptance criteria were changed with the user's approval. Choices made while specifying it: the import replaces the Store app's data (no merge), runs at a restart before any data is opened, leaves out Chromium's caches, logs and downloaded updates, and copies the keys in Credential Manager under the Store app's own names. Registry write virtualization stays on too (its switch needs the same capability), so the Store app no longer runs the direct download's uninstaller (its HKCU deletes would be redirected); Move opens Windows' Installed apps instead.

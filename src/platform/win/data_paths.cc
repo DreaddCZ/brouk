@@ -8,6 +8,7 @@
 #include <system_error>
 
 #include "brouk/app_info.h"
+#include "platform/win/store_package.h"
 #include "platform/win/wide_string.h"
 
 namespace brouk::win {
@@ -45,7 +46,25 @@ std::filesystem::path AppDataDirectory() {
       return EnsureDirectory(path);
     }
   }
-  return EnsureDirectory(LocalAppData() / Utf8ToWide(kAppDataDirName));
+  if (IsStoreApp()) {
+    const std::filesystem::path state = StoreAppStateDirectory();
+    if (!state.empty()) {
+      return EnsureDirectory(state / Utf8ToWide(kAppDataDirName));
+    }
+  }
+  return EnsureDirectory(DirectDownloadDataDirectory());
+}
+
+std::filesystem::path DirectDownloadDataDirectory() {
+  return LocalAppData() / Utf8ToWide(kAppDataDirName);
+}
+
+std::filesystem::path StoreAppStateDirectory() {
+  const std::wstring family = StorePackageFamilyName();
+  if (family.empty()) {
+    return {};
+  }
+  return EnsureDirectory(LocalAppData() / L"Packages" / family / L"LocalState");
 }
 
 std::filesystem::path WebDataRootDirectory() {

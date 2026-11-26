@@ -43,6 +43,8 @@ export interface SettingsState {
   readonly problems: readonly string[];
   /** The Microsoft Store updates this copy (032); no update settings apply. */
   readonly updatesByStore: boolean;
+  /** The Store app can bring in the direct download's data (032). */
+  readonly directDownloadImport: boolean;
 }
 
 export interface FileResult {
@@ -130,6 +132,7 @@ export function parseState(value: unknown): SettingsState {
     profile: { id: profile['id'], items: items(profile['items']) },
     problems: strings(value['problems']),
     updatesByStore: value['updatesByStore'] === true,
+    directDownloadImport: value['directDownloadImport'] === true,
   };
 }
 
@@ -171,6 +174,11 @@ export class SettingsApi {
   /** Shows Brouk's log in Finder or File Explorer (025). */
   async showLog(): Promise<void> {
     await send('settings.showLog', {}, this.#transport);
+  }
+
+  /** The Store app: asks Move or Copy, then restarts to import (032). */
+  async importDirectDownload(): Promise<void> {
+    await send('settings.importDirectDownload', {}, this.#transport);
   }
 
   async openFolder(): Promise<void> {

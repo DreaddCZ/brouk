@@ -39,6 +39,8 @@ add_library(brouk_app SHARED
   controls.h
   credential_store.cc
   credential_store.h
+  choice_dialog.cc
+  choice_dialog.h
   data_paths.cc
   data_paths.h
   default_browser.cc
@@ -92,6 +94,8 @@ add_library(brouk_app SHARED
   system_events.h
   tab.cc
   tab.h
+  store_data_import.cc
+  store_data_import.h
   store_package.cc
   store_package.h
   tab_drag_image.cc

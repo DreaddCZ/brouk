@@ -45,6 +45,9 @@ test('parseState', () => {
   assert.equal(parseState({ ...state, updatesByStore: true }).updatesByStore, true);
   // Only a real true counts (032).
   assert.equal(parseState({ ...state, updatesByStore: 'yes' }).updatesByStore, false);
+  assert.equal(state.directDownloadImport, false);
+  assert.equal(parseState({ ...state, directDownloadImport: true }).directDownloadImport, true);
+  assert.equal(parseState({ ...state, directDownloadImport: 1 }).directDownloadImport, false);
   assert.throws(() => parseState({ ...state, problems: [1] }), BridgeError);
 });
 
