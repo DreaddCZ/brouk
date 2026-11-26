@@ -82,10 +82,10 @@ Start your submission. Fill in pricing (free), properties (category
 Productivity, privacy policy URL), age ratings, the Store listing (texts from
 `store/windows/listing.md`, screenshots), and upload the `.msix` from
 `build/release/<version>/windows/`. In the submission's notes for
-certification, explain the restricted capabilities: `runFullTrust` (a
-desktop browser built on Chromium) and `unvirtualizedResources` (keeps the
-data in `%LOCALAPPDATA%\Brouk`, shared with the direct download, and lets the
-direct download's uninstaller remove its own registration).
+certification, explain the restricted capability `runFullTrust` (a desktop
+browser built on Chromium). The package asks for no other restricted
+capability: certification refused `unvirtualizedResources` on 2026-11-26, so
+the Store app keeps its own data and imports the direct download's (032).
 
 On Windows, Brouk's own updater (not Sparkle) reads
 `https://dreaddcz.github.io/brouk-releases/windows-x64.json`, checks a minute

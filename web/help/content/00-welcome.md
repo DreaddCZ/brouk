@@ -38,7 +38,26 @@ Settings → [Updates](#settings-updates):
 {win}
 With *ask before downloading*, **⋮ → Update Brouk to …** downloads it. The installer runs by itself after Brouk quits. Every update is checked against Brouk's signing key before it runs.
 
-**Brouk from the Microsoft Store** is updated by the Store, not by Brouk: Settings → Updates says so, and **⋮ → Check for updates…** opens the Store's updates page. Its data is in `%LOCALAPPDATA%\Brouk` too, so it shares profiles, passwords and settings with the downloaded copy. If both are installed, the Store app offers once to uninstall the downloaded copy; your data stays either way. To make it the default browser, Settings → Links opens Windows' default apps page for it.
+**Brouk from the Microsoft Store** is updated by the Store, not by Brouk: Settings → Updates says so, and **⋮ → Check for updates…** opens the Store's updates page. See [Microsoft Store](#microsoft-store).
 {/win}
 
 Brouk checks only by downloading the update feed; it sends nothing but its version. Copies you build yourself never update. {mac}**Brouk → About Brouk** shows the version and the exact build{/mac}{win}`brouk.exe --version` in PowerShell shows the version and the exact build (**⋮ → Check for updates…** shows the version){/win}, e.g. `0.1.0 (a1b2c3d)` — mention it when you report a problem.
+
+### Microsoft Store {#microsoft-store}
+
+{mac}
+Brouk is in the Microsoft Store for Windows only. On a Mac, install it as described in [Installing](#installing).
+{/mac}
+{win}
+Brouk from the Microsoft Store is a copy of its own, next to the direct download: installing it does not replace the direct download, and each copy has its own profiles, settings, history and passwords. The Store app keeps its data in its own folder under `%LOCALAPPDATA%\Packages` (Settings → Settings files → **Show in File Explorer** opens it). Windows deletes that folder when you uninstall the Store app, so [export](#profiles-export) the profiles you want to keep first.
+
+The Store updates it (see [Updates](#updates)). To make it the default browser, Settings → Links opens Windows' default apps page for it.
+
+When the direct download has data on this computer, the Store app asks at its first start whether to bring it in:
+
+- **Move** — the Store app gets the direct download's profiles, settings, history, bookmarks and passwords, and the direct download's data is deleted. Windows' Installed apps then opens, so you can uninstall the direct download.
+- **Copy** — the Store app gets the same, and the direct download keeps its own. From then on each copy has its own data.
+- **Not now** — the Store app starts empty and doesn't ask again.
+
+Settings → Advanced → **Import from the direct download…** does the same at any time. It replaces the Store app's data. Brouk restarts to bring the data in; if the direct download is running, Brouk asks you to quit it first. Caches and logs are not copied, and a Bitwarden vault asks to be unlocked again.
+{/win}

@@ -10,6 +10,10 @@ Every setting is also in a plain text file (YAML), which you can edit while Brou
 - {mac}`~/Library/Application Support/Brouk/profiles/<id>/settings.yaml`{/mac}{win}`%LOCALAPPDATA%\Brouk\profiles\<id>\settings.yaml`{/win} — one profile's settings;
 - `link-routing.yaml` (rules and wrappers) next to `settings.yaml`, and `request-rules.yaml` in each profile folder.
 
+{win}
+Brouk from the Microsoft Store keeps these files in a folder of its own ([Microsoft Store](#microsoft-store)); **Show in File Explorer** opens it.
+{/win}
+
 Brouk rewrites the files when you change settings in the app, so comments are not kept. A value Brouk can't use is ignored and listed at the top of the settings page, and a yellow warning in the address bar leads there. Settings → Settings files → {mac}**Show in Finder**{/mac}{win}**Show in File Explorer**{/win} opens the folder; **Export Settings…** and **Import Settings…** move the settings for all profiles as one file ([profiles](#profiles-export) have their own export).
 
 ### Log and debug logging {#logging}
