@@ -64,6 +64,7 @@
 #include "platform/win/devtools_window.h"
 #include "platform/win/downloaded_files.h"
 #include "platform/win/file_dialogs.h"
+#include "platform/win/store_data_import.h"
 #include "platform/win/store_package.h"
 #include "platform/win/system_events.h"
 #include "platform/win/theme.h"
@@ -617,7 +618,7 @@ void App::OnContextInitialized() {
   if (IsStoreApp()) {
     // After the first window is up, so the question has a window to sit on.
     CefPostDelayedTask(
-        TID_UI, new FunctionTask([this] { OfferToUninstallInstallerCopy(); }),
+        TID_UI, new FunctionTask([this] { OfferDirectDownloadImport(); }),
         2000);
   }
   const LaunchRequest request =
@@ -1580,9 +1581,13 @@ void App::OpenWebLink(const std::string& url) {
 }
 
 void App::CloseAllWindows() {
+  QuitAllWindows();
+}
+
+bool App::QuitAllWindows() {
   BrowserWindow* front = FrontWindow();
   if (!ConfirmQuitWithDownloads(front ? front->hwnd() : nullptr)) {
-    return;
+    return false;
   }
   if (routing_) {
     routing_->CancelPending();  // The picker closes, links stop resolving.
@@ -1600,6 +1605,7 @@ void App::CloseAllWindows() {
   for (const std::unique_ptr<BrowserWindow>& window : windows_) {
     PostMessageW(window->hwnd(), WM_CLOSE, 0, 0);
   }
+  return true;
 }
 
 void App::InstallUpdateAtExit() {
@@ -3013,43 +3019,106 @@ bool App::UpdatedByStore() {
   return IsStoreApp();
 }
 
-// The Store app, at its first start, when the installer's Brouk is installed
-// too (032): both use the same data, so one copy is enough. "No" is
-// remembered with a file in the data folder; after "Yes" the question has
-// nothing left to ask about.
-void App::OfferToUninstallInstallerCopy() {
+bool App::CanImportDirectDownload() {
+  return CanImportDirectDownloadData();
+}
+
+// The Store app, at its first start, when the direct download's data is on
+// this computer (032): the two copies keep separate data, so it offers to
+// bring that data in. Not now is remembered; an import remembers it too.
+void App::OfferDirectDownloadImport() {
   CEF_REQUIRE_UI_THREAD();
-  const std::filesystem::path kept =
-      AppDataDirectory() / L"store-keeps-installer-copy";
-  std::error_code error;
-  const std::optional<std::filesystem::path> uninstaller =
-      InstallerCopyUninstaller();
-  if (!uninstaller || std::filesystem::exists(kept, error)) {
+  if (!CanImportDirectDownloadData() || DirectDownloadImportOffered()) {
     return;
   }
-  BrowserWindow* front = FrontWindow();
-  HWND owner = front ? front->hwnd() : nullptr;
   const std::wstring title = Utf8ToWide(kAppName);
-  const int answer = MessageBoxW(
-      owner,
-      (title + L" is also installed from the direct download.\n\nUninstall "
-               L"that copy? Your data stays: both copies use the same "
-               L"settings, profiles and passwords.\n\nYes uninstalls it; No "
-               L"keeps both.")
-          .c_str(),
-      title.c_str(), MB_YESNO | MB_ICONQUESTION);
-  if (answer == IDYES) {
-    if (!UninstallInstallerCopy(*uninstaller)) {
-      MessageBoxW(owner,
-                  (title + L" could not start the uninstaller. Uninstall the "
-                           L"other copy in Windows Settings \u2192 Apps.")
-                      .c_str(),
-                  title.c_str(), MB_OK | MB_ICONWARNING);
-    }
+  BrowserWindow* front = FrontWindow();
+  AskChoice(front ? front->hwnd() : nullptr,
+            title +
+                L" from the direct download has data on this computer. Bring "
+                L"its profiles, settings, history and passwords into this "
+                L"copy?\n\nMove: this copy gets the data and the direct "
+                L"download's is deleted, so you can uninstall it.\nCopy: both "
+                L"copies keep the data, each on its own from now on.\n\n" +
+                title + L" restarts to bring the data in.",
+            {L"Move", L"Copy", L"Not now"}, 2, [this](std::size_t choice) {
+              if (choice == 0) {
+                RestartToImport(DataImportMode::kMove);
+              } else if (choice == 1) {
+                RestartToImport(DataImportMode::kCopy);
+              } else {
+                SetDirectDownloadImportOffered();
+              }
+            });
+}
+
+// Settings → Advanced → Import from the direct download… (032).
+void App::ImportDirectDownload() {
+  CEF_REQUIRE_UI_THREAD();
+  if (!CanImportDirectDownloadData()) {
     return;
   }
-  // An empty file; if it cannot be written, the question comes again.
-  std::ofstream(kept).close();
+  const std::wstring title = Utf8ToWide(kAppName);
+  AskChoice(
+      DialogOwner(),
+      L"Replace this copy's data with the data of " + title +
+          L" from the direct download?\n\nThis copy's profiles, settings, "
+          L"history and passwords are replaced. Move also deletes the direct "
+          L"download's data; Copy keeps it.\n\n" +
+          title + L" restarts to bring the data in.",
+      {L"Move", L"Copy", L"Cancel"}, 2, [this](std::size_t choice) {
+        if (choice == 0) {
+          RestartToImport(DataImportMode::kMove);
+        } else if (choice == 1) {
+          RestartToImport(DataImportMode::kCopy);
+        }
+      });
+}
+
+// Brouk quits as with Exit and starts again; the new start imports before
+// it opens any data, and the session comes back from the imported data.
+void App::RestartToImport(DataImportMode mode) {
+  CEF_REQUIRE_UI_THREAD();
+  import_at_exit_ = mode;
+  if (!QuitAllWindows()) {
+    import_at_exit_.reset();
+  }
+}
+
+void App::RelaunchIfAsked() {
+  if (!import_at_exit_) {
+    return;
+  }
+  const std::wstring title = Utf8ToWide(kAppName);
+  if (!RequestDirectDownloadImport(*import_at_exit_) || !RelaunchStoreApp()) {
+    MessageBoxW(nullptr,
+                (title + L" could not restart to bring in the direct "
+                         L"download's data. Start it again and choose the "
+                         L"import in Settings \u2192 Advanced.")
+                    .c_str(),
+                title.c_str(), MB_OK | MB_ICONWARNING);
+  }
+}
+
+void App::AskChoice(HWND owner,
+                    std::wstring message,
+                    std::vector<std::wstring> buttons,
+                    std::size_t cancel,
+                    ChoiceDialog::Done done) {
+  CEF_REQUIRE_UI_THREAD();
+  if (choice_dialog_) {
+    done(cancel);  // One at a time.
+    return;
+  }
+  choice_dialog_ = std::make_unique<ChoiceDialog>(
+      owner, Utf8ToWide(kAppName), std::move(message), std::move(buttons),
+      cancel, [this, done = std::move(done)](std::size_t choice) {
+        // Deleted from a task: this runs inside the dialog.
+        std::shared_ptr<ChoiceDialog> closed(choice_dialog_.release());
+        CefPostTask(TID_UI, new FunctionTask([closed] {}));
+        done(choice);
+      });
+  choice_dialog_->Show();
 }
 
 // As Chrome on Windows: Brouk registers itself as a browser for this user,

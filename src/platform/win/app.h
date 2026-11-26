@@ -25,6 +25,7 @@
 #include "cef/settings_handler.h"
 #include "cef/task_manager_handler.h"
 #include "core/closed_tabs.h"
+#include "core/data_folder_import.h"
 #include "core/download_paths.h"
 #include "core/launch_args.h"
 #include "core/profile_registry.h"
@@ -32,6 +33,7 @@
 #include "core/yaml_value.h"
 #include "include/cef_request_context.h"
 #include "platform/win/browser_window.h"
+#include "platform/win/choice_dialog.h"
 #include "platform/win/devtools_window.h"
 #include "platform/win/export_password_dialog.h"
 #include "platform/win/internal_page_window.h"
@@ -65,6 +67,9 @@ class App final : public BrowserWindowOwner,
   void ReleaseBrowserObjects();
   // After CefShutdown: starts a downloaded update's installer (W4).
   void InstallUpdateAtExit();
+  // After CefShutdown: for an import of the direct download's data (032),
+  // writes the request and starts the Store app again.
+  void RelaunchIfAsked();
   // content.json_viewer (006), for new renderer processes.
   bool JsonViewerEnabled() const;
   // Link routing (010), for the windows (BrowserWindowOwner).
@@ -233,6 +238,8 @@ class App final : public BrowserWindowOwner,
   void MakeDefaultBrowser(
       std::function<void(std::optional<Error> error)> done) override;
   bool UpdatedByStore() override;
+  bool CanImportDirectDownload() override;
+  void ImportDirectDownload() override;
 
  private:
   // A launch's URLs as tabs of a new window (Chrome), or of `into` (the
@@ -282,8 +289,21 @@ class App final : public BrowserWindowOwner,
   // The window the settings and profile pages' dialogs belong to.
   HWND DialogOwner() const;
   void SetUpBitwarden();
-  // The Store app's question about the installer's copy (032).
-  void OfferToUninstallInstallerCopy();
+  // The Store app's question at its first start: bring in the direct
+  // download's data (032)?
+  void OfferDirectDownloadImport();
+  // Quits and starts again to import the direct download's data.
+  void RestartToImport(DataImportMode mode);
+  // A question with buttons of its own; one at a time (`done` gets
+  // `cancel` while another is open).
+  void AskChoice(HWND owner,
+                 std::wstring message,
+                 std::vector<std::wstring> buttons,
+                 std::size_t cancel,
+                 ChoiceDialog::Done done);
+  // Exit: closes every window, unless the user keeps running downloads;
+  // false then.
+  bool QuitAllWindows();
   // "Inspect" in one of Brouk's page windows: InspectPage.
   std::function<void(CefRefPtr<CefBrowser>, const std::wstring&, POINT)>
   PageInspector();
@@ -372,6 +392,10 @@ class App final : public BrowserWindowOwner,
   // Restart to update: the installer starts Brouk again.
   std::unique_ptr<Updater> updater_;
   bool restart_to_update_ = false;
+  // The Store app's import of the direct download's data, after a restart
+  // (032); the open question.
+  std::optional<DataImportMode> import_at_exit_;
+  std::unique_ptr<ChoiceDialog> choice_dialog_;
   // Link routing (010): the rules file, the picker and the resolver; made
   // when CEF is ready.
   std::unique_ptr<LinkRoutingController> routing_;

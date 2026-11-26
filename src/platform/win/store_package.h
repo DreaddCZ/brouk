@@ -1,8 +1,6 @@
 #ifndef BROUK_PLATFORM_WIN_STORE_PACKAGE_H_
 #define BROUK_PLATFORM_WIN_STORE_PACKAGE_H_
 
-#include <filesystem>
-#include <optional>
 #include <string>
 
 namespace brouk::win {
@@ -14,6 +12,10 @@ namespace brouk::win {
 
 // Whether this Brouk runs as the Store app (with a package identity).
 bool IsStoreApp();
+
+// The Store app's package family name ("Radekevk.Brouk_dkfx2a54qv0ce"); ""
+// outside the package.
+std::wstring StorePackageFamilyName();
 
 // The Store app's AppUserModelID ("<package family name>!Brouk"), which
 // Windows uses for its default-app choices; "" outside the package.
@@ -30,14 +32,19 @@ void OpenStoreAppDefaultAppsSettings();
 // Opens the Microsoft Store's updates page ("Check for updates…").
 void OpenStoreUpdates();
 
-// The uninstaller of the installer's Brouk for this user (024, W4), when
-// that copy is installed too; else nothing.
-std::optional<std::filesystem::path> InstallerCopyUninstaller();
+// Whether the installer's Brouk (024, W4) is installed for this user: its
+// uninstall entry exists.
+bool IsInstallerCopyInstalled();
 
-// Runs that uninstaller silently and returns at once (it copies itself and
-// waits for nothing of Brouk's). Brouk's data folder stays, as with every
-// uninstall. False if it could not be started.
-bool UninstallInstallerCopy(const std::filesystem::path& uninstaller);
+// Opens Windows' Settings at the installed apps, where the installer's
+// Brouk is uninstalled. The Store app does not run its uninstaller itself:
+// inside the package the uninstaller's registry changes would be redirected
+// into the package and never reach the real registration.
+void OpenInstalledAppsSettings();
+
+// Starts the Store app again (a restart for the data import); false outside
+// the package or if it could not be started.
+bool RelaunchStoreApp();
 
 }  // namespace brouk::win
 

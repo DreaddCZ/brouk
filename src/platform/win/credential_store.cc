@@ -11,6 +11,7 @@
 #include <utility>
 
 #include "brouk/app_info.h"
+#include "platform/win/store_package.h"
 #include "platform/win/wide_string.h"
 
 namespace brouk::win {
@@ -95,8 +96,15 @@ std::shared_ptr<SecretStore> CreateCredentialStore(std::wstring prefix) {
   return std::make_shared<CredentialStore>(std::move(prefix));
 }
 
+std::wstring DirectDownloadCredentialPrefix() {
+  return Utf8ToWide(kAppName) + L" Keys";
+}
+
 std::wstring CredentialPrefix() {
-  std::wstring prefix = Utf8ToWide(kAppName) + L" Keys";
+  std::wstring prefix = DirectDownloadCredentialPrefix();
+  if (IsStoreApp()) {
+    prefix += L" (Microsoft Store)";
+  }
   if (const wchar_t* dev_dir = _wgetenv(L"BROUK_DEV_DATA_DIR")) {
     if (dev_dir[0] != L'\0') {
       prefix += L" (" + std::wstring(dev_dir) + L")";

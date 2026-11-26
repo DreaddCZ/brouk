@@ -15,10 +15,15 @@ namespace brouk::win {
 // Thread-safe (the Cred* functions are).
 std::shared_ptr<SecretStore> CreateCredentialStore(std::wstring prefix);
 
-// The name prefix of this app's keys, "Brouk Keys". A developer test run
-// with its own data folder (BROUK_DEV_DATA_DIR) gets its own prefix, so it
-// never reads or deletes the user's keys.
+// The name prefix of this app's keys: "Brouk Keys", in the Store app (032)
+// "Brouk Keys (Microsoft Store)", as each copy has its own data folder and
+// deletes its own keys. A developer test run with its own data folder
+// (BROUK_DEV_DATA_DIR) gets its own prefix, so it never reads or deletes
+// the user's keys.
 std::wstring CredentialPrefix();
+
+// The direct download's prefix, also in the Store app (to import its keys).
+std::wstring DirectDownloadCredentialPrefix();
 
 }  // namespace brouk::win
 

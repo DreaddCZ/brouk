@@ -143,6 +143,7 @@ std::string StateJson(SettingsPageDelegate& delegate,
   }
   state->SetList("problems", problems);
   state->SetBool("updatesByStore", delegate.UpdatedByStore());
+  state->SetBool("directDownloadImport", delegate.CanImportDirectDownload());
   return ToJson(state);
 }
 
@@ -277,6 +278,9 @@ bool SettingsHandler::OnQuery(CefRefPtr<CefBrowser> /*browser*/,
     callback->Success("");
   } else if (*type == "settings.showLog") {
     delegate.RevealLog();
+    callback->Success("");
+  } else if (*type == "settings.importDirectDownload") {
+    delegate.ImportDirectDownload();
     callback->Success("");
   } else if (*type == "settings.export") {
     delegate.ExportSettings(FileAnswer(callback));

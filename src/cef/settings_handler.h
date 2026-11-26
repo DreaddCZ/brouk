@@ -77,6 +77,10 @@ class SettingsPageDelegate {
   // The Microsoft Store updates this copy (032): the page shows that in
   // place of the update settings.
   virtual bool UpdatedByStore() { return false; }
+  // The Store app can bring in the direct download's data (032); asking
+  // which way and restarting for it is the delegate's.
+  virtual bool CanImportDirectDownload() { return false; }
+  virtual void ImportDirectDownload() {}
 };
 
 // Answers the settings page's bridge messages (web/settings/api.ts). The

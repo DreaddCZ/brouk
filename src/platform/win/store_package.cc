@@ -11,7 +11,6 @@
 #include <initializer_list>
 #include <optional>
 #include <string>
-#include <system_error>
 #include <vector>
 
 #include "brouk/app_info.h"
@@ -45,20 +44,6 @@ std::optional<std::wstring> ReadString(HKEY root,
   return text;
 }
 
-std::wstring PackageFamilyName() {
-  UINT32 length = 0;
-  if (GetCurrentPackageFamilyName(&length, nullptr) !=
-          ERROR_INSUFFICIENT_BUFFER ||
-      length == 0) {
-    return {};
-  }
-  std::vector<wchar_t> name(length);
-  if (GetCurrentPackageFamilyName(&length, name.data()) != ERROR_SUCCESS) {
-    return {};
-  }
-  return std::wstring(name.data());
-}
-
 void OpenFixedPage(const wchar_t* page, const wchar_t* fallback) {
   // Fixed pages only, opened by the shell (no program runs with arguments
   // from anywhere else).
@@ -72,6 +57,20 @@ void OpenFixedPage(const wchar_t* page, const wchar_t* fallback) {
 
 }  // namespace
 
+std::wstring StorePackageFamilyName() {
+  UINT32 length = 0;
+  if (GetCurrentPackageFamilyName(&length, nullptr) !=
+          ERROR_INSUFFICIENT_BUFFER ||
+      length == 0) {
+    return {};
+  }
+  std::vector<wchar_t> name(length);
+  if (GetCurrentPackageFamilyName(&length, name.data()) != ERROR_SUCCESS) {
+    return {};
+  }
+  return std::wstring(name.data());
+}
+
 bool IsStoreApp() {
   UINT32 length = 0;
   // APPMODEL_ERROR_NO_PACKAGE outside a package; a packaged process is
@@ -81,7 +80,7 @@ bool IsStoreApp() {
 }
 
 std::wstring StoreAppUserModelId() {
-  const std::wstring family = PackageFamilyName();
+  const std::wstring family = StorePackageFamilyName();
   // The manifest's Application Id is the app name (AppxManifest.xml.in).
   return family.empty() ? std::wstring() : family + L"!" + Utf8ToWide(kAppName);
 }
@@ -127,40 +126,41 @@ void OpenStoreUpdates() {
   OpenFixedPage(L"ms-windows-store://downloadsandupdates", nullptr);
 }
 
-std::optional<std::filesystem::path> InstallerCopyUninstaller() {
-  const std::optional<std::wstring> command =
-      ReadString(HKEY_CURRENT_USER, kInstallerUninstallKey, L"UninstallString");
-  if (!command) {
-    return std::nullopt;
-  }
-  // Inno Setup writes "<folder>\unins000.exe", in quotes.
-  std::wstring path = *command;
-  if (path.size() >= 2 && path.front() == L'"' && path.back() == L'"') {
-    path = path.substr(1, path.size() - 2);
-  }
-  const std::filesystem::path uninstaller(path);
-  std::error_code error;
-  const std::wstring name = uninstaller.filename().wstring();
-  if (!uninstaller.is_absolute() || name.rfind(L"unins", 0) != 0 ||
-      uninstaller.extension() != L".exe" ||
-      !std::filesystem::is_regular_file(uninstaller, error)) {
-    return std::nullopt;
-  }
-  return uninstaller;
+bool IsInstallerCopyInstalled() {
+  return ReadString(HKEY_CURRENT_USER, kInstallerUninstallKey,
+                    L"UninstallString")
+      .has_value();
 }
 
-bool UninstallInstallerCopy(const std::filesystem::path& uninstaller) {
-  std::wstring command = L"\"" + uninstaller.wstring() +
-                         L"\" /VERYSILENT /SUPPRESSMSGBOXES /NORESTART";
+void OpenInstalledAppsSettings() {
+  OpenFixedPage(L"ms-settings:appsfeatures", nullptr);
+}
+
+bool RelaunchStoreApp() {
+  if (!IsStoreApp()) {
+    return false;
+  }
+  // brouk.exe itself, without arguments: a process this one starts keeps
+  // the package identity (as CEF's own child processes do).
+  std::vector<wchar_t> path(MAX_PATH);
+  for (;;) {
+    const DWORD length = GetModuleFileNameW(nullptr, path.data(),
+                                            static_cast<DWORD>(path.size()));
+    if (length == 0) {
+      return false;
+    }
+    if (length < path.size()) {
+      break;
+    }
+    path.resize(path.size() * 2);
+  }
+  std::wstring command = L"\"" + std::wstring(path.data()) + L"\"";
   STARTUPINFOW startup = {};
   startup.cb = sizeof(startup);
   PROCESS_INFORMATION process = {};
-  // Not RunProcess: the uninstaller copies itself and must outlive the job
-  // RunProcess would put it in. Its path comes from the installer's own
-  // uninstall entry, checked above.
   if (!CreateProcessW(  // nosemgrep: cpp-process-spawn
-          uninstaller.c_str(), command.data(), nullptr, nullptr, FALSE,
-          DETACHED_PROCESS, nullptr, nullptr, &startup, &process)) {
+          path.data(), command.data(), nullptr, nullptr, FALSE, 0, nullptr,
+          nullptr, &startup, &process)) {
     return false;
   }
   CloseHandle(process.hThread);
